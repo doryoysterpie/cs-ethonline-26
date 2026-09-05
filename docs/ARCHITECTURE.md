@@ -1,38 +1,41 @@
 # Architecture
 
-This document records the intended architecture as fixed by the Sprint 0 charter and the
-audit-remediation decisions D11 to D15, and the state of each component after Sprint 0.
-Where the project owner fixes something, this document says so. Where the implementer has
-proposed something the owner has not fixed, it is marked **proposed** and is open to
-revision.
+This document records the intended architecture as fixed by the Sprint 0 charter, the
+supplied project plan (Plan 2.0) and decisions D11 to D16, and the state of each component
+after Sprint 0. Where the project owner or the plan fixes something, this document says so.
+Where the implementer has proposed something that is not fixed, it is marked **proposed**
+and is open to revision.
 
-Source note: the component list, the vertical slice, the non-goals and the decisions in
-`DECISIONS.md` are the only plan material available inside the repository. No separate plan
-document exists here.
+Source note: the component list, the vertical slice, the non-goals, the plan's package line
+for the dashboard, and the decisions in `DECISIONS.md` are the plan material available
+inside the repository. No separate plan document exists here.
 
 ## 1. Components
 
-| Package               | Responsibility (intended)                                                                                                                                                                            | State after Sprint 0            |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                            | three contracts defined, tested |
-| `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                                                                                                       | placeholder                     |
-| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts.                   | placeholder                     |
-| `@cas/graph-evidence` | Live Graph-provider queries over the Messari standardized schema (D11), signal detection, and the provenance record of every request and response. Runs in parallel to editorial ingestion.          | placeholder                     |
-| `@cas/classification` | Automated high-recall classification of every imported source into `include`, `exclude` or `review`, with recorded rationale. Calibrated and evaluated against snapshot labels, never gated by them. | placeholder                     |
-| `@cas/clustering`     | Clustering included and needs-review sources into canonical incident records; attaching evidence, including corroborating Graph signals, with evidence states and complete provenance.               | placeholder                     |
-| `@cas/drafting`       | Rendering the editable editorial output from canonical incidents after human review, under the naming policy (D4), to the D3 destination.                                                            | placeholder                     |
-| `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors.                                                                                                                            | placeholder                     |
-| `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 7, conditional on the Graph gate).                                                                                                             | placeholder                     |
-| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                      | placeholder, boundary test only |
-| `@cas/dashboard`      | Editorial dashboard: the needs-review queue, evidence views, the review workflow that writes `ReviewState`, and drafts.                                                                              | placeholder                     |
-| `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                                                                                                | placeholder                     |
-| `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 7, conditional on the Graph gate).                                                                                   | placeholder                     |
-| `data/taxonomy`       | Taxonomy data files.                                                                                                                                                                                 | empty                           |
-| `data/fixtures`       | Synthetic fixtures.                                                                                                                                                                                  | empty                           |
+| Package               | Responsibility (intended)                                                                                                                                                                                                      | State after Sprint 0            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                                                      | three contracts defined, tested |
+| `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                                                                                                                                 | placeholder                     |
+| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts. Sprint 2.                                   | placeholder                     |
+| `@cas/graph-evidence` | Live Graph-provider queries over the Messari standardized schema (D11), signal detection, the anomaly feed, and the provenance record of every request and response. Runs in parallel to editorial ingestion. Sprints 1 and 4. | placeholder                     |
+| `@cas/classification` | Automated high-recall classification of every imported source into `include`, `exclude` or `review`, with recorded rationale. Calibrated and evaluated against snapshot labels, never gated by them. Sprint 3.                 | placeholder                     |
+| `@cas/clustering`     | Clustering included and needs-review sources into canonical incident records; the evidence-state resolver, attaching evidence including corroborating Graph signals, with complete provenance. Sprint 4.                       | placeholder                     |
+| `@cas/drafting`       | The drafting pipeline: the editable editorial output from canonical incidents, the live crypto section and the fixed historical draft, under the naming policy (D4), to the D3 destination. Sprint 5.                          | placeholder                     |
+| `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors, with a `SKILL.md` and a clean installation from a fresh clone. Sprint 6.                                                                             | placeholder                     |
+| `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 8, conditional on the Graph gate).                                                                                                                                       | placeholder                     |
+| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                                                | placeholder, boundary test only |
+| `@cas/dashboard`      | Next.js application, as Plan 2.0 fixes: command center, review queue, incident explorer, draft editor; judge login. The review workflow here is the only writer of `ReviewState`. Sprint 6.                                    | placeholder                     |
+| `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                                                                                                                          | placeholder                     |
+| `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 8, conditional on the Graph gate).                                                                                                             | placeholder                     |
+| `data/taxonomy`       | Taxonomy data files.                                                                                                                                                                                                           | empty                           |
+| `data/fixtures`       | Synthetic fixtures. Sprint 7.                                                                                                                                                                                                  | empty                           |
 
-Framework choices for the applications (for example the web framework for the dashboard and
-the MCP transport for the server) are **not decided** in Sprint 0 and are not implied by the
-placeholder packages. Each is decided in the sprint that builds the application.
+The dashboard framework is Next.js. Plan 2.0 fixes it in the package line
+`apps/dashboard: Next.js; command center, review queue, incident explorer, draft editor;
+judge login`. It is an intended architectural choice, not an open decision. Next.js is not
+scaffolded or installed before Sprint 6, and the placeholder package does not imply it.
+Implementation choices the plan does not fix, such as the MCP transport for `@cas/mcp-server`,
+remain open until their implementation sprint.
 
 ## 2. Package ownership boundaries
 
@@ -41,8 +44,8 @@ placeholder packages. Each is decided in the sprint that builds the application.
 - `@cas/database` is the only package that talks to Postgres.
 - `@cas/graph-evidence` is the only package that talks to a Graph provider.
 - `@cas/classification` is the only package that writes a `ClassificationDecision`. Only a
-  human action, through the review workflow, writes a `ReviewState`. No component derives one
-  from the other.
+  human action, through the dashboard's review workflow, writes a `ReviewState`. No component
+  derives one from the other.
 - `@cas/classification` and `@cas/drafting` are the only packages that call a model, and
   only after decision D9 is resolved.
 - `@cas/feed-api` and `@cas/mcp-server` are read-side surfaces. They do not run the pipeline
@@ -64,7 +67,7 @@ selection, and the human reviews a queue rather than the whole feed.
 7. human review and editorial output             (@cas/dashboard, @cas/drafting)
 
 in parallel:
-   live Graph queries → signals → corroborating evidence attached at steps 5 and 6
+   live Graph queries → signals → anomaly feed → corroborating evidence attached at steps 5 and 6
                                                   (@cas/graph-evidence → @cas/clustering)
 ```
 
@@ -81,7 +84,7 @@ Rules that follow from D15:
 - The present manual workflow described in `DATA_INPUTS.md` section 1 is background for
   understanding the data and its labels, not the runtime design.
 
-Stage by stage, with the Sprint 0 state:
+Stage by stage, with the sprint that delivers it (D16) and the Sprint 0 state:
 
 1. **Import and normalization.** CSV exports from the Excel RSS workflow (D7a) enter through
    `@cas/worker` into `@cas/database`, preserving raw values, provenance and `DataOrigin`.
@@ -90,19 +93,25 @@ Stage by stage, with the Sprint 0 state:
    rationale to every imported source. Sprint 3. Not implemented.
 3. **Queue.** Included sources proceed; `review` sources wait for a human; excluded sources
    are retained. Sprint 3. Not implemented.
-4. **Clustering and canonical records.** `@cas/clustering` groups included and needs-review
-   sources into canonical incidents with member lists and evidence states whose provenance
-   chain reaches back to source rows. Sprint 4. Not implemented.
+4. **Clustering, canonical records and evidence states.** `@cas/clustering` groups included
+   and needs-review sources into canonical incidents with member lists, and the
+   evidence-state resolver assigns each incident a state whose provenance chain reaches back
+   to source rows and Graph responses. Sprint 4. Not implemented.
 5. **Graph correlation.** `@cas/graph-evidence` queries live provider-backed data over the
-   standardized schema for the chosen chains (D11), emits signals, and `@cas/clustering`
-   attaches them as corroborating evidence with request, response and block context.
-   Sprints 1 and 5. Not implemented.
-6. **Review and editorial output.** `@cas/dashboard` presents the queue, evidence views and
-   canonical incidents; the review workflow writes `ReviewState`; `@cas/drafting` renders an
-   editable draft to the D3 destination with the evidence state visible beside every claim
-   and the naming policy (D4) applied. Sprint 6. Not implemented.
-7. **Exposure.** `@cas/mcp-server` exposes tools over the incident store; `@cas/feed-api`
-   serves the public metadata allowlist (D6). Sprints 6 and 7. Not implemented.
+   standardized schema for the chosen chains (D11), emits signals into the anomaly feed, and
+   `@cas/clustering` attaches them as corroborating evidence with request, response and block
+   context. Sprint 1 (provider proof) and Sprint 4 (correlation). Not implemented.
+6. **Drafting.** `@cas/drafting` renders an editable draft to the D3 destination with the
+   evidence state visible beside every claim and the naming policy (D4) applied, including
+   the live crypto section and a fixed historical draft. Sprint 5. Not implemented.
+7. **Review and exposure.** `@cas/dashboard` presents the command center, the queue, the
+   incident explorer and the draft editor; the review workflow writes `ReviewState`;
+   `@cas/mcp-server` exposes tools over the incident store with `SKILL.md`. Sprint 6.
+   `@cas/feed-api` serves the public metadata allowlist (D6) behind x402. Sprint 8,
+   conditional. Not implemented.
+
+Everything in stages 1 to 7 except the feed API must be complete and demonstrable at the
+Graph release gate at the end of 10 September (`SPRINT_BOARD.md`).
 
 The four judgments in `DATA_INPUTS.md` section 4 remain distinct records throughout:
 classification decision, review state, incident membership and publication are never
@@ -130,10 +139,10 @@ Sprint 0 contents of `@cas/contracts`:
 | `ClassificationDecision` | `include`, `exclude`, `review`       | machine decision of the automated classifier, with rationale      | decision D15                            |
 | `DataOrigin`             | `live`, `fixture`, `replay`          | execution and data context of a record, independent of its source | section 7 below                         |
 
-The contract tests in `packages/contracts/src/index.test.ts` pin the three value sets and
-prove that the two decision enums share no value and are distinct types. Incident, signal,
-evidence-state, source-kind and feed-response contracts arrive with the sprints that produce
-them.
+The four contract tests in `packages/contracts/src/index.test.ts` pin the three value sets
+and prove that the two decision enums share no value and are distinct types. Incident,
+signal, evidence-state, source-kind and feed-response contracts arrive with the sprints that
+produce them.
 
 ## 5. Dependency direction rules
 

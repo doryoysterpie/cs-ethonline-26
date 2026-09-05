@@ -249,8 +249,10 @@ be traced to its sources is a provenance failure and must be reported as an expl
 - **D7a** Input format: standards-compliant CSV exports from the existing Excel RSS workflow
   are the hackathon baseline. Provisionally decided.
 - **D7b** Transport: manual upload, watched local export or direct authenticated workbook
-  access. Unresolved; due by 6 September, before Sprint 2.
+  access. Unresolved; due by 5 September, before Sprint 2 (D16).
 - **D15** Classification before selection: the runtime flow in section 1. Accepted.
+- **D16** Gate-aligned implementation sequence: import and normalization are Sprint 2,
+  classification and the review queue Sprint 3. Accepted.
 
 A file-based CSV import is the required reliable baseline. Direct Excel or cloud-workbook
 synchronization must not become a prerequisite for the Graph release candidate.

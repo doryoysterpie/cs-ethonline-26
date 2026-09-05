@@ -50,7 +50,7 @@ variables and block or timestamp for a Graph query.
 
 ## 5. The public x402 feed is a payment gate, not confidential access control
 
-The planned x402-gated feed (Sprint 7, conditional on the Graph gate) charges for access to public incident
+The planned x402-gated feed (Sprint 8, conditional on the Graph gate) charges for access to public incident
 metadata. It provides no confidentiality. Nothing that must stay private, including private
 editorial notes, corpus text or unpublished victim names, may be placed behind it on the
 assumption that payment implies authorization. Decision D6 in `DECISIONS.md` governs what the

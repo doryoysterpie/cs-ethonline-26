@@ -253,7 +253,8 @@ entries are unchanged except for status pointers.
 ## D14 Corrected submission schedule
 
 - **Date:** 2026-09-04
-- **Status:** ACCEPTED
+- **Status:** ACCEPTED; its per-sprint calendar and due dates are SUPERSEDED by D16, its
+  official milestones and freeze stand
 - **Decision:** The operative schedule is the official ETHOnline 2026 schedule, in
   America/Toronto time: hacking began 4 September 2026 at 12:00 PM; Project Check-in #1 is
   7 September at 11:59 PM; Project Check-in #2 is 10 September at 11:59 PM; final project
@@ -289,3 +290,45 @@ entries are unchanged except for status pointers.
   work and is not built in Sprint 0.
 - **Decided by:** Project owner, audit-remediation instruction of 2026-09-04.
 - **Supersedes:** the data-flow section of the first `ARCHITECTURE.md`. D7a is unaffected.
+
+## D16 Gate-aligned implementation sequence
+
+- **Date:** 2026-09-04
+- **Status:** ACCEPTED
+- **Decision:** The implementation sequence, in America/Toronto dates, is:
+  Sprint 1, 5 September: live Graph provider proof, Messari standardized-schema spike,
+  Ethereum mandatory, Base four-hour gate.
+  Sprint 2, 5 to 6 September: Postgres schema, editorial-feed import, normalization,
+  provenance.
+  Sprint 3, 6 to 7 September: high-recall classification, review queue, Check-in #1.
+  Sprint 4, 7 to 8 September: clustering, canonical incidents, Graph correlation,
+  evidence-state resolver, anomaly feed.
+  Sprint 5, 8 to 9 September: drafting pipeline, live crypto section, fixed historical
+  draft.
+  Sprint 6, 9 to 10 September: Next.js dashboard, review workflow, draft editor, MCP server,
+  `SKILL.md`, Check-in #2, Graph release gate.
+  Sprint 7, 10 to 11 September: holdout evaluation, fixtures, clean-install verification,
+  Graph-track hardening.
+  Sprint 8, 11 to 12 September: conditional Hedera and Bazantic work; feature freeze
+  12 September at 12:00 PM.
+  Sprint 9, 12 to 13 September: videos, submission documentation, final checks, submission
+  before 13 September at 12:00 PM.
+  At the Graph release gate at the end of 10 September the following must be complete and
+  demonstrable, not in progress: live Graph anomaly detection; editorial connection;
+  clustering; evidence states and provenance; editable draft; reusable MCP tooling with
+  `SKILL.md` and clean installation. If the gate fails, Hedera and Bazantic are dropped and
+  Sprints 7 and 8 finish and harden the Graph submission.
+- **Rationale:** The previous board required must-ship items 1 to 6 to pass at the end of
+  10 September while scheduling the editable draft and MCP tooling through 11 September. A
+  pass gate cannot be satisfied by work in progress.
+- **Consequences:** `SPRINT_BOARD.md` is re-cut to this sequence. Due dates for open
+  decisions follow it: D7b by 5 September, before Sprint 2; D9 by 6 September, before
+  Sprint 3; D3 and D4 by 8 September, before Sprint 5; D8 by 10 September, before Sprint 8.
+  Sponsor accounts are needed by 10 September only if the gate passes. The dashboard
+  framework is Next.js, as Plan 2.0 fixes (`apps/dashboard`: command center, review queue,
+  incident explorer, draft editor, judge login), built in Sprint 6 and not scaffolded before
+  it. Implementation choices the plan does not fix, such as the MCP transport, stay open
+  until their implementation sprint.
+- **Decided by:** Project owner, final Sprint 0 audit correction of 2026-09-04.
+- **Supersedes:** the per-sprint calendar and due dates of D14. D14's official milestones
+  and freeze stand.

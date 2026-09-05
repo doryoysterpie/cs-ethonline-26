@@ -7,7 +7,8 @@ An ETHOnline 2026 project that imports the current cybersecurity news feed, clas
 automatically with high recall into an include, exclude or needs-review queue, clusters the
 result into canonical incidents with explicit evidence states and complete provenance,
 attaches corroborating onchain signals from live The Graph data, and gives a human an
-editable draft of the weekly Cyberattack Sunday issue, exposed through reusable MCP tooling.
+editable draft of the weekly Cyberattack Sunday issue, exposed through reusable MCP
+tooling.
 
 ## Event schedule
 
@@ -27,12 +28,32 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 0: foundation and audit remediation, pending independent audit.** The repository
-holds a buildable pnpm and Turborepo TypeScript monorepo, continuous integration and the
-project charter documents. It holds no features. Every workspace package except
-`@cas/contracts` is an explicit placeholder that compiles to an empty module. No importer,
-classifier, clustering logic, Graph query, drafting logic, payment code or dashboard exists
-yet. Live integrations begin in Sprint 1 (`docs/SPRINT_BOARD.md`).
+**Sprint 0: foundation, audit remediation and final correction, pending independent
+audit.** The repository holds a buildable pnpm and Turborepo TypeScript monorepo, continuous
+integration and the project charter documents. It holds no features. Every workspace package
+except `@cas/contracts` is an explicit placeholder that compiles to an empty module. No
+importer, classifier, clustering logic, Graph query, drafting logic, payment code or
+dashboard exists yet. Live integrations begin in Sprint 1 (`docs/SPRINT_BOARD.md`).
+
+## Build sequence and the Graph gate
+
+| Sprint | Dates (Sept) | Scope                                                                                                 |
+| ------ | ------------ | ----------------------------------------------------------------------------------------------------- |
+| 1      | 5            | live Graph provider proof, Messari standardized-schema spike, Ethereum mandatory, Base four-hour gate |
+| 2      | 5 to 6       | Postgres schema, editorial-feed import, normalization, provenance                                     |
+| 3      | 6 to 7       | high-recall classification, review queue, Check-in #1                                                 |
+| 4      | 7 to 8       | clustering, canonical incidents, Graph correlation, evidence-state resolver, anomaly feed             |
+| 5      | 8 to 9       | drafting pipeline, live crypto section, fixed historical draft                                        |
+| 6      | 9 to 10      | Next.js dashboard, review workflow, draft editor, MCP server, `SKILL.md`, Check-in #2, Graph gate     |
+| 7      | 10 to 11     | holdout evaluation, fixtures, clean-install verification, Graph-track hardening                       |
+| 8      | 11 to 12     | conditional Hedera and Bazantic work; feature freeze 12 September at 12:00 PM                         |
+| 9      | 12 to 13     | videos, submission documentation, final checks, submission before 13 September at 12:00 PM            |
+
+At the Graph release gate at the end of 10 September, six deliverables must be complete and
+demonstrable, not in progress: live Graph anomaly detection, editorial connection,
+clustering, evidence states and provenance, an editable draft, and reusable MCP tooling with
+`SKILL.md` and clean installation. If the gate fails, Hedera and Bazantic are dropped and
+Sprints 7 and 8 finish and harden the Graph submission (decision D16).
 
 ## The vertical slice
 
@@ -55,34 +76,35 @@ reviews a queue at the end (`docs/ARCHITECTURE.md` section 3, decision D15).
 
 The Graph tracks come first. For the standardized-data track the primary route is meaningful
 use of the Messari standardized schema over live provider-backed data; a second Graph
-product is not required (decision D11). Items 1 to 6 must pass the Graph release gate at the
-end of 10 September. Hedera AI and Agentic Payments (x402) and the Bazantic recipe tracks are
-attempted in Sprint 7 only if that gate passes and time allows; otherwise they are dropped.
-Requirement status per track is in `docs/HACKATHON_REQUIREMENTS.md`.
+product is not required (decision D11). Hedera AI and Agentic Payments (x402) and the
+Bazantic recipe tracks are attempted in Sprint 8 only if the Graph gate passes and time
+allows; otherwise they are dropped. Requirement status per track is in
+`docs/HACKATHON_REQUIREMENTS.md`.
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 0                          |
-| ------------------------- | --------------------- | --------------------------------------------- |
-| `apps/dashboard`          | `@cas/dashboard`      | placeholder                                   |
-| `apps/worker`             | `@cas/worker`         | placeholder, one workspace-boundary test      |
-| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                   |
-| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 7 conditional on the gate |
-| `packages/contracts`      | `@cas/contracts`      | three shared type contracts, tested           |
-| `packages/database`       | `@cas/database`       | placeholder                                   |
-| `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                   |
-| `packages/classification` | `@cas/classification` | placeholder                                   |
-| `packages/clustering`     | `@cas/clustering`     | placeholder                                   |
-| `packages/graph-evidence` | `@cas/graph-evidence` | placeholder                                   |
-| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                   |
-| `packages/drafting`       | `@cas/drafting`       | placeholder                                   |
-| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                   |
-| `data/taxonomy`           |                       | reserved, empty                               |
-| `data/fixtures`           |                       | reserved, empty, synthetic fixtures only      |
-| `docs`                    |                       | charter documents, listed below               |
+| Path                      | Package               | State after Sprint 0                                   |
+| ------------------------- | --------------------- | ------------------------------------------------------ |
+| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6 |
+| `apps/worker`             | `@cas/worker`         | placeholder, one workspace-boundary test               |
+| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                            |
+| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate          |
+| `packages/contracts`      | `@cas/contracts`      | three shared type contracts, four tests                |
+| `packages/database`       | `@cas/database`       | placeholder                                            |
+| `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                            |
+| `packages/classification` | `@cas/classification` | placeholder                                            |
+| `packages/clustering`     | `@cas/clustering`     | placeholder                                            |
+| `packages/graph-evidence` | `@cas/graph-evidence` | placeholder                                            |
+| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                            |
+| `packages/drafting`       | `@cas/drafting`       | placeholder                                            |
+| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                            |
+| `data/taxonomy`           |                       | reserved, empty                                        |
+| `data/fixtures`           |                       | reserved, empty, synthetic fixtures only               |
+| `docs`                    |                       | charter documents, listed below                        |
 
 A placeholder package contains one source file that exports nothing. The intended
-responsibility of each package is in `docs/ARCHITECTURE.md`.
+responsibility of each package is in `docs/ARCHITECTURE.md`. Next.js is fixed by the plan for
+the dashboard and is not installed before Sprint 6.
 
 ## Local installation and verification
 
@@ -157,15 +179,15 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 
 ## Documentation
 
-| Document                         | Content                                                                    |
-| -------------------------------- | -------------------------------------------------------------------------- |
-| `docs/ARCHITECTURE.md`           | components, runtime data flow, contract boundary, dependency rules         |
-| `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules      |
-| `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure |
-| `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D15                                        |
-| `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                       |
-| `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, gates and kill criteria      |
-| `docs/SECURITY.md`               | security policy                                                            |
-| `docs/SPRINT-0-REPORT.md`        | Sprint 0 report and audit remediation for the independent audit            |
-| `LICENSE`                        | Apache License 2.0                                                         |
+| Document                         | Content                                                                     |
+| -------------------------------- | --------------------------------------------------------------------------- |
+| `docs/ARCHITECTURE.md`           | components, runtime data flow, contract boundary, dependency rules          |
+| `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules       |
+| `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure  |
+| `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule  |
+| `docs/DECISIONS.md`              | append-only decision log, D1 to D16                                         |
+| `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                        |
+| `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria |
+| `docs/SECURITY.md`               | security policy                                                             |
+| `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                     |
+| `LICENSE`                        | Apache License 2.0                                                          |
