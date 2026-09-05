@@ -1,33 +1,34 @@
 # Architecture
 
-This document records the intended architecture from Plan 2.0 as supplied in the Sprint 0
-charter, and the state of each component after Sprint 0. Where the charter fixes something,
-this document says so. Where the implementer has proposed something the charter does not fix,
-it is marked **proposed** and is open to the project owner's revision.
+This document records the intended architecture as fixed by the Sprint 0 charter and the
+audit-remediation decisions D11 to D15, and the state of each component after Sprint 0.
+Where the project owner fixes something, this document says so. Where the implementer has
+proposed something the owner has not fixed, it is marked **proposed** and is open to
+revision.
 
-Source note: the component list, the vertical slice, the non-goals and the decisions D1 to
-D10 are the only Plan 2.0 material available inside the repository. No separate Plan 2.0
+Source note: the component list, the vertical slice, the non-goals and the decisions in
+`DECISIONS.md` are the only plan material available inside the repository. No separate plan
 document exists here.
 
 ## 1. Components
 
-| Package               | Responsibility (intended)                                                                                             | State after Sprint 0            |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                             | two contracts defined, tested   |
-| `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                        | placeholder                     |
-| `@cas/database`       | Postgres schema, migrations and typed access for sources, review records, signals, incidents, evidence and drafts.    | placeholder                     |
-| `@cas/graph-evidence` | Live The Graph queries, anomaly signal detection and the provenance record of every response.                         | placeholder                     |
-| `@cas/classification` | Linking chain signals to selected reporting and assigning classification with a model, under the review-state rules.  | placeholder                     |
-| `@cas/clustering`     | Clustering selected sources and signals into canonical incidents; assigning evidence states with complete provenance. | placeholder                     |
-| `@cas/drafting`       | Generating the editable Cyberattack Sunday draft from canonical incidents, under the naming policy (D4).              | placeholder                     |
-| `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors.                                             | placeholder                     |
-| `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 8 at the earliest).                                             | placeholder                     |
-| `@cas/worker`         | Runs the pipeline: import, detection, linkage, clustering, evidence assignment.                                       | placeholder, boundary test only |
-| `@cas/dashboard`      | Editorial dashboard for reviewing incidents, evidence states and drafts.                                              | placeholder                     |
-| `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                 | placeholder                     |
-| `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 8 at the earliest).                   | placeholder                     |
-| `data/taxonomy`       | Taxonomy data files.                                                                                                  | empty                           |
-| `data/fixtures`       | Synthetic fixtures.                                                                                                   | empty                           |
+| Package               | Responsibility (intended)                                                                                                                                                                            | State after Sprint 0            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                            | three contracts defined, tested |
+| `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                                                                                                       | placeholder                     |
+| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts.                   | placeholder                     |
+| `@cas/graph-evidence` | Live Graph-provider queries over the Messari standardized schema (D11), signal detection, and the provenance record of every request and response. Runs in parallel to editorial ingestion.          | placeholder                     |
+| `@cas/classification` | Automated high-recall classification of every imported source into `include`, `exclude` or `review`, with recorded rationale. Calibrated and evaluated against snapshot labels, never gated by them. | placeholder                     |
+| `@cas/clustering`     | Clustering included and needs-review sources into canonical incident records; attaching evidence, including corroborating Graph signals, with evidence states and complete provenance.               | placeholder                     |
+| `@cas/drafting`       | Rendering the editable editorial output from canonical incidents after human review, under the naming policy (D4), to the D3 destination.                                                            | placeholder                     |
+| `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors.                                                                                                                            | placeholder                     |
+| `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 7, conditional on the Graph gate).                                                                                                             | placeholder                     |
+| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                      | placeholder, boundary test only |
+| `@cas/dashboard`      | Editorial dashboard: the needs-review queue, evidence views, the review workflow that writes `ReviewState`, and drafts.                                                                              | placeholder                     |
+| `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                                                                                                | placeholder                     |
+| `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 7, conditional on the Graph gate).                                                                                   | placeholder                     |
+| `data/taxonomy`       | Taxonomy data files.                                                                                                                                                                                 | empty                           |
+| `data/fixtures`       | Synthetic fixtures.                                                                                                                                                                                  | empty                           |
 
 Framework choices for the applications (for example the web framework for the dashboard and
 the MCP transport for the server) are **not decided** in Sprint 0 and are not implied by the
@@ -39,50 +40,73 @@ placeholder packages. Each is decided in the sprint that builds the application.
   `@cas/contracts` defines.
 - `@cas/database` is the only package that talks to Postgres.
 - `@cas/graph-evidence` is the only package that talks to a Graph provider.
+- `@cas/classification` is the only package that writes a `ClassificationDecision`. Only a
+  human action, through the review workflow, writes a `ReviewState`. No component derives one
+  from the other.
 - `@cas/classification` and `@cas/drafting` are the only packages that call a model, and
   only after decision D9 is resolved.
 - `@cas/feed-api` and `@cas/mcp-server` are read-side surfaces. They do not run the pipeline
   and do not write pipeline state.
 - Applications compose packages. They contain no pipeline logic of their own.
 
-## 3. Planned data flow
+## 3. Runtime data flow
 
-Two flows join at incident clustering.
-
-**Editorial flow** (fixed by the project owner, `DATA_INPUTS.md`):
-
-```
-master feed → weekly manual selection → incident clustering and editorial transformation → published issue
-```
-
-**Chain-signal flow** (the vertical slice):
+Decision D15 fixes the runtime flow. Automated classification comes before any human
+selection, and the human reviews a queue rather than the whole feed.
 
 ```
-live Graph data → anomaly signals → linkage to selected reporting → canonical incidents
-   → evidence states with provenance → editable draft → MCP tools / feed API / dashboard
+1. current master RSS / Excel / CSV feed
+2. import and normalization                      (@cas/worker → @cas/database)
+3. automated high-recall classification          (@cas/classification)
+4. include / exclude / needs-review queue        (@cas/database, shown by @cas/dashboard)
+5. incident clustering                           (@cas/clustering)
+6. canonical incident records                    (@cas/database)
+7. human review and editorial output             (@cas/dashboard, @cas/drafting)
+
+in parallel:
+   live Graph queries → signals → corroborating evidence attached at steps 5 and 6
+                                                  (@cas/graph-evidence → @cas/clustering)
 ```
 
-Stage by stage:
+Rules that follow from D15:
 
-1. **Import.** CSV exports from the Excel RSS workflow (D7a) enter through `@cas/worker`
-   into `@cas/database`, preserving raw values, provenance and the review state from a
-   versioned weekly record. Not implemented in Sprint 0.
-2. **Detection.** `@cas/graph-evidence` queries live indexed data for the chosen chains (D1)
-   and watchlist (D2), emits anomaly signals, and records the request, response and block
-   context as provenance.
-3. **Linkage and classification.** `@cas/classification` links signals to selected sources
-   and classifies them, keeping the review state and the linkage evidence.
-4. **Clustering and evidence.** `@cas/clustering` groups sources and signals into canonical
-   incidents and assigns each an evidence state whose provenance chain reaches back to
-   Graph responses and source rows.
-5. **Drafting.** `@cas/drafting` renders an editable draft to the destination in D3, with
-   the evidence state visible beside every claim and the naming policy (D4) applied.
-6. **Exposure.** `@cas/mcp-server` exposes tools over the incident store; `@cas/feed-api`
-   serves the public metadata allowlist (D6); `@cas/dashboard` shows the same records with
-   their data origin labelled.
+- The historical CS79 and CS86 selections, and any other confirmed weekly snapshot, are
+  calibration and evaluation labels. They are never a production filter and never a
+  prerequisite for processing a current feed.
+- Live Graph signals corroborate. They attach evidence to canonical incidents and do not
+  replace editorial ingestion. An incident with no Graph signal is still an incident.
+- Step 3 must be high recall: a source the classifier is unsure about goes to `review`, not
+  to `exclude`. Excluded sources are retained with their decision and rationale, so a human
+  can still select them.
+- The present manual workflow described in `DATA_INPUTS.md` section 1 is background for
+  understanding the data and its labels, not the runtime design.
 
-The four editorial stages remain distinct records throughout. Source selection, incident
-membership and publication are never collapsed into one label.
+Stage by stage, with the Sprint 0 state:
+
+1. **Import and normalization.** CSV exports from the Excel RSS workflow (D7a) enter through
+   `@cas/worker` into `@cas/database`, preserving raw values, provenance and `DataOrigin`.
+   Sprint 2. Not implemented.
+2. **Classification.** `@cas/classification` assigns a `ClassificationDecision` with
+   rationale to every imported source. Sprint 3. Not implemented.
+3. **Queue.** Included sources proceed; `review` sources wait for a human; excluded sources
+   are retained. Sprint 3. Not implemented.
+4. **Clustering and canonical records.** `@cas/clustering` groups included and needs-review
+   sources into canonical incidents with member lists and evidence states whose provenance
+   chain reaches back to source rows. Sprint 4. Not implemented.
+5. **Graph correlation.** `@cas/graph-evidence` queries live provider-backed data over the
+   standardized schema for the chosen chains (D11), emits signals, and `@cas/clustering`
+   attaches them as corroborating evidence with request, response and block context.
+   Sprints 1 and 5. Not implemented.
+6. **Review and editorial output.** `@cas/dashboard` presents the queue, evidence views and
+   canonical incidents; the review workflow writes `ReviewState`; `@cas/drafting` renders an
+   editable draft to the D3 destination with the evidence state visible beside every claim
+   and the naming policy (D4) applied. Sprint 6. Not implemented.
+7. **Exposure.** `@cas/mcp-server` exposes tools over the incident store; `@cas/feed-api`
+   serves the public metadata allowlist (D6). Sprints 6 and 7. Not implemented.
+
+The four judgments in `DATA_INPUTS.md` section 4 remain distinct records throughout:
+classification decision, review state, incident membership and publication are never
+collapsed into one label.
 
 ## 4. The shared-contract boundary
 
@@ -95,16 +119,21 @@ membership and publication are never collapsed into one label.
 - The contracts package has no dependencies and no runtime behaviour beyond constant
   definitions.
 - A change to a contract is a reviewed change, because every surface depends on it.
+- Human decisions and machine decisions are separate contracts. Nothing may map one onto
+  the other.
 
 Sprint 0 contents of `@cas/contracts`:
 
-| Export        | Values                               | Fixed by                                |
-| ------------- | ------------------------------------ | --------------------------------------- |
-| `ReviewState` | `selected`, `rejected`, `unreviewed` | project owner's data-flow clarification |
-| `DataOrigin`  | `live`, `fixture`, `replay`          | the live-versus-fixture rule below      |
+| Export                   | Values                               | Meaning                                                           | Fixed by                                |
+| ------------------------ | ------------------------------------ | ----------------------------------------------------------------- | --------------------------------------- |
+| `ReviewState`            | `selected`, `rejected`, `unreviewed` | human review state from a versioned review record                 | project owner's data-flow clarification |
+| `ClassificationDecision` | `include`, `exclude`, `review`       | machine decision of the automated classifier, with rationale      | decision D15                            |
+| `DataOrigin`             | `live`, `fixture`, `replay`          | execution and data context of a record, independent of its source | section 7 below                         |
 
-Nothing else is defined yet. Incident, signal, evidence-state and feed-response contracts
-arrive with the sprints that produce them.
+The contract tests in `packages/contracts/src/index.test.ts` pin the three value sets and
+prove that the two decision enums share no value and are distinct types. Incident, signal,
+evidence-state, source-kind and feed-response contracts arrive with the sprints that produce
+them.
 
 ## 5. Dependency direction rules
 
@@ -134,18 +163,23 @@ configuration and one source file that exports nothing. A placeholder proves tha
 workspace, the compiler and the task graph reach that package. It proves nothing else and
 must not be described as a feature.
 
-## 7. Live data must never be confused with fixtures or replay
+## 7. Data origin: execution context, not source system
 
-Every record the system processes or shows carries a `DataOrigin`.
+Every record the system processes or shows carries a `DataOrigin`. It describes how the
+record was obtained in this run, not which system it came from:
 
-- `live` is permitted only for a record obtained from a live Graph provider response whose
-  request provenance (endpoint, query, variables, block or timestamp, response hash) is
-  retained.
-- `fixture` marks synthetic data from `data/fixtures`.
-- `replay` marks a stored earlier live response replayed for development or evaluation.
+- `live`: obtained from a current external source during the run. A current editorial RSS
+  or spreadsheet import and a current Graph-provider query are both `live`.
+- `fixture`: checked-in synthetic or approved test data from `data/fixtures`.
+- `replay`: previously captured data intentionally replayed for development or evaluation.
+
+Whether a record is editorial or Graph-derived is provenance, not origin. It will be carried
+by a later source-kind or provenance contract. A `live` record retains its acquisition
+provenance: file identity and row for an import; endpoint, query, variables and block or
+timestamp for a Graph query.
 
 The dashboard, MCP tool results, feed responses and drafts label the origin of what they
-show. No default substitutes one origin for another. A failed live fetch is an explicit
+show. No default substitutes one origin for another. A failed live acquisition is an explicit
 error, never an empty result and never a silent fallback to fixture or replay data
 (`SECURITY.md` sections 4 and 7).
 

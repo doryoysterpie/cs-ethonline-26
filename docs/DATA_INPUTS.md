@@ -5,9 +5,10 @@ and the rules any future importer must obey. It records requirements. Nothing de
 is implemented in Sprint 0; the importer is Sprint 2 work, gated on decision D7b in
 `DECISIONS.md`.
 
-## 1. The four-stage editorial data flow
+## 1. The present manual workflow and the target runtime flow
 
-The present workflow, as stated by the project owner, is:
+**The present manual workflow**, as stated by the project owner, is background for
+understanding the data and the labels. It is not the runtime design.
 
 1. A longstanding Excel-based RSS aggregation collects the broad universe of incoming cyber
    and adjacent technology stories. This is the **master feed**.
@@ -23,10 +24,33 @@ The present workflow, as stated by the project owner, is:
 master feed → weekly manual selection → incident clustering and editorial transformation → published issue
 ```
 
-The architecture keeps these four stages distinct. They must not be collapsed into a single
-binary classification problem. Selection of a source, clustering of sources into an incident,
-and inclusion of an incident in the issue are three different judgments made at three
-different stages, each with its own record.
+**The target runtime flow** (decision D15) removes the manual selection bottleneck from the
+front of the pipeline and moves the human to the end, where review is of a queue rather than
+of the whole feed:
+
+1. Current master RSS, Excel or CSV feed.
+2. Import and normalization.
+3. Automated high-recall classification.
+4. Include, exclude, or needs-review queue.
+5. Incident clustering.
+6. Canonical incident records.
+7. Human review and editorial output.
+
+```
+current feed → import and normalization → automated high-recall classification
+   → include / exclude / needs-review queue → incident clustering → canonical incident records
+   → human review and editorial output
+```
+
+The historical CS79 and CS86 selections are calibration and evaluation labels for steps 3
+to 6. They are never a production filter or a prerequisite for processing a current feed.
+Live Graph signals run in parallel to this flow and attach corroborating evidence to canonical
+incidents; they do not replace editorial ingestion (`ARCHITECTURE.md` section 3).
+
+Four judgments remain distinct records and must not be collapsed into a single binary
+classification problem: the machine's classification decision on a source, the human's
+review state on a source, the clustering of sources into an incident, and the inclusion of
+an incident in the issue.
 
 ## 2. Representative schemas
 
@@ -97,7 +121,8 @@ The same column name, `ch`, carries two different meanings.
 Stable selection labels may come only from preserved weekly snapshots or from another
 explicitly versioned review record.
 
-The system represents review state as an explicit enum, defined in `@cas/contracts`:
+The system represents **human** review state as an explicit enum, `ReviewState`, defined in
+`@cas/contracts`:
 
 | Value        | Meaning                                                      |
 | ------------ | ------------------------------------------------------------ |
@@ -107,22 +132,40 @@ The system represents review state as an explicit enum, defined in `@cas/contrac
 
 A context-free boolean is not an acceptable representation. Every review state must be
 attached to the identity of the review record it came from (for example the snapshot's week
-identifier) so that the state can be traced to its source.
+identifier) so that the state can be traced to its source. A snapshot's `TRUE` and `FALSE`
+map to `selected` and `rejected` only inside a calibration or evaluation set; the master
+export's `ch` never maps to a review state.
 
-## 4. Source selection, incident clustering and final publication
+The **machine** decision of the automated classifier is a separate enum,
+`ClassificationDecision`, also in `@cas/contracts`:
 
-Three distinct judgments, each with its own record:
+| Value     | Meaning                                                                  |
+| --------- | ------------------------------------------------------------------------ |
+| `include` | The classifier routes the source into incident clustering.               |
+| `exclude` | The classifier drops the source from clustering; the record is retained. |
+| `review`  | The classifier cannot decide; the source enters the needs-review queue.  |
 
-| Judgment            | Unit              | Made by                         | Record                          |
-| ------------------- | ----------------- | ------------------------------- | ------------------------------- |
-| Source selection    | one source record | project owner, weekly review    | review state in a snapshot      |
-| Incident clustering | many sources      | pipeline, with editorial review | canonical incident with members |
-| Final publication   | one incident      | project owner, at publication   | published issue                 |
+A classification decision is never a review state and never implies one. Both are stored on
+the record, each with its own provenance, and both are displayed separately. Contract tests
+in `packages/contracts` prove the two enums share no value and are distinct types.
 
-A selected source may be clustered into an incident that is not published. An incident may
-be published from sources some of which were individually unremarkable. Evaluation of the
-pipeline must measure each judgment against its own record, never against a different
-stage's record.
+## 4. Classification, source selection, incident clustering and final publication
+
+Four distinct judgments, each with its own record:
+
+| Judgment                 | Unit              | Made by                               | Record                                      |
+| ------------------------ | ----------------- | ------------------------------------- | ------------------------------------------- |
+| Automated classification | one source record | pipeline, `@cas/classification`       | `ClassificationDecision` with its rationale |
+| Source selection         | one source record | project owner, weekly review or queue | `ReviewState` in a versioned review record  |
+| Incident clustering      | many sources      | pipeline, with editorial review       | canonical incident with members             |
+| Final publication        | one incident      | project owner, at publication         | published issue                             |
+
+An included source may be clustered into an incident that is not published. An incident may
+be published from sources some of which were individually unremarkable. A source the
+classifier excluded may still be selected by a human from the retained records. Evaluation
+of the pipeline must measure each judgment against its own record, never against a different
+stage's record: classification recall against snapshot selections, clustering against the
+published grouping, inclusion against the published issue.
 
 ## 5. Nullable and untrusted fields
 
@@ -193,10 +236,11 @@ Fixtures under `data/fixtures` must:
 
 ## 12. Provenance retention through transformation
 
-Every transformation, from import through canonicalization, clustering, classification,
+Every transformation, from import through canonicalization, classification, clustering,
 evidence-state assignment and drafting, must retain a link back to the originating source
 records: the file or snapshot identifier, the row identity, the original URL, the raw
-timestamps and the review record that supplied the review state. A derived record that cannot
+timestamps, the classification decision with its rationale, and the review record that
+supplied any review state. A derived record that cannot
 be traced to its sources is a provenance failure and must be reported as an explicit error
 (`SECURITY.md` section 7), never as a successful result.
 
@@ -205,7 +249,8 @@ be traced to its sources is a provenance failure and must be reported as an expl
 - **D7a** Input format: standards-compliant CSV exports from the existing Excel RSS workflow
   are the hackathon baseline. Provisionally decided.
 - **D7b** Transport: manual upload, watched local export or direct authenticated workbook
-  access. Unresolved; due before Sprint 2.
+  access. Unresolved; due by 6 September, before Sprint 2.
+- **D15** Classification before selection: the runtime flow in section 1. Accepted.
 
 A file-based CSV import is the required reliable baseline. Direct Excel or cloud-workbook
 synchronization must not become a prerequisite for the Graph release candidate.

@@ -15,4 +15,7 @@ catalog:
 
 # Supply-chain control: refuse to resolve any version published less than
 # 24 hours ago (value in minutes). Do not lower this to install a dependency.
+# The only permitted exception is the narrow, per-package process in
+# docs/DECISIONS.md D13: exact package name, recorded before the dependency
+# lands, never a pattern and never pre-approved.
 minimumReleaseAge: 1440

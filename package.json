@@ -4,6 +4,7 @@
   "private": true,
   "description": "Cyberattack Sunday: Onchain Incident Intelligence (working name CAS Chainwatch). ETHOnline 2026 monorepo.",
   "type": "module",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@11.10.0",
   "engines": {
     "node": ">=24.0.0"

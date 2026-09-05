@@ -41,6 +41,19 @@ equivalent explicitly versioned labelled artefacts, are confirmed to exist for t
 Without a preserved snapshot, a week has no stable selection labels, because the master
 export's `ch` column cannot supply them.
 
+Every use of the corpus is calibration or evaluation. The CS79 and CS86 selections, and any
+other confirmed weekly snapshot, are labels against which the automated classifier and the
+clustering are measured. They are never a production filter, a prerequisite for processing a
+current feed, or an input the runtime pipeline waits on (decision D15).
+
+## Disclosure to the event
+
+ETHGlobal's rules, read on 4 September 2026, state that "in all cases, you must disclose any
+pre-existing work in writing to the ETHGlobal team and include full details in your
+submission (repo history, video, and description)." The corpus is pre-existing input data,
+not project code, and this document is the written basis for that disclosure. The submission
+must state it explicitly (`HACKATHON_REQUIREMENTS.md`, row E4).
+
 ## What may not enter the repository
 
 - The master export, in any format.

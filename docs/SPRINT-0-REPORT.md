@@ -7,14 +7,14 @@ after it; both are in the audit handoff message and in the branch's CI run.
 
 ## Result
 
-`BLOCKED`.
+`BLOCKED`, pending Codex audit of the remediation commit.
 
-Every safe implementation item in the charter is complete and verified in the working copy.
-The result is `BLOCKED` rather than `PASS` because the charter requires it whenever
-unresolved account or decision blockers remain: D1 needs human confirmation before Sprint 1,
-D2, D7b, D8 and D9 are unresolved, and The Graph Studio account, required for Sprint 1, is
-not checked. The submission-deadline conflict in `HACKATHON_REQUIREMENTS.md` is a further
-human decision.
+Every safe implementation item in the charter is complete and verified, and the audit
+findings of 4 September are remediated (see the last section). The result stays `BLOCKED`
+rather than `PASS` because the charter requires it whenever unresolved account or decision
+blockers remain: The Graph Studio or provider account, required for Sprint 1, is not
+checked, and D2, D7b, D8 and D9 are unresolved. D1 is resolved by D11, the licence by D12,
+and the schedule by D14.
 
 ## Repository identity
 
@@ -122,29 +122,36 @@ working-copy check before the commit; its result is in the handoff message.
 
 ## Decisions
 
-| ID  | Status                                            |
-| --- | ------------------------------------------------- |
-| D1  | PROVISIONAL; human confirmation before Sprint 1   |
-| D2  | UNRESOLVED; Sprint 1 ranks candidates             |
-| D3  | PROVISIONAL                                       |
-| D4  | PROVISIONAL; confirmation before drafting work    |
-| D5  | PROVISIONAL, repository name fixed                |
-| D6  | PROVISIONAL                                       |
-| D7  | SUPERSEDED by D7a and D7b                         |
-| D7a | PROVISIONAL (provisionally decided)               |
-| D7b | UNRESOLVED; due before Sprint 2                   |
-| D8  | UNRESOLVED; local development recorded separately |
-| D9  | UNRESOLVED                                        |
-| D10 | PROVISIONAL timezone; timestamps UNRESOLVED       |
+| ID  | Status                                           |
+| --- | ------------------------------------------------ |
+| D1  | SUPERSEDED by D11                                |
+| D2  | UNRESOLVED; Sprint 1 ranks candidates            |
+| D3  | PROVISIONAL                                      |
+| D4  | PROVISIONAL; confirmation before drafting work   |
+| D5  | PROVISIONAL, repository name fixed               |
+| D6  | PROVISIONAL                                      |
+| D7  | SUPERSEDED by D7a and D7b                        |
+| D7a | PROVISIONAL (provisionally decided)              |
+| D7b | UNRESOLVED; due by 6 September, before Sprint 2  |
+| D8  | UNRESOLVED; due by 10 September, before Sprint 7 |
+| D9  | UNRESOLVED; due by 7 September, before Sprint 3  |
+| D10 | PROVISIONAL timezone; timestamps UNRESOLVED      |
+| D11 | ACCEPTED; chains and Graph route                 |
+| D12 | ACCEPTED; Apache-2.0 licence                     |
+| D13 | ACCEPTED; release-age exception policy           |
+| D14 | ACCEPTED; corrected submission schedule          |
+| D15 | ACCEPTED; classification before selection        |
 
-No provisional decision was promoted to accepted.
+D11 to D15 were appended on 4 September 2026 by the project owner's audit-remediation
+instruction. No provisional decision was promoted to accepted by the implementer.
 
 ## Account readiness summary
 
-`READY`: GitHub; Postgres (local development tooling). `NOT CHECKED`: The Graph Studio,
-Graph Market or Substreams, Anthropic, Postgres (live target), deployment hosting.
-`NOT REQUIRED BEFORE SPRINT 8`: Hedera testnet, Blocky402, Bazantic. Full matrix in
-`ACCOUNT_READINESS.md`. No secret was read, printed or stored.
+`READY`: GitHub; Postgres (local development tooling). `NOT CHECKED`: The Graph Studio or
+provider, Graph Market or Substreams (only if an optional path needs it), Anthropic, Postgres
+(live target), deployment hosting, Hedera testnet, Blocky402, Bazantic. Full matrix with
+re-cut deadlines in `ACCOUNT_READINESS.md`. No secret was read, printed or stored, and no
+external account was marked ready without secret-free evidence.
 
 ## Deviations from the charter
 
@@ -175,29 +182,53 @@ Graph Market or Substreams, Anthropic, Postgres (live target), deployment hostin
 
 - Every package except `@cas/contracts` is a placeholder. Nothing is a feature.
 - The dependency graph declares one edge. All other edges in `ARCHITECTURE.md` are proposed.
-- The per-sprint calendar in `SPRINT_BOARD.md` is proposed within the charter's fixed
-  controls. The event's stated submission deadline conflicts with those controls.
-- The engineering-brain vault has no `01_Specs` folder for this project and its Codex
-  charter restricts Codex to static review. Nothing was written to the vault; the charter
-  restricted work to this repository.
-- The repository has no `LICENSE` file; the licence is a human choice.
-- The event's rule against "large single commits" is in tension with a single foundation
-  commit made by instruction.
+- The per-sprint calendar in `SPRINT_BOARD.md` is cut against the official schedule (D14);
+  the placement of the editable draft and MCP tooling inside Sprint 6 is noted there as a
+  tension with the 10 September gate for the project owner to confirm.
+- The event's commit-history rule presumes a single large commit without proper history
+  unqualified unless proven otherwise. This repository's history is a bootstrap commit, a
+  foundation commit and a remediation commit, each dated, and grows with every sprint. No
+  history is rewritten.
 
 ## Exact blockers requiring the project owner
 
-1. Confirm D1 (Ethereum mainnet and Base) before Sprint 1.
-2. Confirm The Graph Studio account and create an API key before Sprint 1.
-3. Reconcile the submission deadline: event page says 13 September 12:00 EDT; charter says
-   freeze 14 September, buffer 16 September.
-4. Choose a licence so the open-source requirement can be met.
-5. Decide D7b before Sprint 2; D9 before Sprint 4; D8 before Sprint 7.
-6. Decide whether the single foundation commit should be split, given the event's
-   commit-history rule.
+1. Confirm The Graph Studio or equivalent provider account and create an API key before
+   Sprint 1 starts on 5 September.
+2. Decide D7b by 6 September (before Sprint 2), D9 by 7 September (before Sprint 3), and D8
+   by 10 September (before Sprint 7).
+3. Confirm D3 and D4 before Sprint 6.
+4. If Hedera or Bazantic are to be attempted, have the Hedera testnet, Blocky402 and
+   Bazantic accounts ready by 10 September.
 
 ## Readiness for Codex audit
 
-Ready. The branch is self-contained: a fresh clone plus `pnpm install --frozen-lockfile`
-and `pnpm verify` reproduces every working-copy result above. The vault's Codex charter
-limits Codex to static review; the commands are therefore for the project owner or for CI,
-whose run on this branch is the executable evidence.
+Ready. The branch is self-contained: a fresh clone plus `corepack pnpm install
+--frozen-lockfile` and `corepack pnpm verify` reproduces every result above. The audit
+policy is: Claude implements on sprint branches; Codex independently reviews diffs, installs
+locked dependencies when appropriate, and reruns verification; neither agent merges to
+`main` without the project owner's instruction.
+
+## Audit remediation, 4 September 2026 (evening, America/Toronto)
+
+Codex independently ran the locked install and the full verification suite on
+`bae7f29b5d7e4ef7aee2c5965bea286c72abbc55` successfully, and the CI run for that commit
+(`https://github.com/doryoysterpie/cs-ethonline-26/actions/runs/33936826532`) succeeded on
+every step. The project owner then issued nine corrections. Each is addressed in the
+remediation commit on `sprint-0/charter-readiness`, which follows the foundation commit
+without rewriting it.
+
+| #   | Correction                                            | Where it landed                                                                                                                                                                                                                                                                                   |
+| --- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Official schedule in America/Toronto; re-cut calendar | D14; `SPRINT_BOARD.md`; README; `HACKATHON_REQUIREMENTS.md` section I; `ACCOUNT_READINESS.md` deadlines; this report                                                                                                                                                                              |
+| 2   | Classification before selection                       | D15; `ARCHITECTURE.md` sections 1 to 4; `DATA_INPUTS.md` sections 1, 3, 4, 12; `SPRINT_BOARD.md`; `ClassificationDecision` contract and tests in `packages/contracts`                                                                                                                             |
+| 3   | `DataOrigin` as execution context                     | Contract comments in `packages/contracts/src/index.ts`; `ARCHITECTURE.md` section 7; `SECURITY.md` section 4; contract tests; values unchanged                                                                                                                                                    |
+| 4   | Graph strategy: either route; Messari schema primary  | D11; `HACKATHON_REQUIREMENTS.md` sections A and B; `SPRINT_BOARD.md` Sprint 1; `ACCOUNT_READINESS.md` Graph rows; feedback requirement withdrawn                                                                                                                                                  |
+| 5   | Git-history rule paraphrased accurately               | `HACKATHON_REQUIREMENTS.md` finding 2 and rows E2 to E4; this report                                                                                                                                                                                                                              |
+| 6   | Cross-project contamination removed                   | This report's limitations and readiness sections; `SPRINT_BOARD.md` standing rules; README audit policy. Repository-wide search: no engineering-brain, spec-folder or Codex-restriction language remains. D3's draft-destination wording is the project owner's own charter text and is unchanged |
+| 7   | Apache-2.0 licence                                    | `LICENSE` (canonical text, sha256 `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30`); `"license"` in `package.json`; README; D12                                                                                                                                                 |
+| 8   | Release-age gate kept, narrow exception documented    | D13; `SECURITY.md` section 8; comment in `pnpm-workspace.yaml`                                                                                                                                                                                                                                    |
+| 9   | Decisions appended, report updated                    | D11 to D15 with D1 marked superseded; this section; invalid Codex limitations removed                                                                                                                                                                                                             |
+
+Verification of the remediation commit, working copy, run with the repository-pinned package
+manager through `corepack pnpm`: recorded in the audit handoff message with exit codes, and
+reproduced by the CI run on the pushed commit.

@@ -15,7 +15,7 @@ Decided by, Supersedes.
 ## D1 Chains
 
 - **Date:** 2026-09-04
-- **Status:** PROVISIONAL
+- **Status:** SUPERSEDED by D11 (2026-09-04)
 - **Decision:** The provisional recommendation is Ethereum mainnet and Base as the chains
   whose live indexed data the anomaly detector reads. Human confirmation is required before
   Sprint 1.
@@ -183,3 +183,109 @@ Decided by, Supersedes.
   (`DATA_INPUTS.md`); the editorial boundary is applied at query time, not at import.
 - **Decided by:** Project owner, provisionally, via the Sprint 0 charter.
 - **Supersedes:** none.
+
+---
+
+Entries D11 to D15 were appended on 2026-09-04 during the Sprint 0 audit remediation. Earlier
+entries are unchanged except for status pointers.
+
+## D11 Chains and Graph route
+
+- **Date:** 2026-09-04
+- **Status:** ACCEPTED
+- **Decision:** Ethereum mainnet is the mandatory primary chain and Base is the secondary
+  chain for Sprint 1's Graph proof. The route for The Graph's standardized-data track is
+  meaningful use of the Messari standardized schema. A second Graph product is not required,
+  Substreams remains optional and must never become a prerequisite, and Graph Market access
+  is required only if an optional product path actually needs it. Sprint 1's internal proof
+  gate is: one common query and data model; at least five relevant protocols or entities;
+  live provider-backed results; Ethereum mandatory; Base secondary. Base validation is
+  time-boxed to four hours. Base is retained only if the same query contract produces
+  sufficiently complete and fresh provider-backed results; otherwise the evidence is
+  documented and the MVP is reduced to Ethereum without blocking the standardized-schema
+  route.
+- **Rationale:** The prizes page, read on 2026-09-04, qualifies the standardized track
+  through either composition of two or more Graph products or meaningful use of a
+  standardized schema, and requires live data from a Graph provider. Meaningful use of one
+  standardized schema is the shortest verified path. Reading indexed mainnet data is not a
+  chain interaction and does not conflict with the testnet-only posture in `SECURITY.md`.
+- **Consequences:** `HACKATHON_REQUIREMENTS.md` section B and `SPRINT_BOARD.md` Sprint 1
+  encode the gate. `ACCOUNT_READINESS.md` treats Graph Studio or equivalent provider access
+  as the Sprint 1 dependency and Graph Market as conditional on an optional path.
+- **Decided by:** Project owner, audit-remediation instruction of 2026-09-04.
+- **Supersedes:** D1.
+
+## D12 Licence
+
+- **Date:** 2026-09-04
+- **Status:** ACCEPTED
+- **Decision:** The repository is licensed under the Apache License, Version 2.0. The
+  canonical licence text is the root `LICENSE` file, unaltered. The root `package.json`
+  declares `"license": "Apache-2.0"` and the README states the licence.
+- **Rationale:** The Graph tracks require open-source code, and the project owner chose
+  Apache-2.0.
+- **Consequences:** All contributions are under Apache-2.0. Any future `NOTICE` file is a
+  separate decision.
+- **Decided by:** Project owner, audit-remediation instruction of 2026-09-04.
+- **Supersedes:** none. Resolves finding 3 of the first `HACKATHON_REQUIREMENTS.md`.
+
+## D13 Package release-age exception policy
+
+- **Date:** 2026-09-04
+- **Status:** ACCEPTED
+- **Decision:** `minimumReleaseAge: 1440` in `pnpm-workspace.yaml` stays. A narrow
+  exception may be granted only for a package that is all three of: required by an official
+  sponsor integration; unavailable in a compatible release older than 24 hours; and necessary
+  to satisfy a verified prize requirement. Every exception records, as a dated entry in this
+  log before the dependency lands: the exact package, the exact version, the official source,
+  the reason, the publication age at the time, and the verification performed. The exact
+  version is pinned and the complete test suite is rerun. The exclusion names the exact
+  package only. No wildcard or pattern exception, and no pre-approved package, is permitted.
+- **Rationale:** The release-age gate is the project's defence against a freshly published
+  malicious or broken version. Sponsor integrations may legitimately ship a package during
+  the event, and a documented, per-package exception preserves the gate while allowing that
+  case.
+- **Consequences:** `SECURITY.md` section 8 references this policy. Codex verifies any
+  exception entry against the lockfile.
+- **Decided by:** Project owner, audit-remediation instruction of 2026-09-04.
+- **Supersedes:** none.
+
+## D14 Corrected submission schedule
+
+- **Date:** 2026-09-04
+- **Status:** ACCEPTED
+- **Decision:** The operative schedule is the official ETHOnline 2026 schedule, in
+  America/Toronto time: hacking began 4 September 2026 at 12:00 PM; Project Check-in #1 is
+  7 September at 11:59 PM; Project Check-in #2 is 10 September at 11:59 PM; final project
+  submission is 13 September at 12:00 PM; judging begins 13 September at 3:00 PM. 14 to
+  16 September are not build or submission time. Feature freeze is 12 September at
+  12:00 PM. The Graph release gate stays at the end of 10 September, and Hedera and Bazantic
+  remain conditional on that gate and on the remaining time budget.
+- **Rationale:** The first sprint board carried a 14 September freeze and a 16 September
+  buffer from the charter; the event's schedule contradicts them.
+- **Consequences:** `SPRINT_BOARD.md` is re-cut. README, `HACKATHON_REQUIREMENTS.md` and
+  `ACCOUNT_READINESS.md` deadlines follow. D7b is due by 6 September, D9 by 7 September, and
+  D8 by 10 September.
+- **Decided by:** Project owner, audit-remediation instruction of 2026-09-04.
+- **Supersedes:** the freeze and buffer controls recorded in the first version of
+  `SPRINT_BOARD.md`, which were never D-numbered.
+
+## D15 Classification before selection
+
+- **Date:** 2026-09-04
+- **Status:** ACCEPTED
+- **Decision:** The runtime flow is: current master RSS, Excel or CSV feed; import and
+  normalization; automated high-recall classification; an include, exclude or needs-review
+  queue; incident clustering; canonical incident records; human review and editorial
+  output. The historical CS79 and CS86 selections are calibration and evaluation labels
+  only. They are never a production filter or prerequisite. Live Graph signals run in
+  parallel and attach corroborating evidence to canonical incidents; they do not replace
+  editorial ingestion. Human `ReviewState` and machine `ClassificationDecision` are distinct
+  contracts in `@cas/contracts`.
+- **Rationale:** The first architecture placed classification after manual source
+  selection, which preserved the manual bottleneck and contradicted the product goal.
+- **Consequences:** `ARCHITECTURE.md`, `DATA_INPUTS.md`, `SPRINT_BOARD.md`, package
+  descriptions and the contracts package are updated. The classifier itself is Sprint 3
+  work and is not built in Sprint 0.
+- **Decided by:** Project owner, audit-remediation instruction of 2026-09-04.
+- **Supersedes:** the data-flow section of the first `ARCHITECTURE.md`. D7a is unaffected.

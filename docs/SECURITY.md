@@ -33,14 +33,24 @@ and by policy (`PRIOR_INPUTS.md`, `DATA_INPUTS.md`).
 ## 4. Live, fixture and replay data must be visibly distinct
 
 Every record the system processes or shows carries a data origin from the shared contract in
-`@cas/contracts`: `live`, `fixture` or `replay`. Only a record obtained from a live Graph
-provider response, with its request provenance retained, may carry `live`. Dashboards, MCP
-outputs, feed responses and drafts must label the origin. Nothing may present fixture or
-replay data as live, and no default may silently substitute one origin for another.
+`@cas/contracts`. The origin describes the execution and data context, not the source
+system:
+
+- `live`: obtained from a current external source during the run. A current editorial RSS
+  or spreadsheet import and a current Graph-provider query are both `live`.
+- `fixture`: checked-in synthetic or approved test data.
+- `replay`: previously captured data intentionally replayed.
+
+Whether a record is editorial or Graph-derived is provenance, carried separately by a later
+source-kind contract, never inferred from the origin. Dashboards, MCP outputs, feed
+responses and drafts must label the origin. Nothing may present fixture or replay data as
+live, and no default may silently substitute one origin for another. A `live` record must
+retain its acquisition provenance: file identity and row for an import; endpoint, query,
+variables and block or timestamp for a Graph query.
 
 ## 5. The public x402 feed is a payment gate, not confidential access control
 
-The planned x402-gated feed (Sprint 8 at the earliest) charges for access to public incident
+The planned x402-gated feed (Sprint 7, conditional on the Graph gate) charges for access to public incident
 metadata. It provides no confidentiality. Nothing that must stay private, including private
 editorial notes, corpus text or unpublished victim names, may be placed behind it on the
 assumption that payment implies authorization. Decision D6 in `DECISIONS.md` governs what the
@@ -67,6 +77,13 @@ version cannot be resolved into the project. Continuous integration installs wit
 `--frozen-lockfile` and runs with read-only repository permissions. GitHub Actions are pinned
 to full commit SHAs. Do not lower or remove any of these controls to make an install succeed;
 choose an older version instead.
+
+One narrow exception process exists, decision D13 in `DECISIONS.md`. A package that is
+required by an official sponsor integration, has no compatible release older than 24 hours,
+and is necessary for a verified prize requirement may be excluded from the release-age gate
+by exact package name, after a dated log entry records the package, version, official
+source, reason, publication age and verification performed, with the exact version pinned
+and the full suite rerun. No wildcard exclusion and no pre-approval.
 
 ## 9. Chain posture
 
