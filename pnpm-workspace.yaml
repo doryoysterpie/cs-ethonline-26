@@ -1,0 +1,18 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Single source of truth for every third-party version. Package manifests
+# reference these with "catalog:" so the lockfile records one exact version.
+catalog:
+  '@eslint/js': 10.0.1
+  eslint: 10.9.1
+  prettier: 3.9.6
+  turbo: 2.10.12
+  typescript: 6.0.3
+  typescript-eslint: 8.69.0
+  vitest: 4.1.11
+
+# Supply-chain control: refuse to resolve any version published less than
+# 24 hours ago (value in minutes). Do not lower this to install a dependency.
+minimumReleaseAge: 1440

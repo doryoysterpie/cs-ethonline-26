@@ -1,0 +1,14 @@
+{
+  "name": "@cas/payer-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "x402 payer agent application, Sprint 8 at the earliest. Placeholder after Sprint 0.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}

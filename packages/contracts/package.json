@@ -1,0 +1,25 @@
+{
+  "name": "@cas/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared type contracts crossing the pipeline, MCP server, feed API and dashboard boundaries.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

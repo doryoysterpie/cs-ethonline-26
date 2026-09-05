@@ -1,0 +1,19 @@
+{
+  "name": "@cas/worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pipeline worker application. Placeholder after Sprint 0.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
