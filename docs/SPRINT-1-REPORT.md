@@ -1,18 +1,24 @@
 # Sprint 1 report: live Graph provider and standardized-schema proof
 
-Result: **PASS**. Ethereum mandatory gate met; Base kept as secondary with thin coverage.
-All times America/Toronto unless marked UTC. Written for the independent Codex audit.
+Result: **PASS on the corrected gate** (section "Correction after Codex audit", D18).
+Ethereum mandatory gate met on five provider-validated identities; Base kept as secondary with
+both configured targets verified and thin coverage. The first verifier's results recorded in
+the earlier sections are superseded, not because the live data changed but because that
+verifier trusted registry labels and required only one successful Base target. All times
+America/Toronto unless marked UTC. Written for the independent Codex audit.
 
 ## Identity
 
-| Field                | Value                                                                                                                                                                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Branch               | `sprint-1/graph-live-proof`, created from the audited Sprint 0 SHA                                                                                                                                                                         |
-| Starting SHA         | `3989149223016158ded59e71f80d7b2c7d3a0683`                                                                                                                                                                                                 |
-| Feature commit       | `b09da96e9c9a578e635389f7054a222d69168578`, `feat(graph): add standardized live-query probe`                                                                                                                                               |
-| Documentation commit | `docs: record sprint 1 live proof`, the commit that introduces this file; SHA in the handoff                                                                                                                                               |
-| Final SHA            | in the handoff                                                                                                                                                                                                                             |
-| Preflight            | 5 Sept 21:14: `origin/sprint-0/charter-readiness` at the audited SHA, `main` at `3011b5b5…`, worktree clean, repository public, `GRAPH_API_KEY` present and non-empty in the ignored `.env` by an emptiness test that never read the value |
+| Field                  | Value                                                                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Branch                 | `sprint-1/graph-live-proof`, created from the audited Sprint 0 SHA                                                                                                                                                                         |
+| Starting SHA           | `3989149223016158ded59e71f80d7b2c7d3a0683`                                                                                                                                                                                                 |
+| Feature commit         | `b09da96e9c9a578e635389f7054a222d69168578`, `feat(graph): add standardized live-query probe`                                                                                                                                               |
+| Documentation commit   | `e02fc1904536aa5ab0b058087b6f56bcc8784377`, `docs: record sprint 1 live proof`; audited by Codex with changes requested                                                                                                                    |
+| Correction commit      | `b5c824e054f2a4fd8d8de1f69ff40677243937da`, `fix(graph): enforce live gate integrity`                                                                                                                                                      |
+| Corrected-proof commit | `docs: record corrected sprint 1 proof`, the commit that introduces this revision; SHA in the handoff                                                                                                                                      |
+| Final SHA              | in the handoff                                                                                                                                                                                                                             |
+| Preflight              | 5 Sept 21:14: `origin/sprint-0/charter-readiness` at the audited SHA, `main` at `3011b5b5…`, worktree clean, repository public, `GRAPH_API_KEY` present and non-empty in the ignored `.env` by an emptiness test that never read the value |
 
 ## Official sources consulted
 
@@ -248,13 +254,13 @@ are Vitest and Vite resolution keys re-recorded with the new peer; no other pack
 
 ## Tests and commands
 
-| Command                                                                      | Result                                                                                             |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `corepack pnpm test` (default, no network, no secret)                        | 42 tests: 36 in `@cas/graph-evidence` across four files, 5 in `@cas/contracts`, 1 in `@cas/worker` |
-| `corepack pnpm --filter @cas/graph-evidence test:live`                       | 3 tests passed with the local credential; fails without it                                         |
-| `corepack pnpm --filter @cas/graph-evidence probe:live`                      | exit 0, output above                                                                               |
-| `env -u GRAPH_API_KEY corepack pnpm --filter @cas/graph-evidence probe:live` | exit 2, "GRAPH_API_KEY is missing"                                                                 |
-| `corepack pnpm typecheck`, `lint`, `build`, `format:check`                   | green on the working copy before the feature commit                                                |
+| Command                                                    | Result                                                                                                                                             |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `corepack pnpm test` (default, no network, no secret)      | at `e02fc190`: 42 tests. After the correction: 86 tests, 80 in `@cas/graph-evidence` across eight files, 5 in `@cas/contracts`, 1 in `@cas/worker` |
+| `corepack pnpm graph:test:live`                            | 3 tests passed with the local credential; fails without it                                                                                         |
+| `corepack pnpm graph:probe`                                | exit 0, output in the correction section                                                                                                           |
+| `env -u GRAPH_API_KEY corepack pnpm graph:probe`           | exit 2, "GRAPH_API_KEY is missing"                                                                                                                 |
+| `corepack pnpm typecheck`, `lint`, `build`, `format:check` | green on the working copy before each commit                                                                                                       |
 
 The unit tests cover: a valid standardized response; observations out of order; percentage
 calculation and truncation; zero, negative and malformed baselines; missing snapshot fields;
@@ -302,10 +308,96 @@ and Morpho Compound (no usable indexer).
 - Explorer pages were not fetched. Their URLs are listed for the human auditor.
 - About 60 gateway queries were used in the sprint.
 
+## Correction after Codex audit
+
+Codex audited `e02fc190` and requested changes: the executable gate had counted configured
+labels rather than provider-returned facts, accepted one successful Base target as a pass,
+validated the gateway URL by regular expression, left response-body read errors
+unstructured, and let a future-dated observation pass as fresh. The correction commit
+`b5c824e0` (`fix(graph): enforce live gate integrity`) addresses each point; this section
+records the rerun on the corrected gate. Earlier sections of this report are kept as the
+history of the first run and are superseded by what follows.
+
+### What changed in the verifier
+
+| Concern                  | Before                                                                                      | After                                                                                                                                                                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider identity        | Configured slug substituted into the result; `network`, `type` and `schemaVersion` optional | Adapter requires provider `name`, `slug`, `network`, `type`, `schemaVersion`; provider identity and configured target carried side by side (`ProtocolIdentity` versus `targetChain`/`targetSlug` in provenance)                                                |
+| Registry expectations    | Registry schema version recorded for information only                                       | Each target declares expected provider `network`, `type` and `schemaVersion` from the verified sweep; registry uniqueness of subgraph IDs and labels asserted at load                                                                                          |
+| Live metadata validation | None before counting                                                                        | Live `network`, normalized chain, `type`, `schemaVersion`, subgraph ID and deployment ID compared with expectations; a mismatch is a structured, redacted failure with target label, field, expected, received and subgraph ID                                 |
+| Network normalization    | Reported network printed, not checked                                                       | Only `MAINNET` and `BASE` recognized; anything else fails validation                                                                                                                                                                                           |
+| Distinctness             | Counted configured protocol labels                                                          | Counted jointly over provider identity (chain, slug, name), subgraph ID and deployment ID; duplicates reported, never counted twice                                                                                                                            |
+| Base threshold           | One valid target passed                                                                     | Every configured Base target must verify, with two distinct identities, subgraph IDs and deployment IDs; one of two is FAIL/DROP                                                                                                                               |
+| Gateway URL              | Regular expression, `https` prefix only                                                     | `new URL()`: `https:` only; no username, password, query string or fragment; hostname required; trailing slashes normalized; rejected values never echoed; provenance records sanitized origin and path and claims the gateway only for `gateway.thegraph.com` |
+| Body-read failures       | Uncaught during `response.text()`                                                           | Abort during the body read is a `timeout`; other read failures are `network`                                                                                                                                                                                   |
+| Freshness                | Only the stale side checked; negative age passed                                            | 48-hour limit plus a 120-second clock-skew tolerance; a future-dated observation beyond it fails                                                                                                                                                               |
+| Exit contract            | Same                                                                                        | 0 Ethereum gate pass, 1 fail, 2 credential missing or registry invalid; Base printed as PASS/KEEP or FAIL/DROP and never changes the exit code                                                                                                                 |
+
+Commands: `corepack pnpm graph:probe` and `corepack pnpm graph:test:live` at the workspace
+root delegate to the package scripts. Tests: 80 unit tests in `@cas/graph-evidence` across
+eight files, covering the twenty-two required cases (identity, distinctness, thresholds,
+URL security, provenance sanitization, body-read classification, freshness boundaries, exit
+codes, and the earlier decimal, delta, redaction and no-credential behaviour).
+
+### Corrected live rerun
+
+Command, with the key loaded into the shell from the ignored `.env` and never echoed:
+
+```bash
+set -a && . ./.env && set +a && corepack pnpm graph:probe
+```
+
+Run at 23:03:10 on 5 September 2026 (2026-09-06T03:03:10Z). Exit code 0. Query SHA-256
+`780080c478815b08437d6c8bd0b814c895a9a7be9547da61befa128c0ed62306`, unchanged. Endpoint
+recorded in provenance: `the-graph-gateway https://gateway.thegraph.com/api`. Gate lines,
+exactly as printed:
+
+```
+Ethereum gate: PASS (5 valid of 5 configured; 5 distinct provider identities, 5 distinct subgraph IDs, 5 distinct deployment IDs; minimum 5)
+Base secondary: PASS/KEEP (2 valid of 2 configured; 2 distinct provider identities, 2 distinct subgraph IDs, 2 distinct deployment IDs; minimum 2, all configured targets required) [does not affect the exit code]
+```
+
+Every Ethereum target was served at block 25915485 (2026-09-06T03:02:59Z) and every Base
+target at block 50937221 (2026-09-06T03:03:09Z), all with `hasIndexingErrors=false`. The
+current observation is the protocol head at that block; freshness age is the query time
+minus that block time. Validation result is "match" when every expected field equalled the
+provider value.
+
+| Target label             | Provider name     | Provider slug       | Network | Type    | Schema | Subgraph ID                                    | Deployment ID                                    | Snapshot timestamps (UTC)                                                              | Baseline (UTC)       | Elapsed | Current TVL (USD)                   | Baseline TVL (USD)                  | Delta      | Freshness   | Validation |
+| ------------------------ | ----------------- | ------------------- | ------- | ------- | ------ | ---------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------- | -------------------- | ------- | ----------------------------------- | ----------------------------------- | ---------- | ----------- | ---------- |
+| `aave-v3-ethereum`       | Aave v3           | `aave-v3`           | MAINNET | LENDING | 3.1.0  | `JCNWRypm7FYwV8fx5HhzZPSFaMxgkPuw4TnR3Gpi81zk` | `QmcXE5QVcBcvcaJddPxd8mFs6W9xt7STmwfgguoiM6ddAd` | 2026-09-06T03:02:59Z, 2026-09-05T23:59:23Z, 2026-09-04T23:59:47Z, 2026-09-03T23:59:47Z | 2026-09-04T23:59:47Z | 27h 03m | 24831061425.60497178908210760835774 | 24390607628.64157812685081285171331 | +1.805833% | fresh, 11 s | match      |
+| `spark-lend-ethereum`    | Spark Lend        | `spark-lend`        | MAINNET | LENDING | 3.1.0  | `GbKdmBe4ycCYCQLQSjqGg6UHYoYfbyJyq5WrG35pv1si` | `QmTVumjhubXWP8MeDx5g114MRX99E4Gie5mFqVurttF99X` | 2026-09-06T02:58:59Z, 2026-09-05T23:47:35Z, 2026-09-04T23:58:11Z, 2026-09-03T23:55:23Z | 2026-09-04T23:58:11Z | 27h 04m | 6535204523.31132468093621432403089  | 6567499122.884807083548118459841748 | -0.491733% | fresh, 12 s | match      |
+| `makerdao-ethereum`      | MakerDAO          | `makerdao`          | MAINNET | LENDING | 2.0.1  | `8sE6rTNkPhzZXZC6c8UQy2ghFTu5PPdGauwUBm4t7HZ1` | `QmYZq1vyFUgFYqyHJgFg2kYfRuYj2U4aXnxrKhZ7t2ApWy` | 2026-09-06T03:00:35Z, 2026-09-05T23:00:47Z, 2026-09-04T23:00:35Z, 2026-09-03T23:00:23Z | 2026-09-04T23:00:35Z | 28h 02m | 5005479787.161439319218165346030041 | 4982441776.684958058506420524407173 | +0.462383% | fresh, 12 s | match      |
+| `compound-v3-ethereum`   | Compound III      | `compound-v3`       | MAINNET | LENDING | 3.1.0  | `AwoxEZbiWLvv6e3QdvdMZw4WDURdGbvPfHmZRc8Dpfz9` | `QmNrQoow7pjM3biRnnhzeCaDYhuEbDyjKCpFeNv2oGXnuK` | 2026-09-06T03:02:47Z, 2026-09-05T23:28:23Z, 2026-09-04T23:58:47Z, 2026-09-03T23:54:23Z | 2026-09-04T23:58:47Z | 27h 04m | 1876288732.494113778731974471046054 | 1865466552.265404811605434119041474 | +0.580132% | fresh, 12 s | match      |
+| `liquity-ethereum`       | Liquity           | `liquity`           | MAINNET | LENDING | 2.0.1  | `2D2dFCLjUt3MfFgTKW8cBxiRQ3Adss7KUtYh2rTcFVY`  | `QmWEnV6povhA9Eq9Y315LsjJg7qwv169r1ZGw9o2uT24eZ` | 2026-09-06T01:33:35Z, 2026-09-05T22:29:11Z, 2026-09-04T23:58:35Z, 2026-09-03T20:05:47Z | 2026-09-04T23:58:35Z | 27h 04m | 188117247.1529877651978258637050038 | 193848916.0000438101041822542668727 | -2.956771% | fresh, 12 s | match      |
+| `seamless-protocol-base` | Seamless Protocol | `seamless-protocol` | BASE    | LENDING | 3.1.0  | `2u4mWUV4xS19ef1MbnxZHWLLMwdPxtVifH46JbonXwXP` | `QmPSmTkJPSKLFn46YdgwMKV5K2c9a3pkWnzDCC4ccCLAXE` | 2026-09-06T02:31:23Z, 2026-09-05T18:13:07Z, 2026-09-04T22:50:41Z, 2026-09-03T21:06:35Z | 2026-09-04T22:50:41Z | 28h 12m | 8784205.2173735728743907877405759   | 8781706.33693495351465605546116409  | +0.028455% | fresh, 2 s  | match      |
+| `moonwell-base`          | Moonwell          | `moonwell`          | BASE    | LENDING | 2.0.1  | `33ex1ExmYQtwGVwri1AP3oMFPGSce6YbocBP7fWbsBrg` | `QmeE6TgfRmK2iLAgCLBeXuxJQ2VXLFAeHVMTvmnECiFw7y` | 2026-09-06T03:01:13Z, 2026-09-05T23:51:51Z, 2026-09-04T23:58:55Z, 2026-09-03T23:59:39Z | 2026-09-04T23:58:55Z | 27h 04m | 49470626.43078311010569889341364989 | 51726498.42463972858573934725446898 | -4.361153% | fresh, 2 s  | match      |
+
+The provider slugs differ from the registry slugs for every target (for example `aave-v3`
+versus `aave-v3-ethereum`). The corrected adapter preserves the provider value and the gate
+counts on it; the first verifier would have reported the registry value. No live schema
+change was found, so no registry expectation was updated.
+
+**Ethereum gate outcome: PASS.** Five valid of five, five distinct provider identities,
+subgraph IDs and deployment IDs, every target `MAINNET` and `LENDING` with its declared
+schema version, every target with a valid two-point delta and fresh current observation.
+
+**Base gate outcome: PASS/KEEP.** Both configured targets verified, two distinct provider
+identities, subgraph IDs and deployment IDs, both `BASE` and `LENDING` with their declared
+schema versions. Coverage remains two deployments; the keep is recorded truthfully under the
+stricter rule and stays subject to the project owner's confirmation on coverage grounds.
+
+**D17 disposition:** its gate definition and recorded results are superseded by D18; its
+schema family, provider interface and deployment selection stand.
+
+`corepack pnpm graph:test:live`: 3 tests passed on the same evidence. `env -u GRAPH_API_KEY
+corepack pnpm graph:probe`: exit 2. The key value occurred zero times in the probe and test
+logs, checked in-shell without printing it.
+
 ## Confirmation
 
 No secret and no raw provider response was committed. The key exists only in the ignored
 `.env` (mode 600) and was never printed, hashed, measured or read by the implementer. Raw
-sweep output stayed in a scratch directory outside the repository; the probe's detail file is
-under the ignored `output/` path with mode 600. The report records block numbers,
-timestamps, identifiers and TVL figures only.
+sweep output stayed in a scratch directory outside the repository; the probe's detail files
+are under the ignored `output/` path with mode 600. The report records block numbers,
+timestamps, identifiers, provider identity fields and TVL figures only.

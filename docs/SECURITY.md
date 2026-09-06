@@ -106,8 +106,24 @@ integration inherits:
   `schema`, `validation`, `indexing`, `timeout`, `network`. A response with GraphQL errors,
   a non-2xx status, a non-JSON body, a missing entity, an empty snapshot list, a malformed
   decimal, or `hasIndexingErrors=true` is a failure, never an empty success.
-- Every request carries an explicit timeout. Subgraph IDs and the gateway base URL are
-  validated before any request is made, and the base URL must be `https`.
+- Every request carries an explicit timeout, and a failure while reading the response body
+  is classified too: an abort is a `timeout`, any other read failure is `network`.
+- The gateway base URL is validated structurally with `new URL()` before any request: it
+  must be `https:` with a hostname, and it must contain no username, no password, no query
+  string and no fragment. A rejected URL is never echoed, because it may contain a
+  credential; the error names only the rule that failed. Provenance records only the
+  sanitized origin and path, and claims The Graph's gateway only when the host is
+  `gateway.thegraph.com`; any other validated HTTPS endpoint is recorded as a
+  Graph-compatible endpoint.
+- The live gate trusts provider-returned facts, never registry labels. The adapter requires
+  the provider's protocol `name`, `slug`, `network`, `type` and `schemaVersion`; the
+  configured slug is never substituted for the provider slug. Before a target can count
+  toward a gate, its live `network`, `type`, `schemaVersion` and deployment ID are compared
+  with the registry's declared expectations, and a mismatch is a structured, redacted
+  failure naming the target label, field, expected value, received value and subgraph ID.
+  Distinctness is counted over provider identity, subgraph ID and deployment ID together.
+- Freshness rejects a current observation older than 48 hours and one dated more than
+  120 seconds in the future; a negative age never passes by accident.
 - A live failure never falls back to fixture or replay data. The live code path contains no
   fixture or replay origin, and a unit test enforces that structurally.
 - Live results carry `DataOrigin` `live` with full query provenance: provider, Subgraph ID,

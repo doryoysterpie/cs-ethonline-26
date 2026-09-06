@@ -336,8 +336,10 @@ entries are unchanged except for status pointers.
 ## D17 Sprint 1 outcome: schema family, deployments, provider interface, chains
 
 - **Date:** 2026-09-05
-- **Status:** ACCEPTED, as the recorded result of applying D11's gate rules; the project
-  owner may override the Base keep given its two-deployment coverage
+- **Status:** SUPERSEDED by D18 (2026-09-05) for the gate definition and the recorded
+  results, because the verifier that produced them trusted registry labels and required only
+  one successful Base target. The schema family, provider interface and deployment selection
+  recorded here stand.
 - **Decision:**
   - Schema family: Messari Lending/CDP standardized schema. The one common query document
     (`packages/graph-evidence/src/query.ts`, SHA-256
@@ -376,3 +378,53 @@ entries are unchanged except for status pointers.
 - **Decided by:** Implementer applying D11's gate rules; Base keep subject to the project
   owner's confirmation.
 - **Supersedes:** none. Resolves the Sprint 1 part of D11.
+
+## D18 Corrected Sprint 1 gate: provider-validated identities
+
+- **Date:** 2026-09-05
+- **Status:** ACCEPTED, as the recorded result of the corrected gate. The project owner may
+  still override the Base keep on coverage grounds.
+- **Decision:**
+  - The executable Graph release gate counts only provider-validated identities. For every
+    configured target the live `protocol.network`, `protocol.type`, `protocol.schemaVersion`
+    and `_meta.deployment` are compared with the expectations declared in
+    `packages/graph-evidence/src/deployments.ts`, which are the exact values observed in the
+    verified sweep. The provider's `slug` and `name` are required and preserved; the
+    configured slug is never substituted. Distinctness is counted jointly over provider
+    identity, subgraph ID and deployment ID. Configured labels never establish distinctness.
+    Only `MAINNET` and `BASE` are recognized network values; anything else fails.
+  - Ethereum (mandatory): PASS, rerun on 2026-09-05 at 23:03 America/Toronto
+    (2026-09-06T03:02:59Z, block 25915485). Five valid of five configured; five distinct
+    provider identities, five distinct subgraph IDs, five distinct deployment IDs; every
+    target reports `MAINNET`, type `LENDING`, and its declared schema version. Provider
+    slugs and names as returned: `aave-v3` "Aave v3", `spark-lend` "Spark Lend",
+    `makerdao` "MakerDAO", `compound-v3` "Compound III", `liquity` "Liquity".
+  - Base (secondary): PASS/KEEP under the corrected rule, which requires every configured
+    Base target to verify. Both targets valid at block 50937221 (2026-09-06T03:03:09Z): two
+    distinct provider identities (`seamless-protocol` "Seamless Protocol", `moonwell`
+    "Moonwell"), two distinct subgraph IDs and deployment IDs, both reporting `BASE`, type
+    `LENDING`, and their declared schema versions. One successful Base target would have
+    been FAIL/DROP. Coverage remains two deployments, as recorded in D17.
+  - Gateway URL: validated structurally with `new URL()`; `https:` only; no username,
+    password, query string or fragment; trailing slashes normalized. Provenance records the
+    sanitized origin and path only, and claims `the-graph-gateway` only when the host is
+    `gateway.thegraph.com`; any other validated HTTPS endpoint is recorded as
+    `graph-compatible-https-endpoint`.
+  - Freshness: 48-hour limit, and a future-dated observation is rejected once it leads the
+    query clock by more than 120 seconds. Inside that tolerance it is accepted and its
+    negative age is reported.
+  - Response-body read failures are classified: an abort is a `timeout`, any other read
+    failure is `network`.
+- **Rationale:** Codex's audit of `e02fc190` found that the first verifier trusted registry
+  labels for chain and distinctness, required only one successful Base target, validated
+  the URL by regular expression, left body-read errors unstructured and let a negative age
+  pass as fresh. The results D17 recorded were produced by that verifier and are superseded
+  for that reason, not because the live data changed. The corrected rerun reproduces PASS
+  for Ethereum and PASS/KEEP for Base on validated evidence (`SPRINT-1-REPORT.md`,
+  "Correction after Codex audit").
+- **Consequences:** `packages/graph-evidence/src/gate.ts` is the gate; eighty unit tests
+  cover identity, distinctness, thresholds, URL security, freshness and exit codes. D2 stays
+  UNRESOLVED.
+- **Decided by:** Implementer applying D11's rules with the corrected gate, after Codex's
+  audit.
+- **Supersedes:** D17's gate definition and recorded results.
