@@ -169,6 +169,26 @@ consumer of the store inherits:
   session advisory lock keyed on the current schema serializes concurrent runners. There is
   no reset, no down migration, and no command that drops anything it did not name. Database
   tests create and drop only schemas whose exact names they generated.
+- Provenance is enforced relationally, not merely by convention. Composite unique keys on
+  the parent tables and composite foreign keys on the children make every provenance
+  contradiction impossible: a source row's origin must be its batch's origin, an issue's
+  batch must be its row's batch, a snapshot's review label and origin must be its batch's,
+  a review entry must name one batch that owns both its snapshot and its row, and a row's
+  canonical URL must be the canonical URL of the group it references. A count-only
+  reconciliation cannot be relied on to notice such a contradiction, so the database
+  refuses it outright.
+- The two metadata values that are stored and printed, the source basename and the review
+  label, are bounded in length and may not contain C0, DEL or C1 controls or the Unicode
+  line and paragraph separators. The rule is enforced twice: in the importer before any
+  file or database access, and by check constraints in the database. Raw editorial fields
+  are exempt, because source text must be preserved exactly.
+- Every line the commands emit is redacted first and escaped second, so a secret that
+  itself contains a control character still matches the redactor, and is then forced to one
+  physical line. Untrusted metadata is rendered with control characters, ANSI introducers
+  and Unicode separators shown as visible escapes and bounded with a visible truncation
+  marker, so a hostile filename or label can neither forge a status, batch, reconciliation
+  or issue line nor hide content from the reader. The redactor covers the whole
+  `DATABASE_URL`, its raw and percent-decoded password, and any PostgreSQL URL shape.
 - Source text is hostile data. Every cell is stored exactly as read, including
   prompt-injection-looking and SQL-looking strings, and nothing interprets it. Derived plain
   text is produced by a maintained HTML parser (htmlparser2), never by regular expressions:

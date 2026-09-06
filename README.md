@@ -105,11 +105,11 @@ allows; otherwise they are dropped. Requirement status per track is in
 | Path                      | Package               | State after Sprint 2                                                                       |
 | ------------------------- | --------------------- | ------------------------------------------------------------------------------------------ |
 | `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                     |
-| `apps/worker`             | `@cas/worker`         | implemented: streaming CSV validation, row evaluation, manual import, CLI; 56 unit tests   |
+| `apps/worker`             | `@cas/worker`         | implemented: streaming CSV validation, row evaluation, manual import, CLI; 111 unit tests  |
 | `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                |
 | `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                              |
 | `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests    |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, first migration, parameterized ingestion ops; 14 unit tests |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, two migrations, parameterized ingestion ops; 15 unit tests  |
 | `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                                                                |
 | `packages/classification` | `@cas/classification` | placeholder                                                                                |
 | `packages/clustering`     | `@cas/clustering`     | placeholder                                                                                |
@@ -218,7 +218,9 @@ set -a && . ./.env && set +a && corepack pnpm db:migrate
 `db:migrate` applies the numbered SQL migrations under `packages/database/migrations` in
 order, records each one's SHA-256 in `schema_migrations`, refuses to run if a recorded
 checksum no longer matches its file, holds an advisory lock so two runners cannot race, and
-is a reported no-op when nothing is pending. `db:check` prints connectivity, server version,
+is a reported no-op when nothing is pending. Migration 0002 makes provenance contradictions
+impossible relationally; it upgrades a database that already has 0001 applied without data
+loss, and refuses to run against one whose existing rows already contradict each other. `db:check` prints connectivity, server version,
 the connection transport and the migration status without printing the connection string.
 
 ```bash
@@ -245,8 +247,10 @@ stays working state; duplicate URLs remain separate rows sharing a URL group. Im
 same file with the same configuration again identifies the original batch and writes
 nothing. `editorial:report` prints count-only reconciliation for every batch.
 
-The commands print only basenames, hashes, counts, ids, statuses, durations and issue codes,
-and every line passes through a redactor for the connection string. pnpm itself echoes the
+The commands print only basenames, hashes, counts, ids, statuses, durations and issue codes.
+Every emitted entry is redacted for the connection string and its password, rendered as one
+physical line, and shows any control character or ANSI sequence in a filename or label as a
+visible escape, so hostile metadata cannot forge a line in captured evidence. pnpm itself echoes the
 command line it runs, path argument included; pass `-s` to `corepack pnpm` when capturing
 evidence. Exit codes: 0 success (including `completed_with_issues`), 2 configuration,
 3 structural input, 4 database, 5 unexpected, 130 interrupted. PostgreSQL integration tests

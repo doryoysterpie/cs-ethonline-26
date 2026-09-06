@@ -1,6 +1,7 @@
 # Sprint 2 report: PostgreSQL data foundation and manual CSV ingestion
 
-Result: **COMPLETE, pending Codex audit.** Every exit condition of the Sprint 2 charter
+Result: **COMPLETE, corrected after the Codex audit, pending re-audit** (section 13). Every
+exit condition of the Sprint 2 charter
 passed on the final code: a fresh local PostgreSQL database migrated safely and a second run
 was a no-op; synthetic data carrying every known source hazard round-tripped exactly; the
 three real exports parsed structurally and every logical row was stored; CS79's invalid rows
@@ -10,18 +11,19 @@ tables; and no real row, credential, generated output or database dump entered G
 America/Toronto unless marked UTC. Count-only throughout: no title, URL, summary,
 description, cell, connection detail or absolute path appears here.
 
-| Item                 | Value                                                                                                                                                                                                                                                                                         |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository           | `doryoysterpie/cs-ethonline-26`, public                                                                                                                                                                                                                                                       |
-| Branch               | `sprint-2/data-foundation`, created from the accepted Sprint 1 SHA                                                                                                                                                                                                                            |
-| Starting SHA         | `56bc95c400bc6b394f00bccde49330e7a9fcb74a` (Sprint 1, audited PASS)                                                                                                                                                                                                                           |
-| Decision commit      | `bb6872aa5cd37ef6cba7d72cbb23a152ccdfa1cf`, `docs: resolve Sprint 2 input decisions` (D20)                                                                                                                                                                                                    |
-| Foundation commit    | `df9ee29203790cdbe2d283c6cf4c51db6ed9d84e`, `feat(data): add Postgres ingestion foundation`                                                                                                                                                                                                   |
-| Proof commit         | `522f5b17eeb3fc34b5771ca4c93ce28e6260b43e`, `docs: record Sprint 2 ingestion proof`, the commit that introduced this document                                                                                                                                                                 |
-| Evidence-capture fix | `fix(data): silence nested pnpm banners in ingestion commands`; SHA in the handoff. Adds `-s` to the nested pnpm call in the root scripts so that `corepack pnpm -s` keeps the path argument out of captured output, as section 10 states; also adds this row and the matching deviation note |
-| Final SHA            | in the handoff                                                                                                                                                                                                                                                                                |
-| `main`               | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                                                                                                                                                                                                                                       |
-| Real inputs          | the three exports named in the charter, read from the project owner's download folder, outside the repository; never copied, never committed, not deleted                                                                                                                                     |
+| Item                 | Value                                                                                                                                                                                                                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository           | `doryoysterpie/cs-ethonline-26`, public                                                                                                                                                                                                                                                                   |
+| Branch               | `sprint-2/data-foundation`, created from the accepted Sprint 1 SHA                                                                                                                                                                                                                                        |
+| Starting SHA         | `56bc95c400bc6b394f00bccde49330e7a9fcb74a` (Sprint 1, audited PASS)                                                                                                                                                                                                                                       |
+| Decision commit      | `bb6872aa5cd37ef6cba7d72cbb23a152ccdfa1cf`, `docs: resolve Sprint 2 input decisions` (D20)                                                                                                                                                                                                                |
+| Foundation commit    | `df9ee29203790cdbe2d283c6cf4c51db6ed9d84e`, `feat(data): add Postgres ingestion foundation`                                                                                                                                                                                                               |
+| Proof commit         | `522f5b17eeb3fc34b5771ca4c93ce28e6260b43e`, `docs: record Sprint 2 ingestion proof`, the commit that introduced this document                                                                                                                                                                             |
+| Evidence-capture fix | `2f2e673b578034adabd796d436449bc05cdba913`, `fix(data): silence nested pnpm banners in ingestion commands`. Adds `-s` to the nested pnpm call in the root scripts so that `corepack pnpm -s` keeps the path argument out of captured output, as section 10 states. Audited by Codex with changes required |
+| Audit correction     | `fix(data): enforce provenance and output integrity` and `docs: record Sprint 2 audit correction`; SHAs in the handoff. Section 13 records both findings, migration 0002 and the evidence                                                                                                                 |
+| Final SHA            | in the handoff                                                                                                                                                                                                                                                                                            |
+| `main`               | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                                                                                                                                                                                                                                                   |
+| Real inputs          | the three exports named in the charter, read from the project owner's download folder, outside the repository; never copied, never committed, not deleted                                                                                                                                                 |
 
 ## 1. Scope
 
@@ -339,15 +341,172 @@ typed; `corepack pnpm -s` suppresses it when capturing evidence.
 - D10 remains unresolved; nothing here applies a week boundary, and the Sprint 3 calibration
   reader must not infer one from `posted_at`.
 
-## 13. Reproduction for Codex
+## 13. Codex-audit correction (6 September 2026)
+
+Codex audited `2f2e673b578034adabd796d436449bc05cdba913` and returned CHANGES REQUIRED with
+two findings and a hygiene item. Both findings are closed on this branch. Migration
+`0001_editorial_ingestion.sql` was not touched; its SHA-256 is still
+`6ccf4b05cdcd255b326029e99097c73ec220fa77d38d767e86a40175abc8b936`, and a unit test pins
+that value so it cannot drift. Nothing in sections 1 to 12 is rewritten; this section
+records what changed and the evidence produced after the change.
+
+### Finding 1: output-forgery boundary
+
+Four pieces of untrusted metadata reached printed lines by direct interpolation: the
+validation basename, the batch basename, the batch review label and the snapshot review
+label. Codex reproduced `forged_line=true` and `contains_ansi=true`: a filename or label
+carrying a newline, carriage return, ANSI escape, C0 or C1 control, or a Unicode line or
+paragraph separator could forge a status, batch, reconciliation or issue line in terminal
+output and in captured evidence.
+
+Corrected:
+
+- New worker-local module `apps/worker/src/editorial/display.ts`, equivalent to the proven
+  approach in `packages/graph-evidence/src/display.ts` and with no dependency between the
+  two packages. Its character class is built from code points, so the source contains no
+  control byte. `toSingleLine` escapes C0, DEL, C1 (CSI included), the ANSI introducer and
+  U+2028 and U+2029 as visible escapes; `safeDisplay` additionally bounds the length at 200
+  characters with a visible `…[+N chars]` marker.
+- `output.ts` redacts each untrusted value **before** escaping it, so a secret that itself
+  contains a control character still matches the redactor, then renders it through
+  `safeDisplay`. Each composed line is redacted again and passed through `toSingleLine`, so
+  every returned entry is exactly one physical line. The command-line interface applies the
+  same guard to every line it emits, including usage and error lines.
+- The base redactor now covers the whole `DATABASE_URL` and its raw and percent-decoded
+  password, through the existing `connectionSecrets` helper, rather than the connection
+  string alone.
+- Review labels are validated before any file or database access: non-empty after trimming,
+  at most 64 characters, and free of control and line-separator characters, checked on the
+  raw value because JavaScript's `trim` would otherwise silently remove a trailing newline.
+  A file basename is validated the same way, at most 255 characters. Ordinary names with
+  spaces and punctuation are untouched: `Content @latestincyber - CS79.csv` imports as
+  before.
+- Validation mode handles a hostile basename by rendering it safely rather than refusing
+  it, so a file can still be inspected; import and report mode refuse it, because the name
+  would be stored.
+
+Tests: `display.test.ts` (11 cases) and `output-safety.test.ts` (39 cases) drive the real
+formatters with the real redactor over twelve hostile values, covering newline, carriage
+return, tab, ANSI escape and full sequence, C1 CSI, DEL, U+2028, U+2029, a 4,000-character
+name, a synthetic database password in the basename and the same password split by control
+characters, each in a basename and in a review label. Every case asserts that no emitted
+entry contains a physical line break, an ANSI introducer, a Unicode separator or the
+password, that the count of status-shaped lines equals exactly the number the formatter
+itself produced, and that hostile content is escaped rather than dropped. `import.test.ts`
+adds label and basename rejection cases; `cli.test.ts` adds an end-to-end hostile-basename
+validation run, an ordinary spaced filename, refusal of a hostile import, a non-UUID batch
+id, and password-only redaction.
+
+### Finding 2: relational provenance integrity
+
+Migration 0001 used independent single-column foreign keys, so the database permitted five
+contradictions: a source row whose origin differed from its batch; an issue naming one batch
+while its row belonged to another; a snapshot whose label or origin differed from its batch;
+a review entry joining one batch's snapshot to another batch's source row; and a row whose
+canonical URL disagreed with its URL group. Count-only reconciliation would not necessarily
+have detected any of them.
+
+Corrected by the new forward-only migration
+`packages/database/migrations/0002_provenance_integrity.sql`, which adds composite unique
+keys on the parents and composite foreign keys on the children:
+
+| Contradiction                                | Prevented by                                                                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| source-row origin differing from its batch   | `import_batches (id, data_origin)` unique; `source_rows (batch_id, data_origin)` foreign key                                  |
+| issue naming a different batch from its row  | `source_rows (id, batch_id)` unique; `row_issues (source_row_id, batch_id)` foreign key                                       |
+| snapshot label or origin differing           | `import_batches (id, review_label, data_origin)` unique; `review_snapshots (batch_id, review_label, data_origin)` foreign key |
+| review entry crossing batches                | new `review_entries.batch_id`, with foreign keys to `review_snapshots (id, batch_id)` and `source_rows (id, batch_id)`        |
+| canonical URL disagreeing with its URL group | `url_groups (id, canonical_url)` unique; `source_rows (url_group_id, canonical_url)` foreign key                              |
+
+`review_entries.batch_id` is added nullable, backfilled deterministically from each entry's
+snapshot, then made `NOT NULL`. Check constraints bound the source basename (255) and the
+review label (64) and reject control and line-separator characters in both; the character
+class is written with `\x` and `\u` escapes so the migration file holds no control byte.
+Raw editorial columns are untouched, and a test proves a title with newlines and an ANSI
+escape and a 50,000-character summary still store unchanged. `insertReviewEntries` and
+`NewReviewEntry` carry the batch id; every other operation is unchanged.
+
+Every constraint validates existing rows as it is added, so a database whose rows already
+contradict each other fails the migration and is left exactly as it was; nothing is
+rewritten silently.
+
+Tests, all in `packages/database/src/provenance.db.test.ts` unless noted: each of the five
+contradictions is attempted directly, by insert and by update, and PostgreSQL rejects it
+with SQLSTATE 23503; a normal weekly batch and a normal master batch still succeed; a
+quarantined row still keeps its review entry; hostile basenames and labels are rejected with
+SQLSTATE 23514 while an ordinary spaced basename is accepted; raw fields stay exempt. In
+`migrate.db.test.ts`: a fresh schema applies both migrations and reruns as a no-op; a schema
+holding valid Sprint 2 data upgrades from 0001 with identical counts and a correct backfill;
+a schema holding a contradiction refuses the upgrade, keeps `schema_migrations` at version 1
+and does not add the new column; migration 0002 participates in checksum-drift detection;
+the advisory lock still applies each migration exactly once under two concurrent runners.
+
+### Finding 3: repository hygiene
+
+- The literal U+0001 delimiter in `validate.ts` is replaced by
+  `JSON.stringify([code, field, severity])`.
+- A scan of every tracked and newly added non-CSV file reports zero C0, DEL and C1 bytes,
+  and zero U+2028 and U+2029 characters.
+- New `.gitattributes` marks only `data/fixtures/editorial/weekly-synthetic.csv` as
+  `-text whitespace=cr-at-eol`, so Git keeps its bytes exactly as committed and stops
+  reporting its intentional carriage returns as trailing whitespace. The fixture is
+  unchanged and the tests still exercise real CRLF behaviour.
+- `git diff --check` over the whole committed range `56bc95c4..HEAD`, not merely the
+  worktree, now passes.
+
+### Verification of the correction
+
+Fresh database `cas_sprint2_fix`, created for this correction, migrated through both
+migrations, then all three real exports validated, imported as `replay`, re-imported and
+reconciled. Every command exited 0.
+
+| File                         |       Bytes |     Stored |   Accepted | Quarantined | Status                  |
+| ---------------------------- | ----------: | ---------: | ---------: | ----------: | ----------------------- |
+| Cyberattack Sundays (master) | 119,643,204 |     23,910 |     23,910 |           0 | `completed`             |
+| CS79 (weekly)                |     155,199 |        157 |        154 |           3 | `completed_with_issues` |
+| CS86 (weekly)                |     149,523 |        181 |        181 |           0 | `completed`             |
+| **Total**                    |             | **24,248** | **24,245** |       **3** |                         |
+
+Unchanged from section 8: master `ch` 133 TRUE, 23,775 FALSE, 2 blank; duplicate excess 270
+by exact and canonical URL in 23,640 groups; longest stored field 48,329 characters; CS79
+issue counts `timestamp_missing` 2 and 2, `title_missing` 2, `url_missing` 2, `url_invalid`
+1, with review entries 130 selected and 27 rejected, 3 on quarantined rows; CS86 161
+selected and 20 rejected. Re-importing the master and CS79 wrote nothing and returned the
+original batch ids. All three batches reconcile. An independent row-hash check over all
+24,248 stored rows found **0 mismatches**. Count-only integrity queries on the result return
+0 for every contradiction: origin mismatches, issue-batch mismatches, snapshot label or
+origin mismatches, cross-batch review entries, URL-group mismatches and null entry batches.
+
+Upgrade of the existing populated verification database `cas_sprint2_verify`, which held the
+Sprint 2 data under migration 0001 only: `db:migrate` applied `0002` alone
+(`applied=1 alreadyApplied=1 total=2`), a rerun was a no-op, and the counts were identical
+before and after (3 batches, 24,248 source rows, 9 row issues, 23,640 URL groups, 2
+snapshots, 338 review entries). The backfill left no null batch id and no mismatch against
+either the snapshot or the source row, all three batches still reconcile, and an attempted
+origin change is now rejected by `source_rows_batch_origin_fk`.
+
+Test totals after the correction:
+
+| Package               | Unit (no database) | PostgreSQL integration |
+| --------------------- | -----------------: | ---------------------: |
+| `@cas/contracts`      |                  7 |                        |
+| `@cas/database`       |                 15 |                     22 |
+| `@cas/graph-evidence` |                102 |                        |
+| `@cas/worker`         |                111 |                      8 |
+| **Total**             |            **235** |                 **30** |
+
+## 14. Reproduction for Codex
 
 1. Check out `sprint-2/data-foundation` at the final SHA in the handoff and run
    `corepack pnpm install --frozen-lockfile`, then `corepack pnpm verify` (no database, no
    secret).
 2. With a local PostgreSQL 17 and `DATABASE_URL` in an ignored `.env` naming a database
    created for the purpose: `set -a && . ./.env && set +a`, then `corepack pnpm db:migrate`
-   twice (applied 1, then no-op), `corepack pnpm db:check`, and `corepack pnpm test:db`
-   (17 tests; only `cas_test_*` schemas are created and dropped).
+   twice (applied 2, then no-op), `corepack pnpm db:check`, and `corepack pnpm test:db`
+   (30 tests; only `cas_test_*` schemas are created and dropped). To reproduce the upgrade
+   path, point `DATABASE_URL` at a database that already has migration 0001 applied with
+   valid rows and run `db:migrate` once: it applies `0002` alone and leaves every count
+   unchanged.
 3. Validate and import the three exports from wherever they live outside the repository, as
    in section 10 steps 4 to 12, and compare the printed counts with section 8. Repeat one
    import to see `already imported`. Run `corepack pnpm editorial:report` and confirm
