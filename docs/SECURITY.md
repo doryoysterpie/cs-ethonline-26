@@ -91,6 +91,32 @@ Any chain interaction is testnet-only until the project owner explicitly approve
 Only public incident metadata and hashes may be written on chain. No personal data is ever
 written on chain.
 
+## 10. Live provider queries and credential handling
+
+Rules the Sprint 1 live client (`@cas/graph-evidence`) implements and every later live
+integration inherits:
+
+- The provider API key is read from the environment (`GRAPH_API_KEY`, locally from the
+  ignored `.env`) and travels only in an `Authorization: Bearer` header. It is never placed in
+  a URL, a log line, an error message, a test fixture, a document, shell history or Git.
+- Every string the client emits passes through a redactor that removes the known key value,
+  any bearer token, and the legacy key-in-path gateway URL form. Provider error bodies are
+  redacted and truncated before they are stored on an error.
+- A live query fails explicitly with one of these kinds: `credential`, `http`, `graphql`,
+  `schema`, `validation`, `indexing`, `timeout`, `network`. A response with GraphQL errors,
+  a non-2xx status, a non-JSON body, a missing entity, an empty snapshot list, a malformed
+  decimal, or `hasIndexingErrors=true` is a failure, never an empty success.
+- Every request carries an explicit timeout. Subgraph IDs and the gateway base URL are
+  validated before any request is made, and the base URL must be `https`.
+- A live failure never falls back to fixture or replay data. The live code path contains no
+  fixture or replay origin, and a unit test enforces that structurally.
+- Live results carry `DataOrigin` `live` with full query provenance: provider, Subgraph ID,
+  deployment ID, chain, UTC query time, SHA-256 of the query document, block number, hash
+  and timestamp, snapshot timestamps, indexing-error state and schema versions.
+- Detailed live output is written only under the ignored `output/` path with mode 600. Live
+  integration tests run only through an explicitly named command and never in CI; CI needs
+  no secret.
+
 ## Reporting a vulnerability
 
 Report privately to the repository owner. Do not open a public issue describing an

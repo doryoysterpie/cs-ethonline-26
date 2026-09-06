@@ -1,8 +1,8 @@
 # Architecture
 
 This document records the intended architecture as fixed by the Sprint 0 charter, the
-supplied project plan (Plan 2.0) and decisions D11 to D16, and the state of each component
-after Sprint 0. Where the project owner or the plan fixes something, this document says so.
+supplied project plan (Plan 2.0) and decisions D11 to D17, and the state of each component
+after Sprint 1. Where the project owner or the plan fixes something, this document says so.
 Where the implementer has proposed something that is not fixed, it is marked **proposed**
 and is open to revision.
 
@@ -12,23 +12,23 @@ inside the repository. No separate plan document exists here.
 
 ## 1. Components
 
-| Package               | Responsibility (intended)                                                                                                                                                                                                      | State after Sprint 0            |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
-| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                                                      | three contracts defined, tested |
-| `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                                                                                                                                 | placeholder                     |
-| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts. Sprint 2.                                   | placeholder                     |
-| `@cas/graph-evidence` | Live Graph-provider queries over the Messari standardized schema (D11), signal detection, the anomaly feed, and the provenance record of every request and response. Runs in parallel to editorial ingestion. Sprints 1 and 4. | placeholder                     |
-| `@cas/classification` | Automated high-recall classification of every imported source into `include`, `exclude` or `review`, with recorded rationale. Calibrated and evaluated against snapshot labels, never gated by them. Sprint 3.                 | placeholder                     |
-| `@cas/clustering`     | Clustering included and needs-review sources into canonical incident records; the evidence-state resolver, attaching evidence including corroborating Graph signals, with complete provenance. Sprint 4.                       | placeholder                     |
-| `@cas/drafting`       | The drafting pipeline: the editable editorial output from canonical incidents, the live crypto section and the fixed historical draft, under the naming policy (D4), to the D3 destination. Sprint 5.                          | placeholder                     |
-| `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors, with a `SKILL.md` and a clean installation from a fresh clone. Sprint 6.                                                                             | placeholder                     |
-| `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 8, conditional on the Graph gate).                                                                                                                                       | placeholder                     |
-| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                                                | placeholder, boundary test only |
-| `@cas/dashboard`      | Next.js application, as Plan 2.0 fixes: command center, review queue, incident explorer, draft editor; judge login. The review workflow here is the only writer of `ReviewState`. Sprint 6.                                    | placeholder                     |
-| `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                                                                                                                          | placeholder                     |
-| `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 8, conditional on the Graph gate).                                                                                                             | placeholder                     |
-| `data/taxonomy`       | Taxonomy data files.                                                                                                                                                                                                           | empty                           |
-| `data/fixtures`       | Synthetic fixtures. Sprint 7.                                                                                                                                                                                                  | empty                           |
+| Package               | Responsibility (intended)                                                                                                                                                                                      | State after Sprint 1                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                                      | three enums, the chain set, and the Graph evidence contracts; tested                          |
+| `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                                                                                                                 | placeholder                                                                                   |
+| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts. Sprint 2.                   | placeholder                                                                                   |
+| `@cas/graph-evidence` | Live Graph-provider queries over the Messari standardized schema (D11), signal detection, the anomaly feed, and the provenance record of every request and response. Runs in parallel to editorial ingestion.  | implemented (Sprint 1): live client, adapter, TVL-delta signal, probe. Anomaly feed: Sprint 4 |
+| `@cas/classification` | Automated high-recall classification of every imported source into `include`, `exclude` or `review`, with recorded rationale. Calibrated and evaluated against snapshot labels, never gated by them. Sprint 3. | placeholder                                                                                   |
+| `@cas/clustering`     | Clustering included and needs-review sources into canonical incident records; the evidence-state resolver, attaching evidence including corroborating Graph signals, with complete provenance. Sprint 4.       | placeholder                                                                                   |
+| `@cas/drafting`       | The drafting pipeline: the editable editorial output from canonical incidents, the live crypto section and the fixed historical draft, under the naming policy (D4), to the D3 destination. Sprint 5.          | placeholder                                                                                   |
+| `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors, with a `SKILL.md` and a clean installation from a fresh clone. Sprint 6.                                                             | placeholder                                                                                   |
+| `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 8, conditional on the Graph gate).                                                                                                                       | placeholder                                                                                   |
+| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                                | placeholder, boundary test only                                                               |
+| `@cas/dashboard`      | Next.js application, as Plan 2.0 fixes: command center, review queue, incident explorer, draft editor; judge login. The review workflow here is the only writer of `ReviewState`. Sprint 6.                    | placeholder                                                                                   |
+| `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                                                                                                          | placeholder                                                                                   |
+| `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 8, conditional on the Graph gate).                                                                                             | placeholder                                                                                   |
+| `data/taxonomy`       | Taxonomy data files.                                                                                                                                                                                           | empty                                                                                         |
+| `data/fixtures`       | Synthetic fixtures. Sprint 7.                                                                                                                                                                                  | empty                                                                                         |
 
 The dashboard framework is Next.js. Plan 2.0 fixes it in the package line
 `apps/dashboard: Next.js; command center, review queue, incident explorer, draft editor;
@@ -84,7 +84,7 @@ Rules that follow from D15:
 - The present manual workflow described in `DATA_INPUTS.md` section 1 is background for
   understanding the data and its labels, not the runtime design.
 
-Stage by stage, with the sprint that delivers it (D16) and the Sprint 0 state:
+Stage by stage, with the sprint that delivers it (D16) and the current state:
 
 1. **Import and normalization.** CSV exports from the Excel RSS workflow (D7a) enter through
    `@cas/worker` into `@cas/database`, preserving raw values, provenance and `DataOrigin`.
@@ -98,9 +98,10 @@ Stage by stage, with the sprint that delivers it (D16) and the Sprint 0 state:
    evidence-state resolver assigns each incident a state whose provenance chain reaches back
    to source rows and Graph responses. Sprint 4. Not implemented.
 5. **Graph correlation.** `@cas/graph-evidence` queries live provider-backed data over the
-   standardized schema for the chosen chains (D11), emits signals into the anomaly feed, and
-   `@cas/clustering` attaches them as corroborating evidence with request, response and block
-   context. Sprint 1 (provider proof) and Sprint 4 (correlation). Not implemented.
+   standardized schema for the chosen chains (D11) and produces `TvlDeltaSignal` records
+   with full provenance. **Implemented in Sprint 1** (section 9). The anomaly feed and the
+   attachment of signals as corroborating evidence by `@cas/clustering` are Sprint 4. Not
+   implemented.
 6. **Drafting.** `@cas/drafting` renders an editable draft to the D3 destination with the
    evidence state visible beside every claim and the naming policy (D4) applied, including
    the live crypto section and a fixed historical draft. Sprint 5. Not implemented.
@@ -131,18 +132,23 @@ collapsed into one label.
 - Human decisions and machine decisions are separate contracts. Nothing may map one onto
   the other.
 
-Sprint 0 contents of `@cas/contracts`:
+Contents of `@cas/contracts` after Sprint 1:
 
-| Export                   | Values                               | Meaning                                                           | Fixed by                                |
-| ------------------------ | ------------------------------------ | ----------------------------------------------------------------- | --------------------------------------- |
-| `ReviewState`            | `selected`, `rejected`, `unreviewed` | human review state from a versioned review record                 | project owner's data-flow clarification |
-| `ClassificationDecision` | `include`, `exclude`, `review`       | machine decision of the automated classifier, with rationale      | decision D15                            |
-| `DataOrigin`             | `live`, `fixture`, `replay`          | execution and data context of a record, independent of its source | section 7 below                         |
+| Export                   | Kind                | Meaning                                                                                                                                                                           | Fixed by                                |
+| ------------------------ | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `ReviewState`            | enum, Sprint 0      | `selected`, `rejected`, `unreviewed`: human review state from a versioned review record                                                                                           | project owner's data-flow clarification |
+| `ClassificationDecision` | enum, Sprint 0      | `include`, `exclude`, `review`: machine decision of the automated classifier, with rationale                                                                                      | decision D15                            |
+| `DataOrigin`             | enum, Sprint 0      | `live`, `fixture`, `replay`: execution and data context of a record, independent of its source                                                                                    | section 7 below                         |
+| `ChainId`                | enum, Sprint 1      | `ethereum`, `base`: chains whose indexed data the project reads, Ethereum mandatory                                                                                               | decision D11                            |
+| `ProtocolIdentity`       | interface, Sprint 1 | protocol name, registry slug and chain of one observed deployment                                                                                                                 | Sprint 1                                |
+| `GraphQueryProvenance`   | interface, Sprint 1 | provider, Subgraph ID, deployment ID, chain, UTC query time, query-document SHA-256, block number, hash and timestamp, snapshot timestamps, indexing-error state, schema versions | Sprint 1 charter                        |
+| `ProtocolTvlObservation` | interface, Sprint 1 | one TVL observation with its raw decimal string, timestamp, block and source                                                                                                      | Sprint 1                                |
+| `TvlDeltaSignal`         | interface, Sprint 1 | current and baseline observations, measured elapsed window, window rule, exact delta and truncated percentage, provenance                                                         | Sprint 1                                |
 
-The four contract tests in `packages/contracts/src/index.test.ts` pin the three value sets
-and prove that the two decision enums share no value and are distinct types. Incident,
-signal, evidence-state, source-kind and feed-response contracts arrive with the sprints that
-produce them.
+The five contract tests in `packages/contracts/src/index.test.ts` pin the enum value sets and
+prove that the two decision enums share no value and are distinct types. Incident,
+evidence-state, source-kind and feed-response contracts arrive with the sprints that produce
+them.
 
 ## 5. Dependency direction rules
 
@@ -160,17 +166,16 @@ apps/*  →  packages/*  →  @cas/contracts
 - No cycles. Turborepo's task graph (`turbo.json`) orders `build`, `typecheck` and `test`
   by declared dependencies, so a cycle fails the build.
 
-**Declared edges after Sprint 0:** one. `@cas/worker` depends on `@cas/contracts`, and its
-test exercises that edge. Every other edge above is **proposed** and is declared in a package
-manifest only when code that needs it lands. Declaring edges ahead of code was avoided so
-that the manifests never claim a relationship the code does not have.
+**Declared edges after Sprint 1:** two. `@cas/worker` depends on `@cas/contracts`, and
+`@cas/graph-evidence` depends on `@cas/contracts`. Every other edge above is **proposed** and
+is declared in a package manifest only when code that needs it lands.
 
-## 6. Placeholders after Sprint 0
+## 6. Placeholders after Sprint 1
 
-Every package except `@cas/contracts` is a placeholder: a manifest, a TypeScript
-configuration and one source file that exports nothing. A placeholder proves that the
-workspace, the compiler and the task graph reach that package. It proves nothing else and
-must not be described as a feature.
+Every package except `@cas/contracts` and `@cas/graph-evidence` is a placeholder: a manifest,
+a TypeScript configuration and one source file that exports nothing. A placeholder proves
+that the workspace, the compiler and the task graph reach that package. It proves nothing
+else and must not be described as a feature.
 
 ## 7. Data origin: execution context, not source system
 
@@ -192,18 +197,44 @@ show. No default substitutes one origin for another. A failed live acquisition i
 error, never an empty result and never a silent fallback to fixture or replay data
 (`SECURITY.md` sections 4 and 7).
 
-## 8. Toolchain (Sprint 0, implementation-level and reversible)
+## 8. Toolchain (implementation-level and reversible)
 
-| Concern         | Choice                                                | Class              |
-| --------------- | ----------------------------------------------------- | ------------------ |
-| Package manager | pnpm 11.10.0, pinned in `packageManager`              | cost judgment      |
-| Task runner     | Turborepo 2.10.12                                     | charter            |
-| Language        | TypeScript 6.0.3, `NodeNext` modules, strict          | compatibility need |
-| Lint            | ESLint 10.9.1 flat config with typescript-eslint 8.69 | preference         |
-| Format          | Prettier 3.9.6                                        | preference         |
-| Tests           | Vitest 4.1.11                                         | preference         |
-| Package pattern | compiled packages: `exports` point to `dist`          | cost judgment      |
+| Concern         | Choice                                                | Class                   |
+| --------------- | ----------------------------------------------------- | ----------------------- |
+| Package manager | pnpm 11.10.0, pinned in `packageManager`              | cost judgment           |
+| Task runner     | Turborepo 2.10.12                                     | charter                 |
+| Language        | TypeScript 6.0.3, `NodeNext` modules, strict          | compatibility need      |
+| Lint            | ESLint 10.9.1 flat config with typescript-eslint 8.69 | preference              |
+| Format          | Prettier 3.9.6                                        | preference              |
+| Tests           | Vitest 4.1.11                                         | preference              |
+| Node typings    | `@types/node` 24.13.3, Sprint 1, through the catalog  | necessity for Node APIs |
+| Package pattern | compiled packages: `exports` point to `dist`          | cost judgment           |
 
 TypeScript is held below 6.1 because typescript-eslint 8.69.0 declares that peer range and
-the 7.x line is the new native compiler. `typecheck` and `test` depend on `^build` in
-`turbo.json` so that consumers see their dependencies' emitted declarations.
+the 7.x line is the new native compiler. TypeScript 6 no longer includes `@types/*` packages
+automatically, so a package that uses Node APIs lists `"types": ["node"]` in its tsconfig.
+`typecheck` and `test` depend on `^build` in `turbo.json` so that consumers see their
+dependencies' emitted declarations.
+
+## 9. Sprint 1 boundary: `@cas/graph-evidence`
+
+Implemented and tested in Sprint 1 (`SPRINT-1-REPORT.md`, D17). Built on Node's global
+`fetch`; no GraphQL client and no decimal package.
+
+| Module               | Responsibility                                                                                                                                                                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/query.ts`       | The one common GraphQL document (`Protocol` interface, `financialsDailySnapshots`, `_meta`) and its SHA-256. Only the Subgraph ID varies between deployments.                                                                                                                |
+| `src/client.ts`      | `GraphGatewayClient`: `POST {base}/subgraphs/id/{id}`, API key only in `Authorization: Bearer`, configurable base URL, explicit timeout, injectable fetch. Distinguishes `credential`, `http`, `graphql`, `schema`, `validation`, `indexing`, `timeout`, `network` failures. |
+| `src/adapter.ts`     | Strict validation of the response and mapping to `ProtocolTvlObservation` records plus `GraphQueryProvenance` with `origin: 'live'`. No protocol-specific branch.                                                                                                            |
+| `src/decimal.ts`     | Exact scaled-BigInt decimal parsing and formatting of the raw strings.                                                                                                                                                                                                       |
+| `src/tvl-delta.ts`   | Deterministic `TvlDeltaSignal`: observations sorted by timestamp, baseline chosen between 12 h and 48 h before the current observation and closest to 24 h, measured elapsed window reported, percentage truncated to six fraction digits.                                   |
+| `src/deployments.ts` | Configuration only: the selected public Subgraph IDs for Ethereum and Base.                                                                                                                                                                                                  |
+| `src/redact.ts`      | Redactor for the key value, bearer tokens and the legacy key-in-path URL form.                                                                                                                                                                                               |
+| `src/probe.ts`       | The `probe:live` command: queries every selected deployment, prints a redacted summary, writes details under the ignored `output/graph-probe/`, exits 0 on Ethereum gate pass, 1 on fail, 2 without a credential.                                                            |
+
+Inputs: `GRAPH_API_KEY` (required, from the environment) and `GRAPH_GATEWAY_URL` (optional).
+Outputs: `TvlDeltaSignal` records for `@cas/clustering` to consume in Sprint 4. Unit tests
+(36) run without network or secret; the live test runs only through `test:live`.
+
+Out of scope and not implemented: Substreams, the anomaly feed, correlation to incidents,
+any second Graph product.

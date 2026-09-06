@@ -332,3 +332,47 @@ entries are unchanged except for status pointers.
 - **Decided by:** Project owner, final Sprint 0 audit correction of 2026-09-04.
 - **Supersedes:** the per-sprint calendar and due dates of D14. D14's official milestones
   and freeze stand.
+
+## D17 Sprint 1 outcome: schema family, deployments, provider interface, chains
+
+- **Date:** 2026-09-05
+- **Status:** ACCEPTED, as the recorded result of applying D11's gate rules; the project
+  owner may override the Base keep given its two-deployment coverage
+- **Decision:**
+  - Schema family: Messari Lending/CDP standardized schema. The one common query document
+    (`packages/graph-evidence/src/query.ts`, SHA-256
+    `780080c478815b08437d6c8bd0b814c895a9a7be9547da61befa128c0ed62306`) reads the
+    standardized `Protocol` interface, `financialsDailySnapshots` and `_meta`, and succeeded
+    unchanged on schema versions 2.0.1, 3.0.1 and 3.1.0 during discovery.
+  - Provider interface: The Graph gateway, `POST {GRAPH_GATEWAY_URL}/subgraphs/id/{subgraphId}`
+    with default base `https://gateway.thegraph.com/api`, API key only in an
+    `Authorization: Bearer` header, 20 s timeout, four snapshots requested.
+  - Ethereum (mandatory): PASS on 5 September 2026 at 21:50 America/Toronto with five
+    distinct protocols in five deployments, all at block 25915123, no indexing errors:
+    Aave v3 `JCNWRypm7FYwV8fx5HhzZPSFaMxgkPuw4TnR3Gpi81zk`, Spark
+    `GbKdmBe4ycCYCQLQSjqGg6UHYoYfbyJyq5WrG35pv1si`, MakerDAO
+    `8sE6rTNkPhzZXZC6c8UQy2ghFTu5PPdGauwUBm4t7HZ1`, Compound v3
+    `AwoxEZbiWLvv6e3QdvdMZw4WDURdGbvPfHmZRc8Dpfz9`, Liquity
+    `2D2dFCLjUt3MfFgTKW8cBxiRQ3Adss7KUtYh2rTcFVY`.
+  - Base (secondary): KEPT under D11's rule. The same query document and adapter produced
+    fresh, provenance-complete results with no indexing errors at block 50935047 for two
+    deployments in the same schema family: Seamless Protocol
+    `2u4mWUV4xS19ef1MbnxZHWLLMwdPxtVifH46JbonXwXP` (3.1.0) and Moonwell
+    `33ex1ExmYQtwGVwri1AP3oMFPGSce6YbocBP7fWbsBrg` (2.0.1). Coverage is thin: the Aave v3
+    Base subgraph has no indexer allocations and the registry's Compound v3 Base entry
+    points at the Ethereum deployment. Investigation took about 33 minutes of the four-hour
+    box; the box was not extended and no protocol-specific query fork was written.
+  - Freshness rule: the current observation must be at most 48 hours old at query time;
+    the baseline is the observation between 12 and 48 hours before it that is closest to
+    24 hours, and the measured elapsed window is always reported.
+  - Substreams: no implementation time, as required. Graph Market access is not needed.
+- **Rationale:** Evidence in `SPRINT-1-REPORT.md`: 44 candidates swept live, selection and
+  rejection reasons recorded per deployment, and the probe output with block, deployment,
+  snapshot and version provenance.
+- **Consequences:** `@cas/graph-evidence` is the implemented Sprint 1 boundary. D2 remains
+  UNRESOLVED; the report appends a ranked candidate list backed by live coverage evidence
+  for the project owner to select from. Sprint 4 correlation reads the `TvlDeltaSignal`
+  contract this sprint added.
+- **Decided by:** Implementer applying D11's gate rules; Base keep subject to the project
+  owner's confirmation.
+- **Supersedes:** none. Resolves the Sprint 1 part of D11.

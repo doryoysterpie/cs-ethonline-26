@@ -28,12 +28,16 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 0: foundation, audit remediation and final correction, pending independent
-audit.** The repository holds a buildable pnpm and Turborepo TypeScript monorepo, continuous
-integration and the project charter documents. It holds no features. Every workspace package
-except `@cas/contracts` is an explicit placeholder that compiles to an empty module. No
-importer, classifier, clustering logic, Graph query, drafting logic, payment code or
-dashboard exists yet. Live integrations begin in Sprint 1 (`docs/SPRINT_BOARD.md`).
+**Sprint 1 complete, pending independent audit: the live Graph proof passed.** On
+5 September 2026 at 21:50 America/Toronto, one common standardized GraphQL query, run by
+`@cas/graph-evidence` against The Graph gateway, returned live provider-backed data for five
+distinct Ethereum lending protocols in five deployments, all at block 25915123 with no
+indexing errors, and a deterministic 24-hour TVL-delta signal was computed for each with
+complete provenance. The same query and adapter also passed for two Base deployments, so Base
+is kept as the secondary chain with thin coverage (`docs/SPRINT-1-REPORT.md`, decision D17).
+
+Everything else is still a placeholder. No importer, classifier, clustering logic, drafting
+logic, payment code or dashboard exists yet (`docs/SPRINT_BOARD.md`).
 
 ## Build sequence and the Graph gate
 
@@ -83,24 +87,24 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 0                                   |
-| ------------------------- | --------------------- | ------------------------------------------------------ |
-| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6 |
-| `apps/worker`             | `@cas/worker`         | placeholder, one workspace-boundary test               |
-| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                            |
-| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate          |
-| `packages/contracts`      | `@cas/contracts`      | three shared type contracts, four tests                |
-| `packages/database`       | `@cas/database`       | placeholder                                            |
-| `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                            |
-| `packages/classification` | `@cas/classification` | placeholder                                            |
-| `packages/clustering`     | `@cas/clustering`     | placeholder                                            |
-| `packages/graph-evidence` | `@cas/graph-evidence` | placeholder                                            |
-| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                            |
-| `packages/drafting`       | `@cas/drafting`       | placeholder                                            |
-| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                            |
-| `data/taxonomy`           |                       | reserved, empty                                        |
-| `data/fixtures`           |                       | reserved, empty, synthetic fixtures only               |
-| `docs`                    |                       | charter documents, listed below                        |
+| Path                      | Package               | State after Sprint 1                                                       |
+| ------------------------- | --------------------- | -------------------------------------------------------------------------- |
+| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                     |
+| `apps/worker`             | `@cas/worker`         | placeholder, one workspace-boundary test                                   |
+| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                |
+| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                              |
+| `packages/contracts`      | `@cas/contracts`      | three enums, the chain set and the Graph evidence contracts; five tests    |
+| `packages/database`       | `@cas/database`       | placeholder                                                                |
+| `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                                                |
+| `packages/classification` | `@cas/classification` | placeholder                                                                |
+| `packages/clustering`     | `@cas/clustering`     | placeholder                                                                |
+| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, probe; 36 unit tests |
+| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                |
+| `packages/drafting`       | `@cas/drafting`       | placeholder                                                                |
+| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                |
+| `data/taxonomy`           |                       | reserved, empty                                                            |
+| `data/fixtures`           |                       | reserved, empty, synthetic fixtures only                                   |
+| `docs`                    |                       | charter documents and sprint reports, listed below                         |
 
 A placeholder package contains one source file that exports nothing. The intended
 responsibility of each package is in `docs/ARCHITECTURE.md`. Next.js is fixed by the plan for
@@ -137,8 +141,46 @@ corepack pnpm build
 
 `corepack pnpm verify` runs the five checks in that order. Continuous integration
 (`.github/workflows/ci.yml`) runs the same sequence on every push to `main` or a `sprint-*`
-branch and on every pull request. Set `TURBO_TELEMETRY_DISABLED=1` to silence Turborepo
-telemetry locally.
+branch and on every pull request. None of these steps touches the network or needs a secret.
+Set `TURBO_TELEMETRY_DISABLED=1` to silence Turborepo telemetry locally.
+
+## Live Graph probe
+
+The Sprint 1 proof is reproducible with one Subgraph Studio API key.
+
+1. Create an API key in Subgraph Studio and put it in a local `.env` at the repository
+   root, which Git ignores:
+
+   ```
+   GRAPH_API_KEY=your-key
+   ```
+
+   The gateway base URL defaults to the public gateway; `GRAPH_GATEWAY_URL` overrides it
+   (`.env.example`).
+
+2. Load the file into your shell without echoing it, then run the probe:
+
+   ```bash
+   set -a && . ./.env && set +a && corepack pnpm --filter @cas/graph-evidence probe:live
+   ```
+
+The probe compiles the package, runs the one common query against every selected deployment
+(five Ethereum, two Base), and prints a redacted summary per deployment: protocol, chain,
+block and block time, deployment ID, schema versions, the baseline and current observation
+with the measured elapsed window, the raw current and baseline TVL, and the percentage delta.
+Detailed output goes only to `output/graph-probe/`, which Git ignores. Exit code 0 means the
+Ethereum gate passed, 1 means it failed, 2 means the credential is missing. Base is reported
+and never changes the exit code.
+
+The live integration test runs the same queries under Vitest and fails, rather than skips,
+without a credential:
+
+```bash
+set -a && . ./.env && set +a && corepack pnpm --filter @cas/graph-evidence test:live
+```
+
+The key travels only in an `Authorization: Bearer` header, is redacted from every output, and
+is never added to CI. Rules are in `docs/SECURITY.md` section 10.
 
 ## Audit policy
 
@@ -146,12 +188,12 @@ Claude implements on sprint branches. Codex independently reviews diffs, install
 dependencies when appropriate, and reruns verification. Neither agent merges to `main`
 without the project owner's instruction.
 
-## Live integrations begin in later sprints
+## Live integrations
 
-Nothing in this repository talks to The Graph, Anthropic, Postgres, Hedera, an x402
-facilitator or Bazantic yet. `.env.example` declares only the two variable names an existing
-architectural need already fixes; every other configuration category is listed there without
-a name until the sprint that introduces it.
+The Graph is live as of Sprint 1. Nothing in this repository talks to Anthropic, Postgres,
+Hedera, an x402 facilitator or Bazantic yet. `.env.example` declares only the variable names
+an existing architectural need already fixes; every other configuration category is listed
+there without a name until the sprint that introduces it.
 
 ## Hackathon non-goals
 
@@ -167,7 +209,7 @@ and automatic publication.
   committed. Fixtures are synthetic.
 - Every record carries a data origin, `live`, `fixture` or `replay`, describing how it was
   obtained in the run. A current editorial import and a current Graph query are both live.
-  Origins are never confused.
+  Origins are never confused, and a live failure never falls back to fixture or replay data.
 - Human review state and machine classification decision are separate contracts.
 - The planned x402 feed is a payment gate, not access control.
 - Nothing publishes automatically. A human turns every draft into the issue.
@@ -185,9 +227,10 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 | `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules       |
 | `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure  |
 | `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule  |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D16                                         |
+| `docs/DECISIONS.md`              | append-only decision log, D1 to D17                                         |
 | `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                        |
 | `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria |
 | `docs/SECURITY.md`               | security policy                                                             |
 | `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                     |
+| `docs/SPRINT-1-REPORT.md`        | Sprint 1 live Graph proof: discovery, selection, results, evidence          |
 | `LICENSE`                        | Apache License 2.0                                                          |
