@@ -2,7 +2,6 @@ import { parseArgs } from 'node:util';
 
 import type { DataOrigin, EditorialSourceKind } from '@cas/contracts';
 import {
-  assertCredentialPolicy,
   connectionSecrets,
   createRedactor,
   DATABASE_URL_VARIABLE,
@@ -43,8 +42,9 @@ import { validateCsvFile } from './editorial/validate.js';
  * durations, issue codes and fixed messages. Every emitted entry passes
  * through the redactor for the connection string and its password
  * components, then through the single-line guard, so it is exactly one
- * physical line. Review labels and batch ids are validated before any file
- * or database access.
+ * physical line. A configured `DATABASE_URL` is validated in full before any
+ * command is dispatched, review labels and batch ids are validated before any
+ * file or database access.
  */
 
 export interface CliIo {
@@ -106,15 +106,23 @@ function baseRedactor(env: Readonly<Record<string, string | undefined>>): Redact
 }
 
 /**
- * Applies the credential policy to a configured `DATABASE_URL` before any
- * command runs, including validation, which needs no database. A password
- * the redactor could not protect is a configuration error whatever the
- * command, so no command can print output while such a credential is set.
+ * Validates a configured `DATABASE_URL` in full before any command runs,
+ * including validation, which needs no database.
+ *
+ * An absent or empty value is not a configuration: `editorial validate`
+ * keeps working without a database. A non-empty value is validated
+ * structurally by `parseDatabaseConfig`, which is the surrounding validator
+ * that owns scheme and URL checks, and which applies the credential policy
+ * in turn. Checking the credential policy alone here was not enough: it
+ * deliberately ignores values whose scheme is not PostgreSQL, so a
+ * non-PostgreSQL URL carrying a password too short for the redactor slipped
+ * through and could reach the output of a command that never opens a
+ * database.
  */
-function assertConfiguredCredential(env: Readonly<Record<string, string | undefined>>): void {
+function assertConfiguredDatabaseUrl(env: Readonly<Record<string, string | undefined>>): void {
   const url = env[DATABASE_URL_VARIABLE];
   if (url === undefined || url.trim().length === 0) return;
-  assertCredentialPolicy(url.trim());
+  parseDatabaseConfig(env);
 }
 
 async function withDatabase<T>(
@@ -154,7 +162,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
   }
   const [group, command] = positionals;
   try {
-    assertConfiguredCredential(options.env);
+    assertConfiguredDatabaseUrl(options.env);
     if (group === 'db' && command === 'migrate') {
       const result = await withDatabase(options.env, (db) => runMigrations(db));
       emit(

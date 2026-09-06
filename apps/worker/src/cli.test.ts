@@ -260,6 +260,86 @@ describe('cli configuration handling (no database)', () => {
     }
   });
 
+  it('refuses every command when a configured DATABASE_URL is not a PostgreSQL URL', async () => {
+    // Codex Desktop reproduced a leak here: the boundary previously checked
+    // only the credential policy, which deliberately ignores non-PostgreSQL
+    // schemes, so a short password in such a URL reached the output of
+    // `editorial validate`, a command that never opens a database. The
+    // boundary now runs the full structural validation instead.
+    const SCHEME_ERROR =
+      'error[database:configuration]: DATABASE_URL rejected: scheme must be postgres or postgresql';
+    const cases: [scheme: string, url: string, password: string][] = [
+      ['https', 'https://user:a@synthetic.invalid/x', 'a'],
+      ['mysql', 'mysql://user:ab@synthetic.invalid:3306/db', 'ab'],
+      ['redis', 'redis://user:abc@synthetic.invalid:6379/0', 'abc'],
+    ];
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cas-cli-'));
+    try {
+      for (const [scheme, url, password] of cases) {
+        const named = path.join(dir, `accidental-${password}.csv`);
+        await copyFile(fixture('weekly-synthetic.csv'), named);
+        const r = await exec(['editorial', 'validate', '--file', named, '--kind', 'weekly'], {
+          DATABASE_URL: url,
+        });
+        expect(r.code, scheme).toBe(EXIT_CODES.configuration);
+        // No normal output at all: the rejection precedes file access.
+        expect(r.out, scheme).toEqual([]);
+        // Exactly one configuration-error line, equal to the fixed message.
+        expect(r.err, scheme).toHaveLength(1);
+        expect(r.err[0], scheme).toBe(SCHEME_ERROR);
+        // Exact equality above already proves nothing from the input reached
+        // the output; these assertions name the specific values anyway.
+        expect(r.err[0], scheme).not.toContain(`accidental-${password}.csv`);
+        expect(r.err[0], scheme).not.toContain(url);
+        expect(r.err[0], scheme).not.toContain('synthetic.invalid');
+        expect(r.err[0], scheme).not.toContain(scheme === 'https' ? 'https://' : `${scheme}://`);
+        // File content never reaches the output: these appear in the fixture.
+        expect(r.err[0], scheme).not.toContain('Weekly story');
+        expect(r.err[0], scheme).not.toContain('weekly.example');
+        if (password.length >= 3) expect(r.err[0], scheme).not.toContain(password);
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses every command when a configured DATABASE_URL is not a URL at all', async () => {
+    const r = await exec(
+      ['editorial', 'validate', '--file', fixture('weekly-synthetic.csv'), '--kind', 'weekly'],
+      { DATABASE_URL: 'not a url abc' },
+    );
+    expect(r.code).toBe(EXIT_CODES.configuration);
+    expect(r.out).toEqual([]);
+    expect(r.err).toEqual(['error[database:configuration]: DATABASE_URL rejected: not a URL']);
+  });
+
+  it('keeps validation working without a database and with an accepted PostgreSQL URL', async () => {
+    const argv = [
+      'editorial',
+      'validate',
+      '--file',
+      fixture('weekly-synthetic.csv'),
+      '--kind',
+      'weekly',
+    ];
+    // Absent, empty, passwordless, and a password of four or more decoded
+    // characters: all four configurations validate normally.
+    for (const env of [
+      {},
+      { DATABASE_URL: '' },
+      { DATABASE_URL: '   ' },
+      { DATABASE_URL: 'postgresql://127.0.0.1:5432/cas' },
+      { DATABASE_URL: 'postgresql://app:abcd@127.0.0.1:5432/cas' },
+      { DATABASE_URL: 'postgresql://app:%41%42%43%44@127.0.0.1:5432/cas' },
+    ]) {
+      const r = await exec(argv, env);
+      expect(r.code, JSON.stringify(env)).toBe(EXIT_CODES.ok);
+      expect(r.err, JSON.stringify(env)).toEqual([]);
+      expect(r.out, JSON.stringify(env)).toHaveLength(8);
+      expect(r.out[0], JSON.stringify(env)).toContain('file=weekly-synthetic.csv');
+    }
+  });
+
   it('redacts an accepted password that appears in printed metadata', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cas-cli-'));
     try {
