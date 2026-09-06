@@ -9,8 +9,10 @@
  */
 
 export {
+  assertCredentialPolicy,
   assertSchemaName,
   DATABASE_URL_VARIABLE,
+  MINIMUM_PASSWORD_LENGTH,
   parseDatabaseConfig,
   summarizeConnection,
   type ConnectionSummary,

@@ -220,6 +220,65 @@ describe('cli configuration handling (no database)', () => {
     expect(all).toContain('error[database:connection');
   });
 
+  it('refuses to run any command while a password too short to redact is configured', async () => {
+    // Codex reproduced `short_password_visible=true` with this exact shape:
+    // a three-character password that the redactor ignores, appearing inside
+    // an otherwise printable filename.
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cas-cli-'));
+    try {
+      const accidental = path.join(dir, 'accidental-abc.csv');
+      await copyFile(fixture('weekly-synthetic.csv'), accidental);
+      const env = { DATABASE_URL: 'postgresql://app:abc@127.0.0.1:5432/cas' };
+      for (const argv of [
+        ['editorial', 'validate', '--file', accidental, '--kind', 'weekly'],
+        ['db', 'migrate'],
+        ['db', 'check'],
+        ['editorial', 'report'],
+        [
+          'editorial',
+          'import',
+          '--file',
+          accidental,
+          '--kind',
+          'weekly',
+          '--origin',
+          'replay',
+          '--review-label',
+          'CS79',
+        ],
+      ]) {
+        const r = await exec(argv, env);
+        expect(r.code, argv.join(' ')).toBe(EXIT_CODES.configuration);
+        const all = [...r.out, ...r.err].join('\n');
+        expect(all, argv.join(' ')).toContain('at least 4 characters');
+        expect(all, argv.join(' ')).not.toContain('accidental-abc.csv');
+        expect(all, argv.join(' ')).not.toContain('postgresql://');
+        expect(all, argv.join(' ')).not.toContain('127.0.0.1');
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('redacts an accepted password that appears in printed metadata', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cas-cli-'));
+    try {
+      // Four decoded characters, the shortest the configuration accepts,
+      // supplied percent-encoded and appearing decoded in the filename.
+      const env = { DATABASE_URL: 'postgresql://app:%41%42%43%44@127.0.0.1:5432/cas' };
+      const named = path.join(dir, 'report-ABCD.csv');
+      await copyFile(fixture('weekly-synthetic.csv'), named);
+      const r = await exec(['editorial', 'validate', '--file', named, '--kind', 'weekly'], env);
+      expect(r.code).toBe(EXIT_CODES.ok);
+      const all = r.out.join('\n');
+      expect(all).toContain('file=report-[REDACTED].csv');
+      expect(all).not.toContain('ABCD');
+      expect(all).not.toContain('%41%42%43%44');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('redacts the password alone, not only the whole connection string', async () => {
     const url = 'postgresql://app:p%40ss-marker@127.0.0.1:1/cas';
     const r = await exec(['editorial', 'report', '--batch', 'not-a-uuid'], { DATABASE_URL: url });

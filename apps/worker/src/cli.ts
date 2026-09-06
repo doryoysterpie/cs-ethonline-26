@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 
 import type { DataOrigin, EditorialSourceKind } from '@cas/contracts';
 import {
+  assertCredentialPolicy,
   connectionSecrets,
   createRedactor,
   DATABASE_URL_VARIABLE,
@@ -104,6 +105,18 @@ function baseRedactor(env: Readonly<Record<string, string | undefined>>): Redact
   return createRedactor(url === undefined ? [] : connectionSecrets(url));
 }
 
+/**
+ * Applies the credential policy to a configured `DATABASE_URL` before any
+ * command runs, including validation, which needs no database. A password
+ * the redactor could not protect is a configuration error whatever the
+ * command, so no command can print output while such a credential is set.
+ */
+function assertConfiguredCredential(env: Readonly<Record<string, string | undefined>>): void {
+  const url = env[DATABASE_URL_VARIABLE];
+  if (url === undefined || url.trim().length === 0) return;
+  assertCredentialPolicy(url.trim());
+}
+
 async function withDatabase<T>(
   env: Readonly<Record<string, string | undefined>>,
   fn: (db: Database) => Promise<T>,
@@ -141,6 +154,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
   }
   const [group, command] = positionals;
   try {
+    assertConfiguredCredential(options.env);
     if (group === 'db' && command === 'migrate') {
       const result = await withDatabase(options.env, (db) => runMigrations(db));
       emit(
