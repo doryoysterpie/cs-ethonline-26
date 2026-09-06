@@ -10,17 +10,18 @@ tables; and no real row, credential, generated output or database dump entered G
 America/Toronto unless marked UTC. Count-only throughout: no title, URL, summary,
 description, cell, connection detail or absolute path appears here.
 
-| Item              | Value                                                                                                                                                     |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository        | `doryoysterpie/cs-ethonline-26`, public                                                                                                                   |
-| Branch            | `sprint-2/data-foundation`, created from the accepted Sprint 1 SHA                                                                                        |
-| Starting SHA      | `56bc95c400bc6b394f00bccde49330e7a9fcb74a` (Sprint 1, audited PASS)                                                                                       |
-| Decision commit   | `bb6872aa5cd37ef6cba7d72cbb23a152ccdfa1cf`, `docs: resolve Sprint 2 input decisions` (D20)                                                                |
-| Foundation commit | `feat(data): add Postgres ingestion foundation`; SHA in the handoff                                                                                       |
-| Proof commit      | `docs: record Sprint 2 ingestion proof`, the commit that introduces this document; SHA in the handoff                                                     |
-| Final SHA         | in the handoff                                                                                                                                            |
-| `main`            | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                                                                                                   |
-| Real inputs       | the three exports named in the charter, read from the project owner's download folder, outside the repository; never copied, never committed, not deleted |
+| Item                 | Value                                                                                                                                                                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository           | `doryoysterpie/cs-ethonline-26`, public                                                                                                                                                                                                                                                       |
+| Branch               | `sprint-2/data-foundation`, created from the accepted Sprint 1 SHA                                                                                                                                                                                                                            |
+| Starting SHA         | `56bc95c400bc6b394f00bccde49330e7a9fcb74a` (Sprint 1, audited PASS)                                                                                                                                                                                                                           |
+| Decision commit      | `bb6872aa5cd37ef6cba7d72cbb23a152ccdfa1cf`, `docs: resolve Sprint 2 input decisions` (D20)                                                                                                                                                                                                    |
+| Foundation commit    | `df9ee29203790cdbe2d283c6cf4c51db6ed9d84e`, `feat(data): add Postgres ingestion foundation`                                                                                                                                                                                                   |
+| Proof commit         | `522f5b17eeb3fc34b5771ca4c93ce28e6260b43e`, `docs: record Sprint 2 ingestion proof`, the commit that introduced this document                                                                                                                                                                 |
+| Evidence-capture fix | `fix(data): silence nested pnpm banners in ingestion commands`; SHA in the handoff. Adds `-s` to the nested pnpm call in the root scripts so that `corepack pnpm -s` keeps the path argument out of captured output, as section 10 states; also adds this row and the matching deviation note |
+| Final SHA            | in the handoff                                                                                                                                                                                                                                                                                |
+| `main`               | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                                                                                                                                                                                                                                       |
+| Real inputs          | the three exports named in the charter, read from the project owner's download folder, outside the repository; never copied, never committed, not deleted                                                                                                                                     |
 
 ## 1. Scope
 
@@ -311,6 +312,11 @@ typed; `corepack pnpm -s` suppresses it when capturing evidence.
   by schema rather than by a second database; the charter allowed either.
 - No CI PostgreSQL service was added; database tests stay behind `test:db`, as the charter
   preferred over adding a mutable container tag or a reusable secret.
+- A fourth, narrowly scoped commit follows the three the charter named. The clean-checkout
+  rerun after `522f5b17` showed that `corepack pnpm -s` silenced only the outer pnpm
+  banner; the nested `pnpm --filter` call still echoed its command line with the path
+  argument. The root scripts now pass `-s` to that nested call, and the clean-checkout run
+  was repeated on the fixed SHA. The commands' own output never contained a path.
 
 ## 12. Unresolved risks
 

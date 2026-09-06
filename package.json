@@ -19,11 +19,11 @@
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "graph:probe": "pnpm --filter @cas/graph-evidence probe:live",
     "graph:test:live": "pnpm --filter @cas/graph-evidence test:live",
-    "db:migrate": "pnpm --filter @cas/worker cli db migrate",
-    "db:check": "pnpm --filter @cas/worker cli db check",
-    "editorial:validate": "pnpm --filter @cas/worker cli editorial validate",
-    "editorial:import": "pnpm --filter @cas/worker cli editorial import",
-    "editorial:report": "pnpm --filter @cas/worker cli editorial report",
+    "db:migrate": "pnpm -s --filter @cas/worker cli db migrate",
+    "db:check": "pnpm -s --filter @cas/worker cli db check",
+    "editorial:validate": "pnpm -s --filter @cas/worker cli editorial validate",
+    "editorial:import": "pnpm -s --filter @cas/worker cli editorial import",
+    "editorial:report": "pnpm -s --filter @cas/worker cli editorial report",
     "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db"
   },
   "devDependencies": {
