@@ -31,7 +31,8 @@ Decided by, Supersedes.
 ## D2 Watchlist
 
 - **Date:** 2026-09-04
-- **Status:** UNRESOLVED
+- **Status:** SUPERSEDED by D20 (2026-09-06), which records the initial standardized-TVL
+  watchlist selected on the Sprint 1 evidence
 - **Decision:** No watchlist is selected. Sprint 1 must rank candidate protocols by live
   indexed-data availability and comparability before any final selection.
 - **Rationale:** Prominence alone is not a selection criterion. A protocol with no
@@ -115,7 +116,7 @@ Decided by, Supersedes.
 ## D7a Input format
 
 - **Date:** 2026-09-04
-- **Status:** PROVISIONAL (provisionally decided)
+- **Status:** PROVISIONAL (provisionally decided); confirmed ACCEPTED by D20 (2026-09-06)
 - **Decision:** The hackathon baseline accepts standards-compliant CSV exports from the
   existing Excel-based RSS workflow: the master feed export and the weekly snapshot sheets,
   with the representative schemas recorded in `DATA_INPUTS.md`.
@@ -132,7 +133,8 @@ Decided by, Supersedes.
 ## D7b Transport
 
 - **Date:** 2026-09-04
-- **Status:** UNRESOLVED
+- **Status:** SUPERSEDED by D20 (2026-09-06), which fixes manual on-demand CSV import through
+  a command-line interface
 - **Decision:** The transport for the CSV inputs, whether manual upload, a watched local
   export directory or direct authenticated workbook access, must be chosen before Sprint 2.
   Permitted fields, refresh cadence and failure behaviour are decided with it.
@@ -474,3 +476,49 @@ entries are unchanged except for status pointers.
   Codex's second audit.
 - **Supersedes:** D18's identity-key definition. D18's other rules and recorded results
   stand.
+
+## D20 Sprint 2 inputs: watchlist, source and transport, provenance, preservation
+
+- **Date:** 2026-09-06
+- **Status:** ACCEPTED
+- **Decision:**
+  - **D2, initial standardized-TVL watchlist.** The initial watchlist for the standardized
+    Graph TVL lane is, on Ethereum: Aave v3, Spark, MakerDAO, Compound v3, Liquity; on Base:
+    Seamless Protocol, Moonwell. Base is explicitly confirmed as `KEEP`. Its two-protocol
+    coverage continues to be labelled thin coverage wherever Base is described. This
+    decision does not satisfy and does not silently replace Plan 2.0's separate
+    ten-protocol administrative-event watchlist. Sprint 4 must either expand that watchlist
+    using verified contracts and event sources or record an explicit scope deviation. No
+    document may claim that the ten-protocol requirement has already been delivered.
+  - **D7a and D7b, source and transport.** CSV remains the accepted baseline source format.
+    Import is manual and on demand for the hackathon; the import cadence is on demand.
+    Sprint 2 provides a command-line interface. Sprint 6 may add a dashboard upload wrapper
+    that invokes the same ingestion service. No watched directory, scheduled importer,
+    Google authentication, cloud-drive integration or background polling is added.
+  - **Provenance.** Every import requires an explicit `DataOrigin`; there is no default.
+    `replay` is used for the supplied historical exports, `fixture` for synthetic test data,
+    and `live` only for a genuinely current import performed during the run.
+  - **Failure and preservation rules.** Structural CSV corruption or an invalid header set
+    rejects the entire file before any database write. Semantic row problems retain and
+    quarantine the row with stable issue codes. A batch containing quarantined rows
+    completes as `completed_with_issues`. Nothing is silently dropped. Repeating the same
+    file with the same import configuration creates no duplicate batch and no duplicate
+    source rows. Every original cell is preserved, including repeated blank-column
+    positions and unknown columns. Recognized fields are derived only from known, named
+    headers, never from positions. The master sheet's `ch` field is working state and never
+    becomes a stable editorial review decision. For weekly extracts, `TRUE` means selected
+    and `FALSE` means rejected; review state is kept separate from source content and from
+    machine classification. Weekly date boundaries are not inferred; D10 remains unresolved.
+- **Rationale:** The Sprint 1 evidence (D17 to D19, audited PASS at `56bc95c4`) identifies
+  the seven deployments with live, provider-validated standardized data, which is the
+  evidence D2 required before any selection. The transport question in D7b is settled by the
+  hackathon constraint that the project owner already produces CSV exports on demand, so a
+  manual command-line import carries no new account, credential or background surface. The
+  provenance and preservation rules restate `DATA_INPUTS.md` sections 3, 5 to 8 and 12 as
+  binding rules for the Sprint 2 importer.
+- **Consequences:** Sprint 2 builds the local PostgreSQL foundation and the manual CSV
+  ingestion path under these rules (`SPRINT-2-REPORT.md`). `SPRINT_BOARD.md` Sprint 4 must
+  address the administrative-event watchlist explicitly. D10 stays unresolved and no
+  importer applies a week boundary.
+- **Decided by:** Project owner, Sprint 2 implementation instruction of 2026-09-06.
+- **Supersedes:** D2 and D7b. Confirms D7a as accepted.

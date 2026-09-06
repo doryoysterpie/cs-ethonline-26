@@ -28,8 +28,8 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 1 corrected after two audits, pending final audit: the live Graph proof passes on
-provider-validated evidence.** On 6 September 2026 at 00:19 America/Toronto, one common
+**Sprint 1 audited: Codex issued PASS for `56bc95c4` on 6 September 2026. The live Graph
+proof passes on provider-validated evidence.** On 6 September 2026 at 00:19 America/Toronto, one common
 standardized GraphQL query, run by `@cas/graph-evidence` against The Graph gateway, returned
 live data for five Ethereum lending deployments at block 25915866. The gate validated each
 response's provider-returned slug, network, protocol type and schema version against the
@@ -38,6 +38,8 @@ five distinct canonical identities (normalized chain plus provider slug), subgra
 deployment IDs, and computed a deterministic 24-hour TVL-delta signal for each with complete
 provenance. Both Base targets passed the same validation at block 50939508, so Base is kept
 as the secondary chain with thin coverage (`docs/SPRINT-1-REPORT.md`, decisions D17 to D19).
+Decision D20 records the initial watchlist selected on that evidence and the Sprint 2 input
+rules.
 
 Everything else is still a placeholder. No importer, classifier, clustering logic, drafting
 logic, payment code or dashboard exists yet (`docs/SPRINT_BOARD.md`).
@@ -237,7 +239,7 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 | `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules       |
 | `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure  |
 | `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule  |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D19                                         |
+| `docs/DECISIONS.md`              | append-only decision log, D1 to D20                                         |
 | `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                        |
 | `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria |
 | `docs/SECURITY.md`               | security policy                                                             |
