@@ -28,16 +28,16 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 1 corrected after audit, pending re-audit: the live Graph proof passes on
-provider-validated evidence.** On 5 September 2026 at 23:03 America/Toronto, one common
+**Sprint 1 corrected after two audits, pending final audit: the live Graph proof passes on
+provider-validated evidence.** On 6 September 2026 at 00:19 America/Toronto, one common
 standardized GraphQL query, run by `@cas/graph-evidence` against The Graph gateway, returned
-live data for five Ethereum lending deployments at block 25915485. The gate validated each
-response's provider-returned network, protocol type, schema version and deployment against
-the registry's declared expectations, counted five distinct provider identities, subgraph IDs
-and deployment IDs, and computed a deterministic 24-hour TVL-delta signal for each with
-complete provenance. Both Base targets passed the same validation at block 50937221, so Base
-is kept as the secondary chain with thin coverage (`docs/SPRINT-1-REPORT.md`, decisions D17
-and D18).
+live data for five Ethereum lending deployments at block 25915866. The gate validated each
+response's provider-returned slug, network, protocol type and schema version against the
+registry's declared expectations, required a present and distinct deployment ID, counted
+five distinct canonical identities (normalized chain plus provider slug), subgraph IDs and
+deployment IDs, and computed a deterministic 24-hour TVL-delta signal for each with complete
+provenance. Both Base targets passed the same validation at block 50939508, so Base is kept
+as the secondary chain with thin coverage (`docs/SPRINT-1-REPORT.md`, decisions D17 to D19).
 
 Everything else is still a placeholder. No importer, classifier, clustering logic, drafting
 logic, payment code or dashboard exists yet (`docs/SPRINT_BOARD.md`).
@@ -90,24 +90,24 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 1                                                                      |
-| ------------------------- | --------------------- | ----------------------------------------------------------------------------------------- |
-| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                    |
-| `apps/worker`             | `@cas/worker`         | placeholder, one workspace-boundary test                                                  |
-| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                               |
-| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                             |
-| `packages/contracts`      | `@cas/contracts`      | three enums, the chain set and the Graph evidence contracts; five tests                   |
-| `packages/database`       | `@cas/database`       | placeholder                                                                               |
-| `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                                                               |
-| `packages/classification` | `@cas/classification` | placeholder                                                                               |
-| `packages/clustering`     | `@cas/clustering`     | placeholder                                                                               |
-| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 80 unit tests |
-| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                               |
-| `packages/drafting`       | `@cas/drafting`       | placeholder                                                                               |
-| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                               |
-| `data/taxonomy`           |                       | reserved, empty                                                                           |
-| `data/fixtures`           |                       | reserved, empty, synthetic fixtures only                                                  |
-| `docs`                    |                       | charter documents and sprint reports, listed below                                        |
+| Path                      | Package               | State after Sprint 1                                                                       |
+| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------ |
+| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                     |
+| `apps/worker`             | `@cas/worker`         | placeholder, one workspace-boundary test                                                   |
+| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                |
+| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                              |
+| `packages/contracts`      | `@cas/contracts`      | three enums, the chain set and the Graph evidence contracts; five tests                    |
+| `packages/database`       | `@cas/database`       | placeholder                                                                                |
+| `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                                                                |
+| `packages/classification` | `@cas/classification` | placeholder                                                                                |
+| `packages/clustering`     | `@cas/clustering`     | placeholder                                                                                |
+| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests |
+| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                |
+| `packages/drafting`       | `@cas/drafting`       | placeholder                                                                                |
+| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                |
+| `data/taxonomy`           |                       | reserved, empty                                                                            |
+| `data/fixtures`           |                       | reserved, empty, synthetic fixtures only                                                   |
+| `docs`                    |                       | charter documents and sprint reports, listed below                                         |
 
 A placeholder package contains one source file that exports nothing. The intended
 responsibility of each package is in `docs/ARCHITECTURE.md`. Next.js is fixed by the plan for
@@ -174,8 +174,10 @@ type, schema version and deployment against the registry's declared expectations
 a redacted summary per deployment: provider identity beside the configured slug, block and
 block time, deployment ID, the baseline and current observation with the measured elapsed
 window and freshness, the raw current and baseline TVL, and the percentage delta. A mismatch
-prints the field, the expected value and the received value. Detailed output goes only to
-`output/graph-probe/`, which Git ignores. Exit code 0 means the Ethereum gate passed on five
+prints the field, the expected value and the received value. Every printed line is redacted
+and every provider-controlled value is rendered as single-line text, so a hostile endpoint
+can neither leak the key nor forge a gate line. Detailed output goes only to
+`output/graph-probe/`, which Git ignores, through the same redactor. Exit code 0 means the Ethereum gate passed on five
 distinct provider-validated identities, 1 means it failed, 2 means the credential is missing
 or the registry is invalid. Base is reported as `PASS/KEEP` only when both configured Base
 targets verify, otherwise `FAIL/DROP`, and never changes the exit code.
@@ -235,7 +237,7 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 | `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules       |
 | `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure  |
 | `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule  |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D17                                         |
+| `docs/DECISIONS.md`              | append-only decision log, D1 to D19                                         |
 | `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                        |
 | `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria |
 | `docs/SECURITY.md`               | security policy                                                             |

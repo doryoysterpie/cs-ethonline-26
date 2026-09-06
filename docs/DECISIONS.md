@@ -382,8 +382,9 @@ entries are unchanged except for status pointers.
 ## D18 Corrected Sprint 1 gate: provider-validated identities
 
 - **Date:** 2026-09-05
-- **Status:** ACCEPTED, as the recorded result of the corrected gate. The project owner may
-  still override the Base keep on coverage grounds.
+- **Status:** ACCEPTED, as the recorded result of the corrected gate; its identity-key
+  definition is SUPERSEDED by D19 (2026-09-06). The project owner may still override the
+  Base keep on coverage grounds.
 - **Decision:**
   - The executable Graph release gate counts only provider-validated identities. For every
     configured target the live `protocol.network`, `protocol.type`, `protocol.schemaVersion`
@@ -428,3 +429,48 @@ entries are unchanged except for status pointers.
 - **Decided by:** Implementer applying D11's rules with the corrected gate, after Codex's
   audit.
 - **Supersedes:** D17's gate definition and recorded results.
+
+## D19 Final Sprint 1 correction: output safety and canonical identity
+
+- **Date:** 2026-09-06
+- **Status:** ACCEPTED, as the recorded result of the final corrected gate. The project
+  owner may still override the Base keep on coverage grounds.
+- **Decision:**
+  - Output safety. The evaluation and gate formatters redact their final output and render
+    every provider-controlled value (name, slug, network, type, schema version, mismatch
+    values, error messages) as safe single-line text with control characters and ANSI
+    sequences shown as visible escapes. The probe and the live tests use only these
+    formatters; the ignored details file is serialized through the same redactor. The
+    evidence itself is never mutated for display. A validated gateway base whose host or
+    path contains the active key, raw or percent-encoded, is rejected before any request
+    and never echoed.
+  - Canonical identity. The protocol identity key is the normalized chain plus the
+    provider-returned slug. The provider name is required display metadata and never
+    creates distinctness, so a renamed protocol counts once. Each registry target declares
+    `expectedProviderSlug` from the verified live runs (`aave-v3`, `spark-lend`,
+    `makerdao`, `compound-v3`, `liquity`, `seamless-protocol`, `moonwell`), and the live
+    slug must equal it before the target can count. The registry is validated before any
+    request: non-empty expected slugs, expected networks that normalize to the configured
+    chain, protocol types consistent with the `lending` family, unique labels and Subgraph
+    IDs. A null, empty or whitespace-only `_meta.deployment` is missing.
+  - Live rerun on the final gate, 2026-09-06 at 00:19 America/Toronto
+    (2026-09-06T04:19:23Z): Ethereum PASS, five valid of five at block 25915866, five
+    distinct canonical identities, subgraph IDs and deployment IDs, every provider slug equal
+    to its expectation. Base PASS/KEEP under the all-targets rule, two valid of two at block
+    50939508, both provider slugs equal to their expectations. The Base live test now asserts
+    the strict gate passes and reports the gate reasons on failure.
+- **Rationale:** Codex's audit of `b7e1fc80` reproduced two exploits. First, a
+  Graph-compatible endpoint returning the bearer key as `protocol.name` reached the probe
+  output, because `formatEvaluation()` emitted provider fields without redaction. Second,
+  the identity key `chain:slug:name` let one protocol count twice under two display names.
+  The handoff for `b7e1fc80` claimed a renamed protocol already counted once; that claim was
+  false at that commit and is corrected here. D18's recorded results stand as evidence; its
+  identity-key definition is superseded.
+- **Consequences:** `packages/graph-evidence/src/display.ts` and the redacting formatters in
+  `probe.ts`; `expectedProviderSlug` in `deployments.ts`; `validateRegistry` in `gate.ts`;
+  102 unit tests in `@cas/graph-evidence`, including the eight output-safety cases, the
+  forgery cases and the identity regressions. D2 stays UNRESOLVED.
+- **Decided by:** Implementer applying D11's rules with the final corrected gate, after
+  Codex's second audit.
+- **Supersedes:** D18's identity-key definition. D18's other rules and recorded results
+  stand.

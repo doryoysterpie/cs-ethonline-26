@@ -118,10 +118,25 @@ integration inherits:
 - The live gate trusts provider-returned facts, never registry labels. The adapter requires
   the provider's protocol `name`, `slug`, `network`, `type` and `schemaVersion`; the
   configured slug is never substituted for the provider slug. Before a target can count
-  toward a gate, its live `network`, `type`, `schemaVersion` and deployment ID are compared
-  with the registry's declared expectations, and a mismatch is a structured, redacted
+  toward a gate, its live `slug`, `network`, `type` and `schemaVersion` are compared with the
+  registry's declared expectations, and its deployment ID must be present, non-empty and
+  distinct; no expected deployment ID is declared. A mismatch is a structured, redacted
   failure naming the target label, field, expected value, received value and subgraph ID.
-  Distinctness is counted over provider identity, subgraph ID and deployment ID together.
+  Canonical protocol identity is the normalized chain plus the provider-returned slug; the
+  provider name is display metadata and never creates distinctness. Distinctness is counted
+  over canonical identity, subgraph ID and deployment ID together. The registry itself is
+  validated before any request: non-empty expected slugs, networks that normalize to the
+  configured chain, protocol types consistent with the schema family, unique labels and
+  Subgraph IDs.
+- Every output boundary is safe against provider-controlled content. The evaluation and
+  gate formatters redact their final output and render provider names, slugs, networks,
+  types, schema versions, mismatch values and error messages as single-line text with
+  control characters and ANSI sequences shown as visible escapes, so a provider cannot leak
+  the key through a field or forge a `PASS`, `FAIL`, target or gate line. The ignored
+  details file is serialized through the same redactor. The evidence itself is never
+  mutated for display.
+- A validated gateway base whose host or path contains the active `GRAPH_API_KEY`, raw or
+  percent-encoded, is rejected before any request, and the rejected URL is never echoed.
 - Freshness rejects a current observation older than 48 hours and one dated more than
   120 seconds in the future; a negative age never passes by accident.
 - A live failure never falls back to fixture or replay data. The live code path contains no
