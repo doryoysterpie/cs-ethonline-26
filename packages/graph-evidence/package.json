@@ -2,7 +2,7 @@
   "name": "@cas/graph-evidence",
   "version": "0.0.0",
   "private": true,
-  "description": "Live The Graph evidence acquisition and provenance. Placeholder after Sprint 0.",
+  "description": "Live Graph-provider queries over the Messari standardized schema, with provenance and a deterministic TVL-delta signal. Sprint 1 live proof.",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,17 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:live": "pnpm -w exec turbo run build --filter=@cas/graph-evidence && vitest run --config vitest.live.config.ts",
+    "probe:live": "pnpm -w exec turbo run build --filter=@cas/graph-evidence && node dist/probe.js"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

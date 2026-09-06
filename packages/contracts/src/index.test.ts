@@ -1,9 +1,11 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
+  CHAINS,
   CLASSIFICATION_DECISIONS,
   DATA_ORIGINS,
   REVIEW_STATES,
+  type ChainId,
   type ClassificationDecision,
   type DataOrigin,
   type ReviewState,
@@ -31,5 +33,10 @@ describe('@cas/contracts', () => {
     expect([...DATA_ORIGINS]).toEqual(['live', 'fixture', 'replay']);
     expectTypeOf<DataOrigin>().not.toEqualTypeOf<ReviewState>();
     expectTypeOf<DataOrigin>().not.toEqualTypeOf<ClassificationDecision>();
+  });
+
+  it('fixes the chain set from decision D11 with Ethereum first', () => {
+    expect([...CHAINS]).toEqual(['ethereum', 'base']);
+    expectTypeOf<ChainId>().not.toEqualTypeOf<DataOrigin>();
   });
 });
