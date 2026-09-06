@@ -1,9 +1,9 @@
 # Data inputs
 
 This document describes the editorial data the project consumes, its shape, its trust level
-and the rules any future importer must obey. It records requirements. Nothing described here
-is implemented in Sprint 0; the importer is Sprint 2 work, gated on decision D7b in
-`DECISIONS.md`.
+and the rules the importer obeys. Sections 1 to 13 record the requirements as written in
+Sprint 0; section 14 records how the Sprint 2 importer enforces them (decision D20 in
+`DECISIONS.md`).
 
 ## 1. The present manual workflow and the target runtime flow
 
@@ -83,7 +83,8 @@ Column names are reproduced exactly, including capitalization and spaces.
 | `Category`     | As above.                                            |
 
 Some exports include unnamed blank columns. The importer must ignore them safely, by name
-rather than by position, and must not fail on their presence or absence.
+rather than by position, and must not fail on their presence or absence. Section 14 records
+the required and recognized header names the Sprint 2 importer enforces.
 
 **Representative files inspected outside the repository**
 
@@ -224,7 +225,8 @@ owner's machine for development, calibration and evaluation, under these conditi
 
 ## 11. Synthetic fixture requirements
 
-Fixtures under `data/fixtures` must:
+Sprint 2 added `data/fixtures/editorial/` (described in `data/fixtures/README.md`), which
+meets every requirement below. Fixtures under `data/fixtures` must:
 
 - be synthetic, containing no real title, summary, description, URL body or row;
 - reproduce the representative schemas above, including at least one unnamed blank column,
@@ -247,12 +249,78 @@ be traced to its sources is a provenance failure and must be reported as an expl
 ## 13. Decisions that govern this document
 
 - **D7a** Input format: standards-compliant CSV exports from the existing Excel RSS workflow
-  are the hackathon baseline. Provisionally decided.
+  are the hackathon baseline. Provisionally decided; confirmed accepted by D20.
 - **D7b** Transport: manual upload, watched local export or direct authenticated workbook
-  access. Unresolved; due by 5 September, before Sprint 2 (D16).
+  access. Superseded by D20: manual, on-demand import through a command-line interface.
 - **D15** Classification before selection: the runtime flow in section 1. Accepted.
 - **D16** Gate-aligned implementation sequence: import and normalization are Sprint 2,
   classification and the review queue Sprint 3. Accepted.
+- **D20** Sprint 2 inputs: CSV baseline, manual on-demand CLI import, explicit `DataOrigin`
+  with no default, and the failure and preservation rules enforced in section 14. Accepted.
 
 A file-based CSV import is the required reliable baseline. Direct Excel or cloud-workbook
 synchronization must not become a prerequisite for the Graph release candidate.
+
+## 14. Sprint 2 importer: rules as enforced
+
+Implemented in `@cas/worker` and `@cas/database` (`ARCHITECTURE.md` section 10) and proven on
+the synthetic fixtures and the three real exports (`SPRINT-2-REPORT.md`).
+
+**Headers.** Fields are recognized by exact header name after Unicode NFC normalization and
+trimming, never by position. Known names: `ch`, `Date Posted`, `Date Updated`, `Title`,
+`Author`, `Description`, `Summary`, `URL`, `Category`. Required: `ch`, `Date Posted`,
+`Date Updated`, `Title`, `URL`. Blank headers are accepted at any position and their cells
+are kept in the ordered raw cell list without ever being mapped to a field. Unknown non-blank
+headers are kept in the raw named fields and reported only as a count. A duplicated non-blank
+header or a missing required header rejects the file.
+
+**Whole-file rejection, before any write:** invalid UTF-8; a NUL character (PostgreSQL text
+cannot hold it); a quoting fault; an inconsistent column count; no header; a duplicated
+non-blank header; a missing required header. The parser's own message is never surfaced,
+only its error code and line number.
+
+**Row issues** (stable codes; `error` quarantines the row, `warning` leaves it accepted):
+
+| Code                     | Field                       | Severity | Meaning                                                               |
+| ------------------------ | --------------------------- | -------- | --------------------------------------------------------------------- |
+| `title_missing`          | Title                       | error    | empty or whitespace-only title                                        |
+| `url_missing`            | URL                         | error    | empty URL                                                             |
+| `url_invalid`            | URL                         | error    | URL cannot be parsed                                                  |
+| `url_scheme_not_allowed` | URL                         | error    | scheme is not `http` or `https`                                       |
+| `timestamp_missing`      | Date Posted or Date Updated | error    | empty timestamp                                                       |
+| `timestamp_invalid`      | Date Posted or Date Updated | error    | not a strict timezone-aware ISO 8601 value (naive values are invalid) |
+| `review_value_unknown`   | ch                          | error    | weekly `ch` is not `TRUE`, `FALSE` or blank; no review state written  |
+| `ch_token_unrecognized`  | ch                          | warning  | master `ch` is not `TRUE`, `FALSE` or blank; stored as working state  |
+
+A quarantined row keeps every raw cell, its issues, and, for a weekly file with a recognized
+token, its review entry. Issue messages are fixed strings and never carry source content.
+
+**Storage.** Every cell is stored exactly as read (`raw_cells`), every named column exactly
+as read (`raw_fields`), and the known columns again in dedicated raw columns. Parsed UTC
+instants, the normalized title, the derived plain text of `Summary` and `Description` (with
+the transformation label `html-to-text@1`) and the canonical URL are separate columns.
+Derived empties are `null`; raw empties stay empty strings. Nothing is truncated: the real
+master export's 48,329-character field is stored whole. Each row carries a deterministic
+SHA-256 of its exact cells.
+
+**Duplicates.** Every row is stored; rows whose canonical URL is equal reference the same
+`url_groups` record. Canonicalization (matching key only, the original URL untouched):
+lowercase scheme and host, default port, fragment and userinfo removed, tracking parameters
+removed (`utm_*`, `fbclid`, `gclid`, `dclid`, `gbraid`, `wbraid`, `msclkid`, `mc_cid`,
+`mc_eid`, `igshid`, `yclid`, `ttclid`, `twclid`, `li_fat_id`, `_hsenc`, `_hsmi`, `mkt_tok`,
+`oly_anon_id`, `oly_enc_id`, `vero_id`, `s_kwcid`), remaining parameters sorted by name then
+value, path and trailing slash preserved. No URL is ever fetched.
+
+**Review state.** Weekly imports create one `review_snapshots` row carrying the label given
+on the command line and one `review_entries` row per source row with a recognized token:
+`TRUE` selected, `FALSE` rejected, blank unreviewed. Master imports never create a snapshot;
+the master `ch` value is stored raw only. Nothing applies a week boundary (D10).
+
+**Batches and idempotency.** A batch stores the explicit origin, the source kind, the weekly
+label, the file's basename only, its SHA-256 and byte length, the ordered header cells, the
+importer version, status, parsed, accepted and quarantined counts, start and completion
+times, and an idempotency key over the file hash, source kind, origin, label, importer
+version and text-transform version. Repeating an import with the same key identifies the
+original batch and writes nothing; a different origin or label is a different batch. A batch
+is written in one transaction and rolled back entirely on any failure or interrupt, so the
+only stored statuses are `completed` and `completed_with_issues`.

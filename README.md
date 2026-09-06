@@ -28,6 +28,16 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
+**Sprint 2 built, pending Codex audit: the local PostgreSQL foundation and the manual CSV
+ingestion path exist and are proven on the real exports.** On 6 September 2026 a fresh local
+PostgreSQL 17 database was migrated by the checksummed forward-only runner in `@cas/database`,
+a second run was a no-op, and `@cas/worker` validated and imported the three real exports as
+`replay` data: 23,910 master rows, 157 CS79 rows and 181 CS86 rows, every logical row stored,
+CS79 completing with three quarantined rows whose issues are recorded by code, weekly review
+state kept in its own tables, duplicate URLs kept as separate rows linked by canonical URL,
+and a second import of the same files writing nothing (`docs/SPRINT-2-REPORT.md`, decision
+D20). No real row, credential or generated output is in Git; fixtures are synthetic.
+
 **Sprint 1 audited: Codex issued PASS for `56bc95c4` on 6 September 2026. The live Graph
 proof passes on provider-validated evidence.** On 6 September 2026 at 00:19 America/Toronto, one common
 standardized GraphQL query, run by `@cas/graph-evidence` against The Graph gateway, returned
@@ -41,8 +51,8 @@ as the secondary chain with thin coverage (`docs/SPRINT-1-REPORT.md`, decisions 
 Decision D20 records the initial watchlist selected on that evidence and the Sprint 2 input
 rules.
 
-Everything else is still a placeholder. No importer, classifier, clustering logic, drafting
-logic, payment code or dashboard exists yet (`docs/SPRINT_BOARD.md`).
+Everything else is still a placeholder. No classifier, clustering logic, drafting logic,
+payment code or dashboard exists yet (`docs/SPRINT_BOARD.md`).
 
 ## Build sequence and the Graph gate
 
@@ -92,14 +102,14 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 1                                                                       |
+| Path                      | Package               | State after Sprint 2                                                                       |
 | ------------------------- | --------------------- | ------------------------------------------------------------------------------------------ |
 | `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                     |
-| `apps/worker`             | `@cas/worker`         | placeholder, one workspace-boundary test                                                   |
+| `apps/worker`             | `@cas/worker`         | implemented: streaming CSV validation, row evaluation, manual import, CLI; 56 unit tests   |
 | `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                |
 | `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                              |
-| `packages/contracts`      | `@cas/contracts`      | three enums, the chain set and the Graph evidence contracts; five tests                    |
-| `packages/database`       | `@cas/database`       | placeholder                                                                                |
+| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests    |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, first migration, parameterized ingestion ops; 14 unit tests |
 | `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                                                                |
 | `packages/classification` | `@cas/classification` | placeholder                                                                                |
 | `packages/clustering`     | `@cas/clustering`     | placeholder                                                                                |
@@ -108,7 +118,7 @@ allows; otherwise they are dropped. Requirement status per track is in
 | `packages/drafting`       | `@cas/drafting`       | placeholder                                                                                |
 | `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                |
 | `data/taxonomy`           |                       | reserved, empty                                                                            |
-| `data/fixtures`           |                       | reserved, empty, synthetic fixtures only                                                   |
+| `data/fixtures`           |                       | synthetic editorial CSV fixtures for every known source hazard (`data/fixtures/README.md`) |
 | `docs`                    |                       | charter documents and sprint reports, listed below                                         |
 
 A placeholder package contains one source file that exports nothing. The intended
@@ -194,6 +204,56 @@ set -a && . ./.env && set +a && corepack pnpm graph:test:live
 The key travels only in an `Authorization: Bearer` header, is redacted from every output, and
 is never added to CI. Rules are in `docs/SECURITY.md` section 10.
 
+## Local database and editorial import
+
+Sprint 2 adds a local PostgreSQL foundation and a manual, on-demand CSV import (decision
+D20). Requirements: a local PostgreSQL 17 you can connect to without a password, and
+`DATABASE_URL` in the ignored `.env`, for example a loopback URL naming a database created
+for this project. Load the file into your shell without echoing it, as for the Graph probe.
+
+```bash
+set -a && . ./.env && set +a && corepack pnpm db:migrate
+```
+
+`db:migrate` applies the numbered SQL migrations under `packages/database/migrations` in
+order, records each one's SHA-256 in `schema_migrations`, refuses to run if a recorded
+checksum no longer matches its file, holds an advisory lock so two runners cannot race, and
+is a reported no-op when nothing is pending. `db:check` prints connectivity, server version,
+the connection transport and the migration status without printing the connection string.
+
+```bash
+corepack pnpm editorial:validate --file /path/to/export.csv --kind weekly
+```
+
+Validation needs no database and writes nothing: it streams the file, rejects it as a whole
+on a structural fault (invalid UTF-8, a NUL character, a quoting fault, inconsistent column
+counts, a duplicated or missing required header), and otherwise prints count-only results:
+rows, accepted and quarantined, issue codes, `ch` token counts, duplicate URL excess and the
+longest cell. `--kind` is `master` or `weekly`.
+
+```bash
+set -a && . ./.env && set +a && corepack pnpm editorial:import --file /path/to/export.csv --kind weekly --origin replay --review-label CS79
+```
+
+Import requires an explicit `--origin` (`live`, `fixture` or `replay`; there is no default),
+requires `--review-label` for a weekly file and forbids it for a master file, validates the
+file structurally before any write, and then writes the batch in one transaction. Every
+original cell is stored, unknown columns included; rows with semantic problems are stored
+as quarantined with stable issue codes, never dropped; weekly `TRUE` and `FALSE` become
+`selected` and `rejected` review entries in their own snapshot, while the master `ch` column
+stays working state; duplicate URLs remain separate rows sharing a URL group. Importing the
+same file with the same configuration again identifies the original batch and writes
+nothing. `editorial:report` prints count-only reconciliation for every batch.
+
+The commands print only basenames, hashes, counts, ids, statuses, durations and issue codes,
+and every line passes through a redactor for the connection string. pnpm itself echoes the
+command line it runs, path argument included; pass `-s` to `corepack pnpm` when capturing
+evidence. Exit codes: 0 success (including `completed_with_issues`), 2 configuration,
+3 structural input, 4 database, 5 unexpected, 130 interrupted. PostgreSQL integration tests
+run only through `corepack pnpm test:db`, need `DATABASE_URL`, and create and drop only
+schemas named `cas_test_<random>` in that database. Rules are in `docs/SECURITY.md`
+section 11 and `docs/DATA_INPUTS.md` section 14.
+
 ## Audit policy
 
 Claude implements on sprint branches. Codex independently reviews diffs, installs locked
@@ -202,8 +262,9 @@ without the project owner's instruction.
 
 ## Live integrations
 
-The Graph is live as of Sprint 1. Nothing in this repository talks to Anthropic, Postgres,
-Hedera, an x402 facilitator or Bazantic yet. `.env.example` declares only the variable names
+The Graph is live as of Sprint 1. A local PostgreSQL is used as of Sprint 2, through
+`@cas/database` only; no live database target is chosen (D8). Nothing in this repository
+talks to Anthropic, Hedera, an x402 facilitator or Bazantic yet. `.env.example` declares only the variable names
 an existing architectural need already fixes; every other configuration category is listed
 there without a name until the sprint that introduces it.
 
@@ -245,4 +306,5 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 | `docs/SECURITY.md`               | security policy                                                             |
 | `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                     |
 | `docs/SPRINT-1-REPORT.md`        | Sprint 1 live Graph proof: discovery, selection, results, evidence          |
+| `docs/SPRINT-2-REPORT.md`        | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports  |
 | `LICENSE`                        | Apache License 2.0                                                          |

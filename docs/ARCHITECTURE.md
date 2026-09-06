@@ -1,8 +1,8 @@
 # Architecture
 
 This document records the intended architecture as fixed by the Sprint 0 charter, the
-supplied project plan (Plan 2.0) and decisions D11 to D19, and the state of each component
-after Sprint 1 and its two audit corrections. Where the project owner or the plan fixes something, this document says so.
+supplied project plan (Plan 2.0) and decisions D11 to D20, and the state of each component
+after Sprint 2. Where the project owner or the plan fixes something, this document says so.
 Where the implementer has proposed something that is not fixed, it is marked **proposed**
 and is open to revision.
 
@@ -12,23 +12,23 @@ inside the repository. No separate plan document exists here.
 
 ## 1. Components
 
-| Package               | Responsibility (intended)                                                                                                                                                                                      | State after Sprint 1                                                                          |
+| Package               | Responsibility (intended)                                                                                                                                                                                      | State after Sprint 2                                                                          |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                                      | three enums, the chain set, and the Graph evidence contracts; tested                          |
+| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                                      | seven enums, the chain set, and the Graph evidence contracts; tested                          |
 | `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                                                                                                                 | placeholder                                                                                   |
-| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts. Sprint 2.                   | placeholder                                                                                   |
+| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts. Sprint 2.                   | implemented (Sprint 2): migration runner, ingestion schema and parameterized operations       |
 | `@cas/graph-evidence` | Live Graph-provider queries over the Messari standardized schema (D11), signal detection, the anomaly feed, and the provenance record of every request and response. Runs in parallel to editorial ingestion.  | implemented (Sprint 1): live client, adapter, TVL-delta signal, probe. Anomaly feed: Sprint 4 |
 | `@cas/classification` | Automated high-recall classification of every imported source into `include`, `exclude` or `review`, with recorded rationale. Calibrated and evaluated against snapshot labels, never gated by them. Sprint 3. | placeholder                                                                                   |
 | `@cas/clustering`     | Clustering included and needs-review sources into canonical incident records; the evidence-state resolver, attaching evidence including corroborating Graph signals, with complete provenance. Sprint 4.       | placeholder                                                                                   |
 | `@cas/drafting`       | The drafting pipeline: the editable editorial output from canonical incidents, the live crypto section and the fixed historical draft, under the naming policy (D4), to the D3 destination. Sprint 5.          | placeholder                                                                                   |
 | `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors, with a `SKILL.md` and a clean installation from a fresh clone. Sprint 6.                                                             | placeholder                                                                                   |
 | `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 8, conditional on the Graph gate).                                                                                                                       | placeholder                                                                                   |
-| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                                | placeholder, boundary test only                                                               |
+| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                                | implemented (Sprint 2): CSV validation, row evaluation, manual import, CLI; later stages next |
 | `@cas/dashboard`      | Next.js application, as Plan 2.0 fixes: command center, review queue, incident explorer, draft editor; judge login. The review workflow here is the only writer of `ReviewState`. Sprint 6.                    | placeholder                                                                                   |
 | `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                                                                                                          | placeholder                                                                                   |
 | `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 8, conditional on the Graph gate).                                                                                             | placeholder                                                                                   |
 | `data/taxonomy`       | Taxonomy data files.                                                                                                                                                                                           | empty                                                                                         |
-| `data/fixtures`       | Synthetic fixtures. Sprint 7.                                                                                                                                                                                  | empty                                                                                         |
+| `data/fixtures`       | Synthetic fixtures. Editorial CSV fixtures from Sprint 2; the remaining fixture set in Sprint 7.                                                                                                               | seven synthetic editorial CSV files (`data/fixtures/README.md`)                               |
 
 The dashboard framework is Next.js. Plan 2.0 fixes it in the package line
 `apps/dashboard: Next.js; command center, review queue, incident explorer, draft editor;
@@ -86,9 +86,10 @@ Rules that follow from D15:
 
 Stage by stage, with the sprint that delivers it (D16) and the current state:
 
-1. **Import and normalization.** CSV exports from the Excel RSS workflow (D7a) enter through
-   `@cas/worker` into `@cas/database`, preserving raw values, provenance and `DataOrigin`.
-   Sprint 2. Not implemented.
+1. **Import and normalization.** CSV exports from the Excel RSS workflow (D7a, D20) enter
+   through `@cas/worker` into `@cas/database`, preserving raw values, provenance and
+   `DataOrigin`. **Implemented in Sprint 2** (section 10): manual, on demand, through a
+   command-line interface; a dashboard upload wrapper may call the same service in Sprint 6.
 2. **Classification.** `@cas/classification` assigns a `ClassificationDecision` with
    rationale to every imported source. Sprint 3. Not implemented.
 3. **Queue.** Included sources proceed; `review` sources wait for a human; excluded sources
@@ -132,7 +133,7 @@ collapsed into one label.
 - Human decisions and machine decisions are separate contracts. Nothing may map one onto
   the other.
 
-Contents of `@cas/contracts` after Sprint 1:
+Contents of `@cas/contracts` after Sprint 2:
 
 | Export                   | Kind                | Meaning                                                                                                                                                                                                                                                                                                  | Fixed by                                |
 | ------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
@@ -144,11 +145,15 @@ Contents of `@cas/contracts` after Sprint 1:
 | `GraphQueryProvenance`   | interface, Sprint 1 | provider kind and sanitized provider base, Subgraph ID, deployment ID as returned, the configured target's chain and slug kept separate from the provider identity, UTC query time, query-document SHA-256, block number, hash and timestamp, snapshot timestamps, indexing-error state, schema versions | Sprint 1 charter, D18                   |
 | `ProtocolTvlObservation` | interface, Sprint 1 | one TVL observation with its raw decimal string, timestamp, block and source                                                                                                                                                                                                                             | Sprint 1                                |
 | `TvlDeltaSignal`         | interface, Sprint 1 | current and baseline observations, measured elapsed window, window rule, exact delta and truncated percentage, provenance                                                                                                                                                                                | Sprint 1                                |
+| `EditorialSourceKind`    | enum, Sprint 2      | `master`, `weekly`: which editorial export a batch came from; provenance, never inferred from content                                                                                                                                                                                                    | decision D20                            |
+| `ImportBatchStatus`      | enum, Sprint 2      | `completed`, `completed_with_issues`: the only terminal batch states, because a rejected file creates no batch and a batch is never half written                                                                                                                                                         | decision D20                            |
+| `SourceRowStatus`        | enum, Sprint 2      | `accepted`, `quarantined`: a quarantined row is retained in full with its issues                                                                                                                                                                                                                         | decision D20                            |
+| `RowIssueSeverity`       | enum, Sprint 2      | `error` quarantines the row, `warning` records an observation and leaves it accepted                                                                                                                                                                                                                     | Sprint 2                                |
 
-The five contract tests in `packages/contracts/src/index.test.ts` pin the enum value sets and
-prove that the two decision enums share no value and are distinct types. Incident,
-evidence-state, source-kind and feed-response contracts arrive with the sprints that produce
-them.
+The seven contract tests in `packages/contracts/src/index.test.ts` pin the enum value sets
+and prove that the two decision enums share no value and are distinct types, and that row
+status and review state are distinct. Incident, evidence-state and feed-response contracts
+arrive with the sprints that produce them.
 
 ## 5. Dependency direction rules
 
@@ -166,16 +171,18 @@ apps/*  →  packages/*  →  @cas/contracts
 - No cycles. Turborepo's task graph (`turbo.json`) orders `build`, `typecheck` and `test`
   by declared dependencies, so a cycle fails the build.
 
-**Declared edges after Sprint 1:** two. `@cas/worker` depends on `@cas/contracts`, and
-`@cas/graph-evidence` depends on `@cas/contracts`. Every other edge above is **proposed** and
-is declared in a package manifest only when code that needs it lands.
+**Declared edges after Sprint 2:** four. `@cas/worker` depends on `@cas/contracts` and on
+`@cas/database`; `@cas/database` depends on `@cas/contracts`; `@cas/graph-evidence` depends
+on `@cas/contracts`. Every other edge above is **proposed** and is declared in a package
+manifest only when code that needs it lands.
 
-## 6. Placeholders after Sprint 1
+## 6. Placeholders after Sprint 2
 
-Every package except `@cas/contracts` and `@cas/graph-evidence` is a placeholder: a manifest,
-a TypeScript configuration and one source file that exports nothing. A placeholder proves
-that the workspace, the compiler and the task graph reach that package. It proves nothing
-else and must not be described as a feature.
+Every package except `@cas/contracts`, `@cas/graph-evidence`, `@cas/database` and
+`@cas/worker` is a placeholder: a manifest, a TypeScript configuration and one source file
+that exports nothing. A placeholder proves that the workspace, the compiler and the task
+graph reach that package. It proves nothing else and must not be described as a feature.
+`@cas/worker` implements only the import stage; its later stages are not implemented.
 
 ## 7. Data origin: execution context, not source system
 
@@ -208,6 +215,9 @@ error, never an empty result and never a silent fallback to fixture or replay da
 | Format          | Prettier 3.9.6                                        | preference              |
 | Tests           | Vitest 4.1.11                                         | preference              |
 | Node typings    | `@types/node` 24.13.3, Sprint 1, through the catalog  | necessity for Node APIs |
+| Postgres driver | `pg` 8.23.0 with `@types/pg` 8.23.1, Sprint 2         | necessity; no ORM       |
+| CSV parser      | `csv-parse` 7.0.2, Sprint 2, streaming RFC 4180       | necessity               |
+| HTML parser     | `htmlparser2` 12.0.0, Sprint 2, derived text only     | security necessity      |
 | Package pattern | compiled packages: `exports` point to `dist`          | cost judgment           |
 
 TypeScript is held below 6.1 because typescript-eslint 8.69.0 declares that peer range and
@@ -252,3 +262,49 @@ asserts both gates, Base included.
 
 Out of scope and not implemented: Substreams, the anomaly feed, correlation to incidents,
 any second Graph product.
+
+## 10. Sprint 2 boundary: `@cas/database` and `@cas/worker`
+
+Implemented and tested in Sprint 2 (`SPRINT-2-REPORT.md`, decision D20). `@cas/database` is
+the only package that opens a PostgreSQL connection; `@cas/worker` parses and evaluates CSV
+files and calls the database package's exported operations. A maintained driver (`pg`) and
+forward-only SQL migrations replace any ORM; identifiers are application-generated UUIDs, so
+no extension is needed.
+
+### `@cas/database`
+
+| Module             | Responsibility                                                                                                                                                                                                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/config.ts`    | `parseDatabaseConfig`: reads `DATABASE_URL`, validates it structurally and never echoes it; `summarizeConnection`: content-free transport summary (unix socket, loopback or remote TCP, password present, SSL requested); schema-name validation as a plain identifier.                        |
+| `src/redact.ts`    | Redactor for the connection string, its password and any PostgreSQL URL shape. Applied to every line the worker's commands print.                                                                                                                                                              |
+| `src/errors.ts`    | `DatabaseError` with kinds `configuration`, `connection`, `migration`, `drift`, `query`, `transaction`; driver errors are classified by SQLSTATE or system code with fixed messages, never by copying the driver text.                                                                         |
+| `src/database.ts`  | `Database`: a `pg.Pool` with UTC session time zone and an optional schema on `search_path`; `withClient` and `withTransaction` (commit on resolve, rollback on throw, destroy the client if rollback fails).                                                                                   |
+| `src/migrate.ts`   | Forward-only runner over `migrations/NNNN_name.sql`: `schema_migrations` with SHA-256 checksums, drift detection (changed, renamed or missing file), one transaction per migration, session advisory lock keyed on the current schema, no-op rerun, `migrationStatus`.                         |
+| `src/ingestion.ts` | Parameterized operations: batch lookup by idempotency key, batch insert and finalize, URL-group upsert by canonical URL, multi-row inserts of source rows, issues and review entries (VALUES lists built from parameter placeholders only), and count-only reads for reconciliation and tests. |
+| `src/schema.ts`    | Create, drop and list for isolated test schemas; names validated before quoting; nothing drops what it did not name.                                                                                                                                                                           |
+| `migrations/0001…` | `import_batches`, `url_groups`, `source_rows`, `row_issues`, `review_snapshots`, `review_entries`, all TEXT and JSONB with check constraints (origin, kind, status, counts, basename without a path separator, weekly label present exactly for weekly batches).                               |
+
+### `@cas/worker`
+
+| Module                        | Responsibility                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/editorial/csv-stream.ts` | Streaming read: strict UTF-8 decoding, NUL rejection, byte-order-mark handling, csv-parse with RFC 4180 quoting, embedded newlines, unlimited field size, strict column counts; byte length and SHA-256 computed while streaming; parser error codes mapped to fixed messages, never the parser's text.                              |
+| `src/editorial/headers.ts`    | Header layout by exact normalized name: known fields, unknown names retained, blank positions accepted and never mapped, duplicates and missing required headers rejected as structural.                                                                                                                                             |
+| `src/editorial/timestamps.ts` | Strict timezone-aware ISO 8601 parsing to a UTC instant; naive or lenient forms rejected; raw preserved by the caller.                                                                                                                                                                                                               |
+| `src/editorial/urls.ts`       | Canonical URL for matching only: lowercase scheme and host, default port, fragment and userinfo removed, tracking parameters removed, remaining parameters sorted, path and trailing slash preserved; `http` and `https` only; no network.                                                                                           |
+| `src/editorial/html-text.ts`  | Derived plain text through htmlparser2, labelled `html-to-text@1`; script and style content dropped, entities decoded, blocks to line breaks, whitespace collapsed, never truncated.                                                                                                                                                 |
+| `src/editorial/rows.ts`       | Pure evaluation of one row: exact cells and named fields, parsed timestamps, normalized title, derived text, canonical URL, deterministic row hash, issues with stable codes, status, and weekly review mapping (`TRUE` selected, `FALSE` rejected, blank unreviewed, unknown quarantined); master `ch` never produces review state. |
+| `src/editorial/validate.ts`   | Structural pass (`inspectCsvFile`) and full count-only validation (`validateCsvFile`) without a database.                                                                                                                                                                                                                            |
+| `src/editorial/import.ts`     | Manual import: explicit origin required, weekly label required and master label forbidden, structural pass before any write, idempotency key over file hash and configuration, one transaction with chunked flushes, header and hash re-checked in the second pass, rollback on any error or interrupt.                              |
+| `src/editorial/report.ts`     | Count-only reconciliation of stored batches against recorded counts, with issue codes, review states and URL-group statistics.                                                                                                                                                                                                       |
+| `src/editorial/output.ts`     | Every printed line built from safe values only; unknown header names reported as a count; errors rendered as kind, code, fixed message and safe details, then redacted.                                                                                                                                                              |
+| `src/cli.ts`                  | `db migrate`, `db check`, `editorial validate`, `editorial import`, `editorial report`; exit codes 0, 2 configuration, 3 structural, 4 database, 5 unexpected, 130 interrupted; SIGINT and SIGTERM abort the import and roll it back.                                                                                                |
+
+Inputs: `DATABASE_URL` (required for every command except validation) and a CSV path.
+Outputs: rows in the six ingestion tables for Sprint 3 to classify. Unit tests (56 in the
+worker, 14 in the database package) run without a database; PostgreSQL integration tests
+(8 and 9) run only through `test:db` in schemas they create and drop themselves.
+
+Out of scope and not implemented: classification, embeddings, clustering, model calls, the
+dashboard upload wrapper, drafting, any watched directory, scheduler or cloud-drive
+integration, and any editorial week boundary (D10 stays unresolved).

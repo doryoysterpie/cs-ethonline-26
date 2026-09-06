@@ -1,6 +1,6 @@
 # Hackathon requirements
 
-Requirement-to-evidence matrix for ETHOnline 2026. Sprint 1 state, 5 September 2026.
+Requirement-to-evidence matrix for ETHOnline 2026. Sprint 2 state, 6 September 2026.
 
 ## How to read this document
 
@@ -137,12 +137,12 @@ not applicable to a Start Fresh project.
 
 ## H. Live-data requirements
 
-| #   | Requirement                                                         | Source | Requirement verification     | Delivery    | Evidence                                                                                                                                                      |
-| --- | ------------------------------------------------------------------- | ------ | ---------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| H1  | Consume live data from a Graph provider; mocked or local data fails | EVENT  | VERIFIED FROM EVENT MATERIAL | IMPLEMENTED | As A2. The live path cannot fall back to fixtures, and the gate counts only provider-validated identities; unit tests enforce both (`SECURITY.md` section 10) |
-| H2  | Live x402-gated service on Hedera testnet                           | EVENT  | VERIFIED FROM EVENT MATERIAL | PLANNED     | As C1, conditional                                                                                                                                            |
-| H3  | Live Graph access working before any dashboard polish               | PLAN   | UNVERIFIED (plan-level)      | IMPLEMENTED | Live access proven 5 Sept 2026 before any dashboard work; standing rule in `SPRINT_BOARD.md`                                                                  |
-| H4  | Editorial imports of the current feed are also `live` data          | PLAN   | UNVERIFIED (plan-level)      | PLANNED     | `DataOrigin` semantics in `ARCHITECTURE.md` section 7; the editorial import is Sprint 2                                                                       |
+| #   | Requirement                                                         | Source | Requirement verification     | Delivery    | Evidence                                                                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------- | ------ | ---------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H1  | Consume live data from a Graph provider; mocked or local data fails | EVENT  | VERIFIED FROM EVENT MATERIAL | IMPLEMENTED | As A2. The live path cannot fall back to fixtures, and the gate counts only provider-validated identities; unit tests enforce both (`SECURITY.md` section 10)                                                                     |
+| H2  | Live x402-gated service on Hedera testnet                           | EVENT  | VERIFIED FROM EVENT MATERIAL | PLANNED     | As C1, conditional                                                                                                                                                                                                                |
+| H3  | Live Graph access working before any dashboard polish               | PLAN   | UNVERIFIED (plan-level)      | IMPLEMENTED | Live access proven 5 Sept 2026 before any dashboard work; standing rule in `SPRINT_BOARD.md`                                                                                                                                      |
+| H4  | Editorial imports of the current feed are also `live` data          | PLAN   | UNVERIFIED (plan-level)      | IMPLEMENTED | The Sprint 2 importer requires an explicit `DataOrigin` per import with no default (D20); the historical exports were imported as `replay`, and a current export is imported as `live` by the same command (`SPRINT-2-REPORT.md`) |
 
 ## I. Official schedule (America/Toronto)
 

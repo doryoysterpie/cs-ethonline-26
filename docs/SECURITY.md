@@ -148,6 +148,54 @@ integration inherits:
   integration tests run only through an explicitly named command and never in CI; CI needs
   no secret.
 
+## 11. Database and editorial ingestion
+
+Rules the Sprint 2 foundation (`@cas/database`, `@cas/worker`) implements and every later
+consumer of the store inherits:
+
+- Only `@cas/database` opens a PostgreSQL connection. The connection string is read from
+  `DATABASE_URL`, validated structurally (a `postgres` or `postgresql` URL), and never
+  printed; a rejected value is reported by the rule that failed. Every line the worker's
+  commands emit passes through a redactor for the connection string, its password and any
+  PostgreSQL URL shape. Driver error messages are never copied into an error; only the
+  SQLSTATE or system code is kept, with a fixed message.
+- Every query is parameterized. No source value is ever interpolated into SQL text, so
+  SQL-looking source content is inert data; a database test proves a `DROP TABLE` string is
+  stored verbatim while the table survives. Identifiers that must vary (test schema names)
+  are validated as plain lowercase identifiers before they are quoted.
+- Migrations are forward-only numbered SQL files. `schema_migrations` stores each applied
+  file's SHA-256; a changed, renamed or missing file for an applied version is drift and
+  stops the run before any change. Each migration runs and is recorded in one transaction. A
+  session advisory lock keyed on the current schema serializes concurrent runners. There is
+  no reset, no down migration, and no command that drops anything it did not name. Database
+  tests create and drop only schemas whose exact names they generated.
+- Source text is hostile data. Every cell is stored exactly as read, including
+  prompt-injection-looking and SQL-looking strings, and nothing interprets it. Derived plain
+  text is produced by a maintained HTML parser (htmlparser2), never by regular expressions:
+  script, style and similar content is dropped, entities are decoded to characters, nothing
+  is executed, fetched or resolved, and the transformation is labelled and versioned on
+  every row. Raw and derived values are never truncated.
+- A file is rejected as a whole, before any write, when it is not valid UTF-8, contains a NUL
+  character (which PostgreSQL text cannot hold), violates RFC 4180 quoting, has inconsistent
+  column counts, has no header, duplicates a non-blank header name, or lacks a required
+  header. Row-level problems (empty title, empty or unparseable URL, a URL whose scheme is
+  not `http` or `https`, an empty or non-strict timestamp, an unknown weekly review token)
+  retain and quarantine the row with stable issue codes and fixed messages. Nothing is
+  dropped silently. Source URLs are never fetched.
+- A batch is written in one transaction; any failure, including an interrupt, rolls it back
+  entirely and closes the connection. The batch's idempotency key covers the file hash and
+  every behaviour-changing configuration value, so repeating an import writes nothing.
+- The batch stores the file's basename only, never an absolute path. Command output and logs
+  carry only basenames, hashes, counts, row numbers, ids, statuses, durations, issue codes,
+  known header names and fixed messages; unknown header names are reported as a count.
+- Every import declares its `DataOrigin` explicitly; there is no default. Weekly review state
+  lives in its own tables, traceable to the snapshot label that supplied it, separate from
+  source content and from any future machine classification. The master sheet's `ch` value
+  is stored raw and never becomes review state.
+- The default `test` and `verify` commands never open a database. PostgreSQL integration
+  tests run only through `test:db` with `DATABASE_URL`; CI runs no database and holds no
+  database secret.
+
 ## Reporting a vulnerability
 
 Report privately to the repository owner. Do not open a public issue describing an
