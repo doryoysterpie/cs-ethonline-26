@@ -1,7 +1,7 @@
 # Sprint 2 report: PostgreSQL data foundation and manual CSV ingestion
 
-Result: **COMPLETE, corrected after the Codex audit, pending re-audit** (section 13). Every
-exit condition of the Sprint 2 charter
+Result: **COMPLETE, corrected after three Codex audits, pending Codex Desktop re-audit**
+(section 13). Every exit condition of the Sprint 2 charter
 passed on the final code: a fresh local PostgreSQL database migrated safely and a second run
 was a no-op; synthetic data carrying every known source hazard round-tripped exactly; the
 three real exports parsed structurally and every logical row was stored; CS79's invalid rows
@@ -28,7 +28,8 @@ the current test totals and the second migration.
 | Proof commit         | `522f5b17eeb3fc34b5771ca4c93ce28e6260b43e`, `docs: record Sprint 2 ingestion proof`, the commit that introduced this document                                                                                                                                                                                                         |
 | Evidence-capture fix | `2f2e673b578034adabd796d436449bc05cdba913`, `fix(data): silence nested pnpm banners in ingestion commands`. Adds `-s` to the nested pnpm call in the root scripts so that `corepack pnpm -s` keeps the path argument out of captured output, as section 10 states. Audited by Codex with changes required                             |
 | Audit correction     | `210193412c234a10b3f0665603b982800cf874da`, `fix(data): enforce provenance and output integrity`, and `07dd53bb85db329563e5073213f570bc1fab59e7`, `docs: record Sprint 2 audit correction`. Section 13 records the output-forgery and provenance findings, migration 0002 and the evidence. Re-audited by Codex with changes required |
-| Re-audit correction  | `fix(data): enforce database credential redaction policy` and `docs: correct final Sprint 2 audit evidence`; SHAs in the handoff. Section 13 records the credential policy and the corrected evidence                                                                                                                                 |
+| Re-audit correction  | `b19d0891ac23545faeef8c774538792875dcc61a`, `fix(data): enforce database credential redaction policy`, and `3a12891cd5d22400da6e6900389643cde0457828`, `docs: correct final Sprint 2 audit evidence`. Section 13 records the credential policy. Re-audited by Codex Desktop with changes required                                     |
+| Boundary correction  | `fix(worker): validate configured database URL before dispatch` and `docs: record Sprint 2 boundary correction`; SHAs in the handoff. Section 13, finding 4, records the boundary gap and its closure                                                                                                                                 |
 | Final SHA            | in the handoff                                                                                                                                                                                                                                                                                                                        |
 | `main`               | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                                                                                                                                                                                                                                                                               |
 | Real inputs          | the three exports named in the charter, read from the project owner's download folder, outside the repository; never copied, never committed, not deleted                                                                                                                                                                             |
@@ -545,11 +546,60 @@ validation. Each rejection is asserted to equal its fixed sentence exactly, whic
 strongest available proof that no input reached the message. `redact.test.ts` grew to 5
 cases, proving an accepted encoded password is redacted in both its raw and decoded forms
 and that every password the configuration accepts is long enough for the redactor to
-protect. `cli.test.ts` grew to 14 cases, including the reproduction above: with the
+protect. `cli.test.ts` grew, at that stage, to 14 cases, including the reproduction: with the
 three-character password configured, every command, validation included, exits 2 with the
 fixed message and prints neither the filename nor the URL; and with an accepted encoded
 password, a filename containing its decoded form prints as `file=report-[REDACTED].csv`. The
 pre-existing connection-failure redaction tests still pass unchanged.
+
+### Finding 4 of the Codex Desktop audit: the boundary check was credential-only
+
+The previous correction applied `assertCredentialPolicy()` at the command-line boundary.
+That function deliberately ignores values whose scheme is not `postgres:` or `postgresql:`,
+leaving them to `parseDatabaseConfig()`, the surrounding structural validator. Every command
+that opens a database reaches that validator, but `editorial validate` does not, so a
+non-empty `DATABASE_URL` with another scheme bypassed the boundary entirely. A synthetic
+HTTPS, MySQL or Redis URL carrying a password too short for the redactor therefore let
+validation run and print that password through a filename.
+
+Reproduced against the compiled CLI at `3a12891c` with a synthetic three-character password
+and a temporary copy of a synthetic fixture: exit code 0, eight normal validation lines, the
+password visible in the printed basename.
+
+Corrected in `apps/worker/src/cli.ts` alone, by one substitution: the boundary now calls
+`parseDatabaseConfig(env)` whenever `DATABASE_URL` is non-empty, instead of the
+credential-only check. That is the complete structural validation, so the boundary rejects a
+non-URL value, a non-PostgreSQL scheme, malformed password percent-encoding and a password
+decoding to fewer than four characters, before any file access, database access or normal
+output. An absent or empty value is still not a configuration, so `editorial validate` keeps
+working without a database. `assertCredentialPolicy()` keeps its intended responsibility and
+is unchanged, as are `createRedactor()`'s four-character threshold, both migrations, the
+ingestion path and every dependency.
+
+Regression tests through the real command-line path, in `cli.test.ts`: three invalid
+configured URLs (HTTPS, MySQL and Redis) carrying synthetic passwords of one, two and three
+characters, each with the password in the copied fixture's basename, assert exit code 2,
+empty standard output, exactly one error line, and that line equal to the fixed scheme
+message, with the basename, URL, hostname and fixture content absent; a non-URL value
+asserts the fixed not-a-URL message; and validation still succeeds with `DATABASE_URL`
+absent, empty, whitespace, passwordless, or carrying an accepted password of four or more
+decoded characters, raw or encoded.
+
+Independent compiled-CLI reproduction after the fix, run from `apps/worker/dist/cli.js` with
+synthetic credentials and temporary fixture copies, recording counts and Boolean checks only
+(the probe and its output are not committed):
+
+| Scheme | Password length | Exit | Standard output | Error lines | Error exactly the fixed message | Basename, URL, host, file content present |
+| ------ | --------------: | ---: | --------------- | ----------: | ------------------------------- | ----------------------------------------- |
+| https  |               1 |    2 | empty           |           1 | yes                             | none                                      |
+| mysql  |               2 |    2 | empty           |           1 | yes                             | none                                      |
+| redis  |               3 |    2 | empty           |           1 | yes                             | none                                      |
+
+Exact-message equality is the meaningful check for the one and two-character cases: a
+one-character password matches ordinary English letters inside any fixed sentence, so a
+substring search would report a false positive. The same compiled CLI still exits 0 with
+eight lines for an absent, passwordless or accepted-password configuration, and still exits
+2 on a three-character PostgreSQL password with the fixed credential message.
 
 ### Test totals after the corrections
 
@@ -561,8 +611,8 @@ run in continuous integration; PostgreSQL tests run only through `test:db`.
 | `@cas/contracts`      |                  7 |                        |
 | `@cas/database`       |                 24 |                     22 |
 | `@cas/graph-evidence` |                102 |                        |
-| `@cas/worker`         |                113 |                      8 |
-| **Total**             |            **246** |                 **30** |
+| `@cas/worker`         |                116 |                      8 |
+| **Total**             |            **249** |                 **30** |
 
 Per file, for the files this correction touched or added:
 
@@ -575,7 +625,7 @@ Per file, for the files this correction touched or added:
 | `packages/database/src/migrate.db.test.ts`        |     7 |
 | `packages/database/src/database.db.test.ts`       |     5 |
 | `packages/database/src/provenance.db.test.ts`     |    10 |
-| `apps/worker/src/cli.test.ts`                     |    14 |
+| `apps/worker/src/cli.test.ts`                     |    17 |
 | `apps/worker/src/editorial/display.test.ts`       |     8 |
 | `apps/worker/src/editorial/output-safety.test.ts` |    40 |
 | `apps/worker/src/editorial/import.test.ts`        |     5 |
@@ -598,7 +648,7 @@ correction changes no ingestion semantics; the real-export evidence in section 1
 | `corepack pnpm format:check`                  |    0 |
 | `corepack pnpm lint`                          |    0 |
 | `corepack pnpm typecheck`                     |    0 |
-| `corepack pnpm test` (246 tests)              |    0 |
+| `corepack pnpm test` (249 tests)              |    0 |
 | `corepack pnpm build`                         |    0 |
 | `corepack pnpm verify`                        |    0 |
 | `corepack pnpm audit`                         |    0 |

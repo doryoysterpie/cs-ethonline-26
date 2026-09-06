@@ -190,9 +190,13 @@ consumer of the store inherits:
   one, two and three-character passwords and malformed percent-encodings are configuration
   errors. Every accepted password is then redacted in both its raw and its decoded form,
   alongside the whole connection string and any PostgreSQL URL shape. The rule is enforced
-  in the shared configuration parser, so migration, check, import and report all inherit it,
-  and again at the command-line boundary, so no command prints output while an unprotectable
-  credential is configured. A rejection names the rule in a fixed sentence and never echoes
+  in the shared configuration parser, so migration, check, import and report all inherit it.
+  The command-line boundary runs that same parser, in full, whenever `DATABASE_URL` is
+  non-empty, before it dispatches any command. A credential-only check there was not enough:
+  it left values whose scheme is not PostgreSQL to the parser, which validation never
+  reaches, so such a URL could carry an unprotectable password into the output of a command
+  that opens no database. An absent or empty value remains no configuration at all, so
+  validation still runs without a database. A rejection names the rule in a fixed sentence and never echoes
   the URL, username, hostname, raw password, decoded password or any fragment of one.
 - Every line the commands emit is redacted first and escaped second, so a secret that
   itself contains a control character still matches the redactor, and is then forced to one
