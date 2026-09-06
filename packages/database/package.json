@@ -2,7 +2,7 @@
   "name": "@cas/database",
   "version": "0.0.0",
   "private": true,
-  "description": "Database schema and access layer. Placeholder after Sprint 0.",
+  "description": "PostgreSQL schema, forward-only checksummed migrations and parameterized access for the editorial ingestion foundation. The only package that talks to PostgreSQL. Sprint 2.",
   "type": "module",
   "exports": {
     ".": {
@@ -11,13 +11,23 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "migrations"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.ts"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*",
+    "pg": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

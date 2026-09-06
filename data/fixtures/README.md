@@ -1,12 +1,32 @@
 # data/fixtures
 
-Reserved for synthetic, normalized fixtures used by tests and by replay runs.
+Synthetic fixtures used by tests and by fixture-origin imports. Rules, from
+`docs/DATA_INPUTS.md` section 11 and `docs/SECURITY.md` section 3:
 
-Empty after Sprint 0. Rules for anything added here, from `docs/DATA_INPUTS.md` and
-`docs/SECURITY.md`:
+- Fixtures are synthetic. They contain no title, summary, description, URL or row copied,
+  shortened, anonymized or otherwise derived from the Excel/RSS exports, the weekly snapshot
+  sheets or any publication. Hostnames use the reserved `.example` domain.
+- Fixtures are imported only with the `fixture` data origin, so they can never be displayed
+  as live data.
+- Fixtures reproduce the representative schemas and every known source hazard, so provenance
+  and preservation handling is exercised by tests.
 
-- Fixtures are synthetic. They must not contain third-party article bodies, summaries,
-  descriptions or any row copied from the Excel/RSS exports or the weekly snapshot sheets.
-- Fixtures must carry a `fixture` data origin so they can never be displayed as live data.
-- Fixtures must retain the provenance fields the pipeline preserves for real records, so that
-  provenance handling is exercised by tests.
+## `editorial/` (Sprint 2)
+
+Generated deterministically; identical bytes on every regeneration. Line endings and the
+byte-order mark are part of the fixture. Timestamps use non-round seconds so that no fixture
+cell can coincide with a cell of a real export, which a count-only check confirms.
+
+| File                                     | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `master-synthetic.csv`                   | Master schema plus one unknown column (`Editor Note`), UTF-8 BOM, LF line endings, 12 rows: quoted commas, escaped quotes, an embedded newline, HTML with entities and script/style content, missing optional values, an exact duplicate URL, tracking-parameter URL variants, a 48,400-character summary (the pattern `long-synthetic-text-` repeated 2,420 times), a prompt-injection-looking title, SQL-injection-looking description and summary, an invalid timestamp, a naive timestamp, an invalid URL, a disallowed scheme, an empty title, and an unrecognized master `ch` token |
+| `weekly-synthetic.csv`                   | Weekly schema with two trailing blank headers, no BOM, CRLF line endings, 8 rows: `TRUE`, `FALSE`, blank and unknown (`YES`) review tokens, an invalid URL and an invalid timestamp on rows that still carry a review token, an exact duplicate URL, a tracking-parameter variant, HTML with entities                                                                                                                                                                                                                                                                                     |
+| `structural-unclosed-quote.csv`          | A quoted field that never closes; rejected before any write                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `structural-duplicate-header.csv`        | `Title` appears twice; rejected                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `structural-missing-required-header.csv` | No `URL` header; rejected                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `structural-inconsistent-columns.csv`    | A data row with fewer cells than the header; rejected                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `structural-empty.csv`                   | Zero bytes; rejected as having no header                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+
+Expected count-only results are asserted in `apps/worker/src/editorial/validate.test.ts` and
+the database round-trip tests. Invalid UTF-8 and NUL-character inputs are generated by tests
+in a temporary directory rather than committed.

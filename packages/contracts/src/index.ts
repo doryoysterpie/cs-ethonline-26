@@ -4,7 +4,8 @@
  * Shared type contracts that cross package boundaries: the pipeline, the
  * MCP server, the feed API and the dashboard. Sprint 0 defined the three
  * editorial contracts; Sprint 1 adds the minimal Graph evidence contracts
- * that `@cas/graph-evidence` produces for later consumers. No runtime
+ * that `@cas/graph-evidence` produces for later consumers; Sprint 2 adds the
+ * editorial source kind and the import status enums. No runtime
  * behaviour lives here beyond constant definitions. See docs/ARCHITECTURE.md
  * and docs/DATA_INPUTS.md.
  */
@@ -46,6 +47,39 @@ export type ClassificationDecision = (typeof CLASSIFICATION_DECISIONS)[number];
  */
 export const DATA_ORIGINS = ['live', 'fixture', 'replay'] as const;
 export type DataOrigin = (typeof DATA_ORIGINS)[number];
+
+/**
+ * Kind of editorial CSV export an import batch came from (decision D20,
+ * docs/DATA_INPUTS.md section 3). `master` is the master RSS export, whose
+ * `ch` column is working state and never a review label. `weekly` is a weekly
+ * snapshot sheet, whose `ch` column is the stable review label for the named
+ * week. The kind is provenance; it is never inferred from file content.
+ */
+export const EDITORIAL_SOURCE_KINDS = ['master', 'weekly'] as const;
+export type EditorialSourceKind = (typeof EDITORIAL_SOURCE_KINDS)[number];
+
+/**
+ * Terminal status of an import batch. A structurally rejected file never
+ * creates a batch, and a batch is never left half written, so the only
+ * statuses are the two completed forms. `completed_with_issues` means at
+ * least one row was retained in quarantine (decision D20).
+ */
+export const IMPORT_BATCH_STATUSES = ['completed', 'completed_with_issues'] as const;
+export type ImportBatchStatus = (typeof IMPORT_BATCH_STATUSES)[number];
+
+/**
+ * Status of one imported source row. A quarantined row is retained in full
+ * with its raw cells and its issues; nothing is dropped.
+ */
+export const SOURCE_ROW_STATUSES = ['accepted', 'quarantined'] as const;
+export type SourceRowStatus = (typeof SOURCE_ROW_STATUSES)[number];
+
+/**
+ * Severity of a row issue. `error` quarantines the row; `warning` records the
+ * observation and leaves the row accepted.
+ */
+export const ROW_ISSUE_SEVERITIES = ['error', 'warning'] as const;
+export type RowIssueSeverity = (typeof ROW_ISSUE_SEVERITIES)[number];
 
 /**
  * Chains whose live indexed data the project reads (decision D11). Ethereum

@@ -7,7 +7,11 @@ packages:
 catalog:
   '@eslint/js': 10.0.1
   '@types/node': 24.13.3
+  '@types/pg': 8.23.1
+  csv-parse: 7.0.2
   eslint: 10.9.1
+  htmlparser2: 12.0.0
+  pg: 8.23.0
   prettier: 3.9.6
   turbo: 2.10.12
   typescript: 6.0.3

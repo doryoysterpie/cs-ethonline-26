@@ -4,11 +4,17 @@ import {
   CHAINS,
   CLASSIFICATION_DECISIONS,
   DATA_ORIGINS,
+  EDITORIAL_SOURCE_KINDS,
+  IMPORT_BATCH_STATUSES,
   REVIEW_STATES,
+  ROW_ISSUE_SEVERITIES,
+  SOURCE_ROW_STATUSES,
   type ChainId,
   type ClassificationDecision,
   type DataOrigin,
+  type EditorialSourceKind,
   type ReviewState,
+  type SourceRowStatus,
 } from './index.js';
 
 describe('@cas/contracts', () => {
@@ -38,5 +44,21 @@ describe('@cas/contracts', () => {
   it('fixes the chain set from decision D11 with Ethereum first', () => {
     expect([...CHAINS]).toEqual(['ethereum', 'base']);
     expectTypeOf<ChainId>().not.toEqualTypeOf<DataOrigin>();
+  });
+
+  it('fixes the editorial source kinds and import statuses from decision D20', () => {
+    expect([...EDITORIAL_SOURCE_KINDS]).toEqual(['master', 'weekly']);
+    expect([...IMPORT_BATCH_STATUSES]).toEqual(['completed', 'completed_with_issues']);
+    expect([...SOURCE_ROW_STATUSES]).toEqual(['accepted', 'quarantined']);
+    expect([...ROW_ISSUE_SEVERITIES]).toEqual(['error', 'warning']);
+    expectTypeOf<EditorialSourceKind>().not.toEqualTypeOf<DataOrigin>();
+  });
+
+  it('keeps row status apart from human review state so quarantine never reads as a decision', () => {
+    const overlap = SOURCE_ROW_STATUSES.filter((value) =>
+      (REVIEW_STATES as readonly string[]).includes(value),
+    );
+    expect(overlap).toEqual([]);
+    expectTypeOf<SourceRowStatus>().not.toEqualTypeOf<ReviewState>();
   });
 });
