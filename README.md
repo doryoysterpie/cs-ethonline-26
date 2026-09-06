@@ -105,11 +105,11 @@ allows; otherwise they are dropped. Requirement status per track is in
 | Path                      | Package               | State after Sprint 2                                                                       |
 | ------------------------- | --------------------- | ------------------------------------------------------------------------------------------ |
 | `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                     |
-| `apps/worker`             | `@cas/worker`         | implemented: streaming CSV validation, row evaluation, manual import, CLI; 111 unit tests  |
+| `apps/worker`             | `@cas/worker`         | implemented: streaming CSV validation, row evaluation, manual import, CLI; 113 unit tests  |
 | `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                |
 | `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                              |
 | `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests    |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, two migrations, parameterized ingestion ops; 15 unit tests  |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, two migrations, parameterized ingestion ops; 24 unit tests  |
 | `packages/taxonomy`       | `@cas/taxonomy`       | placeholder                                                                                |
 | `packages/classification` | `@cas/classification` | placeholder                                                                                |
 | `packages/clustering`     | `@cas/clustering`     | placeholder                                                                                |
@@ -207,9 +207,13 @@ is never added to CI. Rules are in `docs/SECURITY.md` section 10.
 ## Local database and editorial import
 
 Sprint 2 adds a local PostgreSQL foundation and a manual, on-demand CSV import (decision
-D20). Requirements: a local PostgreSQL 17 you can connect to without a password, and
-`DATABASE_URL` in the ignored `.env`, for example a loopback URL naming a database created
-for this project. Load the file into your shell without echoing it, as for the Graph probe.
+D20). Requirements: a local PostgreSQL 17 and `DATABASE_URL` in the ignored `.env`, for
+example a loopback URL naming a database created for this project. A passwordless URL is
+valid, which is the simplest local setup. If you do supply a password, it must be at least
+four characters once percent-decoded, because the redactor cannot protect a shorter value;
+a shorter or malformed one is refused with a fixed message that never echoes the URL or the
+password. Every accepted password is redacted in its raw and decoded forms. Load the file
+into your shell without echoing it, as for the Graph probe.
 
 ```bash
 set -a && . ./.env && set +a && corepack pnpm db:migrate

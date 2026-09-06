@@ -11,19 +11,27 @@ tables; and no real row, credential, generated output or database dump entered G
 America/Toronto unless marked UTC. Count-only throughout: no title, URL, summary,
 description, cell, connection detail or absolute path appears here.
 
-| Item                 | Value                                                                                                                                                                                                                                                                                                     |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository           | `doryoysterpie/cs-ethonline-26`, public                                                                                                                                                                                                                                                                   |
-| Branch               | `sprint-2/data-foundation`, created from the accepted Sprint 1 SHA                                                                                                                                                                                                                                        |
-| Starting SHA         | `56bc95c400bc6b394f00bccde49330e7a9fcb74a` (Sprint 1, audited PASS)                                                                                                                                                                                                                                       |
-| Decision commit      | `bb6872aa5cd37ef6cba7d72cbb23a152ccdfa1cf`, `docs: resolve Sprint 2 input decisions` (D20)                                                                                                                                                                                                                |
-| Foundation commit    | `df9ee29203790cdbe2d283c6cf4c51db6ed9d84e`, `feat(data): add Postgres ingestion foundation`                                                                                                                                                                                                               |
-| Proof commit         | `522f5b17eeb3fc34b5771ca4c93ce28e6260b43e`, `docs: record Sprint 2 ingestion proof`, the commit that introduced this document                                                                                                                                                                             |
-| Evidence-capture fix | `2f2e673b578034adabd796d436449bc05cdba913`, `fix(data): silence nested pnpm banners in ingestion commands`. Adds `-s` to the nested pnpm call in the root scripts so that `corepack pnpm -s` keeps the path argument out of captured output, as section 10 states. Audited by Codex with changes required |
-| Audit correction     | `fix(data): enforce provenance and output integrity` and `docs: record Sprint 2 audit correction`; SHAs in the handoff. Section 13 records both findings, migration 0002 and the evidence                                                                                                                 |
-| Final SHA            | in the handoff                                                                                                                                                                                                                                                                                            |
-| `main`               | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                                                                                                                                                                                                                                                   |
-| Real inputs          | the three exports named in the charter, read from the project owner's download folder, outside the repository; never copied, never committed, not deleted                                                                                                                                                 |
+**How to read this report.** Sections 1 to 12 record the original implementation and its
+verification at `2f2e673b578034adabd796d436449bc05cdba913`, the commit Codex audited. They
+are historical evidence and are preserved unedited except for these labels; where they give
+test totals or a migration count they describe that commit, not the current code. Sections
+13 and 14 carry the corrections and the verification of the current final code, including
+the current test totals and the second migration.
+
+| Item                 | Value                                                                                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository           | `doryoysterpie/cs-ethonline-26`, public                                                                                                                                                                                                                                                                                               |
+| Branch               | `sprint-2/data-foundation`, created from the accepted Sprint 1 SHA                                                                                                                                                                                                                                                                    |
+| Starting SHA         | `56bc95c400bc6b394f00bccde49330e7a9fcb74a` (Sprint 1, audited PASS)                                                                                                                                                                                                                                                                   |
+| Decision commit      | `bb6872aa5cd37ef6cba7d72cbb23a152ccdfa1cf`, `docs: resolve Sprint 2 input decisions` (D20)                                                                                                                                                                                                                                            |
+| Foundation commit    | `df9ee29203790cdbe2d283c6cf4c51db6ed9d84e`, `feat(data): add Postgres ingestion foundation`                                                                                                                                                                                                                                           |
+| Proof commit         | `522f5b17eeb3fc34b5771ca4c93ce28e6260b43e`, `docs: record Sprint 2 ingestion proof`, the commit that introduced this document                                                                                                                                                                                                         |
+| Evidence-capture fix | `2f2e673b578034adabd796d436449bc05cdba913`, `fix(data): silence nested pnpm banners in ingestion commands`. Adds `-s` to the nested pnpm call in the root scripts so that `corepack pnpm -s` keeps the path argument out of captured output, as section 10 states. Audited by Codex with changes required                             |
+| Audit correction     | `210193412c234a10b3f0665603b982800cf874da`, `fix(data): enforce provenance and output integrity`, and `07dd53bb85db329563e5073213f570bc1fab59e7`, `docs: record Sprint 2 audit correction`. Section 13 records the output-forgery and provenance findings, migration 0002 and the evidence. Re-audited by Codex with changes required |
+| Re-audit correction  | `fix(data): enforce database credential redaction policy` and `docs: correct final Sprint 2 audit evidence`; SHAs in the handoff. Section 13 records the credential policy and the corrected evidence                                                                                                                                 |
+| Final SHA            | in the handoff                                                                                                                                                                                                                                                                                                                        |
+| `main`               | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                                                                                                                                                                                                                                                                               |
+| Real inputs          | the three exports named in the charter, read from the project owner's download folder, outside the repository; never copied, never committed, not deleted                                                                                                                                                                             |
 
 ## 1. Scope
 
@@ -68,6 +76,10 @@ on the final lockfile: no known vulnerabilities. `pg`'s optional peer `pg-native
 installed; the pure JavaScript client is used.
 
 ## 3. Migrations and schema
+
+> **Historical evidence from `2f2e673b`.** This section describes the schema as first built,
+> with one migration. Migration `0002_provenance_integrity.sql` was added by the audit
+> correction and is described in section 13; the current code has two migrations.
 
 One migration: `packages/database/migrations/0001_editorial_ingestion.sql`. The runner
 (`packages/database/src/migrate.ts`) applies numbered `NNNN_name.sql` files in order, stores
@@ -127,6 +139,10 @@ draft or publication table exists.
   SIGTERM abort the import, which rolls back and closes its connection.
 
 ## 5. Tests
+
+> **Historical evidence from `2f2e673b`.** The totals in this section describe the original
+> Sprint 2 implementation, before the Codex audit corrections. They are **not** verification
+> of the current code. The current totals are in section 13.
 
 | Package               | Unit (no database, no secret, in CI) | PostgreSQL integration (`test:db`, local only) |
 | --------------------- | ------------------------------------ | ---------------------------------------------- |
@@ -262,8 +278,10 @@ batch records are 08:49 to 08:50):
 | 11   | step 7 repeated (already imported, nothing written)                                              |    0 |
 | 12   | `corepack pnpm editorial:report` (3 batches, all reconciled)                                     |    0 |
 
-Verification after the final edit, on the final code (the clean-checkout rerun after the
-commits is reported in the handoff):
+Verification of the original implementation, run at `2f2e673b` (the clean-checkout rerun of
+that commit is reported in its handoff). **These figures are historical.** They record one
+applied migration, 179 offline tests and 17 PostgreSQL tests, which is the state before the
+Codex audit corrections; the current code has two migrations and the totals in section 13.
 
 | #   | Command                                                          | Exit |
 | --- | ---------------------------------------------------------------- | ---: |
@@ -271,12 +289,12 @@ commits is reported in the handoff):
 | 2   | `corepack pnpm format:check`                                     |    0 |
 | 3   | `corepack pnpm lint`                                             |    0 |
 | 4   | `corepack pnpm typecheck`                                        |    0 |
-| 5   | `corepack pnpm test` (179 tests)                                 |    0 |
+| 5   | `corepack pnpm test` (179 tests at that commit)                  |    0 |
 | 6   | `corepack pnpm build`                                            |    0 |
 | 7   | `corepack pnpm verify`                                           |    0 |
 | 8   | fresh migration (step 1 above)                                   |    0 |
 | 9   | second migration, no-op (step 2 above)                           |    0 |
-| 10  | `corepack pnpm test:db` (17 tests)                               |    0 |
+| 10  | `corepack pnpm test:db` (17 tests at that commit)                |    0 |
 | 11  | validation of each real export (steps 4 to 6)                    |    0 |
 | 12  | full import of each real export (steps 7 to 9)                   |    0 |
 | 13  | idempotent re-import (steps 10 and 11)                           |    0 |
@@ -385,7 +403,7 @@ Corrected:
   it, so a file can still be inspected; import and report mode refuse it, because the name
   would be stored.
 
-Tests: `display.test.ts` (11 cases) and `output-safety.test.ts` (39 cases) drive the real
+Tests: `display.test.ts` (8 cases) and `output-safety.test.ts` (40 cases) drive the real
 formatters with the real redactor over twelve hostile values, covering newline, carriage
 return, tab, ANSI escape and full sequence, C1 CSI, DEL, U+2028, U+2029, a 4,000-character
 name, a synthetic database password in the basename and the same password split by control
@@ -445,8 +463,10 @@ the advisory lock still applies each migration exactly once under two concurrent
 
 - The literal U+0001 delimiter in `validate.ts` is replaced by
   `JSON.stringify([code, field, severity])`.
-- A scan of every tracked and newly added non-CSV file reports zero C0, DEL and C1 bytes,
-  and zero U+2028 and U+2029 characters.
+- A scan of every tracked and newly added non-CSV file reports zero prohibited control
+  characters: no C0, DEL, C1, U+2028 or U+2029 code point occurs in any of them. The scan
+  decodes each file as UTF-8 and examines code points, because a UTF-8 continuation byte can
+  numerically fall in the range `0x80` to `0x9F` without being a C1 control character.
 - New `.gitattributes` marks only `data/fixtures/editorial/weekly-synthetic.csv` as
   `-text whitespace=cr-at-eol`, so Git keeps its bytes exactly as committed and stops
   reporting its intentional carriage returns as trailing whitespace. The fixture is
@@ -485,15 +505,107 @@ snapshots, 338 review entries). The backfill left no null batch id and no mismat
 either the snapshot or the source row, all three batches still reconcile, and an attempted
 origin change is now rejected by `source_rows_batch_origin_fk`.
 
-Test totals after the correction:
+### Finding 3 of the re-audit: short database passwords bypassed redaction
+
+Codex re-audited the correction and reproduced, through the real worker formatter,
+`short_password_visible=true` with `full_url_visible=false` on `file=accidental-abc.csv`.
+The cause: `connectionSecrets()` returns the configured password, but `createRedactor()`
+deliberately ignores secret values shorter than four characters, because such a value would
+match ordinary words and blank out unrelated output. A configured password of `abc`
+therefore stayed visible wherever it appeared independently, such as inside a filename. That
+contradicts the security contract, which states that every configured database password is
+protected.
+
+Corrected by refusing the credential rather than weakening the redactor. The generic
+four-character safeguard in `createRedactor()` is unchanged. `assertCredentialPolicy()` in
+`packages/database/src/config.ts` now enforces:
+
+| Configuration                                    | Result                                                           |
+| ------------------------------------------------ | ---------------------------------------------------------------- |
+| No password (`postgresql://127.0.0.1:5432/cas`)  | accepted; local development needs no password                    |
+| Empty password after a colon (`…//app:@host/db`) | accepted; a colon with nothing after it is no password           |
+| Password decoding to 1, 2 or 3 characters        | rejected, `must be at least 4 characters after percent-decoding` |
+| Password whose percent-encoding is malformed     | rejected, `is not valid percent-encoding`                        |
+| Password decoding to 4 or more characters        | accepted, and redacted in its raw and decoded forms              |
+
+`parseDatabaseConfig()` calls the policy, so every database entry point inherits it:
+migration, check, import and report all build their handle from it. The command-line
+interface additionally applies the policy to a configured `DATABASE_URL` before any command
+runs, including validation, which needs no database, so no command can print output while
+such a credential is set. Both rejection messages are fixed sentences that name only the
+rule: they carry no URL, username, hostname, raw password, decoded password or fragment of
+one. No dependency was added, and no ingestion, normalization, idempotency or provenance
+behaviour changed.
+
+Tests: `config.test.ts` grew to 13 cases covering passwordless URLs, raw passwords of one,
+two and three characters, percent-encoded passwords decoding to one, two and three
+characters, malformed encodings, accepted passwords of four or more decoded characters, the
+rule reaching every entry point, and non-PostgreSQL values being left to the surrounding
+validation. Each rejection is asserted to equal its fixed sentence exactly, which is the
+strongest available proof that no input reached the message. `redact.test.ts` grew to 5
+cases, proving an accepted encoded password is redacted in both its raw and decoded forms
+and that every password the configuration accepts is long enough for the redactor to
+protect. `cli.test.ts` grew to 14 cases, including the reproduction above: with the
+three-character password configured, every command, validation included, exits 2 with the
+fixed message and prints neither the filename nor the URL; and with an accepted encoded
+password, a filename containing its decoded form prints as `file=report-[REDACTED].csv`. The
+pre-existing connection-failure redaction tests still pass unchanged.
+
+### Test totals after the corrections
+
+Taken from the test runner, not estimated. Offline tests need no database and no secret and
+run in continuous integration; PostgreSQL tests run only through `test:db`.
 
 | Package               | Unit (no database) | PostgreSQL integration |
 | --------------------- | -----------------: | ---------------------: |
 | `@cas/contracts`      |                  7 |                        |
-| `@cas/database`       |                 15 |                     22 |
+| `@cas/database`       |                 24 |                     22 |
 | `@cas/graph-evidence` |                102 |                        |
-| `@cas/worker`         |                111 |                      8 |
-| **Total**             |            **235** |                 **30** |
+| `@cas/worker`         |                113 |                      8 |
+| **Total**             |            **246** |                 **30** |
+
+Per file, for the files this correction touched or added:
+
+| File                                              | Tests |
+| ------------------------------------------------- | ----: |
+| `packages/database/src/config.test.ts`            |    13 |
+| `packages/database/src/redact.test.ts`            |     5 |
+| `packages/database/src/errors.test.ts`            |     3 |
+| `packages/database/src/migrate.test.ts`           |     3 |
+| `packages/database/src/migrate.db.test.ts`        |     7 |
+| `packages/database/src/database.db.test.ts`       |     5 |
+| `packages/database/src/provenance.db.test.ts`     |    10 |
+| `apps/worker/src/cli.test.ts`                     |    14 |
+| `apps/worker/src/editorial/display.test.ts`       |     8 |
+| `apps/worker/src/editorial/output-safety.test.ts` |    40 |
+| `apps/worker/src/editorial/import.test.ts`        |     5 |
+| `apps/worker/src/editorial/import.db.test.ts`     |     8 |
+
+### Verification of the final code
+
+Run after the final edit, on the current code. Migration checksums confirmed unchanged:
+`0001_editorial_ingestion.sql` is
+`6ccf4b05cdcd255b326029e99097c73ec220fa77d38d767e86a40175abc8b936` and
+`0002_provenance_integrity.sql` is
+`4139f25cd5ca24746208c40cc3b65076c2bd9cccbc287e08880d508691d71b8d`; neither file was
+modified by this correction, and the weekly CRLF fixture keeps the blob it had at the
+starting SHA. The full 24,248-row real-export import was not repeated, because this
+correction changes no ingestion semantics; the real-export evidence in section 13 stands.
+
+| Command                                       | Exit |
+| --------------------------------------------- | ---: |
+| `corepack pnpm install --frozen-lockfile`     |    0 |
+| `corepack pnpm format:check`                  |    0 |
+| `corepack pnpm lint`                          |    0 |
+| `corepack pnpm typecheck`                     |    0 |
+| `corepack pnpm test` (246 tests)              |    0 |
+| `corepack pnpm build`                         |    0 |
+| `corepack pnpm verify`                        |    0 |
+| `corepack pnpm audit`                         |    0 |
+| `corepack pnpm test:db` (30 tests)            |    0 |
+| `git diff --check 56bc95c4..HEAD`             |    0 |
+| `git fsck --full`                             |    0 |
+| `git status --short` (clean after committing) |    0 |
 
 ## 14. Reproduction for Codex
 

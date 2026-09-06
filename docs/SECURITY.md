@@ -182,6 +182,18 @@ consumer of the store inherits:
   line and paragraph separators. The rule is enforced twice: in the importer before any
   file or database access, and by check constraints in the database. Raw editorial fields
   are exempt, because source text must be preserved exactly.
+- A configured database password must be one the redactor can protect. The redactor ignores
+  secret values shorter than four characters, because such a value would match ordinary
+  words and blank out unrelated output; rather than weaken it, the configuration refuses the
+  credential. A passwordless URL stays valid, which keeps local development simple. A
+  supplied password must percent-decode, and must be at least four characters once decoded;
+  one, two and three-character passwords and malformed percent-encodings are configuration
+  errors. Every accepted password is then redacted in both its raw and its decoded form,
+  alongside the whole connection string and any PostgreSQL URL shape. The rule is enforced
+  in the shared configuration parser, so migration, check, import and report all inherit it,
+  and again at the command-line boundary, so no command prints output while an unprotectable
+  credential is configured. A rejection names the rule in a fixed sentence and never echoes
+  the URL, username, hostname, raw password, decoded password or any fragment of one.
 - Every line the commands emit is redacted first and escaped second, so a secret that
   itself contains a control character still matches the redactor, and is then forced to one
   physical line. Untrusted metadata is rendered with control characters, ANSI introducers
