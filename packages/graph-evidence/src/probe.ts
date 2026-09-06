@@ -2,127 +2,117 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { TvlDeltaSignal } from '@cas/contracts';
-
-import { GraphGatewayClient } from './client.js';
+import { GraphGatewayClient, type FetchLike } from './client.js';
 import {
+  BASE_GATE_MINIMUM_PROTOCOLS,
   BASE_LENDING_TARGETS,
   ETHEREUM_GATE_MINIMUM_PROTOCOLS,
   ETHEREUM_LENDING_TARGETS,
-  type DeploymentTarget,
 } from './deployments.js';
-import { GraphProbeError, isGraphProbeError } from './errors.js';
+import {
+  assertUniqueTargets,
+  evaluateChainGate,
+  evaluateFailedTarget,
+  evaluateTarget,
+  type ChainGateResult,
+  type DeploymentTarget,
+  type TargetEvaluation,
+} from './gate.js';
 import { queryDocumentSha256 } from './query.js';
 import { createRedactor } from './redact.js';
-import { calculateTvlDelta, describeElapsed } from './tvl-delta.js';
+import { describeElapsed } from './tvl-delta.js';
 
 /**
  * Sprint 1 live probe. Runs the common standardized query against every
- * selected deployment, computes the TVL-delta signal, prints a concise
+ * selected deployment, validates each response against the registry's
+ * declared expectations, computes the TVL-delta signal, prints a concise
  * redacted summary, and writes details under the ignored `output/` path.
  *
  * Exit codes: 0 Ethereum gate passed; 1 Ethereum gate failed; 2 credential
- * missing or configuration invalid. Base is reported but never changes the
- * exit code. There is no fixture or replay path in this program.
+ * missing or configuration invalid. Base is reported truthfully as PASS/KEEP
+ * or FAIL/DROP and never changes the exit code. There is no fixture or replay
+ * path in this program.
  */
 
-/** Data older than this, measured from the query time to the current observation, fails freshness. */
-export const FRESHNESS_LIMIT_SECONDS = 48 * 3600;
+export interface ProbeOptions {
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly fetchImpl?: FetchLike | undefined;
+  readonly now?: (() => Date) | undefined;
+  readonly ethereumTargets?: readonly DeploymentTarget[] | undefined;
+  readonly baseTargets?: readonly DeploymentTarget[] | undefined;
+  /** Write the redacted details file under output/graph-probe. Default true. */
+  readonly writeDetails?: boolean | undefined;
+  readonly log?: ((line: string) => void) | undefined;
+  readonly error?: ((line: string) => void) | undefined;
+}
 
-interface ProbeOutcome {
-  readonly target: DeploymentTarget;
-  readonly signal: TvlDeltaSignal | null;
-  readonly reportedNetwork: string | null;
-  readonly freshnessSeconds: number | null;
-  readonly failure: { kind: string; message: string } | null;
+export interface ProbeRun {
+  readonly code: 0 | 1 | 2;
+  readonly ethereum: ChainGateResult | null;
+  readonly base: ChainGateResult | null;
+  readonly evaluations: readonly TargetEvaluation[];
+  readonly detailsFile: string | null;
 }
 
 async function probeTarget(
   client: GraphGatewayClient,
   target: DeploymentTarget,
-): Promise<ProbeOutcome> {
+): Promise<TargetEvaluation> {
+  let reading;
   try {
-    const reading = await client.queryStandardizedTvl({
+    reading = await client.queryStandardizedTvl({
       subgraphId: target.subgraphId,
-      chain: target.chain,
-      slug: target.slug,
+      targetChain: target.chain,
+      targetSlug: target.slug,
     });
-    const signal = calculateTvlDelta({
-      protocol: reading.protocol,
-      observations: reading.observations,
-      provenance: reading.provenance,
-    });
-    const queriedAt = Math.floor(Date.parse(reading.provenance.queriedAtUtc) / 1000);
-    const freshnessSeconds = queriedAt - signal.current.timestamp;
-    if (freshnessSeconds > FRESHNESS_LIMIT_SECONDS) {
-      throw new GraphProbeError(
-        'validation',
-        `current observation is ${describeElapsed(freshnessSeconds)} old`,
-        {
-          freshnessSeconds,
-        },
-      );
-    }
-    return {
-      target,
-      signal,
-      reportedNetwork: reading.reportedNetwork,
-      freshnessSeconds,
-      failure: null,
-    };
   } catch (error) {
-    const kind = isGraphProbeError(error) ? error.kind : 'unexpected';
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      target,
-      signal: null,
-      reportedNetwork: null,
-      freshnessSeconds: null,
-      failure: { kind, message: client.redact(message) },
-    };
+    return evaluateFailedTarget(target, error, client.redact);
   }
+  const queriedAtSeconds = Math.floor(Date.parse(reading.provenance.queriedAtUtc) / 1000);
+  return evaluateTarget(target, reading, queriedAtSeconds, client.redact);
 }
 
-function formatOutcome(outcome: ProbeOutcome): string {
-  const t = outcome.target;
-  const head = `[${t.chain}] ${t.protocol} (${t.slug}) subgraph=${t.subgraphId}`;
-  if (outcome.signal === null || outcome.failure !== null) {
-    return `${head}\n  FAIL kind=${outcome.failure?.kind ?? 'unknown'}: ${outcome.failure?.message ?? 'no signal'}`;
+function iso(seconds: number | null): string {
+  return seconds === null ? 'n/a' : new Date(seconds * 1000).toISOString();
+}
+
+export function formatEvaluation(e: TargetEvaluation): string {
+  const t = e.target;
+  const head = `[${t.chain}] ${t.label} subgraph=${t.subgraphId}`;
+  if (!e.valid || e.signal === null || e.reading === null) {
+    const f = e.failure;
+    const lines = [`${head}\n  FAIL kind=${f?.kind ?? 'unknown'}: ${f?.message ?? 'no signal'}`];
+    for (const m of e.mismatches) {
+      lines.push(`  mismatch field=${m.field} expected=${m.expected} received=${m.received}`);
+    }
+    return lines.join('\n');
   }
-  const s = outcome.signal;
+  const s = e.signal;
   const p = s.provenance;
-  const blockTs =
-    p.block.timestamp === null ? 'n/a' : new Date(p.block.timestamp * 1000).toISOString();
+  const id = e.reading.identity;
   return [
     head,
-    `  deployment=${p.deploymentId ?? 'n/a'} block=${p.block.number} @ ${blockTs} hasIndexingErrors=${p.hasIndexingErrors} schema=${p.schemaVersion ?? 'n/a'} subgraph=${p.subgraphVersion ?? 'n/a'} methodology=${p.methodologyVersion ?? 'n/a'} network=${outcome.reportedNetwork ?? 'n/a'}`,
-    `  window: baseline ${new Date(s.baseline.timestamp * 1000).toISOString()} (${s.baseline.source}) → current ${new Date(s.current.timestamp * 1000).toISOString()} (${s.current.source}); elapsed ${describeElapsed(s.elapsedSeconds)}, target 24h 00m, current is ${describeElapsed(outcome.freshnessSeconds ?? 0)} old at query time`,
+    `  provider identity: name=${JSON.stringify(id.name)} slug=${id.slug} network=${id.network} (${id.chain}) type=${id.protocolType} schema=${id.schemaVersion}; configured slug=${t.slug}`,
+    `  deployment=${p.deploymentId ?? 'n/a'} block=${p.block.number} @ ${iso(p.block.timestamp)} hasIndexingErrors=${p.hasIndexingErrors} subgraphVersion=${p.subgraphVersion ?? 'n/a'} methodology=${p.methodologyVersion ?? 'n/a'} endpoint=${p.provider} ${p.providerBase}`,
+    `  window: baseline ${iso(s.baseline.timestamp)} (${s.baseline.source}) → current ${iso(s.current.timestamp)} (${s.current.source}); elapsed ${describeElapsed(s.elapsedSeconds)}, target 24h 00m; freshness ${e.freshness?.reason ?? 'n/a'} (age ${e.freshness?.ageSeconds ?? 'n/a'} s)`,
     `  TVL current=${s.current.totalValueLockedUsd} baseline=${s.baseline.totalValueLockedUsd} delta=${s.deltaUsd} (${s.deltaPercent}%)`,
   ].join('\n');
 }
 
-export interface GateResult {
-  readonly passed: boolean;
-  readonly distinctProtocolsWithSignal: number;
-  readonly deploymentsQueried: number;
-}
-
-export function evaluateGate(
-  outcomes: readonly ProbeOutcome[],
-  minimumProtocols: number,
-): GateResult {
-  const protocols = new Set(
-    outcomes.filter((o) => o.signal !== null && o.failure === null).map((o) => o.target.protocol),
-  );
-  return {
-    passed: protocols.size >= minimumProtocols,
-    distinctProtocolsWithSignal: protocols.size,
-    deploymentsQueried: outcomes.length,
-  };
+export function formatGate(
+  name: string,
+  g: ChainGateResult,
+  passLabel: string,
+  failLabel: string,
+): string {
+  const verdict = g.passed ? passLabel : failLabel;
+  const summary = `${g.valid} valid of ${g.configured} configured; ${g.distinctIdentities} distinct provider identities, ${g.distinctSubgraphIds} distinct subgraph IDs, ${g.distinctDeploymentIds} distinct deployment IDs; minimum ${g.minimum}${g.requireAll ? ', all configured targets required' : ''}`;
+  const reasons = g.reasons.length > 0 ? `\n  reasons: ${g.reasons.join(' | ')}` : '';
+  return `${name}: ${verdict} (${summary})${reasons}`;
 }
 
 async function writeDetails(
-  outcomes: readonly ProbeOutcome[],
+  evaluations: readonly TargetEvaluation[],
   redact: (s: string) => string,
 ): Promise<string> {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -130,56 +120,79 @@ async function writeDetails(
   await mkdir(outDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const file = path.join(outDir, `${stamp}.json`);
-  const body = redact(JSON.stringify(outcomes, null, 2));
+  const body = redact(JSON.stringify(evaluations, null, 2));
   await writeFile(file, body, { encoding: 'utf8', mode: 0o600 });
   return file;
 }
 
-export async function main(): Promise<number> {
-  const apiKey = process.env['GRAPH_API_KEY'];
-  const gatewayBaseUrl = process.env['GRAPH_GATEWAY_URL'];
+export async function runProbe(options: ProbeOptions): Promise<ProbeRun> {
+  const log = options.log ?? ((line: string) => console.log(line));
+  const error = options.error ?? ((line: string) => console.error(line));
+  const apiKey = options.env['GRAPH_API_KEY'];
+  const gatewayBaseUrl = options.env['GRAPH_GATEWAY_URL'];
   const redactEarly = createRedactor([apiKey]);
+  const ethereumTargets = options.ethereumTargets ?? ETHEREUM_LENDING_TARGETS;
+  const baseTargets = options.baseTargets ?? BASE_LENDING_TARGETS;
+
   let client: GraphGatewayClient;
   try {
-    client = new GraphGatewayClient({ apiKey, gatewayBaseUrl });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`probe:live cannot start: ${redactEarly(message)}`);
-    return 2;
+    assertUniqueTargets([...ethereumTargets, ...baseTargets]);
+    client = new GraphGatewayClient({
+      apiKey,
+      gatewayBaseUrl,
+      fetchImpl: options.fetchImpl,
+      now: options.now,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    error(`graph:probe cannot start: ${redactEarly(message)}`);
+    return { code: 2, ethereum: null, base: null, evaluations: [], detailsFile: null };
   }
 
-  console.log(`CAS Chainwatch live Graph probe. query sha256=${queryDocumentSha256()}`);
-  console.log(
-    `Queried at ${new Date().toISOString()} through the configured gateway (credentials redacted).`,
+  log(`CAS Chainwatch live Graph probe. query sha256=${queryDocumentSha256()}`);
+  log(
+    `Queried at ${(options.now ?? (() => new Date()))().toISOString()} via ${client.gateway.provider} ${client.gateway.base} (credentials redacted).`,
   );
 
-  const ethereum: ProbeOutcome[] = [];
-  for (const target of ETHEREUM_LENDING_TARGETS) {
-    const outcome = await probeTarget(client, target);
-    ethereum.push(outcome);
-    console.log(formatOutcome(outcome));
+  const evaluations: TargetEvaluation[] = [];
+  for (const target of ethereumTargets) {
+    const e = await probeTarget(client, target);
+    evaluations.push(e);
+    log(formatEvaluation(e));
   }
-  const ethereumGate = evaluateGate(ethereum, ETHEREUM_GATE_MINIMUM_PROTOCOLS);
+  const ethereum = evaluateChainGate(evaluations.slice(0, ethereumTargets.length), {
+    chain: 'ethereum',
+    minimum: ETHEREUM_GATE_MINIMUM_PROTOCOLS,
+    requireAll: false,
+  });
 
-  const base: ProbeOutcome[] = [];
-  for (const target of BASE_LENDING_TARGETS) {
-    const outcome = await probeTarget(client, target);
-    base.push(outcome);
-    console.log(formatOutcome(outcome));
+  for (const target of baseTargets) {
+    const e = await probeTarget(client, target);
+    evaluations.push(e);
+    log(formatEvaluation(e));
   }
-  const baseGate = evaluateGate(base, 1);
+  const base = evaluateChainGate(evaluations.slice(ethereumTargets.length), {
+    chain: 'base',
+    minimum: BASE_GATE_MINIMUM_PROTOCOLS,
+    requireAll: true,
+  });
 
-  const detailsFile = await writeDetails([...ethereum, ...base], client.redact);
+  const detailsFile =
+    options.writeDetails === false ? null : await writeDetails(evaluations, client.redact);
 
-  console.log('');
-  console.log(
-    `Ethereum gate: ${ethereumGate.passed ? 'PASS' : 'FAIL'} (${ethereumGate.distinctProtocolsWithSignal} distinct protocols with a valid signal across ${ethereumGate.deploymentsQueried} deployments; minimum ${ETHEREUM_GATE_MINIMUM_PROTOCOLS})`,
+  log('');
+  log(formatGate('Ethereum gate', ethereum, 'PASS', 'FAIL'));
+  log(
+    formatGate('Base secondary', base, 'PASS/KEEP', 'FAIL/DROP') +
+      ' [does not affect the exit code]',
   );
-  console.log(
-    `Base secondary: ${baseGate.passed ? 'PASS' : 'FAIL'} (${baseGate.distinctProtocolsWithSignal} distinct protocols with a valid signal across ${baseGate.deploymentsQueried} deployments; reported, does not affect the exit code)`,
-  );
-  console.log(`Details written to ${detailsFile} (ignored by Git).`);
-  return ethereumGate.passed ? 0 : 1;
+  if (detailsFile !== null) log(`Details written to ${detailsFile} (ignored by Git).`);
+  return { code: ethereum.passed ? 0 : 1, ethereum, base, evaluations, detailsFile };
+}
+
+export async function main(): Promise<number> {
+  const run = await runProbe({ env: process.env, writeDetails: true });
+  return run.code;
 }
 
 const invokedDirectly =
@@ -193,7 +206,7 @@ if (invokedDirectly) {
     (error: unknown) => {
       const redact = createRedactor([process.env['GRAPH_API_KEY']]);
       console.error(
-        `probe:live failed: ${redact(error instanceof Error ? error.message : String(error))}`,
+        `graph:probe failed: ${redact(error instanceof Error ? error.message : String(error))}`,
       );
       process.exitCode = 1;
     },

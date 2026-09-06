@@ -6,11 +6,19 @@ import { TEST_SUBGRAPH_ID, T_NOW, snapshot, validPayload } from './test-support.
 
 const ctx: AdapterContext = {
   subgraphId: TEST_SUBGRAPH_ID,
-  chain: 'ethereum',
-  slug: 'synthetic-lending',
+  targetChain: 'ethereum',
+  targetSlug: 'configured-slug',
   queriedAtUtc: new Date(T_NOW * 1000).toISOString(),
   queryDocumentSha256: 'deadbeef',
+  provider: 'the-graph-gateway',
+  providerBase: 'https://gateway.thegraph.com/api',
 };
+
+function withProtocol(overrides: Record<string, unknown>): Record<string, unknown> {
+  const payload = validPayload();
+  const protocols = payload['protocols'] as Record<string, unknown>[];
+  return { ...payload, protocols: [{ ...protocols[0], ...overrides }] };
+}
 
 function kindOf(fn: () => unknown): string {
   try {
@@ -25,12 +33,19 @@ function kindOf(fn: () => unknown): string {
 describe('adaptStandardizedTvl', () => {
   it('adapts a valid standardized response into observations and live provenance', () => {
     const reading = adaptStandardizedTvl(validPayload(), ctx);
-    expect(reading.protocol).toEqual({
+    expect(reading.identity).toEqual({
       name: 'Synthetic Lending',
       slug: 'synthetic-lending',
+      network: 'MAINNET',
       chain: 'ethereum',
+      protocolType: 'LENDING',
+      schemaVersion: '3.1.0',
     });
-    expect(reading.reportedNetwork).toBe('MAINNET');
+    expect(reading.target).toEqual({
+      chain: 'ethereum',
+      slug: 'configured-slug',
+      subgraphId: TEST_SUBGRAPH_ID,
+    });
     expect(reading.observations).toHaveLength(5);
     expect(reading.observations.at(-1)).toMatchObject({
       source: 'protocol-head',
@@ -39,9 +54,11 @@ describe('adaptStandardizedTvl', () => {
     expect(reading.provenance).toMatchObject({
       origin: 'live',
       provider: 'the-graph-gateway',
+      providerBase: 'https://gateway.thegraph.com/api',
       subgraphId: TEST_SUBGRAPH_ID,
       deploymentId: 'QmSyntheticDeploymentIdForUnitTestsOnly000000000',
-      chain: 'ethereum',
+      targetChain: 'ethereum',
+      targetSlug: 'configured-slug',
       queryDocumentSha256: 'deadbeef',
       block: { number: 25_000_000, hash: '0xabc123', timestamp: T_NOW },
       hasIndexingErrors: false,
@@ -50,6 +67,13 @@ describe('adaptStandardizedTvl', () => {
       methodologyVersion: '1.0.0',
     });
     expect(reading.provenance.snapshotTimestamps).toHaveLength(4);
+  });
+
+  it('preserves the provider slug and never substitutes the configured slug', () => {
+    const reading = adaptStandardizedTvl(withProtocol({ slug: 'provider-slug' }), ctx);
+    expect(reading.identity.slug).toBe('provider-slug');
+    expect(reading.provenance.targetSlug).toBe('configured-slug');
+    expect(reading.identity.slug).not.toBe(reading.provenance.targetSlug);
   });
 
   it('keeps every raw TVL string unchanged', () => {
@@ -71,6 +95,44 @@ describe('adaptStandardizedTvl', () => {
     expect(reading.observations).toHaveLength(4);
     expect(reading.provenance.block.timestamp).toBeNull();
     expect(reading.provenance.deploymentId).toBeNull();
+  });
+
+  it('fails with kind "schema" when a required provider identity field is missing or empty', () => {
+    expect(kindOf(() => adaptStandardizedTvl(withProtocol({ slug: undefined }), ctx))).toBe(
+      'schema',
+    );
+    expect(kindOf(() => adaptStandardizedTvl(withProtocol({ slug: '' }), ctx))).toBe('schema');
+    expect(kindOf(() => adaptStandardizedTvl(withProtocol({ slug: '   ' }), ctx))).toBe('schema');
+    expect(kindOf(() => adaptStandardizedTvl(withProtocol({ name: undefined }), ctx))).toBe(
+      'schema',
+    );
+    expect(kindOf(() => adaptStandardizedTvl(withProtocol({ network: undefined }), ctx))).toBe(
+      'schema',
+    );
+    expect(kindOf(() => adaptStandardizedTvl(withProtocol({ type: undefined }), ctx))).toBe(
+      'schema',
+    );
+    expect(kindOf(() => adaptStandardizedTvl(withProtocol({ schemaVersion: '' }), ctx))).toBe(
+      'schema',
+    );
+    expect(kindOf(() => adaptStandardizedTvl(withProtocol({ schemaVersion: 42 }), ctx))).toBe(
+      'schema',
+    );
+  });
+
+  it('fails with kind "validation" when the provider network is not a recognized chain', () => {
+    for (const network of ['ARBITRUM_ONE', 'mainnet', 'Ethereum', 'base']) {
+      expect(kindOf(() => adaptStandardizedTvl(withProtocol({ network }), ctx))).toBe('validation');
+    }
+  });
+
+  it('normalizes only the documented network values', () => {
+    expect(adaptStandardizedTvl(withProtocol({ network: 'BASE' }), ctx).identity.chain).toBe(
+      'base',
+    );
+    expect(adaptStandardizedTvl(withProtocol({ network: 'MAINNET' }), ctx).identity.chain).toBe(
+      'ethereum',
+    );
   });
 
   it('fails with kind "indexing" when hasIndexingErrors is true', () => {

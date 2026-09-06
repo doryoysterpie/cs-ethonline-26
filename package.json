@@ -16,7 +16,9 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "build": "turbo run build",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "graph:probe": "pnpm --filter @cas/graph-evidence probe:live",
+    "graph:test:live": "pnpm --filter @cas/graph-evidence test:live"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",

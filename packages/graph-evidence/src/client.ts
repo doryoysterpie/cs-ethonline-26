@@ -2,11 +2,11 @@ import type { ChainId } from '@cas/contracts';
 
 import { adaptStandardizedTvl, type StandardizedTvlReading } from './adapter.js';
 import { GraphProbeError } from './errors.js';
+import { parseGatewayBaseUrl, type ParsedGatewayBase } from './gateway-url.js';
 import { DEFAULT_SNAPSHOT_COUNT, STANDARDIZED_TVL_QUERY, queryDocumentSha256 } from './query.js';
 import { createRedactor, type Redactor } from './redact.js';
 
-/** Default public gateway base. Overridable through GRAPH_GATEWAY_URL. */
-export const DEFAULT_GATEWAY_BASE_URL = 'https://gateway.thegraph.com/api';
+export { DEFAULT_GATEWAY_BASE_URL } from './gateway-url.js';
 export const DEFAULT_TIMEOUT_MS = 20_000;
 
 /** Public Subgraph IDs are base58 strings; anything else is rejected before a request is made. */
@@ -24,8 +24,10 @@ export interface GraphGatewayClientOptions {
 
 export interface StandardizedTvlRequest {
   readonly subgraphId: string;
-  readonly chain: ChainId;
-  readonly slug: string;
+  /** Chain the configured target is expected on; compared, never trusted, downstream. */
+  readonly targetChain: ChainId;
+  /** Registry slug of the configured target; never substituted for the provider slug. */
+  readonly targetSlug: string;
   readonly snapshots?: number | undefined;
 }
 
@@ -34,17 +36,23 @@ function describeUnknownError(error: unknown): { name: string; message: string }
   return { name: 'UnknownError', message: String(error) };
 }
 
+function isAbort(name: string): boolean {
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
 /**
- * Minimal live client for The Graph gateway, built on Node's global fetch.
+ * Minimal live client for a Graph gateway, built on Node's global fetch.
  *
  * - API key travels only in the `Authorization: Bearer` header, never in a URL.
- * - Base URL, timeout and fetch implementation are injectable for tests.
+ * - The base URL is structurally validated (`gateway-url.ts`); provenance
+ *   records only its sanitized origin and path.
+ * - Timeout and fetch implementation are injectable for tests.
  * - Every failure is a GraphProbeError with a distinct kind. Nothing returns
  *   an empty success, and nothing falls back to fixture or replay data.
  */
 export class GraphGatewayClient {
   readonly #apiKey: string;
-  readonly #baseUrl: string;
+  readonly #gateway: ParsedGatewayBase;
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
   readonly #now: () => Date;
@@ -60,11 +68,7 @@ export class GraphGatewayClient {
     }
     this.#apiKey = key;
     this.redact = createRedactor([key]);
-    const base = (options.gatewayBaseUrl ?? DEFAULT_GATEWAY_BASE_URL).trim();
-    if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(base)) {
-      throw new GraphProbeError('validation', 'gateway base URL must be an https URL');
-    }
-    this.#baseUrl = base.replace(/\/+$/, '');
+    this.#gateway = parseGatewayBaseUrl(options.gatewayBaseUrl);
     const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     if (!Number.isInteger(timeout) || timeout <= 0) {
       throw new GraphProbeError('validation', 'timeoutMs must be a positive integer');
@@ -72,6 +76,11 @@ export class GraphGatewayClient {
     this.#timeoutMs = timeout;
     this.#fetch = options.fetchImpl ?? ((input, init) => fetch(input, init));
     this.#now = options.now ?? (() => new Date());
+  }
+
+  /** Sanitized endpoint description, safe to print and to store in provenance. */
+  get gateway(): ParsedGatewayBase {
+    return this.#gateway;
   }
 
   /** Query one deployment with the common document and adapt the response. */
@@ -86,9 +95,10 @@ export class GraphGatewayClient {
       throw new GraphProbeError('validation', 'snapshots must be an integer between 2 and 30');
     }
 
-    const url = `${this.#baseUrl}/subgraphs/id/${request.subgraphId}`;
+    const url = `${this.#gateway.base}/subgraphs/id/${request.subgraphId}`;
     const queriedAtUtc = this.#now().toISOString();
     const body = JSON.stringify({ query: STANDARDIZED_TVL_QUERY, variables: { snapshots } });
+    const signal = AbortSignal.timeout(this.#timeoutMs);
 
     let response: Response;
     try {
@@ -100,22 +110,42 @@ export class GraphGatewayClient {
           authorization: `Bearer ${this.#apiKey}`,
         },
         body,
-        signal: AbortSignal.timeout(this.#timeoutMs),
+        signal,
       });
     } catch (error) {
       const { name, message } = describeUnknownError(error);
-      if (name === 'TimeoutError' || name === 'AbortError') {
+      if (isAbort(name)) {
         throw new GraphProbeError('timeout', `gateway request exceeded ${this.#timeoutMs} ms`, {
           subgraphId: request.subgraphId,
           timeoutMs: this.#timeoutMs,
+          phase: 'request',
         });
       }
       throw new GraphProbeError('network', `gateway request failed: ${this.redact(message)}`, {
         subgraphId: request.subgraphId,
+        phase: 'request',
       });
     }
 
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error) {
+      const { name, message } = describeUnknownError(error);
+      if (isAbort(name)) {
+        throw new GraphProbeError(
+          'timeout',
+          `gateway response body read exceeded ${this.#timeoutMs} ms`,
+          { subgraphId: request.subgraphId, timeoutMs: this.#timeoutMs, phase: 'body' },
+        );
+      }
+      throw new GraphProbeError(
+        'network',
+        `gateway response body read failed: ${this.redact(message)}`,
+        { subgraphId: request.subgraphId, phase: 'body' },
+      );
+    }
+
     if (!response.ok) {
       throw new GraphProbeError('http', `gateway returned HTTP ${response.status}`, {
         subgraphId: request.subgraphId,
@@ -148,10 +178,7 @@ export class GraphGatewayClient {
       throw new GraphProbeError(
         'graphql',
         `gateway returned GraphQL errors: ${messages.join('; ')}`,
-        {
-          subgraphId: request.subgraphId,
-          errors: messages,
-        },
+        { subgraphId: request.subgraphId, errors: messages },
       );
     }
     if (envelope.data === undefined || envelope.data === null) {
@@ -162,10 +189,12 @@ export class GraphGatewayClient {
 
     return adaptStandardizedTvl(envelope.data, {
       subgraphId: request.subgraphId,
-      chain: request.chain,
-      slug: request.slug,
+      targetChain: request.targetChain,
+      targetSlug: request.targetSlug,
       queriedAtUtc,
       queryDocumentSha256: queryDocumentSha256(),
+      provider: this.#gateway.provider,
+      providerBase: this.#gateway.base,
     });
   }
 }

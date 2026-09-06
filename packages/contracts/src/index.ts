@@ -54,29 +54,55 @@ export type DataOrigin = (typeof DATA_ORIGINS)[number];
 export const CHAINS = ['ethereum', 'base'] as const;
 export type ChainId = (typeof CHAINS)[number];
 
-/** Identity of one protocol deployment as observed through a Graph provider. */
+/**
+ * Identity of one protocol deployment AS RETURNED BY THE PROVIDER. Every
+ * field comes from the live standardized `Protocol` entity, never from the
+ * project's own registry. The configured target identity lives separately in
+ * `GraphQueryProvenance.targetChain` and `targetSlug`, so the two can be
+ * compared and never confused.
+ */
 export interface ProtocolIdentity {
-  /** Human-readable protocol name as reported by the standardized subgraph. */
+  /** Provider-returned protocol name. */
   readonly name: string;
-  /** Registry slug of the deployment, for example `aave-v3-ethereum`. */
+  /** Provider-returned protocol slug. Never substituted by a configured slug. */
   readonly slug: string;
+  /** Provider-returned network value, verbatim, for example `MAINNET` or `BASE`. */
+  readonly network: string;
+  /** `network` normalized through the documented alias table; only recognized values map. */
   readonly chain: ChainId;
+  /** Provider-returned standardized protocol family, for example `LENDING`. */
+  readonly protocolType: string;
+  /** Provider-returned standardized schema version, for example `3.1.0`. */
+  readonly schemaVersion: string;
 }
+
+/**
+ * Which kind of endpoint served a query. `the-graph-gateway` is claimed only
+ * when the validated base URL's host is The Graph's public gateway; any other
+ * validated HTTPS endpoint is recorded as a Graph-compatible endpoint.
+ */
+export type GraphProvider = 'the-graph-gateway' | 'graph-compatible-https-endpoint';
 
 /**
  * Provenance of one live Graph-provider query. Every field the provider
  * returned is retained; fields it did not return are `null`, never invented.
+ * No field may contain authorization data, user information, query
+ * parameters or fragments.
  */
 export interface GraphQueryProvenance {
   /** Always `live` for a record produced by the live client. */
   readonly origin: DataOrigin;
-  /** Provider that served the query. */
-  readonly provider: 'the-graph-gateway';
-  /** Public Subgraph ID the query was addressed to. */
+  readonly provider: GraphProvider;
+  /** Validated HTTPS origin plus path of the endpoint, with nothing else. */
+  readonly providerBase: string;
+  /** Public Subgraph ID the query was addressed to (configured). */
   readonly subgraphId: string;
   /** Deployment ID (`_meta.deployment`) when the provider returned it. */
   readonly deploymentId: string | null;
-  readonly chain: ChainId;
+  /** Chain the configured target was expected to be on. Compare with `ProtocolIdentity.chain`. */
+  readonly targetChain: ChainId;
+  /** Registry slug of the configured target. Compare with `ProtocolIdentity.slug`. */
+  readonly targetSlug: string;
   /** UTC timestamp of the request, ISO 8601. */
   readonly queriedAtUtc: string;
   /** SHA-256 of the exact GraphQL document sent, hex. */
@@ -91,7 +117,8 @@ export interface GraphQueryProvenance {
   /** Unix-second timestamps of every financial snapshot in the response. */
   readonly snapshotTimestamps: readonly number[];
   readonly hasIndexingErrors: boolean;
-  readonly schemaVersion: string | null;
+  /** Provider-returned schema version; required. */
+  readonly schemaVersion: string;
   readonly subgraphVersion: string | null;
   readonly methodologyVersion: string | null;
 }
@@ -119,6 +146,7 @@ export interface ProtocolTvlObservation {
  * measured value; nothing here claims an exact 24 hours.
  */
 export interface TvlDeltaSignal {
+  /** Provider-returned identity of the protocol the signal describes. */
   readonly protocol: ProtocolIdentity;
   readonly current: ProtocolTvlObservation;
   readonly baseline: ProtocolTvlObservation;

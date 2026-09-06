@@ -13,14 +13,19 @@ import { DEFAULT_WINDOW, calculateTvlDelta, describeElapsed } from './tvl-delta.
 const protocol: ProtocolIdentity = {
   name: 'Synthetic Lending',
   slug: 'synthetic-lending',
+  network: 'MAINNET',
   chain: 'ethereum',
+  protocolType: 'LENDING',
+  schemaVersion: '3.1.0',
 };
 const provenance: GraphQueryProvenance = {
   origin: 'live',
   provider: 'the-graph-gateway',
+  providerBase: 'https://gateway.thegraph.com/api',
   subgraphId: 'JCNWRypm7FYwV8fx5HhzZPSFaMxgkPuw4TnR3Gpi81zk',
   deploymentId: null,
-  chain: 'ethereum',
+  targetChain: 'ethereum',
+  targetSlug: 'synthetic-lending',
   queriedAtUtc: new Date(T_NOW * 1000).toISOString(),
   queryDocumentSha256: 'deadbeef',
   block: { number: 1, hash: null, timestamp: T_NOW },

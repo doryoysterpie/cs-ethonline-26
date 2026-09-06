@@ -1,5 +1,6 @@
 import type {
   ChainId,
+  GraphProvider,
   GraphQueryProvenance,
   ProtocolIdentity,
   ProtocolTvlObservation,
@@ -7,25 +8,34 @@ import type {
 
 import { parseDecimal } from './decimal.js';
 import { GraphProbeError } from './errors.js';
+import { normalizeNetwork } from './network.js';
 
 /**
  * Response adapter for the common standardized query. One adapter serves every
  * selected deployment; nothing in here branches on protocol or chain.
  * Validation is strict: a missing or malformed field is an explicit failure.
+ *
+ * Two identities are preserved and never merged: the configured target
+ * (`ctx.targetChain`, `ctx.targetSlug`, `ctx.subgraphId`) and the identity the
+ * provider returned (`ProtocolIdentity`). The provider's name, slug, network,
+ * type and schema version are all required.
  */
 
 export interface AdapterContext {
   readonly subgraphId: string;
-  readonly chain: ChainId;
-  readonly slug: string;
+  readonly targetChain: ChainId;
+  readonly targetSlug: string;
   readonly queriedAtUtc: string;
   readonly queryDocumentSha256: string;
+  readonly provider: GraphProvider;
+  readonly providerBase: string;
 }
 
 export interface StandardizedTvlReading {
-  readonly protocol: ProtocolIdentity;
-  readonly protocolType: string | null;
-  readonly reportedNetwork: string | null;
+  /** Identity as returned by the provider. */
+  readonly identity: ProtocolIdentity;
+  /** Identity the query was configured for. */
+  readonly target: { readonly chain: ChainId; readonly slug: string; readonly subgraphId: string };
   readonly observations: readonly ProtocolTvlObservation[];
   readonly provenance: GraphQueryProvenance;
 }
@@ -39,8 +49,10 @@ function optionalString(value: unknown): string | null {
 }
 
 function requireString(value: unknown, field: string): string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new GraphProbeError('schema', `${field} is missing or not a string`, { field });
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new GraphProbeError('schema', `${field} is missing or not a non-empty string`, {
+      field,
+    });
   }
   return value;
 }
@@ -95,7 +107,22 @@ export function adaptStandardizedTvl(data: unknown, ctx: AdapterContext): Standa
   if (!isRecord(protocol)) {
     throw new GraphProbeError('schema', 'protocol entity is not an object');
   }
+
+  // Provider identity: every field required, none substituted from the target.
   const name = requireString(protocol['name'], 'protocols[0].name');
+  const slug = requireString(protocol['slug'], 'protocols[0].slug');
+  const network = requireString(protocol['network'], 'protocols[0].network');
+  const protocolType = requireString(protocol['type'], 'protocols[0].type');
+  const schemaVersion = requireString(protocol['schemaVersion'], 'protocols[0].schemaVersion');
+  const chain = normalizeNetwork(network);
+  if (chain === null) {
+    throw new GraphProbeError('validation', 'provider network is not a recognized chain', {
+      field: 'protocols[0].network',
+      received: network,
+      subgraphId: ctx.subgraphId,
+    });
+  }
+
   const headTvl = requireString(
     protocol['totalValueLockedUSD'],
     'protocols[0].totalValueLockedUSD',
@@ -144,16 +171,18 @@ export function adaptStandardizedTvl(data: unknown, ctx: AdapterContext): Standa
 
   const provenance: GraphQueryProvenance = {
     origin: 'live',
-    provider: 'the-graph-gateway',
+    provider: ctx.provider,
+    providerBase: ctx.providerBase,
     subgraphId: ctx.subgraphId,
     deploymentId,
-    chain: ctx.chain,
+    targetChain: ctx.targetChain,
+    targetSlug: ctx.targetSlug,
     queriedAtUtc: ctx.queriedAtUtc,
     queryDocumentSha256: ctx.queryDocumentSha256,
     block: { number: blockNumber, hash: blockHash, timestamp: blockTimestamp },
     snapshotTimestamps,
     hasIndexingErrors,
-    schemaVersion: optionalString(protocol['schemaVersion']),
+    schemaVersion,
     subgraphVersion: optionalString(protocol['subgraphVersion']),
     methodologyVersion: optionalString(protocol['methodologyVersion']),
   };
@@ -167,9 +196,8 @@ export function adaptStandardizedTvl(data: unknown, ctx: AdapterContext): Standa
   }
 
   return {
-    protocol: { name, slug: ctx.slug, chain: ctx.chain },
-    protocolType: optionalString(protocol['type']),
-    reportedNetwork: optionalString(protocol['network']),
+    identity: { name, slug, network, chain, protocolType, schemaVersion },
+    target: { chain: ctx.targetChain, slug: ctx.targetSlug, subgraphId: ctx.subgraphId },
     observations,
     provenance,
   };

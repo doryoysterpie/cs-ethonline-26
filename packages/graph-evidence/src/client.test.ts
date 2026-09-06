@@ -10,30 +10,38 @@ import { TEST_KEY, TEST_SUBGRAPH_ID, T_NOW, jsonResponse, validPayload } from '.
 
 const request = {
   subgraphId: TEST_SUBGRAPH_ID,
-  chain: 'ethereum',
-  slug: 'synthetic-lending',
+  targetChain: 'ethereum',
+  targetSlug: 'synthetic-lending',
 } as const;
 
-async function failureKind(promise: Promise<unknown>): Promise<string> {
+async function failure(promise: Promise<unknown>): Promise<GraphProbeError | null> {
   try {
     await promise;
   } catch (error) {
-    if (error instanceof GraphProbeError) return error.kind;
-    return 'not-a-probe-error';
+    if (error instanceof GraphProbeError) return error;
+    throw error;
   }
-  return 'no-error';
+  return null;
 }
 
 function clientWith(
   fetchImpl: FetchLike,
   apiKey: string | undefined = TEST_KEY,
+  gatewayBaseUrl?: string,
 ): GraphGatewayClient {
   return new GraphGatewayClient({
     apiKey,
     fetchImpl,
+    gatewayBaseUrl,
     timeoutMs: 50,
     now: () => new Date(T_NOW * 1000),
   });
+}
+
+function responseWithFailingBody(error: unknown): Response {
+  const response = new Response('{}', { status: 200 });
+  Object.defineProperty(response, 'text', { value: () => Promise.reject(error) });
+  return response;
 }
 
 describe('GraphGatewayClient', () => {
@@ -70,6 +78,7 @@ describe('GraphGatewayClient', () => {
     expect(body.variables.snapshots).toBe(4);
     expect(call?.init.signal).toBeInstanceOf(AbortSignal);
     expect(reading.provenance.origin).toBe('live');
+    expect(reading.provenance.provider).toBe('the-graph-gateway');
     expect(reading.provenance.queryDocumentSha256).toBe(queryDocumentSha256());
     expect(reading.provenance.queriedAtUtc).toBe(new Date(T_NOW * 1000).toISOString());
   });
@@ -78,28 +87,47 @@ describe('GraphGatewayClient', () => {
     const client = clientWith(async () =>
       jsonResponse({ errors: [{ message: 'subgraph not found: no allocations' }] }, 200),
     );
-    const promise = client.queryStandardizedTvl(request);
-    await expect(promise).rejects.toThrow(/no allocations/);
-    expect(await failureKind(client.queryStandardizedTvl(request))).toBe('graphql');
+    const error = await failure(client.queryStandardizedTvl(request));
+    expect(error?.kind).toBe('graphql');
+    expect(error?.message).toMatch(/no allocations/);
   });
 
   it('classifies a non-2xx provider response', async () => {
     const client = clientWith(async () => new Response('upstream unavailable', { status: 502 }));
-    expect(await failureKind(client.queryStandardizedTvl(request))).toBe('http');
+    expect((await failure(client.queryStandardizedTvl(request)))?.kind).toBe('http');
   });
 
-  it('classifies a timeout', async () => {
+  it('classifies an abort during the request as a timeout', async () => {
     const client = clientWith(async () => {
       throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
     });
-    expect(await failureKind(client.queryStandardizedTvl(request))).toBe('timeout');
+    const error = await failure(client.queryStandardizedTvl(request));
+    expect(error?.kind).toBe('timeout');
+    expect(error?.details['phase']).toBe('request');
   });
 
-  it('classifies a transport failure as network', async () => {
+  it('classifies an AbortError during the response-body read as a timeout', async () => {
+    const client = clientWith(async () =>
+      responseWithFailingBody(new DOMException('body read aborted', 'AbortError')),
+    );
+    const error = await failure(client.queryStandardizedTvl(request));
+    expect(error?.kind).toBe('timeout');
+    expect(error?.details['phase']).toBe('body');
+  });
+
+  it('classifies another failure during the response-body read as a network failure', async () => {
+    const client = clientWith(async () => responseWithFailingBody(new TypeError('terminated')));
+    const error = await failure(client.queryStandardizedTvl(request));
+    expect(error?.kind).toBe('network');
+    expect(error?.details['phase']).toBe('body');
+    expect(error?.message).toMatch(/body read failed/);
+  });
+
+  it('classifies a transport failure during the request as network', async () => {
     const client = clientWith(async () => {
       throw new TypeError('fetch failed');
     });
-    expect(await failureKind(client.queryStandardizedTvl(request))).toBe('network');
+    expect((await failure(client.queryStandardizedTvl(request)))?.kind).toBe('network');
   });
 
   it('classifies hasIndexingErrors as an indexing failure', async () => {
@@ -111,14 +139,14 @@ describe('GraphGatewayClient', () => {
       },
     });
     const client = clientWith(async () => jsonResponse({ data: payload }));
-    expect(await failureKind(client.queryStandardizedTvl(request))).toBe('indexing');
+    expect((await failure(client.queryStandardizedTvl(request)))?.kind).toBe('indexing');
   });
 
   it('classifies a non-JSON or empty body as a schema failure, never an empty success', async () => {
     const notJson = clientWith(async () => new Response('<html>', { status: 200 }));
-    expect(await failureKind(notJson.queryStandardizedTvl(request))).toBe('schema');
+    expect((await failure(notJson.queryStandardizedTvl(request)))?.kind).toBe('schema');
     const noData = clientWith(async () => jsonResponse({}));
-    expect(await failureKind(noData.queryStandardizedTvl(request))).toBe('schema');
+    expect((await failure(noData.queryStandardizedTvl(request)))?.kind).toBe('schema');
   });
 
   it('rejects a malformed subgraph id before any request is made', async () => {
@@ -127,9 +155,10 @@ describe('GraphGatewayClient', () => {
       called = true;
       return jsonResponse({ data: validPayload() });
     });
-    expect(
-      await failureKind(client.queryStandardizedTvl({ ...request, subgraphId: 'not-an-id' })),
-    ).toBe('validation');
+    const error = await failure(
+      client.queryStandardizedTvl({ ...request, subgraphId: 'not-an-id' }),
+    );
+    expect(error?.kind).toBe('validation');
     expect(called).toBe(false);
   });
 
@@ -138,35 +167,56 @@ describe('GraphGatewayClient', () => {
       async () =>
         new Response(
           `bad key ${TEST_KEY} at https://x/api/${TEST_KEY}/subgraphs/id/Y Bearer ${TEST_KEY}`,
-          {
-            status: 401,
-          },
+          { status: 401 },
         ),
     );
-    try {
-      await client.queryStandardizedTvl(request);
-      throw new Error('expected failure');
-    } catch (error) {
-      const probe = error as GraphProbeError;
-      const body = String(probe.details['body']);
-      expect(body).not.toContain(TEST_KEY);
-      expect(body).toContain(REDACTED);
-      expect(probe.message).not.toContain(TEST_KEY);
+    const error = await failure(client.queryStandardizedTvl(request));
+    const body = String(error?.details['body']);
+    expect(body).not.toContain(TEST_KEY);
+    expect(body).toContain(REDACTED);
+    expect(error?.message).not.toContain(TEST_KEY);
+  });
+
+  it('rejects unsafe gateway base URLs at construction', () => {
+    for (const bad of [
+      'http://gateway.thegraph.com/api',
+      `https://user:${TEST_KEY}@gateway.thegraph.com/api`,
+      `https://gateway.thegraph.com/api?key=${TEST_KEY}`,
+      `https://gateway.thegraph.com/api#${TEST_KEY}`,
+    ]) {
+      let message = 'accepted';
+      try {
+        new GraphGatewayClient({ apiKey: TEST_KEY, gatewayBaseUrl: bad });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toMatch(/gateway base URL rejected/);
+      expect(message).not.toContain(TEST_KEY);
     }
   });
 
-  it('rejects a non-https gateway base URL', () => {
-    expect(
-      () =>
-        new GraphGatewayClient({ apiKey: TEST_KEY, gatewayBaseUrl: 'http://insecure.example/api' }),
-    ).toThrowError(GraphProbeError);
+  it('records only the sanitized endpoint in provenance and never claims the gateway for another host', async () => {
+    const client = clientWith(
+      async () => jsonResponse({ data: validPayload() }),
+      TEST_KEY,
+      'https://custom.example/graph/',
+    );
+    const reading = await client.queryStandardizedTvl(request);
+    expect(reading.provenance.provider).toBe('graph-compatible-https-endpoint');
+    expect(reading.provenance.providerBase).toBe('https://custom.example/graph');
+    const serialized = JSON.stringify(reading.provenance);
+    expect(serialized).not.toContain(TEST_KEY);
+    expect(serialized).not.toMatch(/Bearer/i);
+    expect(serialized).not.toContain('?');
+    expect(serialized).not.toContain('#');
+    expect(serialized).not.toContain('@');
   });
 
   it('cannot fall back from a live failure to fixture or replay data', async () => {
     const client = clientWith(async () => new Response('down', { status: 503 }));
     await expect(client.queryStandardizedTvl(request)).rejects.toBeInstanceOf(GraphProbeError);
     // Structural proof: the live path has no fixture or replay origin anywhere.
-    for (const file of ['./client.ts', './adapter.ts', './probe.ts']) {
+    for (const file of ['./client.ts', './adapter.ts', './probe.ts', './gate.ts']) {
       const source = readFileSync(new URL(file, import.meta.url), 'utf8');
       expect(source).not.toMatch(/['"]fixture['"]/);
       expect(source).not.toMatch(/['"]replay['"]/);
