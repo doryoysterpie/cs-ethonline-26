@@ -16,11 +16,25 @@ afterEach(async () => {
 describe('loadMigrations', () => {
   it('loads the shipped migrations in numeric order with SHA-256 checksums of the file bytes', async () => {
     const files = await loadMigrations();
-    expect(files.map((f) => f.fileName)).toEqual(['0001_editorial_ingestion.sql']);
-    const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, '0001_editorial_ingestion.sql'));
-    expect(files[0]?.checksum).toBe(createHash('sha256').update(bytes).digest('hex'));
+    expect(files.map((f) => f.fileName)).toEqual([
+      '0001_editorial_ingestion.sql',
+      '0002_provenance_integrity.sql',
+    ]);
+    for (const file of files) {
+      const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));
+      expect(file.checksum).toBe(createHash('sha256').update(bytes).digest('hex'));
+    }
     expect(files[0]?.version).toBe(1);
     expect(files[0]?.name).toBe('editorial_ingestion');
+    expect(files[1]?.version).toBe(2);
+    expect(files[1]?.name).toBe('provenance_integrity');
+  });
+
+  it('pins the checksum of migration 0001, which has been applied and must never change', async () => {
+    const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, '0001_editorial_ingestion.sql'));
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+      '6ccf4b05cdcd255b326029e99097c73ec220fa77d38d767e86a40175abc8b936',
+    );
   });
 
   it('orders by version, ignores files that do not match the naming rule, and rejects duplicate versions', async () => {

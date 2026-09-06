@@ -80,8 +80,9 @@ export async function inspectCsvFile(
   return { ...stats, basename: path.basename(filePath), headerCells, layout, rowCount };
 }
 
+/** Collision-free aggregation key built from plain source-safe characters. */
 function issueKey(code: string, field: string | null, severity: string): string {
-  return `${code}${field ?? ''}${severity}`;
+  return JSON.stringify([code, field, severity]);
 }
 
 export async function validateCsvFile(

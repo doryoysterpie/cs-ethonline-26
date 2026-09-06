@@ -1,3 +1,7 @@
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { run } from './cli.js';
@@ -123,6 +127,89 @@ describe('cli configuration handling (no database)', () => {
     );
   });
 
+  it('rejects a non-UUID batch id before opening a connection', async () => {
+    const r = await exec(['editorial', 'report', '--batch', "x'; DROP TABLE import_batches; --"]);
+    expect(r.code).toBe(EXIT_CODES.configuration);
+    expect(r.err.join('\n')).toContain('batch_id_invalid');
+    expect(r.err.join('\n')).not.toContain('DROP TABLE');
+  });
+
+  it('renders a hostile basename safely in validation mode, on one line, without rejecting it', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cas-cli-'));
+    try {
+      const ESC = String.fromCharCode(0x1b);
+      const LS = String.fromCharCode(0x2028);
+      const hostile = path.join(dir, `a${ESC}[31m${LS}b.csv`);
+      await copyFile(fixture('weekly-synthetic.csv'), hostile);
+      const r = await exec(['editorial', 'validate', '--file', hostile, '--kind', 'weekly']);
+      expect(r.code).toBe(EXIT_CODES.ok);
+      expect(r.out).toHaveLength(8);
+      for (const line of r.out) {
+        expect(line.includes('\n')).toBe(false);
+        expect(line.includes(ESC)).toBe(false);
+        expect(line.includes(LS)).toBe(false);
+      }
+      expect(r.out[0]).toContain('file=a\\x1b[31m\\u2028b.csv');
+      expect(r.out.join('\n').split('\n')).toHaveLength(8);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts an ordinary filename containing spaces in validation mode', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cas-cli-'));
+    try {
+      const spaced = path.join(dir, 'Content @latestincyber - CS86.csv');
+      await copyFile(fixture('weekly-synthetic.csv'), spaced);
+      const r = await exec(['editorial', 'validate', '--file', spaced, '--kind', 'weekly']);
+      expect(r.code).toBe(EXIT_CODES.ok);
+      expect(r.out[0]).toContain('file=Content @latestincyber - CS86.csv');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an import whose basename or review label carries a control character', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cas-cli-'));
+    try {
+      const hostile = path.join(dir, 'a\nb.csv');
+      await copyFile(fixture('weekly-synthetic.csv'), hostile);
+      const byName = await exec([
+        'editorial',
+        'import',
+        '--file',
+        hostile,
+        '--kind',
+        'weekly',
+        '--origin',
+        'replay',
+        '--review-label',
+        'CS79',
+      ]);
+      expect(byName.code).toBe(EXIT_CODES.configuration);
+      expect(byName.err.join('\n')).toContain('source_basename_invalid');
+      expect(byName.err.join('\n').split('\n')).toHaveLength(1);
+
+      const byLabel = await exec([
+        'editorial',
+        'import',
+        '--file',
+        fixture('weekly-synthetic.csv'),
+        '--kind',
+        'weekly',
+        '--origin',
+        'replay',
+        '--review-label',
+        'CS79\nRECONCILIATION FAILED for 9 batch(es)',
+      ]);
+      expect(byLabel.code).toBe(EXIT_CODES.configuration);
+      expect(byLabel.err.join('\n')).toContain('review_label_invalid');
+      expect(byLabel.err.join('\n').split('\n')).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('never prints a credential-bearing connection string, even on connection failure', async () => {
     const url = 'postgresql://app:hunter2-marker@127.0.0.1:1/cas';
     const r = await exec(['db', 'check'], { DATABASE_URL: url });
@@ -131,5 +218,14 @@ describe('cli configuration handling (no database)', () => {
     expect(all).not.toContain('hunter2-marker');
     expect(all).not.toContain('postgresql://');
     expect(all).toContain('error[database:connection');
+  });
+
+  it('redacts the password alone, not only the whole connection string', async () => {
+    const url = 'postgresql://app:p%40ss-marker@127.0.0.1:1/cas';
+    const r = await exec(['editorial', 'report', '--batch', 'not-a-uuid'], { DATABASE_URL: url });
+    expect(r.code).toBe(EXIT_CODES.configuration);
+    const all = [...r.out, ...r.err].join('\n');
+    expect(all).not.toContain('p%40ss-marker');
+    expect(all).not.toContain('p@ss-marker');
   });
 });

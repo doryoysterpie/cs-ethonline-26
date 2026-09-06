@@ -39,6 +39,15 @@ export {
   resolveHeaderLayout,
   type HeaderLayout,
 } from './editorial/headers.js';
+export {
+  DISPLAY_MAX_LENGTH,
+  ESCAPE_CHARACTER,
+  hasControlCharacter,
+  MAX_BASENAME_LENGTH,
+  MAX_REVIEW_LABEL_LENGTH,
+  safeDisplay,
+  toSingleLine,
+} from './editorial/display.js';
 export { htmlToText, TEXT_TRANSFORM } from './editorial/html-text.js';
 export {
   assertImportRequest,

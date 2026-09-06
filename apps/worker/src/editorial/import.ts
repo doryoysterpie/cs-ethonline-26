@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import path from 'node:path';
 
 import type { DataOrigin, EditorialSourceKind, ImportBatchStatus } from '@cas/contracts';
 import {
@@ -29,6 +30,7 @@ import {
 
 import { DEFAULT_CHUNK_SIZE, IMPORTER_VERSION } from './constants.js';
 import { readCsv } from './csv-stream.js';
+import { hasControlCharacter, MAX_BASENAME_LENGTH, MAX_REVIEW_LABEL_LENGTH } from './display.js';
 import { IngestionError } from './errors.js';
 import { TEXT_TRANSFORM } from './html-text.js';
 import { evaluateRow, type RowEvaluation } from './rows.js';
@@ -107,6 +109,46 @@ export function assertImportRequest(request: ImportRequest): void {
       'configuration',
       'review_label_forbidden',
       'a master import must not carry a review label; the master ch column is working state',
+    );
+  }
+  if (label !== null) {
+    // Checked on the raw value: JavaScript's `trim` also removes newlines,
+    // carriage returns, tabs and the Unicode separators, so trimming first
+    // would silently accept a label that carried them.
+    if (hasControlCharacter(label)) {
+      throw new IngestionError(
+        'configuration',
+        'review_label_invalid',
+        'review label contains a control or line-separator character',
+      );
+    }
+    const trimmed = label.trim();
+    if (trimmed.length > MAX_REVIEW_LABEL_LENGTH) {
+      throw new IngestionError(
+        'configuration',
+        'review_label_invalid',
+        `review label exceeds ${MAX_REVIEW_LABEL_LENGTH} characters`,
+        { length: trimmed.length },
+      );
+    }
+  }
+  // The basename is stored as provenance and printed; a name that carries a
+  // control character or exceeds the fixed length is refused before any file
+  // or database access. Spaces and other ordinary characters are fine.
+  const basename = path.basename(request.filePath);
+  if (basename.length === 0 || basename.length > MAX_BASENAME_LENGTH) {
+    throw new IngestionError(
+      'configuration',
+      'source_basename_invalid',
+      `file basename must be 1 to ${MAX_BASENAME_LENGTH} characters`,
+      { length: basename.length },
+    );
+  }
+  if (hasControlCharacter(basename)) {
+    throw new IngestionError(
+      'configuration',
+      'source_basename_invalid',
+      'file basename contains a control or line-separator character',
     );
   }
 }
@@ -216,6 +258,7 @@ async function flushChunk(
         id: context.makeId(),
         snapshotId: context.snapshotId,
         sourceRowId: id,
+        batchId: context.batchId,
         rawValue: e.review.rawValue,
         reviewState: e.review.state,
       });

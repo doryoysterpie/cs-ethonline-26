@@ -89,6 +89,8 @@ export interface NewReviewEntry {
   readonly id: string;
   readonly snapshotId: string;
   readonly sourceRowId: string;
+  /** The batch both the snapshot and the source row must belong to; enforced relationally by migration 0002. */
+  readonly batchId: string;
   readonly rawValue: string | null;
   readonly reviewState: ReviewState;
 }
@@ -407,12 +409,19 @@ export async function insertReviewEntries(
   assertChunk(entries.length, 'review entries');
   const values: unknown[] = [];
   for (const entry of entries) {
-    values.push(entry.id, entry.snapshotId, entry.sourceRowId, entry.rawValue, entry.reviewState);
+    values.push(
+      entry.id,
+      entry.snapshotId,
+      entry.sourceRowId,
+      entry.batchId,
+      entry.rawValue,
+      entry.reviewState,
+    );
   }
   await client.query(
-    `INSERT INTO review_entries (id, snapshot_id, source_row_id, raw_value, review_state) VALUES\n${valuesList(
+    `INSERT INTO review_entries (id, snapshot_id, source_row_id, batch_id, raw_value, review_state) VALUES\n${valuesList(
       entries.length,
-      5,
+      6,
     )}`,
     values,
   );

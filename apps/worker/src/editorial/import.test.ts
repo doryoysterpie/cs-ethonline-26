@@ -60,6 +60,61 @@ describe('assertImportRequest', () => {
     ).toBe('origin_required');
   });
 
+  it('rejects a review label carrying control characters or exceeding the fixed length', () => {
+    const hostile = [
+      'CS79\nrows: parsed=0',
+      'CS79\r',
+      'CS\tX',
+      `CS${String.fromCharCode(0x1b)}[31m`,
+      `CS${String.fromCharCode(0x9b)}`,
+      `CS${String.fromCharCode(0x2028)}`,
+      `CS${String.fromCharCode(0x2029)}`,
+      'C'.repeat(65),
+    ];
+    for (const label of hostile) {
+      expect(
+        code({ filePath: 'x.csv', sourceKind: 'weekly', origin: 'replay', reviewLabel: label }),
+        JSON.stringify(label),
+      ).toBe('review_label_invalid');
+    }
+    expect(
+      code({
+        filePath: 'x.csv',
+        sourceKind: 'weekly',
+        origin: 'replay',
+        reviewLabel: 'C'.repeat(64),
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects a basename carrying control characters, and accepts ordinary names with spaces', () => {
+    for (const name of [
+      'a.csv\nbatch=forged',
+      'a\r.csv',
+      `a${String.fromCharCode(0x1b)}[31m.csv`,
+      `a${String.fromCharCode(0x2028)}.csv`,
+      `${'n'.repeat(256)}.csv`,
+    ]) {
+      expect(
+        code({
+          filePath: `/tmp/${name}`,
+          sourceKind: 'master',
+          origin: 'replay',
+          reviewLabel: null,
+        }),
+        JSON.stringify(name),
+      ).toBe('source_basename_invalid');
+    }
+    expect(
+      code({
+        filePath: '/tmp/Content @latestincyber - CS79.csv',
+        sourceKind: 'weekly',
+        origin: 'replay',
+        reviewLabel: 'CS79',
+      }),
+    ).toBeNull();
+  });
+
   it('requires a review label for weekly files and forbids one for master files', () => {
     expect(
       code({ filePath: 'x.csv', sourceKind: 'weekly', origin: 'replay', reviewLabel: null }),
