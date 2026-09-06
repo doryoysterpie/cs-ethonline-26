@@ -48,6 +48,11 @@ function optionalString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/** Identity-bearing optional strings: whitespace-only is treated as missing. */
+function optionalIdentifier(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
 function requireString(value: unknown, field: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new GraphProbeError('schema', `${field} is missing or not a non-empty string`, {
@@ -93,7 +98,7 @@ export function adaptStandardizedTvl(data: unknown, ctx: AdapterContext): Standa
   const blockNumber = requireInteger(block['number'], '_meta.block.number');
   const blockHash = optionalString(block['hash']);
   const blockTimestamp = optionalInteger(block['timestamp']);
-  const deploymentId = optionalString(meta['deployment']);
+  const deploymentId = optionalIdentifier(meta['deployment']);
   const hasIndexingErrors = meta['hasIndexingErrors'];
   if (typeof hasIndexingErrors !== 'boolean') {
     throw new GraphProbeError('schema', '_meta.hasIndexingErrors is missing');

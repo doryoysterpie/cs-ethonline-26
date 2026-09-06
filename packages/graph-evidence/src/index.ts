@@ -17,6 +17,7 @@ export {
   DEFAULT_GATEWAY_BASE_URL,
   DEFAULT_TIMEOUT_MS,
   GraphGatewayClient,
+  gatewayBaseContainsCredential,
   type FetchLike,
   type GraphGatewayClientOptions,
   type StandardizedTvlRequest,
@@ -28,6 +29,7 @@ export {
   ETHEREUM_LENDING_TARGETS,
   type DeploymentTarget,
 } from './deployments.js';
+export { DISPLAY_MAX_LENGTH, safeDisplay } from './display.js';
 export {
   GRAPH_PROBE_FAILURE_KINDS,
   GraphProbeError,
@@ -41,11 +43,13 @@ export {
   type FreshnessResult,
 } from './freshness.js';
 export {
-  assertUniqueTargets,
   evaluateChainGate,
   evaluateFailedTarget,
   evaluateTarget,
+  presentDeploymentId,
+  protocolIdentityKey,
   validateLiveIdentity,
+  validateRegistry,
   type ChainGateOptions,
   type ChainGateResult,
   type IdentityMismatch,
@@ -62,6 +66,7 @@ export {
   formatEvaluation,
   formatGate,
   runProbe,
+  serializeDetails,
   type ProbeOptions,
   type ProbeRun,
 } from './probe.js';

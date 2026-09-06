@@ -19,7 +19,8 @@ function target(index: number, chain: 'ethereum' | 'base'): DeploymentTarget {
     label: `${chain}-${index}`,
     chain,
     protocol: `Protocol ${index}`,
-    slug: `protocol-${index}`,
+    slug: `protocol-${index}-registry`,
+    expectedProviderSlug: `protocol-${index}`,
     subgraphId: syntheticId(index),
     schemaFamily: 'lending',
     expected: {
@@ -51,7 +52,7 @@ function syntheticFetch(overrides: Record<string, Override> = {}): FetchLike {
       {
         ...protocols[0],
         name: t.protocol,
-        slug: t.slug,
+        slug: t.expectedProviderSlug,
         network: over.network ?? t.expected.network,
       },
     ];
@@ -95,12 +96,29 @@ describe('runProbe exit codes and output', () => {
     const { result, output } = await run(
       syntheticFetch(),
       { GRAPH_API_KEY: TEST_KEY },
-      {
-        ethereum: [...ETHEREUM, dup],
-      },
+      { ethereum: [...ETHEREUM, dup] },
     );
     expect(result.code).toBe(2);
     expect(output).toMatch(/same subgraph ID twice/);
+  });
+
+  it('exits 2 when the registry is inconsistent, before any request', async () => {
+    let called = false;
+    const wrongFamily = {
+      ...target(0, 'ethereum'),
+      expected: { network: 'MAINNET', protocolType: 'EXCHANGE', schemaVersion: '3.1.0' },
+    };
+    const { result, output } = await run(
+      async () => {
+        called = true;
+        return new Response('{}', { status: 200 });
+      },
+      { GRAPH_API_KEY: TEST_KEY },
+      { ethereum: [wrongFamily] },
+    );
+    expect(result.code).toBe(2);
+    expect(called).toBe(false);
+    expect(output).toMatch(/inconsistent with the declared schema family/);
   });
 
   it('exits 0 when five verified Ethereum identities pass, and reports Base PASS/KEEP truthfully', async () => {

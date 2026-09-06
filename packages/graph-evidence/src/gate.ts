@@ -1,15 +1,21 @@
 import type { ChainId, TvlDeltaSignal } from '@cas/contracts';
 
 import type { StandardizedTvlReading } from './adapter.js';
+import { safeDisplay } from './display.js';
 import { GraphProbeError, isGraphProbeError } from './errors.js';
 import { evaluateFreshness, type FreshnessResult } from './freshness.js';
+import { normalizeNetwork } from './network.js';
 import { calculateTvlDelta } from './tvl-delta.js';
 
 /**
  * The executable Graph release gate. Every count here derives from validated
  * provider evidence: what the provider returned for network, protocol type,
- * schema version, slug, name and deployment, checked against the registry's
+ * schema version, slug and deployment, checked against the registry's
  * declared expectations. Configured labels never establish distinctness.
+ *
+ * Canonical protocol identity is the normalized chain plus the
+ * provider-returned slug. The provider name is required display metadata and
+ * never contributes to distinctness, so a renamed protocol counts once.
  */
 
 /** Expectations a registry target declares, taken verbatim from a verified live sweep. */
@@ -30,16 +36,53 @@ export interface DeploymentTarget {
   readonly protocol: string;
   /** Registry deployment slug. Compared with, never substituted for, the provider slug. */
   readonly slug: string;
+  /** Provider-returned slug observed in the verified sweep; the live slug must equal it. */
+  readonly expectedProviderSlug: string;
   readonly subgraphId: string;
   readonly schemaFamily: 'lending';
   readonly expected: TargetExpectations;
 }
 
-/** Reject a registry whose targets are not unique before any query is made. */
-export function assertUniqueTargets(targets: readonly DeploymentTarget[]): void {
+/** Provider protocol type each declared schema family must report. */
+const FAMILY_PROTOCOL_TYPES: Readonly<Record<DeploymentTarget['schemaFamily'], string>> = {
+  lending: 'LENDING',
+};
+
+/**
+ * Reject an inconsistent registry before any query is made: empty expected
+ * provider slugs, expected networks that do not normalize to the configured
+ * chain, protocol types inconsistent with the declared schema family,
+ * duplicate labels and duplicate subgraph IDs.
+ */
+export function validateRegistry(targets: readonly DeploymentTarget[]): void {
   const seenIds = new Map<string, string>();
   const seenLabels = new Set<string>();
   for (const t of targets) {
+    if (t.expectedProviderSlug.trim().length === 0) {
+      throw new GraphProbeError(
+        'validation',
+        'registry target has an empty expected provider slug',
+        {
+          label: t.label,
+        },
+      );
+    }
+    const normalized = normalizeNetwork(t.expected.network);
+    if (normalized !== t.chain) {
+      throw new GraphProbeError(
+        'validation',
+        'registry expected network does not normalize to the configured chain',
+        { label: t.label, expectedNetwork: t.expected.network, chain: t.chain },
+      );
+    }
+    const familyType = FAMILY_PROTOCOL_TYPES[t.schemaFamily];
+    if (t.expected.protocolType !== familyType) {
+      throw new GraphProbeError(
+        'validation',
+        'registry expected protocol type is inconsistent with the declared schema family',
+        { label: t.label, schemaFamily: t.schemaFamily, protocolType: t.expected.protocolType },
+      );
+    }
     const prior = seenIds.get(t.subgraphId);
     if (prior !== undefined) {
       throw new GraphProbeError('validation', 'registry declares the same subgraph ID twice', {
@@ -65,6 +108,13 @@ export interface IdentityMismatch {
   readonly subgraphId: string;
 }
 
+/** A deployment ID counts as present only when it is a non-empty, non-whitespace string. */
+export function presentDeploymentId(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
 /** Compare live provider metadata to the registry expectations. Empty array means match. */
 export function validateLiveIdentity(
   target: DeploymentTarget,
@@ -82,12 +132,13 @@ export function validateLiveIdentity(
       });
     }
   };
+  check('protocol.slug', target.expectedProviderSlug, reading.identity.slug);
   check('protocol.network', target.expected.network, reading.identity.network);
   check('protocol.network(normalized)', target.chain, reading.identity.chain);
   check('protocol.type', target.expected.protocolType, reading.identity.protocolType);
   check('protocol.schemaVersion', target.expected.schemaVersion, reading.identity.schemaVersion);
   check('provenance.subgraphId', target.subgraphId, reading.provenance.subgraphId);
-  if (reading.provenance.deploymentId === null) {
+  if (presentDeploymentId(reading.provenance.deploymentId) === null) {
     mismatches.push({
       targetLabel: target.label,
       field: '_meta.deployment',
@@ -246,11 +297,17 @@ export interface ChainGateResult {
   readonly reasons: readonly string[];
 }
 
+/** Canonical protocol identity: normalized chain plus provider-returned slug. Name excluded. */
+export function protocolIdentityKey(reading: StandardizedTvlReading): string {
+  return `${reading.identity.chain}:${reading.identity.slug}`;
+}
+
 /**
  * Count verified live identities for one chain. A target counts only when it
- * is valid, reports the gate's chain, and adds a new provider identity, a new
+ * is valid, reports the gate's chain, and adds a new canonical identity, a new
  * subgraph ID and a new deployment ID. Duplicates by any of those keys are
- * reported and never counted twice.
+ * reported and never counted twice. Reasons are display strings: provider
+ * values in them are rendered as safe single-line text.
  */
 export function evaluateChainGate(
   evaluations: readonly TargetEvaluation[],
@@ -266,28 +323,30 @@ export function evaluateChainGate(
   for (const e of evaluations) {
     if (!e.valid || e.reading === null || e.signal === null) {
       reasons.push(
-        `${e.target.label}: ${e.failure?.kind ?? 'invalid'}: ${e.failure?.message ?? 'no signal'}`,
+        `${e.target.label}: ${safeDisplay(e.failure?.kind ?? 'invalid')}: ${safeDisplay(e.failure?.message ?? 'no signal')}`,
       );
       continue;
     }
     if (e.reading.identity.chain !== options.chain) {
       reasons.push(
-        `${e.target.label}: provider reports ${e.reading.identity.network}, gate is ${options.chain}`,
+        `${e.target.label}: provider reports ${safeDisplay(e.reading.identity.network)}, gate is ${options.chain}`,
       );
       continue;
     }
     valid += 1;
-    const identityKey = `${e.reading.identity.chain}:${e.reading.identity.slug}:${e.reading.identity.name}`;
-    const deploymentId = e.reading.provenance.deploymentId ?? '';
+    const identityKey = protocolIdentityKey(e.reading);
+    const deploymentId = presentDeploymentId(e.reading.provenance.deploymentId);
     if (identities.has(identityKey)) {
-      reasons.push(`${e.target.label}: duplicate provider identity ${e.reading.identity.slug}`);
+      reasons.push(
+        `${e.target.label}: duplicate provider identity ${safeDisplay(e.reading.identity.slug)}`,
+      );
       continue;
     }
     if (subgraphIds.has(e.reading.provenance.subgraphId)) {
       reasons.push(`${e.target.label}: duplicate subgraph ID`);
       continue;
     }
-    if (deploymentId === '' || deploymentIds.has(deploymentId)) {
+    if (deploymentId === null || deploymentIds.has(deploymentId)) {
       reasons.push(`${e.target.label}: duplicate or missing deployment ID`);
       continue;
     }

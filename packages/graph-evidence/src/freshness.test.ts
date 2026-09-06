@@ -20,6 +20,7 @@ const target: DeploymentTarget = {
   chain: 'ethereum',
   protocol: 'Synthetic Lending',
   slug: 'synthetic-lending',
+  expectedProviderSlug: 'synthetic-lending',
   subgraphId: TEST_SUBGRAPH_ID,
   schemaFamily: 'lending',
   expected: { network: 'MAINNET', protocolType: 'LENDING', schemaVersion: '3.1.0' },

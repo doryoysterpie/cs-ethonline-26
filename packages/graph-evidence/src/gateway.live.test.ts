@@ -21,7 +21,8 @@ import { formatEvaluation, formatGate } from './probe.js';
  * Requires GRAPH_API_KEY in the environment and performs real gateway queries.
  * It fails, rather than skips, without the credential, so that a missing key
  * can never look like a pass. Every count comes from the corrected gate,
- * which validates provider-returned identity against the registry.
+ * which validates provider-returned identity against the registry, and every
+ * printed line goes through the redacting, single-line formatter.
  */
 describe('live gateway integration', () => {
   const apiKey = process.env['GRAPH_API_KEY'];
@@ -30,7 +31,10 @@ describe('live gateway integration', () => {
     expect(apiKey, 'GRAPH_API_KEY must be exported for the live integration test').toBeTruthy();
   });
 
-  async function evaluateAll(targets: readonly DeploymentTarget[]): Promise<TargetEvaluation[]> {
+  async function evaluateAll(targets: readonly DeploymentTarget[]): Promise<{
+    evaluations: TargetEvaluation[];
+    client: GraphGatewayClient;
+  }> {
     const client = new GraphGatewayClient({
       apiKey,
       gatewayBaseUrl: process.env['GRAPH_GATEWAY_URL'],
@@ -49,42 +53,49 @@ describe('live gateway integration', () => {
         evaluations.push(evaluateFailedTarget(target, error, client.redact));
       }
       const last = evaluations.at(-1);
-      if (last) console.log(formatEvaluation(last));
+      if (last) console.log(formatEvaluation(last, client.redact));
     }
-    return evaluations;
+    return { evaluations, client };
   }
 
   it('passes the Ethereum proof gate on verified provider identities', async () => {
-    const evaluations = await evaluateAll(ETHEREUM_LENDING_TARGETS);
+    const { evaluations, client } = await evaluateAll(ETHEREUM_LENDING_TARGETS);
     const gate = evaluateChainGate(evaluations, {
       chain: 'ethereum',
       minimum: ETHEREUM_GATE_MINIMUM_PROTOCOLS,
       requireAll: false,
     });
-    console.log(formatGate('[live] Ethereum gate', gate, 'PASS', 'FAIL'));
+    console.log(formatGate('[live] Ethereum gate', gate, 'PASS', 'FAIL', client.redact));
     for (const e of evaluations) {
-      expect(e.failure?.kind, `${e.target.label}: ${e.failure?.message ?? ''}`).not.toBe(
-        'unexpected',
-      );
+      expect(
+        e.failure?.kind,
+        `${e.target.label}: ${client.redact(e.failure?.message ?? '')}`,
+      ).not.toBe('unexpected');
     }
-    expect(gate.passed, gate.reasons.join(' | ')).toBe(true);
+    expect(gate.passed, client.redact(gate.reasons.join(' | '))).toBe(true);
     expect(gate.distinctIdentities).toBeGreaterThanOrEqual(ETHEREUM_GATE_MINIMUM_PROTOCOLS);
     expect(gate.distinctDeploymentIds).toBeGreaterThanOrEqual(ETHEREUM_GATE_MINIMUM_PROTOCOLS);
   });
 
-  it('evaluates the Base secondary chain with the strict all-targets rule and reports truthfully', async () => {
-    const evaluations = await evaluateAll(BASE_LENDING_TARGETS);
+  it('passes the strict all-targets Base gate, as D18 and D19 record Base as kept', async () => {
+    const { evaluations, client } = await evaluateAll(BASE_LENDING_TARGETS);
     const gate = evaluateChainGate(evaluations, {
       chain: 'base',
       minimum: BASE_GATE_MINIMUM_PROTOCOLS,
       requireAll: true,
     });
-    console.log(formatGate('[live] Base secondary', gate, 'PASS/KEEP', 'FAIL/DROP'));
-    // Every Base outcome must be a structured, classified result; the keep/drop
-    // verdict itself is recorded in the report and never affects the exit contract.
+    console.log(formatGate('[live] Base secondary', gate, 'PASS/KEEP', 'FAIL/DROP', client.redact));
     for (const e of evaluations) {
-      expect(e.valid || (e.failure !== null && e.failure.kind !== 'unexpected')).toBe(true);
+      expect(
+        e.failure?.kind,
+        `${e.target.label}: ${client.redact(e.failure?.message ?? '')}`,
+      ).not.toBe('unexpected');
     }
     expect(gate.configured).toBe(BASE_LENDING_TARGETS.length);
+    // Base is recorded as KEPT. If this assertion fails, do not weaken it:
+    // record Base as FAIL/DROP, supersede the keep in DECISIONS.md and update
+    // this expectation together with the documentation.
+    expect(gate.passed, `Base FAIL/DROP: ${client.redact(gate.reasons.join(' | '))}`).toBe(true);
+    expect(gate.distinctIdentities).toBe(BASE_GATE_MINIMUM_PROTOCOLS);
   });
 });

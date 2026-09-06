@@ -41,6 +41,30 @@ function isAbort(name: string): boolean {
 }
 
 /**
+ * True when the validated gateway base carries the active credential in its
+ * host or path, raw or percent-encoded. Checked before any request is made so
+ * the key can never travel in a URL.
+ */
+export function gatewayBaseContainsCredential(base: string, key: string): boolean {
+  if (key.length === 0) return false;
+  const candidates = new Set<string>([base, base.toLowerCase()]);
+  try {
+    candidates.add(decodeURIComponent(base));
+    candidates.add(decodeURIComponent(base).toLowerCase());
+  } catch {
+    // An undecodable base still gets the raw comparisons.
+  }
+  const encodedKey = encodeURIComponent(key);
+  const needles = [key, key.toLowerCase(), encodedKey, encodedKey.toLowerCase()];
+  for (const candidate of candidates) {
+    for (const needle of needles) {
+      if (candidate.includes(needle)) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Minimal live client for a Graph gateway, built on Node's global fetch.
  *
  * - API key travels only in the `Authorization: Bearer` header, never in a URL.
@@ -69,6 +93,13 @@ export class GraphGatewayClient {
     this.#apiKey = key;
     this.redact = createRedactor([key]);
     this.#gateway = parseGatewayBaseUrl(options.gatewayBaseUrl);
+    if (gatewayBaseContainsCredential(this.#gateway.base, key)) {
+      throw new GraphProbeError(
+        'validation',
+        'gateway base URL rejected: contains the active credential',
+        { reason: 'contains the active credential' },
+      );
+    }
     const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     if (!Number.isInteger(timeout) || timeout <= 0) {
       throw new GraphProbeError('validation', 'timeoutMs must be a positive integer');
