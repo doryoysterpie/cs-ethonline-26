@@ -28,15 +28,24 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 3 complete, pending Codex Desktop audit: every imported source row now carries a
-machine classification and the needs-review queue is populated.** On 7 September 2026 a
-deterministic, versioned rule-based classifier (decision D21) classified all 24,248 imported
-rows across the three batches: 13,015 include, 55 exclude, 11,178 needs-review, one result per
-row, every run reconciled against its batch. Selected-retention recall is 0.992307 on CS79 and
-1.0 on CS86 against a 0.98 target. The historical weekly selections never reach the
-classifier; a regression test proves removing, replacing or flipping them changes no decision.
-No model is called and no Anthropic credential is read, because D9 is unresolved
-(`docs/SPRINT-3-REPORT.md`).
+**Sprint 3 corrected after audit, pending Codex Desktop re-audit: every imported source row
+carries a machine classification and the needs-review queue is populated.** On 7 September
+2026 a deterministic, versioned rule-based classifier (decision D21) classified all 24,248
+imported rows across the three batches: 13,015 include, 55 exclude, 11,178 needs-review, one
+result per row, every run reconciled against its batch. Selected-retention recall is 0.992307
+on CS79 and 1.0 on CS86 against a 0.98 target. The historical weekly selections never reach
+the classifier; a regression test proves removing, replacing or flipping them changes no
+decision. No model is called and no Anthropic credential is read, because D9 is unresolved.
+
+Codex Desktop returned CHANGES REQUIRED on the first candidate. All five findings are fixed on
+the same branch: a result's row hash is now bound to its source row by foreign key and a
+completed run is immutable in the database; the run makes one pass under a repeatable-read
+snapshot and derives its counters from its stored results; the ruleset hash covers every
+component that can change a decision; the classifier input is a closed allowlist rather than a
+denylist; and the queue command prints a count and nothing else. The corrected implementation
+reproduces the same decisions on all three batches. Section 12 of `docs/SPRINT-3-REPORT.md`
+records the findings, the root causes and the evidence. Sprint 3 is not accepted until Codex
+Desktop issues PASS.
 
 **Sprint 2 audited: Codex Desktop issued PASS for `000c3410` on 7 September 2026. The local
 PostgreSQL foundation and the manual CSV ingestion path are proven on the real exports.** On 6 September 2026 a fresh local
@@ -112,24 +121,24 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 3                                                                        |
-| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------- |
-| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                      |
-| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification and calibration commands; 126 tests     |
-| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                 |
-| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                               |
-| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests     |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, three migrations, ingestion and classification ops; 24 tests |
-| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work        |
-| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 33 unit tests  |
-| `packages/clustering`     | `@cas/clustering`     | placeholder                                                                                 |
-| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests  |
-| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                 |
-| `packages/drafting`       | `@cas/drafting`       | placeholder                                                                                 |
-| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                 |
-| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                            |
-| `data/fixtures`           |                       | synthetic editorial CSV fixtures for every known source hazard (`data/fixtures/README.md`)  |
-| `docs`                    |                       | charter documents and sprint reports, listed below                                          |
+| Path                      | Package               | State after Sprint 3                                                                       |
+| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------ |
+| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                     |
+| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification and calibration commands; 126 tests    |
+| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                |
+| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                              |
+| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests    |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, four migrations, ingestion and classification ops; 24 tests |
+| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work       |
+| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 55 unit tests |
+| `packages/clustering`     | `@cas/clustering`     | placeholder                                                                                |
+| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests |
+| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                |
+| `packages/drafting`       | `@cas/drafting`       | placeholder                                                                                |
+| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                |
+| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                           |
+| `data/fixtures`           |                       | synthetic editorial CSV fixtures for every known source hazard (`data/fixtures/README.md`) |
+| `docs`                    |                       | charter documents and sprint reports, listed below                                         |
 
 A placeholder package contains one source file that exports nothing. The intended
 responsibility of each package is in `docs/ARCHITECTURE.md`. Next.js is fixed by the plan for

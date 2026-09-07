@@ -241,11 +241,14 @@ inherits (decision D21):
   clock, no randomness. It cannot reach a credential because it cannot reach the environment.
   No model is invoked anywhere in Sprint 3, and no Anthropic credential is read even if one is
   configured, because D9 is unresolved.
-- The classifier's input is a closed list: source-row identifier, row hash, ingestion status,
-  normalized title, derived summary text, derived description text. A human review state, a
-  weekly label, the master `ch` value, a publisher category, a URL, raw cells, a batch label
-  and any connection value are refused by name at the boundary, in the type system and again
-  at runtime.
+- The classifier's input is a closed allowlist: exactly six own keys on a plain object, being
+  the source-row identifier, row hash, ingestion status, normalized title, derived summary
+  text and derived description text. Anything else is refused whatever it is called, together
+  with symbol keys, accessor properties and any prototype other than `Object.prototype` or
+  null. A human review state, a weekly label, the master `ch` value, a publisher category, a
+  URL, raw cells, a batch label and any connection value are therefore refused by
+  construction, not by being listed. A rejection carries a fixed reason code and never echoes
+  the offending key or its value.
 - Source text stays hostile evidence. It is matched against a fixed vocabulary and never
   interpreted: a title that says "ignore previous instructions" changes nothing, and text that
   looks like SQL is inert because every query is parameterized.
@@ -259,7 +262,14 @@ inherits (decision D21):
   any database access. There is no implicit "latest run".
 - Classification output carries identifiers, versions, hashes, counts, statuses, durations and
   fixed vocabulary only, through the same redactor and single-line guard as the ingestion
-  commands.
+  commands. The queue command is count-only: it prints one line holding one integer, has no
+  paging flag, and reaches the database through an aggregate query. No compiled command emits
+  a per-row queue export; per-row access is reserved for the authenticated review interface.
+- A completed classification run is immutable in the database, not merely in the application.
+  Its decisions, rationales, counters and provenance cannot be updated or deleted, its results
+  cannot be added to, changed or removed, and a result's row hash is bound by foreign key to
+  the source row it names, which in turn can no longer be re-hashed or deleted while a result
+  references it.
 
 ## Reporting a vulnerability
 

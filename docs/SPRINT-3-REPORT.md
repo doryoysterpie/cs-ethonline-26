@@ -47,26 +47,43 @@ inferred anywhere.
 
 | Property           | Value                                                              |
 | ------------------ | ------------------------------------------------------------------ |
-| Classifier version | `rules-classifier@1`                                               |
-| Ruleset version    | `classification-signal-policy@1`                                   |
-| Text assembly      | `classification-text-assembly@1`                                   |
+| Classifier version | `rules-classifier@2`                                               |
+| Ruleset version    | `classification-behavior-contract@1`                               |
+| Engine version     | `classification-engine@1`                                          |
 | Mode               | `rules`                                                            |
-| Ruleset hash       | `6aae18f3f7e6433615be7de68b5120b6956f377cba4d7b71f013e5c2db1ea04c` |
+| Ruleset hash       | `af7e15d184293ce28ff10ee891f27d7fac41325a41e0953139578600466b202f` |
 
-The ruleset hash is the SHA-256 of a canonical JSON document containing the classifier
-version, the mode, the text-assembly version, the ordered decision rules and the entire signal
-policy with its terms sorted. Any change to a term, a tier or a threshold changes the hash,
-and the hash is stored on every run.
+The ruleset hash is the SHA-256 of a canonical JSON document covering every component that can
+change an outcome: the versions and mode, the allowed input keys, the whole text-assembly rule
+set (field order, separator, null and empty handling, Unicode normalization form, case and
+whitespace normalization, the input character limit and whether truncation occurs), the
+matching rules (word-boundary policy, boundary character class, term ordering, duplicate
+handling, case sensitivity and the pattern signals), the thresholds, the ordered decision
+rules, the rationale-code vocabulary, the scoring formula with its weights and bounds, and the
+entire signal policy with its terms sorted. Any change to any of them changes the hash, and
+the hash is stored on every run.
+
+The classifier reads its behaviour from that document at run time rather than from constants
+that merely happen to agree with it, so a component that is not covered by the hash cannot
+silently change a decision. This is the correction to audit finding 3; the rejected version
+hashed the signal policy and the decision rules only, and the audit demonstrated that changing
+the text-assembly or matching behaviour left the hash unchanged.
 
 **Allowed classifier inputs.** Exactly six fields: the source-row identifier, the row hash,
 the ingestion status (`accepted` or `quarantined`), the normalized title, the derived summary
 text and the derived description text.
 
-**Prohibited inputs**, refused by the type and again at runtime by name: human review state,
-weekly selected or rejected labels, the master `ch` working state, publisher category, URLs in
-any form, raw cells or raw fields, batch labels, snapshot identifiers, and any database
-connection value. A caller that widens the object with any of these gets a
-`ClassificationInputError` naming the field, not the value.
+**Everything else is prohibited**, and the boundary is a closed allowlist rather than a list
+of known-bad names. The input must be a plain object whose prototype is `Object.prototype` or
+null, carrying exactly those six own keys, no symbol keys and no accessor properties. Any
+other own key is refused whatever it is called, so human review state, weekly selected or
+rejected labels, the master `ch` working state, publisher category, URLs in any form, raw
+cells or raw fields, batch labels, snapshot identifiers and database connection values are all
+refused by construction, together with names nobody has thought of yet. A rejected input
+raises a `ClassificationInputError` carrying a fixed reason code; neither the offending key
+nor its value is ever echoed. This is the correction to audit finding 4; the rejected version
+denied a fixed list of prohibited names, and the audit passed `analystDisposition` and
+`hiddenSnapshotToken` straight through it.
 
 **Text handling.** The three fields are joined in a fixed order with a newline, so a phrase
 cannot form across a field boundary, then normalized to Unicode NFC, lower-cased and
@@ -120,11 +137,14 @@ ruleset hash and mode. Re-running the same batch with the same rules returns the
 and writes nothing. A changed rule changes the hash and so produces a distinct run.
 
 **Ordering note.** Result foreign keys are checked immediately, so the run row must exist
-before its results. The orchestration therefore makes two bounded passes over the batch: the
-first counts decisions without retaining them so the run can be written with true counts, and
-the second writes the results. The classifier is pure, so the second pass reproduces the first
-exactly, and both run inside one transaction on one snapshot. This keeps memory bounded at one
-page and keeps every foreign key immediate rather than deferred.
+before its results. The rejected version met that requirement with two bounded passes over the
+batch, the first counting decisions and the second writing them, and claimed both passes read
+one snapshot. That claim was false. The transaction began with a plain `BEGIN`, so it ran at
+READ COMMITTED and each statement took a fresh snapshot; the two passes could therefore see
+different data and the run could commit counters that did not describe its own results. The
+corrected orchestration is described in section 12 and makes a single pass under an explicit
+`REPEATABLE READ` snapshot, inserting the run in a `running` state first and deriving its
+counters from the rows it actually stored.
 
 ## 4. Database access (design)
 
@@ -138,18 +158,25 @@ changed nothing.
 
 ## 5. Command-line interface (design)
 
-| Command                                           | Root script          |
-| ------------------------------------------------- | -------------------- |
-| `classification run --batch <uuid>`               | `classify:run`       |
-| `classification report --run <uuid>`              | `classify:report`    |
-| `classification queue --run <uuid> [--limit <n>]` | `classify:queue`     |
-| `classification calibrate --run <uuid>`           | `classify:calibrate` |
+| Command                                 | Root script          |
+| --------------------------------------- | -------------------- |
+| `classification run --batch <uuid>`     | `classify:run`       |
+| `classification report --run <uuid>`    | `classify:report`    |
+| `classification queue --run <uuid>`     | `classify:queue`     |
+| `classification calibrate --run <uuid>` | `classify:calibrate` |
 
 Every command validates its UUID before any database access, inherits the existing database
 configuration validation, and prints through the existing redactor and single-line guard.
 There is no implicit "latest run" anywhere: `report`, `queue` and `calibrate` each require an
 explicit run identifier. `calibrate` refuses a batch with no weekly review snapshot. Output
 carries identifiers, versions, hashes, counts, statuses, durations and fixed vocabulary only.
+
+`queue` prints one line, `classification_queue count=<integer>`, and nothing else. It has no
+paging flag, so no page of entries can be requested, and the count is an aggregate query
+rather than a fetched page. This is the correction to audit finding 5; the rejected version
+printed a source-row identifier, a row number, a signal score and the rationale codes for
+every queue entry. Per-row queue access remains available as a typed database operation for
+the authenticated review interface Sprint 6 will build; no compiled command calls it.
 
 ## 6. Tests (tests)
 
@@ -159,26 +186,32 @@ Offline tests need no database, no secret and no network, and run in continuous 
 | --------------------- | ------: | ---------: |
 | `@cas/contracts`      |       7 |            |
 | `@cas/taxonomy`       |       7 |            |
-| `@cas/classification` |      33 |            |
-| `@cas/database`       |      24 |         35 |
+| `@cas/classification` |      55 |            |
+| `@cas/database`       |      24 |         59 |
 | `@cas/graph-evidence` |     102 |            |
-| `@cas/worker`         |     126 |         17 |
-| **Total**             | **299** |     **52** |
+| `@cas/worker`         |     126 |         21 |
+| **Total**             | **321** |     **80** |
 
 Per file, for the files this sprint added or changed:
 
 | File                                                   | Tests |
 | ------------------------------------------------------ | ----: |
 | `packages/taxonomy/src/signal-policy.test.ts`          |     7 |
-| `packages/classification/src/classifier.test.ts`       |    22 |
+| `packages/classification/src/classifier.test.ts`       |    20 |
+| `packages/classification/src/contract.test.ts`         |    11 |
+| `packages/classification/src/input.test.ts`            |    13 |
 | `packages/classification/src/calibration.test.ts`      |     7 |
 | `packages/classification/src/label-invariance.test.ts` |     4 |
 | `packages/database/src/migrate.test.ts`                |     3 |
-| `packages/database/src/classification.db.test.ts`      |    13 |
+| `packages/database/src/classification.db.test.ts`      |    37 |
 | `packages/database/src/migrate.db.test.ts`             |     7 |
 | `apps/worker/src/cli.test.ts`                          |    20 |
 | `apps/worker/src/classification/output.test.ts`        |     7 |
-| `apps/worker/src/classification/run.db.test.ts`        |     9 |
+| `apps/worker/src/classification/run.db.test.ts`        |    13 |
+
+The counts above are the corrected totals. The rejected candidate had 33 classification tests,
+13 in `classification.db.test.ts` and 9 in `run.db.test.ts`; section 12 lists what the
+correction added.
 
 **Unit coverage** includes all three decisions; uncertain and quarantined input routed to
 review; stable rationale codes; deterministic ruleset hashing; repeated-run determinism over
@@ -206,15 +239,17 @@ distributions and identical per-row decisions.
 
 ## 7. Real-data evidence (real data)
 
-Run on 7 September 2026 against the dedicated local verification database established in
-Sprint 2, which already held the three imported batches under migrations 0001 and 0002.
-`DATABASE_URL` was never printed.
+All figures below are from the corrected implementation, re-run on 7 September 2026 after the
+audit. They come from a clean local PostgreSQL 17.10 database that applied migrations 0001 to
+0004 in order, reran them as a no-op, and re-imported the three real exports as `replay` data
+before classifying them. The upgrade and immutability evidence in section 12 comes from the
+working database established in Sprint 2, which already held the same three batches under
+migrations 0001 to 0003. `DATABASE_URL` was never printed.
 
-**Upgrade.** `db:migrate` applied `0003` alone (`applied=1 alreadyApplied=2 total=3`), a rerun
-was a no-op, and `db:check` reported three applied migrations and no drift. Counts before and
-after the upgrade were identical: 3 import batches, 24,248 source rows, 9 row issues, 23,640
-URL groups, 2 review snapshots, 338 review entries. A fresh database separately applied all
-three migrations in order and reran as a no-op, producing the nine expected tables.
+**Import into the clean database.** 23,910 master rows accepted with no issues; 157 CS79 rows
+with 3 quarantined and 5 issue codes; 181 CS86 rows accepted with no issues. Review snapshots:
+CS79 with 130 selected and 27 rejected, CS86 with 161 selected and 20 rejected. These match
+the Sprint 2 import evidence exactly.
 
 **Classification of the three explicit batches.**
 
@@ -227,10 +262,13 @@ three migrations in order and reran as a no-op, producing the nine expected tabl
 
 Every run stored exactly one result per source row: 24,248 results, and a query for any
 (run, row) pair with a count other than one returns zero. The three CS79 quarantined rows all
-received `review` with the single rationale code `row_quarantined`. The needs-review queue is
-non-empty for every run. Re-running the master and CS79 batches with the same ruleset returned
-the original run identifiers and wrote nothing. `calibrate` on the master run exited 2 with
-`no_review_snapshot`, as required.
+received `review` with the single rationale code `row_quarantined`. Re-running a batch with
+the same ruleset returned the original run identifier and wrote nothing. `calibrate` on the
+master run exited 2 with `no_review_snapshot`, as required.
+
+**Queue command output.** `classification_queue count=11074` for the master run,
+`classification_queue count=46` for CS79 and `classification_queue count=58` for CS86. That is
+the whole output: one line each, no identifier, row number, score or rationale code.
 
 **Rationale-code distribution.**
 
@@ -280,8 +318,9 @@ classification query. Every stored result carries the batch and run that produce
   to the calibration set, which decision D21 forbids. A future ruleset version may require two
   distinct out-of-scope signals for exclusion; that would be a general change, would alter the
   ruleset hash and would produce a new run.
-- **Two bounded passes per run** rather than one, for the foreign-key ordering reason in
-  section 3. The cost is classifying each row twice; the master batch takes about 15 seconds.
+- **One pass per run under a repeatable-read snapshot.** The rejected candidate made two
+  bounded passes; section 12 explains why that was wrong and what replaced it. The corrected
+  master run classifies 23,910 rows in about 9 seconds.
 - **`@cas/taxonomy` now holds a classification signal policy**, not an incident taxonomy. The
   distinction is stated in the package, in the policy file and here, and `data/taxonomy`
   remains empty.
@@ -302,9 +341,11 @@ classification query. Every stored result carries the batch and run that produce
 - **Local PostgreSQL only.** All database evidence comes from PostgreSQL 17.10 on the project
   owner's machine over a loopback connection. There is no hosted database, and D8 is still
   open.
-- **Continuous integration runs no database.** The 52 PostgreSQL tests run only through
-  `test:db` with a local `DATABASE_URL`. Continuous integration proves the 299 offline tests
-  and nothing about the schema.
+- **Continuous integration runs no database.** The 80 PostgreSQL tests run only through
+  `test:db` with a local `DATABASE_URL`. Continuous integration proves the 321 offline tests
+  and nothing about the schema. Every constraint and trigger added by migration 0004,
+  including the whole immutability matrix, is therefore unproven by continuous integration and
+  must be re-proven by any reviewer with a local database.
 - **Calibration is not a holdout.** CS79 and CS86 are calibration sets. The recall figures
   describe them, not unseen weeks, and no holdout evaluation has been run; that is Sprint 7.
 - **Precision is not a Sprint 3 target.** The classifier includes 6 rejected rows in each
@@ -319,10 +360,10 @@ classification query. Every stored result carries the batch and run that produce
 Every command run after the final edit. Exit codes in the handoff.
 
 `corepack pnpm install --frozen-lockfile`, `format:check`, `lint`, `typecheck`,
-`test --force`, `build`, `verify`, `audit`; then against the dedicated verification database
-`db:migrate` twice, `db:check` and `test:db`; then `classify:run`, `classify:report`,
-`classify:queue` and `classify:calibrate` against the three explicit batches; then
-`git diff --check`, `git fsck --full` and `git status --short`.
+`test --force`, `build`, `verify`, `audit`; then against a local database `db:migrate` twice,
+`db:check` and `test:db`; then `classify:run`, `classify:report`, `classify:queue` and
+`classify:calibrate` against the three explicit batches; then `git diff --check`,
+`git fsck --full` and `git status --short`.
 
 ## 11. Reproduction for Codex Desktop
 
@@ -330,14 +371,174 @@ Every command run after the final edit. Exit codes in the handoff.
    `corepack pnpm install --frozen-lockfile`, then `corepack pnpm verify` and
    `corepack pnpm test --force`. No database, secret or network is needed.
 2. Confirm the ruleset hash independently: build the workspace and evaluate `rulesetHash()`
-   from `@cas/classification`, or hash the canonical ruleset document yourself. It must equal
-   the value in section 2.
+   from `@cas/classification`, or hash the canonical behaviour contract yourself. It must
+   equal the value in section 2.
 3. With a local PostgreSQL 17 and `DATABASE_URL` in an ignored `.env`, run
-   `corepack pnpm db:migrate` twice (three applied, then no-op), `db:check`, and `test:db`
-   (52 tests, which create and drop only `cas_test_*` schemas).
-4. For the real-data evidence, point `DATABASE_URL` at a database holding the Sprint 2 import,
-   read the three batch identifiers from `import_batches`, and run `classify:run`,
-   `classify:report`, `classify:queue` and `classify:calibrate` for each. Compare with
-   section 7. Re-run `classify:run` to see `already classified`.
+   `corepack pnpm db:migrate` twice (four applied, then no-op), `db:check`, and `test:db`
+   (80 tests, which create and drop only `cas_test_*` schemas).
+4. For the real-data evidence, point `DATABASE_URL` at a clean database, import the three
+   exports as in the Sprint 2 report, then run `classify:run`, `classify:report`,
+   `classify:queue` and `classify:calibrate` for each batch. Compare with section 7. Re-run
+   `classify:run` to see `already classified`.
 5. Confirm the review tables are untouched by comparing `review_snapshots` and
    `review_entries` counts before and after a run.
+6. For the immutability matrix, connect with `psql` and attempt the statements listed in
+   section 12 against a completed run. Every one must be refused.
+
+## 12. Audit correction (correction)
+
+Codex Desktop reviewed `974ec047620bd54dd6f66f25c576377d4a488241` on
+`sprint-3/classification-review-queue` and returned CHANGES REQUIRED with five findings. This
+section records what was wrong, why, and what replaced it. The corrections are additive
+commits on the same branch; nothing was amended, rebased or force-pushed, and migrations
+0001, 0002 and 0003 are byte-identical to the versions already applied.
+
+### Finding 1. A result's fingerprint was not bound to its source row
+
+**What was wrong.** `classification_results.row_hash` was only shape-checked as 64 hexadecimal
+characters. Any syntactically valid SHA-256 could be stored against any row, and a source
+row's hash could be changed afterwards without the stored result noticing. Separately, nothing
+stopped a direct `UPDATE` or `DELETE` from rewriting a completed run's decisions, rationales,
+counters or provenance, so the audit trail was advisory rather than enforced.
+
+**Root cause.** The integrity claim lived in TypeScript, which wrote the correct value, rather
+than in the schema, which permitted any value. Sprint 2 made exactly the opposite choice for
+batches and rows, and Sprint 3 did not carry it forward.
+
+**Correction.** Migration `0004_classification_integrity.sql`, SHA-256
+`89763968c272d178a6a40c8f83ed5b28907c7e727393901ff99681b7b13ec719`, publishes
+`(id, batch_id, row_hash)` on `source_rows` and adds a composite foreign key from
+`classification_results (source_row_id, batch_id, row_hash)` to it. A wrong hash is now
+impossible on insert and on update, a referenced source row cannot be re-hashed, and it cannot
+be deleted. Two triggers make a completed run immutable: `classification_run_guard` refuses
+every update and delete on a completed run and every provenance change on a running one, and
+`classification_result_guard` refuses any insert, update or delete of a result whose run is
+completed, taking a share lock on the parent run first so it cannot race a concurrent
+completion.
+
+### Finding 2. Two passes under READ COMMITTED could commit stale counters
+
+**What was wrong.** The orchestration counted decisions in one pass and wrote them in a
+second, inside a transaction opened with a plain `BEGIN`. That is READ COMMITTED, where each
+statement takes a fresh snapshot, so the two passes could see different data and the run could
+commit counters that did not describe its own stored results. The report claimed both passes
+read one snapshot; that claim was false and has been corrected in section 3.
+
+**Root cause.** The design assumed a transaction implies a stable snapshot. In PostgreSQL that
+is true only from REPEATABLE READ upwards.
+
+**Correction.** One pass, under an explicit snapshot, with the counters derived from what was
+actually stored:
+
+1. `BEGIN ISOLATION LEVEL REPEATABLE READ`, issued as the transaction's first statement.
+2. Insert the run as `running` with zero counters and no completion time. The unique
+   idempotency key is the concurrency gate: a second identical invocation blocks here.
+3. Page the batch deterministically by the row's stable logical number, classify and persist.
+4. Derive the counters from `classification_results` for that run.
+5. Reconcile the stored results against the batch inside the same snapshot.
+6. Transition to `completed` as the final database operation.
+
+The transition is validated by the database, not by the caller. The trigger re-derives the
+total and each decision count from the stored results, verifies the run covers every row of
+its batch and holds no result from another batch, and refuses the transition otherwise. A run
+can no longer be inserted as already complete.
+
+### Finding 3. The ruleset hash did not cover everything that changes a decision
+
+**What was wrong.** The hash covered the signal policy and the decision rules. Text assembly,
+Unicode normalization, case folding, whitespace collapsing, field order and separator,
+word-boundary policy, the input character limit, the scoring weights and the quarantine score
+were all outside it, so changing any of them changed decisions while the hash, and therefore
+the run's identity and idempotency key, stayed the same.
+
+**Root cause.** The hash described the data the classifier used, not the behaviour it
+implemented.
+
+**Correction.** `packages/classification/src/contract.ts` declares the whole behaviour
+contract, and the classifier reads its thresholds, weights, matching rules and text-assembly
+rules from it rather than from constants that merely agree with it. The hash is the SHA-256 of
+that document in canonical form. Twenty-seven single-component mutations are each proven to
+change the hash, with no two colliding, and five tests prove the classifier actually honours a
+changed contract rather than ignoring it. The corrected identity is `rules-classifier@2` with
+ruleset `classification-behavior-contract@1` and hash
+`af7e15d184293ce28ff10ee891f27d7fac41325a41e0953139578600466b202f`.
+
+### Finding 4. The input boundary denied known names instead of admitting known names
+
+**What was wrong.** The runtime guard rejected a fixed list of prohibited field names. The
+audit passed `analystDisposition` and `hiddenSnapshotToken` and both reached the classifier,
+because neither was on the list.
+
+**Root cause.** A denylist cannot enumerate what has not been thought of.
+
+**Correction.** `assertClassificationInput` now admits exactly six own keys and nothing else.
+The value must be a plain object whose prototype is `Object.prototype` or null; symbol keys,
+accessor properties, inherited or polluted prototypes, and any additional own key are refused
+whatever they are called. Rejections carry a fixed reason code and never echo the offending
+key or its value.
+
+### Finding 5. The queue command printed per-row detail
+
+**What was wrong.** `classification queue` printed a source-row identifier, a row number, a
+signal score and the rationale codes for every entry, and accepted a `--limit` up to 1,000.
+That is a bulk per-row export from a compiled command, beyond the Sprint 3 output contract.
+
+**Root cause.** The command was written for the implementer's convenience during calibration.
+
+**Correction.** The command prints one line, `classification_queue count=<integer>`, from an
+aggregate query. The paging flag is gone, so a page of entries cannot be requested at all. The
+typed per-row operation remains in `@cas/database` for the authenticated review interface
+Sprint 6 will build, and no compiled command calls it.
+
+### Tests added by the correction
+
+| Area                                               | Tests |
+| -------------------------------------------------- | ----: |
+| Behaviour contract and hash coverage               |    11 |
+| Closed input allowlist                             |    13 |
+| Source-row hash integrity (PostgreSQL)             |     4 |
+| Completed-run and result immutability (PostgreSQL) |    12 |
+| Completion correctness and derived counters        |     9 |
+| Concurrent interference during a run (PostgreSQL)  |     4 |
+
+The concurrency tests drive a second connection through a test-only seam that runs before each
+page is fetched, so the interleaving is deterministic and no test sleeps. The seam cannot
+change what is written; production callers never pass it. They prove that a row inserted
+mid-run leaves the run's counters describing exactly its own results and the extra row
+reported as uncovered rather than hidden; that a source row cannot be re-hashed while a
+result of the running transaction references it, the tampering statement failing with
+`23503`; that a row re-hashed before it is read makes the whole run fail, observed as `40001`,
+rather than storing a fingerprint that has moved on; and that two identical concurrent
+invocations produce exactly one run and one set of results.
+
+### Real-data evidence for the correction
+
+Migration 0004 was applied to the Sprint 2 working database, which held 24,248 source rows,
+24,248 results and three completed runs from the rejected implementation. It applied cleanly,
+validating every existing row: no result carried a hash its source row did not have. Counts
+after the upgrade were identical, and `db:check` reported four applied migrations and no
+drift.
+
+Four tamper attempts were then made with `psql` against a real completed run:
+
+| Statement                                      | Result                                                    |
+| ---------------------------------------------- | --------------------------------------------------------- |
+| `UPDATE classification_results SET decision`   | refused: results of a completed run are immutable         |
+| `DELETE FROM classification_runs`              | refused: completed classification run is immutable        |
+| `UPDATE classification_runs SET include_count` | refused: completed classification run is immutable        |
+| `UPDATE source_rows SET row_hash`              | refused: foreign key `classification_results_row_hash_fk` |
+
+Nothing changed: 24,248 results, three runs, and the master run's include count still 12,782.
+
+The classification evidence in section 7 was then produced on a clean database, so it carries
+one run per batch at the corrected ruleset hash. The corrected implementation reproduces the
+rejected implementation's decisions exactly on all three batches: identical include, exclude
+and review counts, identical rationale-code distributions, identical calibration. That is the
+expected result. Every one of the five findings concerned integrity, identity, boundary or
+output, not classification behaviour.
+
+### What this correction does not establish
+
+The correction has not been audited. Codex Desktop's verdict on the rejected candidate stands
+until it reviews these commits. Sprint 3 is not accepted, and Check-in #1 has not been
+submitted.

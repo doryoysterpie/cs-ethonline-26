@@ -565,3 +565,15 @@ entries are unchanged except for status pointers.
 - **Decided by:** Project owner, Sprint 3 implementation instruction of 2026-09-07.
 - **Supersedes:** none. Applies the Sprint 3 kill criterion recorded in `SPRINT_BOARD.md`
   and leaves D9 and D10 open.
+- **Amendment, 2026-09-07 (audit correction).** Codex Desktop returned CHANGES REQUIRED on
+  the first Sprint 3 candidate. The decision itself is unchanged; the following recorded
+  particulars are. The classifier identity is now `rules-classifier@2` with ruleset
+  `classification-behavior-contract@1`, and the stored hash covers every component that can
+  change a decision rather than the signal policy and rule order alone. The classifier input
+  is a closed allowlist of six keys instead of a denylist of prohibited names. `@cas/database`
+  gains migration `0004_classification_integrity.sql`, which binds a result's row hash to its
+  source row and makes a completed run immutable in the database. A run is written in one pass
+  under a `REPEATABLE READ` snapshot, inserted as `running` and completed last with counters
+  the database re-derives from the stored results. The `classification queue` command is
+  count-only. Decisions on all three real batches are unchanged. Details and evidence are in
+  section 12 of `SPRINT-3-REPORT.md`.
