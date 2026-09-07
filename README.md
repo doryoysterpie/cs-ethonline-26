@@ -105,7 +105,7 @@ allows; otherwise they are dropped. Requirement status per track is in
 | Path                      | Package               | State after Sprint 2                                                                       |
 | ------------------------- | --------------------- | ------------------------------------------------------------------------------------------ |
 | `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                     |
-| `apps/worker`             | `@cas/worker`         | implemented: streaming CSV validation, row evaluation, manual import, CLI; 113 unit tests  |
+| `apps/worker`             | `@cas/worker`         | implemented: streaming CSV validation, row evaluation, manual import, CLI; 116 unit tests  |
 | `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                |
 | `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                              |
 | `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests    |

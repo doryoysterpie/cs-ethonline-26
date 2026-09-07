@@ -303,7 +303,7 @@ no extension is needed.
 | `src/cli.ts`                  | `db migrate`, `db check`, `editorial validate`, `editorial import`, `editorial report`; a non-empty `DATABASE_URL` is validated in full by `parseDatabaseConfig` before any command is dispatched, validation included; a batch id must be a UUID; the base redactor covers the whole `DATABASE_URL` and its raw and percent-decoded password; every emitted entry passes the redactor and then the single-line guard; exit codes 0, 2 configuration, 3 structural, 4 database, 5 unexpected, 130 interrupted; SIGINT and SIGTERM abort the import and roll it back. |
 
 Inputs: `DATABASE_URL` (required for every command except validation) and a CSV path.
-Outputs: rows in the six ingestion tables for Sprint 3 to classify. Unit tests (113 in the
+Outputs: rows in the six ingestion tables for Sprint 3 to classify. Unit tests (116 in the
 worker, 24 in the database package) run without a database; PostgreSQL integration tests
 (8 and 22) run only through `test:db` in schemas they create and drop themselves.
 
