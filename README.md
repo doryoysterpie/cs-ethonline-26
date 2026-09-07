@@ -28,8 +28,8 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 2 built, pending Codex audit: the local PostgreSQL foundation and the manual CSV
-ingestion path exist and are proven on the real exports.** On 6 September 2026 a fresh local
+**Sprint 2 audited: Codex Desktop issued PASS for `000c3410` on 7 September 2026. The local
+PostgreSQL foundation and the manual CSV ingestion path are proven on the real exports.** On 6 September 2026 a fresh local
 PostgreSQL 17 database was migrated by the checksummed forward-only runner in `@cas/database`,
 a second run was a no-op, and `@cas/worker` validated and imported the three real exports as
 `replay` data: 23,910 master rows, 157 CS79 rows and 181 CS86 rows, every logical row stored,
@@ -308,7 +308,7 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 | `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules       |
 | `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure  |
 | `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule  |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D20                                         |
+| `docs/DECISIONS.md`              | append-only decision log, D1 to D21                                         |
 | `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                        |
 | `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria |
 | `docs/SECURITY.md`               | security policy                                                             |

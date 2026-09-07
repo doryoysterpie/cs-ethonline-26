@@ -522,3 +522,46 @@ entries are unchanged except for status pointers.
   importer applies a week boundary.
 - **Decided by:** Project owner, Sprint 2 implementation instruction of 2026-09-06.
 - **Supersedes:** D2 and D7b. Confirms D7a as accepted.
+
+## D21 Sprint 3 classification approach: deterministic rules, calibration, separation
+
+- **Date:** 2026-09-07
+- **Status:** ACCEPTED
+- **Decision:**
+  - **Approach.** Sprint 3 classifies with a deterministic, versioned, rule-based
+    high-recall classifier in `@cas/classification`. This is the approved fallback that the
+    sprint board's kill criterion names, taken because D9 is unresolved.
+  - **D9 stays unresolved.** This decision does not resolve it and does not choose a model,
+    settings or spending cap. No Anthropic SDK, no model-backed code path and no model call
+    is added in Sprint 3. Even if `ANTHROPIC_API_KEY` is present in the environment, nothing
+    in this sprint reads or uses it.
+  - **Calibration, not filtering.** CS79 and CS86 are calibration datasets. They are not a
+    production filter and not holdouts. Historical selections never enter the classifier:
+    they are not passed to it, not used as features, not used to choose which rows are
+    classified, not used to vary rules for particular source-row identifiers, and never
+    encoded as special cases. Classification runs first and calibration is a separate
+    post-hoc evaluation that joins completed results to a weekly review snapshot.
+  - **Scope of a run.** Classification operates on one explicitly named imported batch. No
+    editorial week is inferred, because D10 remains unresolved.
+  - **Recall posture.** An uncertain source is routed to `review`, never to `exclude`. A
+    source is excluded only on strong, explicit out-of-scope evidence with no material cyber
+    signal. Excluded sources remain stored with stable rationale codes; nothing is dropped.
+  - **Separation.** A machine `ClassificationDecision` is never a human `ReviewState`, never
+    written into the review tables and never derived from one. The needs-review queue is
+    derived from an explicit classification run.
+- **Rationale:** The sprint board's kill criterion for Sprint 3 is explicit: if the model
+  path cannot run reproducibly enough to audit, ship a rule-based high-recall pass with the
+  queue and defer the model. D9 is unresolved, no model, settings or cap is chosen, and at
+  the time of this decision no Anthropic credential is configured. A deterministic ruleset
+  is auditable line by line, needs no credential, runs in continuous integration and can be
+  hashed, which a model call cannot. Keeping calibration strictly after classification is
+  what makes the recall figure meaningful rather than circular.
+- **Consequences:** `@cas/taxonomy` carries the versioned classification signal policy;
+  `@cas/classification` carries the pure classifier and the pure calibration evaluator;
+  `@cas/database` gains migration `0003_classification.sql` and the run and result
+  operations; `@cas/worker` gains the classification commands. D9 and D10 both stay
+  unresolved and are listed as open human items. The classifier's ruleset is hashed and the
+  hash is stored with every run, so a rule change is visible and produces a distinct run.
+- **Decided by:** Project owner, Sprint 3 implementation instruction of 2026-09-07.
+- **Supersedes:** none. Applies the Sprint 3 kill criterion recorded in `SPRINT_BOARD.md`
+  and leaves D9 and D10 open.
