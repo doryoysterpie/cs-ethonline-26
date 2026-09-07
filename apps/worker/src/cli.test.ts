@@ -210,6 +210,69 @@ describe('cli configuration handling (no database)', () => {
     }
   });
 
+  it('requires an explicit UUID for every classification command, with no latest-run default', async () => {
+    const cases: [argv: string[], code: string][] = [
+      [['classification', 'run'], 'batch_id_required'],
+      [['classification', 'run', '--batch', 'not-a-uuid'], 'batch_id_invalid'],
+      [['classification', 'report'], 'run_id_required'],
+      [['classification', 'report', '--run', 'latest'], 'run_id_invalid'],
+      [['classification', 'queue'], 'run_id_required'],
+      [
+        ['classification', 'queue', '--run', "x'; DROP TABLE classification_runs; --"],
+        'run_id_invalid',
+      ],
+      [['classification', 'calibrate'], 'run_id_required'],
+      [['classification', 'calibrate', '--run', '123'], 'run_id_invalid'],
+    ];
+    for (const [argv, code] of cases) {
+      const r = await exec(argv, { DATABASE_URL: 'postgresql://127.0.0.1:5432/cas' });
+      expect(r.code, argv.join(' ')).toBe(EXIT_CODES.configuration);
+      expect(r.out, argv.join(' ')).toEqual([]);
+      expect(r.err.join('\n'), argv.join(' ')).toContain(code);
+      expect(r.err.join('\n'), argv.join(' ')).not.toContain('DROP TABLE');
+    }
+  });
+
+  it('validates the queue limit before opening a connection', async () => {
+    const runId = '11111111-1111-4111-8111-111111111111';
+    for (const limit of ['0', 'all', '1.5', '99999', '00']) {
+      const r = await exec(['classification', 'queue', '--run', runId, '--limit', limit], {
+        DATABASE_URL: 'postgresql://127.0.0.1:5432/cas',
+      });
+      expect(r.code, limit).toBe(EXIT_CODES.configuration);
+      expect(r.err.join('\n'), limit).toContain('limit_invalid');
+    }
+    // A leading minus reads as an unknown option, which the argument parser
+    // rejects before any command runs. Still a configuration error, still no
+    // output.
+    const negative = await exec(['classification', 'queue', '--run', runId, '--limit', '-1'], {
+      DATABASE_URL: 'postgresql://127.0.0.1:5432/cas',
+    });
+    expect(negative.code).toBe(EXIT_CODES.configuration);
+    expect(negative.out).toEqual([]);
+    expect(negative.err.join('\n')).toContain('arguments_invalid');
+  });
+
+  it('applies the database configuration validation to classification commands too', async () => {
+    const argvs = [
+      ['classification', 'run', '--batch', '11111111-1111-4111-8111-111111111111'],
+      ['classification', 'report', '--run', '11111111-1111-4111-8111-111111111111'],
+      ['classification', 'queue', '--run', '11111111-1111-4111-8111-111111111111'],
+      ['classification', 'calibrate', '--run', '11111111-1111-4111-8111-111111111111'],
+    ];
+    for (const argv of argvs) {
+      // No DATABASE_URL at all.
+      const missing = await exec(argv, {});
+      expect(missing.code, argv.join(' ')).toBe(EXIT_CODES.configuration);
+      expect(missing.err.join('\n'), argv.join(' ')).toContain('DATABASE_URL is not set');
+      // A password the redactor could not protect.
+      const short = await exec(argv, { DATABASE_URL: 'postgresql://app:abc@127.0.0.1:5432/cas' });
+      expect(short.code, argv.join(' ')).toBe(EXIT_CODES.configuration);
+      expect(short.err.join('\n'), argv.join(' ')).toContain('at least 4 characters');
+      expect(short.out, argv.join(' ')).toEqual([]);
+    }
+  });
+
   it('never prints a credential-bearing connection string, even on connection failure', async () => {
     const url = 'postgresql://app:hunter2-marker@127.0.0.1:1/cas';
     const r = await exec(['db', 'check'], { DATABASE_URL: url });

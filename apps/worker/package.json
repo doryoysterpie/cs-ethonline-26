@@ -12,6 +12,7 @@
     "cli": "pnpm -w exec turbo run build --filter=@cas/worker && node dist/cli.js"
   },
   "dependencies": {
+    "@cas/classification": "workspace:*",
     "@cas/contracts": "workspace:*",
     "@cas/database": "workspace:*",
     "csv-parse": "catalog:",

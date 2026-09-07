@@ -14,6 +14,14 @@ import {
   type Redactor,
 } from '@cas/database';
 
+import {
+  formatCalibration,
+  formatClassificationRun,
+  formatQueue,
+  formatRunReport,
+} from './classification/output.js';
+import { calibrateRun, reportRun, reviewQueue } from './classification/report.js';
+import { classifyBatch } from './classification/run.js';
 import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
 import { assertImportRequest, importCsvFile } from './editorial/import.js';
@@ -34,6 +42,10 @@ import { validateCsvFile } from './editorial/validate.js';
  *   editorial validate --file F --kind K
  *   editorial import   --file F --kind K --origin O [--review-label L]
  *   editorial report   [--batch ID]
+ *   classification run       --batch UUID
+ *   classification report    --run UUID
+ *   classification queue     --run UUID [--limit N]
+ *   classification calibrate --run UUID
  *
  * Exit codes: 0 success (a completed_with_issues import is a success that
  * retained every row); 2 configuration; 3 structural input; 4 database;
@@ -65,6 +77,10 @@ const USAGE = [
   '  editorial validate --file <path> --kind <master|weekly>',
   '  editorial import --file <path> --kind <master|weekly> --origin <live|fixture|replay> [--review-label <label>]',
   '  editorial report [--batch <id>]',
+  '  classification run --batch <uuid>',
+  '  classification report --run <uuid>',
+  '  classification queue --run <uuid> [--limit <n>]',
+  '  classification calibrate --run <uuid>',
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -97,6 +113,32 @@ function parseBatchId(value: string | undefined): string | null {
   if (value === undefined) return null;
   if (!UUID.test(value)) throw configurationError('batch_id_invalid', '--batch must be a UUID');
   return value.toLowerCase();
+}
+
+/** A classification command names its subject explicitly; there is no "latest" default. */
+function requireUuid(value: string | undefined, flag: 'batch' | 'run'): string {
+  if (value === undefined || value.length === 0) {
+    throw configurationError(`${flag}_id_required`, `--${flag} is required`);
+  }
+  if (!UUID.test(value)) {
+    throw configurationError(`${flag}_id_invalid`, `--${flag} must be a UUID`);
+  }
+  return value.toLowerCase();
+}
+
+const DEFAULT_QUEUE_LIMIT = 20;
+const MAX_QUEUE_LIMIT = 1000;
+
+function parseLimit(value: string | undefined): number {
+  if (value === undefined) return DEFAULT_QUEUE_LIMIT;
+  if (!/^[1-9][0-9]{0,3}$/.test(value)) {
+    throw configurationError('limit_invalid', `--limit must be a whole number of rows`);
+  }
+  const limit = Number(value);
+  if (limit > MAX_QUEUE_LIMIT) {
+    throw configurationError('limit_invalid', `--limit must not exceed ${MAX_QUEUE_LIMIT}`);
+  }
+  return limit;
 }
 
 /** Covers the whole DATABASE_URL plus its raw and percent-decoded password, when set. */
@@ -225,6 +267,32 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       if (unreconciled > 0) emit(`RECONCILIATION FAILED for ${unreconciled} batch(es)`);
       return unreconciled === 0 ? EXIT_CODES.ok : EXIT_CODES.database;
     }
+    if (group === 'classification' && command === 'run') {
+      const batchId = requireUuid(values.batch, 'batch');
+      parseDatabaseConfig(options.env);
+      const outcome = await withDatabase(options.env, (db) => classifyBatch(db, { batchId }));
+      for (const line of formatClassificationRun(outcome, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'classification' && command === 'report') {
+      const runId = requireUuid(values.run, 'run');
+      const report = await withDatabase(options.env, (db) => reportRun(db, runId));
+      for (const line of formatRunReport(report, redact)) emit(line);
+      return report.reconciled ? EXIT_CODES.ok : EXIT_CODES.database;
+    }
+    if (group === 'classification' && command === 'queue') {
+      const runId = requireUuid(values.run, 'run');
+      const limit = parseLimit(values.limit);
+      const page = await withDatabase(options.env, (db) => reviewQueue(db, runId, limit));
+      for (const line of formatQueue(page, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'classification' && command === 'calibrate') {
+      const runId = requireUuid(values.run, 'run');
+      const report = await withDatabase(options.env, (db) => calibrateRun(db, runId));
+      for (const line of formatCalibration(report, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
     for (const line of USAGE) emitError(line);
     return fail(configurationError('command_unknown', 'unknown command'));
   } catch (error) {
@@ -238,6 +306,8 @@ const PARSE_OPTIONS = {
   origin: { type: 'string' },
   'review-label': { type: 'string' },
   batch: { type: 'string' },
+  run: { type: 'string' },
+  limit: { type: 'string' },
 } as const;
 
 interface ParsedValues {
@@ -246,6 +316,8 @@ interface ParsedValues {
   readonly origin?: string | undefined;
   readonly 'review-label'?: string | undefined;
   readonly batch?: string | undefined;
+  readonly run?: string | undefined;
+  readonly limit?: string | undefined;
 }
 
 export async function main(): Promise<void> {

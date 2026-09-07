@@ -89,6 +89,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@cas/classification':
+        specifier: workspace:*
+        version: link:../../packages/classification
       '@cas/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

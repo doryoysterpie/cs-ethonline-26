@@ -90,4 +90,27 @@ export {
   type ValidateOptions,
   type ValidationReport,
 } from './editorial/validate.js';
+export {
+  formatCalibration,
+  formatClassificationRun,
+  formatQueue,
+  formatRunReport,
+} from './classification/output.js';
+export {
+  calibrateRun,
+  reportRun,
+  reviewQueue,
+  type CalibrationReport,
+  type QueuePage,
+  type RunReport,
+} from './classification/report.js';
+export {
+  classifyBatch,
+  computeRunIdempotencyKey,
+  DEFAULT_PAGE_SIZE,
+  type ClassifyBatchOptions,
+  type ClassifyBatchOutcome,
+  type ClassifyBatchRequest,
+  type IdempotencyInputs as RunIdempotencyInputs,
+} from './classification/run.js';
 export { run, type CliIo, type CliOptions } from './cli.js';
