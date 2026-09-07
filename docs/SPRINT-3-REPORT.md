@@ -365,6 +365,17 @@ Every command run after the final edit. Exit codes in the handoff.
 `classify:calibrate` against the three explicit batches; then `git diff --check`,
 `git fsck --full` and `git status --short`.
 
+**One unexplained test failure, recorded rather than hidden.** On the first full offline run in
+a fresh clone of the correction, `packages/database/src/migrate.test.ts` reported its first
+case failing while the other 23 database tests passed. It has not recurred in six subsequent
+full-suite runs across two fresh clones, twenty-five consecutive runs of that file alone, or
+the continuous integration run of the pushed branch, and the assertion diff was not captured
+before the log was filtered. The test reads the migrations directory and compares each file's
+checksum against a fresh read of the same bytes; nothing in the build or the test suite writes
+to that directory. The cause is unknown. It is recorded here because an unreproduced failure
+is still evidence, and a reviewer who sees it again should treat it as a real defect in the
+loader rather than as noise.
+
 ## 11. Reproduction for Codex Desktop
 
 1. Check out `sprint-3/classification-review-queue` at the final SHA, run
