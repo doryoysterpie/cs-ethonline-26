@@ -2,7 +2,7 @@
   "name": "@cas/taxonomy",
   "version": "0.0.0",
   "private": true,
-  "description": "Incident taxonomy definitions and loaders. Placeholder after Sprint 0.",
+  "description": "Versioned classification signal policy consumed by @cas/classification. Not the incident taxonomy, which remains future work.",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

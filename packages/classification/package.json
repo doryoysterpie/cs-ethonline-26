@@ -2,7 +2,7 @@
   "name": "@cas/classification",
   "version": "0.0.0",
   "private": true,
-  "description": "Signal-to-reporting classification. Placeholder after Sprint 0.",
+  "description": "Deterministic high-recall classification of imported sources into include, exclude or review, and the post-hoc calibration evaluator. Pure: no database, network, environment, model, clock or randomness. Sprint 3, decision D21.",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,16 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*",
+    "@cas/taxonomy": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
