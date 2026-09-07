@@ -1,8 +1,8 @@
 # Architecture
 
 This document records the intended architecture as fixed by the Sprint 0 charter, the
-supplied project plan (Plan 2.0) and decisions D11 to D20, and the state of each component
-after Sprint 2. Where the project owner or the plan fixes something, this document says so.
+supplied project plan (Plan 2.0) and decisions D11 to D21, and the state of each component
+after Sprint 3. Where the project owner or the plan fixes something, this document says so.
 Where the implementer has proposed something that is not fixed, it is marked **proposed**
 and is open to revision.
 
@@ -12,23 +12,23 @@ inside the repository. No separate plan document exists here.
 
 ## 1. Components
 
-| Package               | Responsibility (intended)                                                                                                                                                                                      | State after Sprint 2                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                                      | seven enums, the chain set, and the Graph evidence contracts; tested                          |
-| `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                                                                                                                 | placeholder                                                                                   |
-| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts. Sprint 2.                   | implemented (Sprint 2): migration runner, ingestion schema and parameterized operations       |
-| `@cas/graph-evidence` | Live Graph-provider queries over the Messari standardized schema (D11), signal detection, the anomaly feed, and the provenance record of every request and response. Runs in parallel to editorial ingestion.  | implemented (Sprint 1): live client, adapter, TVL-delta signal, probe. Anomaly feed: Sprint 4 |
-| `@cas/classification` | Automated high-recall classification of every imported source into `include`, `exclude` or `review`, with recorded rationale. Calibrated and evaluated against snapshot labels, never gated by them. Sprint 3. | placeholder                                                                                   |
-| `@cas/clustering`     | Clustering included and needs-review sources into canonical incident records; the evidence-state resolver, attaching evidence including corroborating Graph signals, with complete provenance. Sprint 4.       | placeholder                                                                                   |
-| `@cas/drafting`       | The drafting pipeline: the editable editorial output from canonical incidents, the live crypto section and the fixed historical draft, under the naming policy (D4), to the D3 destination. Sprint 5.          | placeholder                                                                                   |
-| `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors, with a `SKILL.md` and a clean installation from a fresh clone. Sprint 6.                                                             | placeholder                                                                                   |
-| `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 8, conditional on the Graph gate).                                                                                                                       | placeholder                                                                                   |
-| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                                | implemented (Sprint 2): CSV validation, row evaluation, manual import, CLI; later stages next |
-| `@cas/dashboard`      | Next.js application, as Plan 2.0 fixes: command center, review queue, incident explorer, draft editor; judge login. The review workflow here is the only writer of `ReviewState`. Sprint 6.                    | placeholder                                                                                   |
-| `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                                                                                                          | placeholder                                                                                   |
-| `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 8, conditional on the Graph gate).                                                                                             | placeholder                                                                                   |
-| `data/taxonomy`       | Taxonomy data files.                                                                                                                                                                                           | empty                                                                                         |
-| `data/fixtures`       | Synthetic fixtures. Editorial CSV fixtures from Sprint 2; the remaining fixture set in Sprint 7.                                                                                                               | seven synthetic editorial CSV files (`data/fixtures/README.md`)                               |
+| Package               | Responsibility (intended)                                                                                                                                                                                      | State after Sprint 3                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `@cas/contracts`      | Shared types that cross package boundaries. No behaviour.                                                                                                                                                      | seven enums, the chain set, and the Graph evidence contracts; tested                                |
+| `@cas/taxonomy`       | Incident taxonomy definitions and loaders for `data/taxonomy`.                                                                                                                                                 | implemented (Sprint 3): versioned classification signal policy only; taxonomy still future          |
+| `@cas/database`       | Postgres schema, migrations and typed access for imported sources, normalized records, classification decisions, the review queue, review records, incidents, evidence and drafts. Sprint 2.                   | implemented (Sprints 2 and 3): migration runner, three migrations, ingestion and classification ops |
+| `@cas/graph-evidence` | Live Graph-provider queries over the Messari standardized schema (D11), signal detection, the anomaly feed, and the provenance record of every request and response. Runs in parallel to editorial ingestion.  | implemented (Sprint 1): live client, adapter, TVL-delta signal, probe. Anomaly feed: Sprint 4       |
+| `@cas/classification` | Automated high-recall classification of every imported source into `include`, `exclude` or `review`, with recorded rationale. Calibrated and evaluated against snapshot labels, never gated by them. Sprint 3. | implemented (Sprint 3): pure rule-based classifier and calibration evaluator (D21)                  |
+| `@cas/clustering`     | Clustering included and needs-review sources into canonical incident records; the evidence-state resolver, attaching evidence including corroborating Graph signals, with complete provenance. Sprint 4.       | placeholder                                                                                         |
+| `@cas/drafting`       | The drafting pipeline: the editable editorial output from canonical incidents, the live crypto section and the fixed historical draft, under the naming policy (D4), to the D3 destination. Sprint 5.          | placeholder                                                                                         |
+| `@cas/mcp-server`     | MCP tools exposing incident intelligence for reuse by agents and editors, with a `SKILL.md` and a clean installation from a fresh clone. Sprint 6.                                                             | placeholder                                                                                         |
+| `@cas/feed-api`       | The public incident feed, later gated by x402 (Sprint 8, conditional on the Graph gate).                                                                                                                       | placeholder                                                                                         |
+| `@cas/worker`         | Runs the pipeline in order: import and normalization, classification, queue routing, clustering, canonical records; and, in parallel, Graph signal correlation.                                                | implemented (Sprints 2 and 3): import, classification, queue and calibration commands               |
+| `@cas/dashboard`      | Next.js application, as Plan 2.0 fixes: command center, review queue, incident explorer, draft editor; judge login. The review workflow here is the only writer of `ReviewState`. Sprint 6.                    | placeholder                                                                                         |
+| `@cas/sunday-agent`   | The drafting agent that drives `@cas/drafting` through the MCP tools.                                                                                                                                          | placeholder                                                                                         |
+| `@cas/payer-agent`    | An agent that consumes the x402-gated feed and completes a paid request (Sprint 8, conditional on the Graph gate).                                                                                             | placeholder                                                                                         |
+| `data/taxonomy`       | Taxonomy data files.                                                                                                                                                                                           | empty                                                                                               |
+| `data/fixtures`       | Synthetic fixtures. Editorial CSV fixtures from Sprint 2; the remaining fixture set in Sprint 7.                                                                                                               | seven synthetic editorial CSV files (`data/fixtures/README.md`)                                     |
 
 The dashboard framework is Next.js. Plan 2.0 fixes it in the package line
 `apps/dashboard: Next.js; command center, review queue, incident explorer, draft editor;
@@ -91,9 +91,13 @@ Stage by stage, with the sprint that delivers it (D16) and the current state:
    `DataOrigin`. **Implemented in Sprint 2** (section 10): manual, on demand, through a
    command-line interface; a dashboard upload wrapper may call the same service in Sprint 6.
 2. **Classification.** `@cas/classification` assigns a `ClassificationDecision` with
-   rationale to every imported source. Sprint 3. Not implemented.
+   rationale to every imported source. **Implemented in Sprint 3** (section 11): a
+   deterministic, versioned rule-based classifier, scoped to one explicit batch, that never
+   reads a human label (decision D21).
 3. **Queue.** Included sources proceed; `review` sources wait for a human; excluded sources
-   are retained. Sprint 3. Not implemented.
+   are retained. **Implemented in Sprint 3**: the needs-review queue is derived from an
+   explicit classification run, never copied into the human review tables. The review
+   workflow that acts on it is Sprint 6.
 4. **Clustering, canonical records and evidence states.** `@cas/clustering` groups included
    and needs-review sources into canonical incidents with member lists, and the
    evidence-state resolver assigns each incident a state whose provenance chain reaches back
@@ -310,3 +314,28 @@ worker, 24 in the database package) run without a database; PostgreSQL integrati
 Out of scope and not implemented: classification, embeddings, clustering, model calls, the
 dashboard upload wrapper, drafting, any watched directory, scheduler or cloud-drive
 integration, and any editorial week boundary (D10 stays unresolved).
+
+## 11. Sprint 3 boundary: `@cas/taxonomy`, `@cas/classification` and the classification tables
+
+Implemented and tested in Sprint 3 (`SPRINT-3-REPORT.md`, decision D21). The classifier is
+deterministic and rule-based, because D9 is unresolved and no model may be called.
+
+| Module                                     | Responsibility                                                                                                                                                                                                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@cas/taxonomy/src/signal-policy.ts`       | The versioned classification signal policy: decisive, contextual and out-of-scope vocabulary, the thresholds, the score weights and a canonical JSON form. Not the incident taxonomy, which remains future work with `data/taxonomy` still empty. |
+| `@cas/classification/src/input.ts`         | The narrow classifier input and the runtime guard that refuses a review state, a weekly label, `ch`, a category, a URL, raw cells or a connection value.                                                                                          |
+| `@cas/classification/src/text.ts`          | Fixed field order, Unicode NFC, lower case, whitespace collapse. No truncation, and the assembly is versioned.                                                                                                                                    |
+| `@cas/classification/src/classifier.ts`    | The decision rules, the stable rationale codes, the deterministic score and the ruleset hash covering the classifier version, the assembly version, the rule order and the whole policy.                                                          |
+| `@cas/classification/src/calibration.ts`   | The post-hoc evaluator: retention recall, strict include recall, precision, decision distribution, queue size and rate, automation rate and the full confusion matrix, all from a count-only input.                                               |
+| `@cas/database/migrations/0003…`           | `classification_runs` and `classification_results`, with composite keys carrying the batch through both tables so a cross-batch or cross-run contradiction is impossible. References no review table.                                             |
+| `@cas/database/src/classification.ts`      | Parameterized run and result operations, the bounded keyset input query that joins no review table, the derived queue, and the count-only calibration matrix.                                                                                     |
+| `@cas/worker/src/classification/run.ts`    | Orchestration: two bounded passes in one transaction, idempotency over batch, classifier version, ruleset version and ruleset hash.                                                                                                               |
+| `@cas/worker/src/classification/report.ts` | Count-only run report, the queue for an explicit run, and calibration, which refuses a batch with no weekly review snapshot.                                                                                                                      |
+
+Inputs: an explicit batch identifier for a run, an explicit run identifier for everything
+else. There is no implicit "latest run". Outputs: one `ClassificationDecision` per source row
+for Sprint 4 clustering to consume, and a derived needs-review queue for the Sprint 6 review
+workflow. A machine decision is never written into `review_snapshots` or `review_entries`.
+
+Out of scope and not implemented: any model call, incident clustering, embeddings, the review
+workflow itself, and any editorial week boundary (D10 stays unresolved).

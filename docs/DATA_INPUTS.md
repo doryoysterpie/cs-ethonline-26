@@ -257,6 +257,10 @@ be traced to its sources is a provenance failure and must be reported as an expl
   classification and the review queue Sprint 3. Accepted.
 - **D20** Sprint 2 inputs: CSV baseline, manual on-demand CLI import, explicit `DataOrigin`
   with no default, and the failure and preservation rules enforced in section 14. Accepted.
+- **D21** Sprint 3 classification: a deterministic, versioned rule-based high-recall
+  classifier; CS79 and CS86 are calibration datasets, never a filter and never holdouts;
+  historical selections never enter the classifier. Accepted; section 15 records what the
+  classifier may read.
 
 A file-based CSV import is the required reliable baseline. Direct Excel or cloud-workbook
 synchronization must not become a prerequisite for the Graph release candidate.
@@ -324,3 +328,29 @@ version and text-transform version. Repeating an import with the same key identi
 original batch and writes nothing; a different origin or label is a different batch. A batch
 is written in one transaction and rolled back entirely on any failure or interrupt, so the
 only stored statuses are `completed` and `completed_with_issues`.
+
+## 15. What the classifier may read (Sprint 3)
+
+Decision D21 fixes the classifier's input boundary, and `@cas/classification` enforces it in
+the type system and again at runtime.
+
+**Permitted:** the source-row identifier, the row hash, the ingestion status (`accepted` or
+`quarantined`), the normalized title, the derived summary text and the derived description
+text. Nothing else is loaded from the database for classification.
+
+**Prohibited, and refused by name:** the human `ReviewState`; the weekly `TRUE` and `FALSE`
+selections and the snapshot they came from; the master feed's `ch` working state; the
+publisher-supplied `Category`, which section 5 already forbids as a classification input; the
+original and canonical URL; raw cells and raw named fields; the batch's review label; and any
+connection value.
+
+The consequence is the property section 3 requires: a historical selection cannot influence a
+machine decision. Classification runs first over an explicit batch; calibration is a separate
+step that joins completed results to a weekly snapshot afterwards and returns counts only. A
+regression test proves that removing, replacing or flipping every label leaves every decision
+byte-identical, and a database test proves two batches with identical text under opposite
+labels produce identical decisions.
+
+Machine decisions live in their own tables. Nothing in the classification path writes to
+`review_snapshots` or `review_entries`, and the needs-review queue is derived from a
+classification run rather than copied into the human review records.

@@ -1,6 +1,6 @@
 # Hackathon requirements
 
-Requirement-to-evidence matrix for ETHOnline 2026. Sprint 2 state, 6 September 2026.
+Requirement-to-evidence matrix for ETHOnline 2026. Sprint 3 state, 7 September 2026.
 
 ## How to read this document
 
@@ -146,11 +146,11 @@ not applicable to a Start Fresh project.
 
 ## I. Official schedule (America/Toronto)
 
-| #   | Milestone                                        | Source | Requirement verification                                                        | Delivery | Evidence                                                                |
-| --- | ------------------------------------------------ | ------ | ------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| I1  | Hacking began 4 September 2026, 12:00 PM         | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | n/a      | Repository created 20:33 the same day                                   |
-| I2  | Project Check-in #1: 7 September, 11:59 PM       | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | PLANNED  | Sprint 3 exit gate                                                      |
-| I3  | Project Check-in #2: 10 September, 11:59 PM      | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | PLANNED  | Sprint 6 exit gate, with the Graph release gate                         |
-| I4  | Final project submission: 13 September, 12:00 PM | EVENT  | VERIFIED FROM EVENT MATERIAL (also on the information page as "12:00 pm EDT")   | PLANNED  | Sprint 9 exit gate; 14 to 16 September are not build or submission time |
-| I5  | Judging begins: 13 September, 3:00 PM            | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | n/a      | none                                                                    |
-| I6  | Team size                                        | EVENT  | UNVERIFIED                                                                      | n/a      | Not stated on the fetched pages                                         |
+| #   | Milestone                                        | Source | Requirement verification                                                        | Delivery | Evidence                                                                                                   |
+| --- | ------------------------------------------------ | ------ | ------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| I1  | Hacking began 4 September 2026, 12:00 PM         | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | n/a      | Repository created 20:33 the same day                                                                      |
+| I2  | Project Check-in #1: 7 September, 11:59 PM       | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | PLANNED  | Sprint 3 exit gate. `docs/CHECKIN-1-DRAFT.md` is ready; submitting it is a human action, still outstanding |
+| I3  | Project Check-in #2: 10 September, 11:59 PM      | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | PLANNED  | Sprint 6 exit gate, with the Graph release gate                                                            |
+| I4  | Final project submission: 13 September, 12:00 PM | EVENT  | VERIFIED FROM EVENT MATERIAL (also on the information page as "12:00 pm EDT")   | PLANNED  | Sprint 9 exit gate; 14 to 16 September are not build or submission time                                    |
+| I5  | Judging begins: 13 September, 3:00 PM            | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | n/a      | none                                                                                                       |
+| I6  | Team size                                        | EVENT  | UNVERIFIED                                                                      | n/a      | Not stated on the fetched pages                                                                            |

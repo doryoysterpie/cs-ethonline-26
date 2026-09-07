@@ -232,6 +232,35 @@ consumer of the store inherits:
   tests run only through `test:db` with `DATABASE_URL`; CI runs no database and holds no
   database secret.
 
+## 12. Machine classification
+
+Rules the Sprint 3 classifier (`@cas/classification`) implements and every later classifier
+inherits (decision D21):
+
+- The classifier is pure: no database, no network, no environment variable, no model call, no
+  clock, no randomness. It cannot reach a credential because it cannot reach the environment.
+  No model is invoked anywhere in Sprint 3, and no Anthropic credential is read even if one is
+  configured, because D9 is unresolved.
+- The classifier's input is a closed list: source-row identifier, row hash, ingestion status,
+  normalized title, derived summary text, derived description text. A human review state, a
+  weekly label, the master `ch` value, a publisher category, a URL, raw cells, a batch label
+  and any connection value are refused by name at the boundary, in the type system and again
+  at runtime.
+- Source text stays hostile evidence. It is matched against a fixed vocabulary and never
+  interpreted: a title that says "ignore previous instructions" changes nothing, and text that
+  looks like SQL is inert because every query is parameterized.
+- Rationale is a fixed vocabulary of machine-readable codes plus the policy's own signal
+  identifiers. A source excerpt is never stored as a rationale and never printed.
+- A machine `ClassificationDecision` is never a human `ReviewState`. Classification writes
+  only to its own tables, references no review table, and the needs-review queue is derived
+  from an explicit run rather than copied into the human review records. Calibration is the
+  only place a decision meets a label, it runs after classification, and it returns counts.
+- Every classification command names its subject explicitly and validates it as a UUID before
+  any database access. There is no implicit "latest run".
+- Classification output carries identifiers, versions, hashes, counts, statuses, durations and
+  fixed vocabulary only, through the same redactor and single-line guard as the ingestion
+  commands.
+
 ## Reporting a vulnerability
 
 Report privately to the repository owner. Do not open a public issue describing an
