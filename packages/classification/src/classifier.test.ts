@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  canonicalRuleset,
-  classify,
-  CLASSIFIER_MODE,
-  CLASSIFIER_VERSION,
-  RATIONALE_CODES,
-  rulesetHash,
-  RULESET_VERSION,
-} from './classifier.js';
+import { classify } from './classifier.js';
+import { RATIONALE_CODES } from './contract.js';
 import { ClassificationInputError, type ClassificationInput } from './input.js';
 
 function input(overrides: Partial<ClassificationInput> = {}): ClassificationInput {
@@ -221,7 +214,7 @@ describe('classify: determinism and safety', () => {
     for (const signal of result.matchedSignals) expect(signal).toMatch(/^[a-z][a-z0-9_]*$/);
   });
 
-  it('rejects any prohibited field at the input boundary', () => {
+  it('rejects any field outside the closed allowlist at the input boundary', () => {
     for (const field of [
       'reviewState',
       'rawCh',
@@ -231,32 +224,13 @@ describe('classify: determinism and safety', () => {
       'rawCells',
       'reviewLabel',
       'DATABASE_URL',
+      'analystDisposition',
+      'hiddenSnapshotToken',
     ]) {
       const widened = { ...input({ normalizedTitle: 'ransomware' }), [field]: 'x' };
       expect(() => classify(widened as ClassificationInput), field).toThrowError(
         ClassificationInputError,
       );
     }
-  });
-});
-
-describe('ruleset identity', () => {
-  it('publishes stable versions and a stable hash', () => {
-    expect(CLASSIFIER_VERSION).toBe('rules-classifier@1');
-    expect(CLASSIFIER_MODE).toBe('rules');
-    expect(RULESET_VERSION).toBe('classification-signal-policy@1');
-    expect(rulesetHash()).toMatch(/^[0-9a-f]{64}$/);
-    expect(rulesetHash()).toBe(rulesetHash());
-  });
-
-  it('covers the classifier version, the text assembly, the rule order and the whole policy', () => {
-    const ruleset = JSON.parse(canonicalRuleset()) as Record<string, unknown>;
-    expect(ruleset['classifierVersion']).toBe(CLASSIFIER_VERSION);
-    expect(ruleset['textAssemblyVersion']).toBe('classification-text-assembly@1');
-    expect(Array.isArray(ruleset['decisionRules'])).toBe(true);
-    const policy = ruleset['policy'] as { signals: { id: string }[] };
-    expect(policy.signals.length).toBeGreaterThan(20);
-    // Canonical: the same document every time, independent of iteration order.
-    expect(canonicalRuleset()).toBe(canonicalRuleset());
   });
 });

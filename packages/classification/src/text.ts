@@ -1,45 +1,58 @@
+import { BEHAVIOR_CONTRACT, type BehaviorContract } from './contract.js';
 import type { ClassificationInput } from './input.js';
 
 /**
- * Deterministic assembly and normalization of the text the rules read.
+ * Text assembly and normalization, driven entirely by the behaviour contract.
  *
- * Versioned, because a change here changes every decision: the version is
- * part of the ruleset hash. The complete normalized derived fields are
- * evaluated; nothing is truncated, so a 48,000-character summary is matched
- * end to end exactly like a short one.
+ * Field order, the separator, null and empty handling, the Unicode form, the
+ * case rule, the whitespace rule and the absence of truncation are read from
+ * `contract.textAssembly`, so changing any of them changes the ruleset hash.
  */
-export const TEXT_ASSEMBLY_VERSION = 'classification-text-assembly@1';
-
-/** Field order is fixed and part of the version. */
-export const TEXT_FIELD_ORDER = [
-  'normalizedTitle',
-  'derivedSummaryText',
-  'derivedDescriptionText',
-] as const;
 
 const WHITESPACE = /\s+/gu;
 
 /**
- * Unicode NFC, lower case, whitespace collapsed to single spaces, trimmed.
- * Case folding uses the locale-independent `toLowerCase`, so the result does
- * not depend on the machine's locale.
+ * Applies the contract's normalization: Unicode form, then locale-independent
+ * lower casing, then whitespace collapse and trim.
  */
-export function normalizeForMatching(value: string): string {
-  return value.normalize('NFC').toLowerCase().replace(WHITESPACE, ' ').trim();
+export function normalizeForMatching(
+  value: string,
+  contract: BehaviorContract = BEHAVIOR_CONTRACT,
+): string {
+  const assembly = contract.textAssembly;
+  let text = value.normalize(assembly.unicodeNormalizationForm);
+  if (assembly.caseNormalization === 'locale-independent-lowercase') text = text.toLowerCase();
+  if (assembly.whitespaceNormalization === 'collapse-runs-to-single-space-and-trim') {
+    text = text.replace(WHITESPACE, ' ').trim();
+  }
+  return text;
 }
 
 /**
- * Joins the three fields in the fixed order with a newline, so a phrase
- * cannot be formed accidentally across a field boundary. Absent and
- * whitespace-only fields contribute nothing.
+ * Joins the contract's fields in the contract's order with the contract's
+ * separator. Absent and empty fields are skipped as the contract declares.
+ * Nothing is truncated: `maxInputCharacters` is null.
  */
-export function assembleText(input: ClassificationInput): string {
+export function assembleText(
+  input: ClassificationInput,
+  contract: BehaviorContract = BEHAVIOR_CONTRACT,
+): string {
+  const assembly = contract.textAssembly;
   const parts: string[] = [];
-  for (const field of TEXT_FIELD_ORDER) {
+  for (const field of assembly.fieldOrder) {
     const raw = input[field];
-    if (raw === null) continue;
-    const normalized = normalizeForMatching(raw);
-    if (normalized.length > 0) parts.push(normalized);
+    if (raw === null) {
+      if (assembly.nullHandling === 'skip') continue;
+    } else {
+      const normalized = normalizeForMatching(raw, contract);
+      if (normalized.length === 0) {
+        if (assembly.emptyHandling === 'skip') continue;
+      }
+      parts.push(normalized);
+      continue;
+    }
   }
-  return parts.join('\n');
+  const joined = parts.join(assembly.fieldSeparator);
+  if (assembly.maxInputCharacters === null) return joined;
+  return joined.slice(0, assembly.maxInputCharacters);
 }
