@@ -23,6 +23,13 @@ export interface DatabaseOptions {
   readonly maxConnections?: number | undefined;
 }
 
+/** Only the levels this project uses are offered, so a typo cannot widen a snapshot. */
+export type IsolationLevel = 'repeatable read';
+
+export interface TransactionOptions {
+  readonly isolationLevel?: IsolationLevel | undefined;
+}
+
 function wrap(client: pg.PoolClient): Queryable {
   return {
     async query<R extends pg.QueryResultRow>(text: string, values?: readonly unknown[]) {
@@ -81,13 +88,25 @@ export class Database {
    * Runs `fn` inside one transaction. Commits when it resolves; rolls back
    * when it throws, then rethrows the original error. If the rollback itself
    * fails the client is destroyed instead of returned to the pool.
+   *
+   * `isolationLevel` is set on the BEGIN itself, before any other statement,
+   * so the transaction's snapshot is fixed from its first query. Classification
+   * uses `repeatable read` so that paging a batch cannot observe a concurrent
+   * change halfway through; every other caller keeps PostgreSQL's default.
    */
-  async withTransaction<T>(fn: (tx: Queryable) => Promise<T>): Promise<T> {
+  async withTransaction<T>(
+    fn: (tx: Queryable) => Promise<T>,
+    options: TransactionOptions = {},
+  ): Promise<T> {
     const client = await this.acquire();
     const tx = wrap(client);
     let destroy = false;
     try {
-      await tx.query('BEGIN');
+      await tx.query(
+        options.isolationLevel === 'repeatable read'
+          ? 'BEGIN ISOLATION LEVEL REPEATABLE READ'
+          : 'BEGIN',
+      );
       const result = await fn(tx);
       await tx.query('COMMIT');
       return result;

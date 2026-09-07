@@ -27,13 +27,15 @@ export interface NewClassificationRun {
   readonly startedAt: string;
 }
 
+export type ClassificationRunStatus = 'running' | 'completed';
+
 export interface ClassificationRunRecord extends NewClassificationRun {
-  readonly status: 'completed';
+  readonly status: ClassificationRunStatus;
   readonly classifiedRowCount: number;
   readonly includeCount: number;
   readonly excludeCount: number;
   readonly reviewCount: number;
-  readonly completedAt: string;
+  readonly completedAt: string | null;
 }
 
 export interface NewClassificationResult {
@@ -47,6 +49,13 @@ export interface NewClassificationResult {
   readonly signalScore: number;
   readonly rowHash: string;
   readonly createdAt: string;
+}
+
+export interface DecisionCounts {
+  readonly include: number;
+  readonly exclude: number;
+  readonly review: number;
+  readonly total: number;
 }
 
 /** Exactly the fields the classifier may read (decision D21). */
@@ -74,14 +83,14 @@ interface RunRow {
   ruleset_hash: string;
   mode: 'rules';
   idempotency_key: string;
-  status: 'completed';
+  status: ClassificationRunStatus;
   expected_row_count: number;
   classified_row_count: number;
   include_count: number;
   exclude_count: number;
   review_count: number;
   started_at: string;
-  completed_at: string;
+  completed_at: string | null;
 }
 
 function toRunRecord(row: RunRow): ClassificationRunRecord {
@@ -196,24 +205,25 @@ export async function fetchClassificationInputs(
   }));
 }
 
-export async function insertClassificationRun(
+/**
+ * Inserts the run in the `running` state with zero counters.
+ *
+ * A run is never inserted as already complete: migration 0004 opens the
+ * running state precisely so that completion is a separate, independently
+ * validated transition. Inserting first also makes the unique idempotency key
+ * the concurrency gate, so two identical invocations cannot both proceed.
+ */
+export async function insertRunningClassificationRun(
   client: Queryable,
   run: NewClassificationRun,
-  completion: {
-    readonly classifiedRowCount: number;
-    readonly includeCount: number;
-    readonly excludeCount: number;
-    readonly reviewCount: number;
-    readonly completedAt: string;
-  },
 ): Promise<void> {
   await client.query(
     `INSERT INTO classification_runs (
        id, batch_id, data_origin, classifier_version, ruleset_version, ruleset_hash, mode,
        idempotency_key, status, expected_row_count, classified_row_count, include_count,
        exclude_count, review_count, started_at, completed_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'completed', $9, $10, $11, $12, $13,
-               $14::timestamptz, $15::timestamptz)`,
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, 0, 0, 0, 0,
+               $10::timestamptz, NULL)`,
     [
       run.id,
       run.batchId,
@@ -224,14 +234,63 @@ export async function insertClassificationRun(
       run.mode,
       run.idempotencyKey,
       run.expectedRowCount,
-      completion.classifiedRowCount,
-      completion.includeCount,
-      completion.excludeCount,
-      completion.reviewCount,
       run.startedAt,
-      completion.completedAt,
     ],
   );
+}
+
+/** Decision counts derived from the results actually stored for a run. */
+export async function deriveRunDecisionCounts(
+  client: Queryable,
+  runId: string,
+): Promise<DecisionCounts> {
+  const result = await client.query<{
+    total: string;
+    include: string;
+    exclude: string;
+    review: string;
+  }>(
+    `SELECT count(*)::text AS total,
+            count(*) FILTER (WHERE decision = 'include')::text AS include,
+            count(*) FILTER (WHERE decision = 'exclude')::text AS exclude,
+            count(*) FILTER (WHERE decision = 'review')::text AS review
+       FROM classification_results WHERE run_id = $1`,
+    [runId],
+  );
+  const row = result.rows[0];
+  return {
+    total: Number(row?.total ?? '0'),
+    include: Number(row?.include ?? '0'),
+    exclude: Number(row?.exclude ?? '0'),
+    review: Number(row?.review ?? '0'),
+  };
+}
+
+/**
+ * Transitions a running run to `completed` with counters derived from its
+ * stored results. The database trigger added by migration 0004 re-derives
+ * every counter itself and refuses the transition unless the run covers its
+ * batch exactly, so a fabricated but internally consistent set of counters
+ * cannot complete a run even through a direct UPDATE.
+ */
+export async function completeClassificationRun(
+  client: Queryable,
+  runId: string,
+  counts: DecisionCounts,
+  completedAt: string,
+): Promise<void> {
+  const result = await client.query(
+    `UPDATE classification_runs
+        SET status = 'completed', classified_row_count = $2, include_count = $3,
+            exclude_count = $4, review_count = $5, completed_at = $6::timestamptz
+      WHERE id = $1 AND status = 'running'`,
+    [runId, counts.total, counts.include, counts.exclude, counts.review, completedAt],
+  );
+  if (result.rowCount !== 1) {
+    throw new DatabaseError('query', 'classification run was not in a completable state', {
+      details: { runId },
+    });
+  }
 }
 
 const RESULT_COLUMNS = [
@@ -305,13 +364,6 @@ export async function insertClassificationResults(
 // ---------------------------------------------------------------------------
 // Count-only reads.
 
-export interface DecisionCounts {
-  readonly include: number;
-  readonly exclude: number;
-  readonly review: number;
-  readonly total: number;
-}
-
 export async function countRunDecisions(client: Queryable, runId: string): Promise<DecisionCounts> {
   const result = await client.query<{ decision: ClassificationDecision; count: string }>(
     `SELECT decision, count(*)::text AS count FROM classification_results
@@ -359,6 +411,19 @@ export async function countUnclassifiedRows(
   return Number(result.rows[0]?.count ?? '0');
 }
 
+/**
+ * The size of the needs-review queue for one run, as a single aggregate. The
+ * CLI reports this count and nothing else; rows are never fetched to be
+ * counted.
+ */
+export async function countReviewQueue(client: Queryable, runId: string): Promise<number> {
+  const result = await client.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM classification_results WHERE run_id = $1 AND decision = 'review'",
+    [runId],
+  );
+  return Number(result.rows[0]?.count ?? '0');
+}
+
 export interface QueueEntry {
   readonly sourceRowId: string;
   readonly rowNumber: number;
@@ -367,9 +432,13 @@ export interface QueueEntry {
 }
 
 /**
- * The needs-review queue for one explicit run. Derived, never copied into the
- * human review tables, and never defaulted to a "latest" run. Returns no
- * source text.
+ * The needs-review queue for one explicit run, row by row. Derived, never
+ * copied into the human review tables, and never defaulted to a "latest" run.
+ * Returns no source text.
+ *
+ * This is a typed programmatic boundary for the authenticated review
+ * interface that Sprint 6 will build. The command-line interface must not use
+ * it: its queue command reports `countReviewQueue` only.
  */
 export async function fetchReviewQueue(
   client: Queryable,

@@ -22,7 +22,9 @@ export {
   type DatabaseConfig,
 } from './config.js';
 export {
+  completeClassificationRun,
   countBatchSourceRows,
+  countReviewQueue,
   countReviewState,
   countRunDecisions,
   countRunRationaleCodes,
@@ -33,8 +35,9 @@ export {
   findBatchReviewSnapshot,
   findClassificationRunByIdempotencyKey,
   getClassificationRun,
+  deriveRunDecisionCounts,
   insertClassificationResults,
-  insertClassificationRun,
+  insertRunningClassificationRun,
   listClassificationRuns,
   type CalibrationMatrixCell,
   type ClassificationInputRow,
@@ -45,7 +48,14 @@ export {
   type QueueEntry,
   type RationaleCodeCount,
 } from './classification.js';
-export { Database, openDatabase, type DatabaseOptions, type Queryable } from './database.js';
+export {
+  Database,
+  openDatabase,
+  type DatabaseOptions,
+  type IsolationLevel,
+  type Queryable,
+  type TransactionOptions,
+} from './database.js';
 export {
   classifyDriverError,
   DATABASE_FAILURE_KINDS,
