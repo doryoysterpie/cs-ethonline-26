@@ -19,6 +19,7 @@ describe('loadMigrations', () => {
     expect(files.map((f) => f.fileName)).toEqual([
       '0001_editorial_ingestion.sql',
       '0002_provenance_integrity.sql',
+      '0003_classification.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));
@@ -28,13 +29,26 @@ describe('loadMigrations', () => {
     expect(files[0]?.name).toBe('editorial_ingestion');
     expect(files[1]?.version).toBe(2);
     expect(files[1]?.name).toBe('provenance_integrity');
+    expect(files[2]?.version).toBe(3);
+    expect(files[2]?.name).toBe('classification');
   });
 
-  it('pins the checksum of migration 0001, which has been applied and must never change', async () => {
-    const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, '0001_editorial_ingestion.sql'));
-    expect(createHash('sha256').update(bytes).digest('hex')).toBe(
-      '6ccf4b05cdcd255b326029e99097c73ec220fa77d38d767e86a40175abc8b936',
-    );
+  it('pins the checksums of the applied migrations, which must never change', async () => {
+    // 0001 and 0002 were applied and audited in Sprint 2. Editing either would
+    // be drift on every existing database, so their bytes are pinned here.
+    for (const [fileName, expected] of [
+      [
+        '0001_editorial_ingestion.sql',
+        '6ccf4b05cdcd255b326029e99097c73ec220fa77d38d767e86a40175abc8b936',
+      ],
+      [
+        '0002_provenance_integrity.sql',
+        '4139f25cd5ca24746208c40cc3b65076c2bd9cccbc287e08880d508691d71b8d',
+      ],
+    ] as const) {
+      const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, fileName));
+      expect(createHash('sha256').update(bytes).digest('hex'), fileName).toBe(expected);
+    }
   });
 
   it('orders by version, ignores files that do not match the naming rule, and rejects duplicate versions', async () => {

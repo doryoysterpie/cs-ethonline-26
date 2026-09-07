@@ -4,8 +4,10 @@
  * The only package that talks to PostgreSQL (docs/ARCHITECTURE.md section 2).
  * Sprint 2: connection configuration read from DATABASE_URL and never echoed,
  * a forward-only checksummed migration runner with an advisory lock, and
- * parameterized operations over the editorial ingestion tables. CSV parsing
- * and import orchestration live in @cas/worker and call these operations.
+ * parameterized operations over the editorial ingestion tables. Sprint 3 adds
+ * migration 0003 and the classification run and result operations. CSV
+ * parsing, classification and calibration orchestration live in @cas/worker
+ * and call these operations.
  */
 
 export {
@@ -19,6 +21,30 @@ export {
   type ConnectionTransport,
   type DatabaseConfig,
 } from './config.js';
+export {
+  countBatchSourceRows,
+  countReviewState,
+  countRunDecisions,
+  countRunRationaleCodes,
+  countUnclassifiedRows,
+  fetchCalibrationMatrix,
+  fetchClassificationInputs,
+  fetchReviewQueue,
+  findBatchReviewSnapshot,
+  findClassificationRunByIdempotencyKey,
+  getClassificationRun,
+  insertClassificationResults,
+  insertClassificationRun,
+  listClassificationRuns,
+  type CalibrationMatrixCell,
+  type ClassificationInputRow,
+  type ClassificationRunRecord,
+  type DecisionCounts,
+  type NewClassificationResult,
+  type NewClassificationRun,
+  type QueueEntry,
+  type RationaleCodeCount,
+} from './classification.js';
 export { Database, openDatabase, type DatabaseOptions, type Queryable } from './database.js';
 export {
   classifyDriverError,
