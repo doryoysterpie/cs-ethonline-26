@@ -1,7 +1,8 @@
 # Sprint 3 report: high-recall classification and the needs-review queue
 
-Result: **COMPLETE, pending Codex Desktop audit.** Nothing in this document declares Sprint 3
-accepted. All times America/Toronto unless marked UTC. Count-only throughout: no title, URL,
+Result: **CORRECTED after audit, pending Codex Desktop re-audit.** The first candidate was
+reviewed and returned CHANGES REQUIRED; section 12 records the five findings and their
+corrections. Nothing in this document declares Sprint 3 accepted. All times America/Toronto unless marked UTC. Count-only throughout: no title, URL,
 summary, description, cell, connection detail or absolute path appears here.
 
 **How to read this report.** Each section is labelled by the kind of evidence it carries:
@@ -10,17 +11,18 @@ offline, **PostgreSQL** is integration evidence against a live database, and **r
 count-only evidence from the three imported real exports. Historical figures from earlier
 sprints are marked as such.
 
-| Item               | Value                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------ |
-| Repository         | `doryoysterpie/cs-ethonline-26`, public                                              |
-| Branch             | `sprint-3/classification-review-queue`, created from the audited Sprint 2 SHA        |
-| Starting SHA       | `000c3410848a531bed23d93e6cabc73cc3942a1b` (Sprint 2, audited PASS by Codex Desktop) |
-| Final SHA          | in the handoff                                                                       |
-| `main`             | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                              |
-| Decision           | D21, appended 7 September 2026                                                       |
-| Migration added    | `packages/database/migrations/0003_classification.sql`                               |
-| Migrations 1 and 2 | unchanged; checksums verified against the accepted values                            |
-| Model calls        | none; no Anthropic SDK, no model path, no credential read                            |
+| Item              | Value                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| Repository        | `doryoysterpie/cs-ethonline-26`, public                                              |
+| Branch            | `sprint-3/classification-review-queue`, created from the audited Sprint 2 SHA        |
+| Starting SHA      | `000c3410848a531bed23d93e6cabc73cc3942a1b` (Sprint 2, audited PASS by Codex Desktop) |
+| Rejected SHA      | `974ec047620bd54dd6f66f25c576377d4a488241` (CHANGES REQUIRED, five findings)         |
+| Final SHA         | in the handoff                                                                       |
+| `main`            | unchanged at `3011b5b50189a79181a9cf2d0c95724c019e5e74`                              |
+| Decision          | D21, appended 7 September 2026                                                       |
+| Migrations added  | `0003_classification.sql`, then `0004_classification_integrity.sql` in correction    |
+| Migrations 1 to 3 | unchanged; checksums verified against the applied values                             |
+| Model calls       | none; no Anthropic SDK, no model path, no credential read                            |
 
 ## 1. Scope and approach (design)
 
