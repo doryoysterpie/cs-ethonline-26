@@ -6,6 +6,10 @@ import {
   countReviewState,
   countRunDecisions,
   countUnclassifiedRows,
+  deriveRunDecisionCounts,
+  isDatabaseError,
+  openDatabase,
+  parseDatabaseConfig,
   type Database,
 } from '@cas/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -193,7 +197,7 @@ describe('classifyBatch against a migrated schema', () => {
     });
     const changedClassifier = computeRunIdempotencyKey({
       batchId: batch.batchId,
-      classifierVersion: 'rules-classifier@2',
+      classifierVersion: `${CLASSIFIER_VERSION}-next`,
       rulesetVersion: RULESET_VERSION,
       rulesetHash: rulesetHash(),
       mode: 'rules',
@@ -206,24 +210,37 @@ describe('classifyBatch against a migrated schema', () => {
     const otherRun = await classifyBatch(isolated.db, { batchId: other.batchId });
     const first = await classifyBatch(isolated.db, { batchId: batch.batchId });
     expect(otherRun.run.id).not.toBe(first.run.id);
-    const otherQueue = await reviewQueue(isolated.db, otherRun.run.id, 100);
-    const firstQueue = await reviewQueue(isolated.db, first.run.id, 100);
-    const overlap = otherQueue.entries
-      .map((e) => e.sourceRowId)
-      .filter((id) => firstQueue.entries.some((e) => e.sourceRowId === id));
-    expect(overlap).toEqual([]);
+    const otherQueue = await reviewQueue(isolated.db, otherRun.run.id);
+    const firstQueue = await reviewQueue(isolated.db, first.run.id);
+    expect(otherQueue.run.id).toBe(otherRun.run.id);
+    expect(firstQueue.run.id).toBe(first.run.id);
+    // The two queues are disjoint at the row level, checked in the database
+    // rather than by fetching entries into the process.
+    const shared = await isolated.db.withClient((c) =>
+      c.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM classification_results a
+           JOIN classification_results b ON b.source_row_id = a.source_row_id
+          WHERE a.run_id = $1 AND b.run_id = $2`,
+        [otherRun.run.id, first.run.id],
+      ),
+    );
+    expect(shared.rows[0]?.count).toBe('0');
   });
 
-  it('derives a non-empty queue for an explicit run, with codes but no source text', async () => {
+  it('reports the queue as a count for an explicit run, holding no entries', async () => {
     const run = await classifyBatch(isolated.db, { batchId: batch.batchId });
-    const page = await reviewQueue(isolated.db, run.run.id, 100);
-    expect(page.total).toBeGreaterThan(0);
-    expect(page.entries.length).toBeGreaterThan(0);
-    const serialized = JSON.stringify(page.entries);
-    expect(serialized).not.toContain('Ransomware');
-    expect(serialized).not.toContain('recipe');
-    expect(serialized).not.toContain('seed.example');
-    for (const entry of page.entries) expect(entry.rationaleCodes.length).toBeGreaterThan(0);
+    const summary = await reviewQueue(isolated.db, run.run.id);
+    expect(summary.count).toBeGreaterThan(0);
+    expect(summary.count).toBe(run.run.reviewCount);
+    // The whole value is a run record and an integer: there is no entry list to
+    // leak, so nothing derived from a source row can reach the caller.
+    expect(Object.keys(summary).sort()).toEqual(['count', 'run']);
+    const serialized = JSON.stringify(summary);
+    for (const forbidden of ['Ransomware', 'recipe', 'seed.example', 'sourceRowId']) {
+      expect(serialized, forbidden).not.toContain(forbidden);
+    }
+    for (const rowId of batch.rowIds) expect(serialized).not.toContain(rowId);
   });
 
   it('refuses a run identifier that does not exist, and a calibration without a snapshot', async () => {
@@ -333,5 +350,197 @@ describe('classifyBatch against a migrated schema', () => {
     // Every selected row is retained: none was excluded.
     expect(calibration.metrics.selected.exclude).toBeGreaterThanOrEqual(0);
     expect(await isolated.db.withClient(countReviewState)).toEqual(before);
+  });
+
+  // -------------------------------------------------------------------------
+  // Codex Desktop audit findings 1 and 2: a run's counters can never drift
+  // from its stored results, and a stored fingerprint can never drift from its
+  // source row. Both are driven by a coordinated second connection through the
+  // `beforePage` seam, so the interleaving is deterministic and no test sleeps.
+
+  describe('concurrent interference during a run', () => {
+    /** A second, independent connection to the same schema. */
+    async function withRival<T>(fn: (rival: Database) => Promise<T>): Promise<T> {
+      const config = parseDatabaseConfig(process.env);
+      const rival = openDatabase({ ...config, schema: isolated.name }, { maxConnections: 2 });
+      try {
+        return await fn(rival);
+      } finally {
+        await rival.end();
+      }
+    }
+
+    async function runCounters(runId: string): Promise<Record<string, number>> {
+      const derived = await isolated.db.withClient((c) => deriveRunDecisionCounts(c, runId));
+      return {
+        total: derived.total,
+        include: derived.include,
+        exclude: derived.exclude,
+        review: derived.review,
+      };
+    }
+
+    it('commits counters that match its own results when rows are added mid-run', async () => {
+      const fresh = await seedBatch(isolated.db, 'CS10', () => 'selected');
+      const outcome = await withRival(async (rival) =>
+        classifyBatch(
+          isolated.db,
+          { batchId: fresh.batchId },
+          {
+            pageSize: 2,
+            beforePage: async (index) => {
+              if (index !== 1) return;
+              // A seventh row lands and commits while the run is paging.
+              await rival.withTransaction(async (tx) => {
+                await tx.query(
+                  `INSERT INTO source_rows (
+                     id, batch_id, row_number, data_origin, status, raw_cells, raw_fields,
+                     normalized_title, text_transform, row_hash
+                   ) VALUES ($1, $2, $3, 'replay', 'accepted', '["x"]'::jsonb, '{}'::jsonb,
+                             'Ransomware strikes a second hospital', 'html-to-text@1', $4)`,
+                  [randomUUID(), fresh.batchId, ROWS.length + 1, hash('9')],
+                );
+              });
+            },
+          },
+        ),
+      );
+      // The run saw one stable snapshot, so its counters describe exactly the
+      // results it stored. Under the rejected two-pass design the counting pass
+      // and the classifying pass could see different data.
+      expect(outcome.run.status).toBe('completed');
+      expect(outcome.run.classifiedRowCount).toBe(ROWS.length);
+      expect(await runCounters(outcome.run.id)).toEqual({
+        total: outcome.run.classifiedRowCount,
+        include: outcome.run.includeCount,
+        exclude: outcome.run.excludeCount,
+        review: outcome.run.reviewCount,
+      });
+      // The row that arrived late is reported as uncovered rather than hidden:
+      // the report tells the truth instead of a stale counter doing so.
+      const report = await reportRun(isolated.db, outcome.run.id);
+      expect(report.unclassifiedRows).toBe(1);
+      expect(report.reconciled).toBe(false);
+    });
+
+    it('refuses to let a source row be re-hashed under a stored result', async () => {
+      const fresh = await seedBatch(isolated.db, 'CS11', () => 'selected');
+      let rivalOutcome: Promise<unknown> | null = null;
+      const outcome = await withRival(async (rival) => {
+        const run = await classifyBatch(
+          isolated.db,
+          { batchId: fresh.batchId },
+          {
+            pageSize: 2,
+            beforePage: (index) => {
+              if (index !== 1) return;
+              // Row 1 already has a stored result in this run, so this UPDATE
+              // blocks on the lock that result holds. It is deliberately not
+              // awaited here: awaiting it would stall the run that must commit
+              // before the lock is released.
+              rivalOutcome = rival.withTransaction(async (tx) => {
+                await tx.query('UPDATE source_rows SET row_hash = $2 WHERE id = $1', [
+                  fresh.rowIds[0],
+                  hash('8'),
+                ]);
+              });
+            },
+          },
+        );
+        let rivalError: unknown;
+        try {
+          await rivalOutcome;
+        } catch (error) {
+          rivalError = error;
+        }
+        expect(isDatabaseError(rivalError)).toBe(true);
+        expect(isDatabaseError(rivalError) ? rivalError.code : '').toBe('23503');
+        return run;
+      });
+      expect(outcome.run.status).toBe('completed');
+      const mismatched = await isolated.db.withClient((c) =>
+        c.query<{ count: string }>(
+          `SELECT count(*)::text AS count
+             FROM classification_results r
+             JOIN source_rows s ON s.id = r.source_row_id
+            WHERE r.run_id = $1 AND r.row_hash <> s.row_hash`,
+          [outcome.run.id],
+        ),
+      );
+      expect(mismatched.rows[0]?.count).toBe('0');
+    });
+
+    it('fails the whole run rather than storing a fingerprint that has moved on', async () => {
+      const fresh = await seedBatch(isolated.db, 'CS12', () => 'selected');
+      const before = await isolated.db.withClient((c) =>
+        c.query<{ runs: string; results: string }>(
+          `SELECT (SELECT count(*) FROM classification_runs)::text AS runs,
+                  (SELECT count(*) FROM classification_results)::text AS results`,
+        ),
+      );
+      let caught: unknown;
+      await withRival(async (rival) => {
+        try {
+          await classifyBatch(
+            isolated.db,
+            { batchId: fresh.batchId },
+            {
+              pageSize: 2,
+              beforePage: async (index) => {
+                if (index !== 1) return;
+                // The last row has not been read yet, so nothing references it
+                // and the change commits immediately. The run's snapshot still
+                // holds the old hash.
+                await rival.withTransaction(async (tx) => {
+                  await tx.query('UPDATE source_rows SET row_hash = $2 WHERE id = $1', [
+                    fresh.rowIds[ROWS.length - 1],
+                    hash('8'),
+                  ]);
+                });
+              },
+            },
+          );
+        } catch (error) {
+          caught = error;
+        }
+      });
+      // PostgreSQL refuses the stale write either as a serialization failure,
+      // when the referential check cannot lock a row changed after the run's
+      // snapshot, or as a plain foreign-key violation. Both mean the same
+      // thing here: a fingerprint that has moved on is never stored.
+      expect(isDatabaseError(caught)).toBe(true);
+      expect(['40001', '23503']).toContain(isDatabaseError(caught) ? caught.code : '');
+      const after = await isolated.db.withClient((c) =>
+        c.query<{ runs: string; results: string }>(
+          `SELECT (SELECT count(*) FROM classification_runs)::text AS runs,
+                  (SELECT count(*) FROM classification_results)::text AS results`,
+        ),
+      );
+      expect(after.rows[0]).toEqual(before.rows[0]);
+    });
+
+    it('lets exactly one of two identical concurrent invocations create the run', async () => {
+      const fresh = await seedBatch(isolated.db, 'CS13', () => 'selected');
+      const [a, b] = await Promise.all([
+        classifyBatch(isolated.db, { batchId: fresh.batchId }, { pageSize: 2 }),
+        classifyBatch(isolated.db, { batchId: fresh.batchId }, { pageSize: 2 }),
+      ]);
+      expect(a.run.id).toBe(b.run.id);
+      expect([a.outcome, b.outcome].sort()).toEqual(['already_classified', 'classified']);
+      const rows = await isolated.db.withClient((c) =>
+        c.query<{ runs: string; results: string }>(
+          `SELECT (SELECT count(*) FROM classification_runs WHERE batch_id = $1)::text AS runs,
+                  (SELECT count(*) FROM classification_results WHERE batch_id = $1)::text AS results`,
+          [fresh.batchId],
+        ),
+      );
+      expect(rows.rows[0]).toEqual({ runs: '1', results: String(ROWS.length) });
+      expect(await runCounters(a.run.id)).toEqual({
+        total: a.run.classifiedRowCount,
+        include: a.run.includeCount,
+        exclude: a.run.excludeCount,
+        review: a.run.reviewCount,
+      });
+    });
   });
 });

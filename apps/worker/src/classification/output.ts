@@ -1,7 +1,7 @@
 import type { Redactor } from '@cas/database';
 
 import { safeDisplay, toSingleLine } from '../editorial/display.js';
-import type { CalibrationReport, QueuePage, RunReport } from './report.js';
+import type { CalibrationReport, QueueSummary, RunReport } from './report.js';
 import type { ClassifyBatchOutcome } from './run.js';
 
 /**
@@ -51,17 +51,18 @@ export function formatRunReport(report: RunReport, redact: Redactor): string[] {
   ].map((entry) => line(entry, redact));
 }
 
-export function formatQueue(page: QueuePage, redact: Redactor): string[] {
-  const lines = [
-    `classification:queue: run=${page.run.id} batch=${page.run.batchId} needsReview=${page.total} shown=${page.entries.length}${page.truncated ? ' (truncated)' : ''}`,
-  ];
-  for (const entry of page.entries) {
-    lines.push(
-      `  row=${entry.sourceRowId} rowNumber=${entry.rowNumber} score=${entry.signalScore} codes=${entry.rationaleCodes.join(',')}`,
-    );
-  }
-  if (page.entries.length === 0) lines.push('  (queue empty for this run)');
-  return lines.map((entry) => line(entry, redact));
+/**
+ * Count only.
+ *
+ * The Codex Desktop audit found the previous output emitted a source-row
+ * identifier, a row number, a score and rationale codes for every queue entry,
+ * which exceeds the Sprint 3 output contract. The command now reports the
+ * aggregate size of the needs-review queue and nothing else. Per-row queue
+ * access stays behind the typed database boundary for the authenticated
+ * review interface Sprint 6 will build.
+ */
+export function formatQueue(summary: QueueSummary, redact: Redactor): string[] {
+  return [line(`classification_queue count=${summary.count}`, redact)];
 }
 
 export function formatCalibration(report: CalibrationReport, redact: Redactor): string[] {

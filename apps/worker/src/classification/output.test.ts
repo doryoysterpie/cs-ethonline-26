@@ -9,7 +9,7 @@ import {
   formatQueue,
   formatRunReport,
 } from './output.js';
-import type { CalibrationReport, QueuePage, RunReport } from './report.js';
+import type { CalibrationReport, QueueSummary, RunReport } from './report.js';
 import type { ClassifyBatchOutcome } from './run.js';
 
 /**
@@ -79,19 +79,7 @@ const report: RunReport = {
   ],
 };
 
-const queue: QueuePage = {
-  run,
-  total: 30,
-  entries: [
-    {
-      sourceRowId: '33333333-3333-4333-8333-333333333333',
-      rowNumber: 12,
-      rationaleCodes: ['row_quarantined'],
-      signalScore: 0,
-    },
-  ],
-  truncated: true,
-};
+const queue: QueueSummary = { run, count: 30 };
 
 function calibration(label: string): CalibrationReport {
   return {
@@ -143,14 +131,17 @@ describe('classification output', () => {
     expect(bad.join('\n')).toContain('unclassifiedRows=4');
   });
 
-  it('prints queue entries as identifiers and codes only', () => {
+  it('prints the queue as one count and nothing else', () => {
+    // The Codex Desktop audit rejected per-entry queue output. One line, one
+    // integer: no source-row identifier, row number, score or rationale code.
     const lines = formatQueue(queue, REDACT);
     assertSafe(lines);
-    expect(lines[0]).toContain('needsReview=30 shown=1 (truncated)');
-    expect(lines[1]).toContain('row=33333333-3333-4333-8333-333333333333');
-    expect(lines[1]).toContain('codes=row_quarantined');
-    const empty = formatQueue({ ...queue, total: 0, entries: [], truncated: false }, REDACT);
-    expect(empty[1]).toContain('queue empty');
+    expect(lines).toEqual(['classification_queue count=30']);
+    expect(formatQueue({ run, count: 0 }, REDACT)).toEqual(['classification_queue count=0']);
+    const joined = formatQueue(queue, REDACT).join('\n');
+    for (const forbidden of ['row=', 'rowNumber', 'codes=', 'score', run.id, run.batchId]) {
+      expect(joined, forbidden).not.toContain(forbidden);
+    }
   });
 
   it('prints calibration as counts and ratios, with the target and whether it was met', () => {

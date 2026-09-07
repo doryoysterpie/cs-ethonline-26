@@ -233,24 +233,19 @@ describe('cli configuration handling (no database)', () => {
     }
   });
 
-  it('validates the queue limit before opening a connection', async () => {
+  it('has no queue paging flag at all, so no queue page can be requested', async () => {
+    // The queue command reports a count. There is nothing to page, and a
+    // caller asking for entries is rejected by the argument parser before any
+    // command runs.
     const runId = '11111111-1111-4111-8111-111111111111';
-    for (const limit of ['0', 'all', '1.5', '99999', '00']) {
-      const r = await exec(['classification', 'queue', '--run', runId, '--limit', limit], {
+    for (const extra of [['--limit', '1000'], ['--limit', '1'], ['--entries'], ['--rows', '50']]) {
+      const r = await exec(['classification', 'queue', '--run', runId, ...extra], {
         DATABASE_URL: 'postgresql://127.0.0.1:5432/cas',
       });
-      expect(r.code, limit).toBe(EXIT_CODES.configuration);
-      expect(r.err.join('\n'), limit).toContain('limit_invalid');
+      expect(r.code, extra.join(' ')).toBe(EXIT_CODES.configuration);
+      expect(r.out, extra.join(' ')).toEqual([]);
+      expect(r.err.join('\n'), extra.join(' ')).toContain('arguments_invalid');
     }
-    // A leading minus reads as an unknown option, which the argument parser
-    // rejects before any command runs. Still a configuration error, still no
-    // output.
-    const negative = await exec(['classification', 'queue', '--run', runId, '--limit', '-1'], {
-      DATABASE_URL: 'postgresql://127.0.0.1:5432/cas',
-    });
-    expect(negative.code).toBe(EXIT_CODES.configuration);
-    expect(negative.out).toEqual([]);
-    expect(negative.err.join('\n')).toContain('arguments_invalid');
   });
 
   it('applies the database configuration validation to classification commands too', async () => {

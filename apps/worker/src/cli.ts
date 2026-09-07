@@ -44,7 +44,7 @@ import { validateCsvFile } from './editorial/validate.js';
  *   editorial report   [--batch ID]
  *   classification run       --batch UUID
  *   classification report    --run UUID
- *   classification queue     --run UUID [--limit N]
+ *   classification queue     --run UUID
  *   classification calibrate --run UUID
  *
  * Exit codes: 0 success (a completed_with_issues import is a success that
@@ -79,7 +79,7 @@ const USAGE = [
   '  editorial report [--batch <id>]',
   '  classification run --batch <uuid>',
   '  classification report --run <uuid>',
-  '  classification queue --run <uuid> [--limit <n>]',
+  '  classification queue --run <uuid>',
   '  classification calibrate --run <uuid>',
 ];
 
@@ -124,21 +124,6 @@ function requireUuid(value: string | undefined, flag: 'batch' | 'run'): string {
     throw configurationError(`${flag}_id_invalid`, `--${flag} must be a UUID`);
   }
   return value.toLowerCase();
-}
-
-const DEFAULT_QUEUE_LIMIT = 20;
-const MAX_QUEUE_LIMIT = 1000;
-
-function parseLimit(value: string | undefined): number {
-  if (value === undefined) return DEFAULT_QUEUE_LIMIT;
-  if (!/^[1-9][0-9]{0,3}$/.test(value)) {
-    throw configurationError('limit_invalid', `--limit must be a whole number of rows`);
-  }
-  const limit = Number(value);
-  if (limit > MAX_QUEUE_LIMIT) {
-    throw configurationError('limit_invalid', `--limit must not exceed ${MAX_QUEUE_LIMIT}`);
-  }
-  return limit;
 }
 
 /** Covers the whole DATABASE_URL plus its raw and percent-decoded password, when set. */
@@ -282,9 +267,8 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
     }
     if (group === 'classification' && command === 'queue') {
       const runId = requireUuid(values.run, 'run');
-      const limit = parseLimit(values.limit);
-      const page = await withDatabase(options.env, (db) => reviewQueue(db, runId, limit));
-      for (const line of formatQueue(page, redact)) emit(line);
+      const summary = await withDatabase(options.env, (db) => reviewQueue(db, runId));
+      for (const line of formatQueue(summary, redact)) emit(line);
       return EXIT_CODES.ok;
     }
     if (group === 'classification' && command === 'calibrate') {
@@ -307,7 +291,6 @@ const PARSE_OPTIONS = {
   'review-label': { type: 'string' },
   batch: { type: 'string' },
   run: { type: 'string' },
-  limit: { type: 'string' },
 } as const;
 
 interface ParsedValues {
@@ -317,7 +300,6 @@ interface ParsedValues {
   readonly 'review-label'?: string | undefined;
   readonly batch?: string | undefined;
   readonly run?: string | undefined;
-  readonly limit?: string | undefined;
 }
 
 export async function main(): Promise<void> {

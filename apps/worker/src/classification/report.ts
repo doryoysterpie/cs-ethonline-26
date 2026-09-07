@@ -4,17 +4,16 @@ import {
   type CalibrationMetrics,
 } from '@cas/classification';
 import {
+  countReviewQueue,
   countRunDecisions,
   countRunRationaleCodes,
   countUnclassifiedRows,
   fetchCalibrationMatrix,
-  fetchReviewQueue,
   findBatchReviewSnapshot,
   getClassificationRun,
   type ClassificationRunRecord,
   type Database,
   type DecisionCounts,
-  type QueueEntry,
   type RationaleCodeCount,
 } from '@cas/database';
 
@@ -67,20 +66,22 @@ export async function reportRun(db: Database, runId: string): Promise<RunReport>
   });
 }
 
-export interface QueuePage {
+/**
+ * The size of the needs-review queue for one explicit run. Count only: no row
+ * identifier, row number, score or rationale code leaves this function, and
+ * the count is an aggregate query rather than a page of fetched rows.
+ */
+export interface QueueSummary {
   readonly run: ClassificationRunRecord;
-  readonly total: number;
-  readonly entries: readonly QueueEntry[];
-  readonly truncated: boolean;
+  readonly count: number;
 }
 
-/** The needs-review queue derived from one explicit run. */
-export async function reviewQueue(db: Database, runId: string, limit: number): Promise<QueuePage> {
+export async function reviewQueue(db: Database, runId: string): Promise<QueueSummary> {
   const run = await requireRun(db, runId);
-  return db.withClient(async (client) => {
-    const entries = await fetchReviewQueue(client, run.id, { afterRowNumber: 0, limit });
-    return { run, total: run.reviewCount, entries, truncated: run.reviewCount > entries.length };
-  });
+  return db.withClient(async (client) => ({
+    run,
+    count: await countReviewQueue(client, run.id),
+  }));
 }
 
 export interface CalibrationReport {

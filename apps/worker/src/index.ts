@@ -101,7 +101,7 @@ export {
   reportRun,
   reviewQueue,
   type CalibrationReport,
-  type QueuePage,
+  type QueueSummary,
   type RunReport,
 } from './classification/report.js';
 export {

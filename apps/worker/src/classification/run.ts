@@ -8,15 +8,18 @@ import {
   RULESET_VERSION,
   type ClassificationInput,
 } from '@cas/classification';
-import type { ClassificationDecision } from '@cas/contracts';
 import {
+  completeClassificationRun,
   countBatchSourceRows,
+  countUnclassifiedRows,
+  deriveRunDecisionCounts,
   fetchClassificationInputs,
   findClassificationRunByIdempotencyKey,
   getClassificationRun,
   getImportBatch,
   insertClassificationResults,
-  insertClassificationRun,
+  insertRunningClassificationRun,
+  isDatabaseError,
   MAX_ROWS_PER_INSERT,
   type ClassificationRunRecord,
   type Database,
@@ -28,21 +31,32 @@ import {
 import { IngestionError } from '../editorial/errors.js';
 
 /**
- * Classification orchestration (decision D21).
+ * Classification orchestration (decision D21), corrected after the Codex
+ * Desktop audit.
  *
- * `@cas/worker` composes the pure classifier with the database operations.
- * The rules live in `@cas/classification` and never see a connection; the
- * queries live in `@cas/database` and never see a rule. This module holds no
- * classification logic of its own: it pages rows in, calls `classify`, and
- * writes what comes back.
+ * The audit demonstrated that the previous two-pass design ran under plain
+ * `BEGIN`, so PostgreSQL used statement-level READ COMMITTED snapshots: a
+ * concurrent update between the passes let a run commit counters that did not
+ * match its own stored results. The lifecycle below fixes that:
  *
- * The whole run is one transaction, so a failure leaves no partial run, and
- * the completed run's counts must equal the batch's stored row count or the
- * database refuses it. Nothing here reads a review snapshot, a review entry,
- * a `ch` value, a category or a URL.
+ *   1. Begin a REPEATABLE READ transaction, so every page reads one snapshot.
+ *   2. Insert the run as `running`. The unique idempotency key is the
+ *      concurrency gate: a second identical invocation blocks here and then
+ *      finds the first run.
+ *   3. Page the batch deterministically by row number and write results.
+ *   4. Derive the counters from the stored results, not from a counting pass.
+ *   5. Reconcile the stored results against the batch inside the same
+ *      transaction.
+ *   6. Transition to `completed` as the last operation; migration 0004's
+ *      trigger independently re-derives every counter and refuses a run that
+ *      does not cover its batch exactly.
+ *
+ * `@cas/worker` composes the pure classifier with the database operations and
+ * holds no classification logic of its own. Nothing here reads a review
+ * snapshot, a review entry, a `ch` value, a category or a URL.
  */
 
-/** Rows read and classified before each flush. Bounds memory over a 23,910-row batch. */
+/** Rows read and written per page. Bounds memory over a 23,910-row batch. */
 export const DEFAULT_PAGE_SIZE = 200;
 
 export interface ClassifyBatchRequest {
@@ -53,7 +67,11 @@ export interface ClassifyBatchOptions {
   readonly now?: (() => Date) | undefined;
   readonly makeId?: (() => string) | undefined;
   readonly pageSize?: number | undefined;
-  /** Test hook run before each page is written; throwing must roll the run back. */
+  /**
+   * Test seam, invoked before each page is fetched. Integration tests use it
+   * to drive a second connection deterministically between pages; production
+   * callers never pass it, and it cannot change what is written.
+   */
   readonly beforePage?: ((pageIndex: number) => void | Promise<void>) | undefined;
 }
 
@@ -75,8 +93,8 @@ export interface IdempotencyInputs {
 /**
  * SHA-256 over the canonical JSON of everything that changes the outcome: the
  * batch, the classifier version, the ruleset version and the ruleset hash. A
- * changed rule changes the hash and therefore produces a distinct run rather
- * than silently reusing the old one.
+ * changed behaviour contract changes the hash and so produces a distinct run
+ * rather than silently reusing the old one.
  */
 export function computeRunIdempotencyKey(inputs: IdempotencyInputs): string {
   return createHash('sha256')
@@ -100,10 +118,14 @@ async function loadBatch(db: Database, batchId: string): Promise<ImportBatchReco
   return batch;
 }
 
-async function loadRun(db: Database, runId: string): Promise<ClassificationRunRecord> {
+async function loadCompletedRun(db: Database, runId: string): Promise<ClassificationRunRecord> {
   const run = await db.withClient((client) => getClassificationRun(client, runId));
-  if (run === null) {
-    throw new IngestionError('database', 'run_missing', 'classification run not found after write');
+  if (run === null || run.status !== 'completed') {
+    throw new IngestionError(
+      'database',
+      'run_not_completed',
+      'classification run is missing or not completed after the transaction committed',
+    );
   }
   return run;
 }
@@ -114,11 +136,16 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
   return out;
 }
 
+/** A duplicate idempotency key means another invocation already owns this run. */
+function isDuplicateRun(error: unknown): boolean {
+  return isDatabaseError(error) && error.code === '23505';
+}
+
 /**
  * Classifies every row of one explicit batch.
  *
- * A run with the same batch, classifier version and ruleset hash already in
- * the database is returned unchanged and writes nothing.
+ * A completed run with the same batch, classifier version, ruleset version and
+ * ruleset hash is returned unchanged and writes nothing.
  */
 export async function classifyBatch(
   db: Database,
@@ -142,141 +169,124 @@ export async function classifyBatch(
     rulesetHash: hash,
     mode: CLASSIFIER_MODE,
   });
+  const elapsed = (): number => now().getTime() - startedAt.getTime();
 
   const existing = await db.withClient((client) =>
     findClassificationRunByIdempotencyKey(client, idempotencyKey),
   );
-  if (existing !== null) {
-    return {
-      outcome: 'already_classified',
-      run: existing,
-      batch,
-      durationMs: now().getTime() - startedAt.getTime(),
-    };
+  if (existing !== null && existing.status === 'completed') {
+    return { outcome: 'already_classified', run: existing, batch, durationMs: elapsed() };
   }
 
   const runId = makeId();
-  await db.withTransaction(async (tx: Queryable) => {
-    const expected = await countBatchSourceRows(tx, batch.id);
-
-    /**
-     * Pages the batch and hands each row to the classifier. Both passes below
-     * use it. Memory stays bounded at one page: the large derived text of a
-     * page is released before the next is fetched.
-     */
-    const forEachDecision = async (
-      onDecision: (decided: ReturnType<typeof classify>, pageIndex: number) => Promise<void> | void,
-      onPage?: (pageIndex: number) => Promise<void> | void,
-    ): Promise<number> => {
-      let seen = 0;
-      let afterRowNumber = 0;
-      let pageIndex = 0;
-      for (;;) {
-        const page = await fetchClassificationInputs(tx, batch.id, {
-          afterRowNumber,
-          limit: pageSize,
+  try {
+    await db.withTransaction(
+      async (tx: Queryable) => {
+        // Step 2. The unique idempotency key serializes concurrent callers: the
+        // loser blocks here until the winner commits, then fails with 23505.
+        await insertRunningClassificationRun(tx, {
+          id: runId,
+          batchId: batch.id,
+          dataOrigin: batch.dataOrigin,
+          classifierVersion: CLASSIFIER_VERSION,
+          rulesetVersion: RULESET_VERSION,
+          rulesetHash: hash,
+          mode: CLASSIFIER_MODE,
+          idempotencyKey,
+          expectedRowCount: await countBatchSourceRows(tx, batch.id),
+          startedAt: startedAt.toISOString(),
         });
-        if (page.length === 0) break;
-        if (onPage !== undefined) await onPage(pageIndex);
-        for (const row of page) {
-          // Only the permitted fields cross into the classifier.
-          const input: ClassificationInput = {
-            sourceRowId: row.sourceRowId,
-            rowHash: row.rowHash,
-            status: row.status,
-            normalizedTitle: row.normalizedTitle,
-            derivedSummaryText: row.derivedSummaryText,
-            derivedDescriptionText: row.derivedDescriptionText,
-          };
-          await onDecision(classify(input), pageIndex);
-          seen += 1;
-          afterRowNumber = row.rowNumber;
+
+        // Step 3. One repeatable-read snapshot, paged deterministically by the
+        // row's stable logical number.
+        let afterRowNumber = 0;
+        let pageIndex = 0;
+        let buffer: NewClassificationResult[] = [];
+        const flush = async (): Promise<void> => {
+          for (const part of chunk(buffer, MAX_ROWS_PER_INSERT)) {
+            await insertClassificationResults(tx, part);
+          }
+          buffer = [];
+        };
+        for (;;) {
+          if (options.beforePage !== undefined) await options.beforePage(pageIndex);
+          const page = await fetchClassificationInputs(tx, batch.id, {
+            afterRowNumber,
+            limit: pageSize,
+          });
+          if (page.length === 0) break;
+          for (const row of page) {
+            // Only the permitted fields cross into the classifier.
+            const input: ClassificationInput = {
+              sourceRowId: row.sourceRowId,
+              rowHash: row.rowHash,
+              status: row.status,
+              normalizedTitle: row.normalizedTitle,
+              derivedSummaryText: row.derivedSummaryText,
+              derivedDescriptionText: row.derivedDescriptionText,
+            };
+            const decided = classify(input);
+            buffer.push({
+              id: makeId(),
+              runId,
+              batchId: batch.id,
+              sourceRowId: decided.sourceRowId,
+              decision: decided.decision,
+              rationaleCodes: decided.rationaleCodes,
+              matchedSignals: decided.matchedSignals,
+              signalScore: decided.signalScore,
+              rowHash: decided.rowHash,
+              createdAt: startedAt.toISOString(),
+            });
+            afterRowNumber = row.rowNumber;
+          }
+          await flush();
+          pageIndex += 1;
         }
-        pageIndex += 1;
-      }
-      return seen;
-    };
+        await flush();
 
-    // Pass 1 counts the decisions without keeping any of them, so the run row
-    // can be written with true counts before any result references it. The
-    // classifier is pure, so pass 2 reproduces exactly these decisions.
-    const counts: Record<ClassificationDecision, number> = { include: 0, exclude: 0, review: 0 };
-    const classified = await forEachDecision((decided) => {
-      counts[decided.decision] += 1;
-    }, options.beforePage);
-    if (classified !== expected) {
-      throw new IngestionError(
-        'database',
-        'run_incomplete',
-        'classification did not cover every row of the batch',
-        { expected, classified },
-      );
-    }
+        // Steps 4 and 5. Counters come from the persisted results, and the run
+        // must cover its batch exactly, all inside the same snapshot.
+        const derived = await deriveRunDecisionCounts(tx, runId);
+        const expected = await countBatchSourceRows(tx, batch.id);
+        const uncovered = await countUnclassifiedRows(tx, runId, batch.id);
+        if (derived.total !== expected || uncovered !== 0) {
+          throw new IngestionError(
+            'database',
+            'run_not_reconciled',
+            'classification results do not cover every row of the batch',
+            { expected, stored: derived.total, uncovered },
+          );
+        }
 
-    // The run is written before its results, because a result's composite
-    // foreign key names its run and is checked immediately. Its constraints
-    // reject any count that does not reconcile with the batch.
-    await insertClassificationRun(
-      tx,
-      {
-        id: runId,
-        batchId: batch.id,
-        dataOrigin: batch.dataOrigin,
-        classifierVersion: CLASSIFIER_VERSION,
-        rulesetVersion: RULESET_VERSION,
-        rulesetHash: hash,
-        mode: CLASSIFIER_MODE,
-        idempotencyKey,
-        expectedRowCount: expected,
-        startedAt: startedAt.toISOString(),
+        // Step 6. The trigger re-derives every counter before allowing this.
+        await completeClassificationRun(tx, runId, derived, now().toISOString());
       },
-      {
-        classifiedRowCount: classified,
-        includeCount: counts.include,
-        excludeCount: counts.exclude,
-        reviewCount: counts.review,
-        completedAt: now().toISOString(),
-      },
+      { isolationLevel: 'repeatable read' },
     );
-
-    // Pass 2 writes the results in bounded chunks.
-    let buffer: NewClassificationResult[] = [];
-    const flush = async (): Promise<void> => {
-      for (const part of chunk(buffer, MAX_ROWS_PER_INSERT)) {
-        await insertClassificationResults(tx, part);
+  } catch (error) {
+    if (isDuplicateRun(error)) {
+      // Another invocation owns this key. It has committed by the time the
+      // unique violation surfaced, so its run is readable now.
+      const winner = await db.withClient((client) =>
+        findClassificationRunByIdempotencyKey(client, idempotencyKey),
+      );
+      if (winner !== null && winner.status === 'completed') {
+        return { outcome: 'already_classified', run: winner, batch, durationMs: elapsed() };
       }
-      buffer = [];
-    };
-    const written = await forEachDecision(async (decided) => {
-      buffer.push({
-        id: makeId(),
-        runId,
-        batchId: batch.id,
-        sourceRowId: decided.sourceRowId,
-        decision: decided.decision,
-        rationaleCodes: decided.rationaleCodes,
-        matchedSignals: decided.matchedSignals,
-        signalScore: decided.signalScore,
-        rowHash: decided.rowHash,
-        createdAt: startedAt.toISOString(),
-      });
-      if (buffer.length >= pageSize) await flush();
-    });
-    await flush();
-    if (written !== classified) {
       throw new IngestionError(
         'database',
-        'run_incomplete',
-        'classification wrote a different number of results than it counted',
-        { counted: classified, written },
+        'run_in_progress',
+        'another classification run for this batch and ruleset is in progress',
       );
     }
-  });
+    throw error;
+  }
 
   return {
     outcome: 'classified',
-    run: await loadRun(db, runId),
+    run: await loadCompletedRun(db, runId),
     batch,
-    durationMs: now().getTime() - startedAt.getTime(),
+    durationMs: elapsed(),
   };
 }
