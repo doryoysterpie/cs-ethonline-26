@@ -206,6 +206,40 @@ export async function fetchClassificationInputs(
 }
 
 /**
+ * Freezes the batch's source set, and returns when it was frozen.
+ *
+ * This is the classifier's first statement, so it does three things at once:
+ * it establishes the transaction's repeatable-read snapshot, it takes the
+ * batch row's write lock, and it makes the source set immutable from that
+ * point on. Migration 0005 supplies the other half: every source-row mutation
+ * updates the same batch row, refusing the mutation when the batch is already
+ * frozen. A mutation that committed first is therefore inside this snapshot, a
+ * mutation still in flight is refused when it reaches its own update, and a
+ * mutation that committed while this statement waited for the lock makes this
+ * statement fail with a serialization error rather than silently missing a
+ * row. Freezing an already-frozen batch keeps the original timestamp.
+ */
+export async function freezeBatchSourceSet(
+  client: Queryable,
+  batchId: string,
+): Promise<{ readonly frozenAt: string; readonly sourceSetVersion: number }> {
+  const result = await client.query<{ frozen_at: string; source_set_version: number }>(
+    `UPDATE import_batches
+        SET source_set_frozen_at = COALESCE(source_set_frozen_at, now())
+      WHERE id = $1
+      RETURNING to_json(source_set_frozen_at) #>> '{}' AS frozen_at, source_set_version`,
+    [batchId],
+  );
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new DatabaseError('query', 'import batch not found while freezing its source set', {
+      details: { batchId },
+    });
+  }
+  return { frozenAt: row.frozen_at, sourceSetVersion: row.source_set_version };
+}
+
+/**
  * Inserts the run in the `running` state with zero counters.
  *
  * A run is never inserted as already complete: migration 0004 opens the

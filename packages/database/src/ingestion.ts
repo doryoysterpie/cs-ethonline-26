@@ -37,6 +37,12 @@ export interface ImportBatchRecord extends NewImportBatch {
   readonly acceptedRowCount: number;
   readonly quarantinedRowCount: number;
   readonly completedAt: string | null;
+  /**
+   * When the batch's source set was frozen, or null while it is still
+   * mutable. Migration 0005 makes a frozen batch's rows immutable, which is
+   * what keeps a completed classification run permanently reconciled.
+   */
+  readonly sourceSetFrozenAt: string | null;
 }
 
 export interface NewSourceRow {
@@ -135,12 +141,14 @@ interface BatchRow {
   quarantined_row_count: number;
   started_at: string;
   completed_at: string | null;
+  source_set_frozen_at: string | null;
 }
 
 const BATCH_COLUMNS = `id, data_origin, source_kind, review_label, source_basename, file_sha256,
   byte_length::text AS byte_length, header_cells, importer_version, idempotency_key, status,
   parsed_row_count, accepted_row_count, quarantined_row_count,
-  to_json(started_at) #>> '{}' AS started_at, to_json(completed_at) #>> '{}' AS completed_at`;
+  to_json(started_at) #>> '{}' AS started_at, to_json(completed_at) #>> '{}' AS completed_at,
+  to_json(source_set_frozen_at) #>> '{}' AS source_set_frozen_at`;
 
 function toBatchRecord(row: BatchRow): ImportBatchRecord {
   return {
@@ -160,6 +168,7 @@ function toBatchRecord(row: BatchRow): ImportBatchRecord {
     quarantinedRowCount: row.quarantined_row_count,
     startedAt: row.started_at,
     completedAt: row.completed_at,
+    sourceSetFrozenAt: row.source_set_frozen_at,
   };
 }
 

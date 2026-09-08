@@ -15,6 +15,7 @@ import {
   deriveRunDecisionCounts,
   fetchClassificationInputs,
   findClassificationRunByIdempotencyKey,
+  freezeBatchSourceSet,
   getClassificationRun,
   getImportBatch,
   insertClassificationResults,
@@ -39,7 +40,11 @@ import { IngestionError } from '../editorial/errors.js';
  * concurrent update between the passes let a run commit counters that did not
  * match its own stored results. The lifecycle below fixes that:
  *
- *   1. Begin a REPEATABLE READ transaction, so every page reads one snapshot.
+ *   1. Begin a REPEATABLE READ transaction and freeze the batch's source set
+ *      as the very first statement. The re-audit showed why a snapshot alone
+ *      is not enough: a source row committed after the snapshot left a run
+ *      marked completed that did not cover its batch. The freeze closes that
+ *      by making the source set immutable rather than merely unobserved.
  *   2. Insert the run as `running`. The unique idempotency key is the
  *      concurrency gate: a second identical invocation blocks here and then
  *      finds the first run.
@@ -73,12 +78,20 @@ export interface ClassifyBatchOptions {
    * callers never pass it, and it cannot change what is written.
    */
   readonly beforePage?: ((pageIndex: number) => void | Promise<void>) | undefined;
+  /**
+   * Test seam, invoked inside the transaction immediately before the source
+   * set is frozen and therefore before the snapshot is established. Used to
+   * prove the pre-freeze race; production callers never pass it.
+   */
+  readonly beforeFreeze?: (() => void | Promise<void>) | undefined;
 }
 
 export interface ClassifyBatchOutcome {
   readonly outcome: 'classified' | 'already_classified';
   readonly run: ClassificationRunRecord;
   readonly batch: ImportBatchRecord;
+  /** When this batch's source set became immutable. Never null after a run. */
+  readonly sourceSetFrozenAt: string;
   readonly durationMs: number;
 }
 
@@ -142,6 +155,14 @@ function isDuplicateRun(error: unknown): boolean {
 }
 
 /**
+ * The batch changed under this transaction's snapshot, so PostgreSQL refused
+ * the freeze. Another invocation may have completed the same run meanwhile.
+ */
+function isSerializationFailure(error: unknown): boolean {
+  return isDatabaseError(error) && error.code === '40001';
+}
+
+/**
  * Classifies every row of one explicit batch.
  *
  * A completed run with the same batch, classifier version, ruleset version and
@@ -171,17 +192,37 @@ export async function classifyBatch(
   });
   const elapsed = (): number => now().getTime() - startedAt.getTime();
 
-  const existing = await db.withClient((client) =>
-    findClassificationRunByIdempotencyKey(client, idempotencyKey),
-  );
-  if (existing !== null && existing.status === 'completed') {
-    return { outcome: 'already_classified', run: existing, batch, durationMs: elapsed() };
-  }
+  const alreadyDone = async (): Promise<ClassifyBatchOutcome | null> => {
+    const found = await db.withClient((client) =>
+      findClassificationRunByIdempotencyKey(client, idempotencyKey),
+    );
+    if (found === null || found.status !== 'completed') return null;
+    const stored = await loadBatch(db, batch.id);
+    return {
+      outcome: 'already_classified',
+      run: found,
+      batch: stored,
+      sourceSetFrozenAt: stored.sourceSetFrozenAt ?? '',
+      durationMs: elapsed(),
+    };
+  };
+
+  const existing = await alreadyDone();
+  if (existing !== null) return existing;
 
   const runId = makeId();
+  let frozenAt = '';
   try {
     await db.withTransaction(
       async (tx: Queryable) => {
+        if (options.beforeFreeze !== undefined) await options.beforeFreeze();
+
+        // Step 1. Freeze the batch's source set before reading a single row.
+        // This statement establishes the snapshot, so nothing can commit into
+        // the batch behind it: a later mutation is refused by migration 0005,
+        // and a mutation that commits while this waits makes it fail.
+        frozenAt = (await freezeBatchSourceSet(tx, batch.id)).frozenAt;
+
         // Step 2. The unique idempotency key serializes concurrent callers: the
         // loser blocks here until the winner commits, then fails with 23505.
         await insertRunningClassificationRun(tx, {
@@ -265,19 +306,18 @@ export async function classifyBatch(
       { isolationLevel: 'repeatable read' },
     );
   } catch (error) {
-    if (isDuplicateRun(error)) {
-      // Another invocation owns this key. It has committed by the time the
-      // unique violation surfaced, so its run is readable now.
-      const winner = await db.withClient((client) =>
-        findClassificationRunByIdempotencyKey(client, idempotencyKey),
-      );
-      if (winner !== null && winner.status === 'completed') {
-        return { outcome: 'already_classified', run: winner, batch, durationMs: elapsed() };
-      }
+    if (isDuplicateRun(error) || isSerializationFailure(error)) {
+      // Either another invocation owns this idempotency key, or the batch
+      // changed under this snapshot. Both leave nothing of this attempt
+      // behind. If the equivalent run was completed by the winner, report it.
+      const winner = await alreadyDone();
+      if (winner !== null) return winner;
       throw new IngestionError(
         'database',
-        'run_in_progress',
-        'another classification run for this batch and ruleset is in progress',
+        isDuplicateRun(error) ? 'run_in_progress' : 'batch_source_set_changed',
+        isDuplicateRun(error)
+          ? 'another classification run for this batch and ruleset is in progress'
+          : 'the batch source set changed during classification; nothing was written',
       );
     }
     throw error;
@@ -286,7 +326,8 @@ export async function classifyBatch(
   return {
     outcome: 'classified',
     run: await loadCompletedRun(db, runId),
-    batch,
+    batch: await loadBatch(db, batch.id),
+    sourceSetFrozenAt: frozenAt,
     durationMs: elapsed(),
   };
 }

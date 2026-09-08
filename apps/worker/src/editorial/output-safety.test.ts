@@ -119,6 +119,7 @@ function importOutcome(basename: string, label: string): ImportOutcome {
       quarantinedRowCount: 0,
       startedAt: '2026-09-06T00:00:00.000Z',
       completedAt: '2026-09-06T00:00:01.000Z',
+      sourceSetFrozenAt: null,
     },
     issues: [],
     review: {

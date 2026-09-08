@@ -64,7 +64,9 @@ const outcome: ClassifyBatchOutcome = {
     quarantinedRowCount: 3,
     startedAt: '2026-09-07T11:00:00.000Z',
     completedAt: '2026-09-07T11:00:01.000Z',
+    sourceSetFrozenAt: '2026-09-07T11:30:00.000Z',
   },
+  sourceSetFrozenAt: '2026-09-07T11:30:00.000Z',
   durationMs: 5000,
 };
 

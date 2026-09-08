@@ -7,6 +7,8 @@ import {
   countRunDecisions,
   countUnclassifiedRows,
   deriveRunDecisionCounts,
+  getClassificationRun,
+  getImportBatch,
   isDatabaseError,
   openDatabase,
   parseDatabaseConfig,
@@ -358,8 +360,16 @@ describe('classifyBatch against a migrated schema', () => {
   // source row. Both are driven by a coordinated second connection through the
   // `beforePage` seam, so the interleaving is deterministic and no test sleeps.
 
-  describe('concurrent interference during a run', () => {
-    /** A second, independent connection to the same schema. */
+  // -------------------------------------------------------------------------
+  // Re-audit finding 2. A completed run must cover its batch for ever, not
+  // only against the snapshot it happened to read. The source set is frozen
+  // before the first source-row read, so every mutation after that point is
+  // refused and every mutation before it is inside the classified set.
+  //
+  // A second real connection is coordinated through seams that run at exact
+  // points inside the classifier's transaction. No test sleeps.
+
+  describe('concurrent source-set mutation', () => {
     async function withRival<T>(fn: (rival: Database) => Promise<T>): Promise<T> {
       const config = parseDatabaseConfig(process.env);
       const rival = openDatabase({ ...config, schema: isolated.name }, { maxConnections: 2 });
@@ -370,157 +380,291 @@ describe('classifyBatch against a migrated schema', () => {
       }
     }
 
-    async function runCounters(runId: string): Promise<Record<string, number>> {
+    /** The invariant every completed run must satisfy in the live database. */
+    async function assertReconciled(runId: string, batchId: string): Promise<void> {
+      const report = await reportRun(isolated.db, runId);
+      expect(report.reconciled, 'a completed run must reconcile').toBe(true);
+      expect(report.unclassifiedRows).toBe(0);
+      const rows = await isolated.db.withClient((c) =>
+        c.query<{ sources: string; results: string; duplicates: string }>(
+          `SELECT (SELECT count(*) FROM source_rows WHERE batch_id = $2)::text AS sources,
+                  (SELECT count(*) FROM classification_results WHERE run_id = $1)::text AS results,
+                  (SELECT count(*) FROM (
+                     SELECT source_row_id FROM classification_results
+                      WHERE run_id = $1 GROUP BY source_row_id HAVING count(*) > 1) d)::text
+                    AS duplicates`,
+          [runId, batchId],
+        ),
+      );
+      const row = rows.rows[0];
+      expect(row?.results).toBe(row?.sources);
+      expect(row?.duplicates).toBe('0');
       const derived = await isolated.db.withClient((c) => deriveRunDecisionCounts(c, runId));
-      return {
-        total: derived.total,
-        include: derived.include,
-        exclude: derived.exclude,
-        review: derived.review,
-      };
+      const stored = await isolated.db.withClient((c) => getClassificationRun(c, runId));
+      expect({
+        total: stored?.classifiedRowCount,
+        include: stored?.includeCount,
+        exclude: stored?.excludeCount,
+        review: stored?.reviewCount,
+      }).toEqual(derived);
     }
 
-    it('commits counters that match its own results when rows are added mid-run', async () => {
-      const fresh = await seedBatch(isolated.db, 'CS10', () => 'selected');
-      const outcome = await withRival(async (rival) =>
+    /** An import batch with no rows, so a reassignment cannot collide. */
+    async function emptyBatch(label: string): Promise<string> {
+      const batchId = randomUUID();
+      await isolated.db.withClient(async (c) => {
+        await c.query(
+          `INSERT INTO import_batches (
+             id, data_origin, source_kind, review_label, source_basename, file_sha256, byte_length,
+             header_cells, importer_version, idempotency_key, status, parsed_row_count,
+             accepted_row_count, quarantined_row_count, started_at, completed_at
+           ) VALUES ($1, 'replay', 'weekly', $2, 'seed.csv', $3, 10, '["ch"]'::jsonb,
+                     'editorial-csv-import@1', $4, 'completed', 0, 0, 0, now(), now())`,
+          [batchId, label, hash('a'), randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64)],
+        );
+      });
+      return batchId;
+    }
+
+    interface Interference {
+      readonly name: string;
+      readonly statements: (
+        batch: SeededBatch,
+        destination: string,
+      ) => readonly [sql: string, values: readonly unknown[]][];
+    }
+
+    const INTERFERENCE: readonly Interference[] = [
+      {
+        name: 'insert',
+        statements: (batch) => [
+          [
+            `INSERT INTO source_rows (
+               id, batch_id, row_number, data_origin, status, raw_cells, raw_fields,
+               normalized_title, text_transform, row_hash
+             ) VALUES ($1, $2, 99, 'replay', 'accepted', '["x"]'::jsonb, '{}'::jsonb,
+                       'Ransomware strikes a second hospital', 'html-to-text@1', $3)`,
+            [randomUUID(), batch.batchId, hash('9')],
+          ],
+        ],
+      },
+      {
+        name: 'delete',
+        statements: (batch) => [
+          ['DELETE FROM review_entries WHERE source_row_id = $1', [batch.rowIds[0]]],
+          ['DELETE FROM source_rows WHERE id = $1', [batch.rowIds[0]]],
+        ],
+      },
+      {
+        name: 'row rehash',
+        statements: (batch) => [
+          ['UPDATE source_rows SET row_hash = $2 WHERE id = $1', [batch.rowIds[1], hash('8')]],
+        ],
+      },
+      {
+        name: 'normalized text update',
+        statements: (batch) => [
+          [
+            'UPDATE source_rows SET normalized_title = $2 WHERE id = $1',
+            [batch.rowIds[1], 'rewritten after the snapshot'],
+          ],
+        ],
+      },
+      {
+        name: 'derived summary update',
+        statements: (batch) => [
+          [
+            'UPDATE source_rows SET derived_summary_text = $2 WHERE id = $1',
+            [batch.rowIds[1], 'rewritten after the snapshot'],
+          ],
+        ],
+      },
+      {
+        name: 'ingestion status update',
+        statements: (batch) => [
+          [`UPDATE source_rows SET status = 'quarantined' WHERE id = $1`, [batch.rowIds[1]]],
+        ],
+      },
+      {
+        name: 'batch reassignment',
+        statements: (batch, destination) => [
+          ['UPDATE source_rows SET batch_id = $2 WHERE id = $1', [batch.rowIds[1], destination]],
+        ],
+      },
+      {
+        name: 'origin reassignment',
+        statements: (batch) => [
+          [`UPDATE source_rows SET data_origin = 'live' WHERE id = $1`, [batch.rowIds[1]]],
+        ],
+      },
+    ];
+
+    it.each(INTERFERENCE.map((entry) => [entry.name, entry] as const))(
+      'refuses a %s that starts after the source set is frozen',
+      async (_name, entry) => {
+        const fresh = await seedBatch(
+          isolated.db,
+          `CS3${INTERFERENCE.indexOf(entry)}`,
+          () => 'selected',
+        );
+        const destination = await emptyBatch(`CS4${INTERFERENCE.indexOf(entry)}`);
+        let rival: Promise<unknown> | null = null;
+        const outcome = await withRival(async (connection) => {
+          const run = await classifyBatch(
+            isolated.db,
+            { batchId: fresh.batchId },
+            {
+              pageSize: 2,
+              beforePage: (index) => {
+                if (index !== 0 || rival !== null) return;
+                // Started, not awaited: the mutation blocks on the batch row
+                // the classifier locked when it froze the source set, and
+                // awaiting it here would stall the transaction that must
+                // commit before that lock is released.
+                rival = connection.withTransaction(async (tx) => {
+                  for (const [sql, values] of entry.statements(fresh, destination)) {
+                    await tx.query(sql, values);
+                  }
+                });
+              },
+            },
+          );
+          let rivalError: unknown;
+          try {
+            await rival;
+          } catch (error) {
+            rivalError = error;
+          }
+          expect(isDatabaseError(rivalError), `${entry.name} must be refused`).toBe(true);
+          // The freeze refuses it, or the immediate foreign key that binds a
+          // stored result to its source row gets there first. Both are
+          // refusals; neither leaves the run uncovered.
+          expect(['P0001', '23503']).toContain(isDatabaseError(rivalError) ? rivalError.code : '');
+          return run;
+        });
+
+        expect(outcome.outcome).toBe('classified');
+        expect(outcome.run.status).toBe('completed');
+        expect(outcome.sourceSetFrozenAt).not.toBe('');
+        await assertReconciled(outcome.run.id, fresh.batchId);
+      },
+    );
+
+    /** The row every pre-freeze race inserts from the second connection. */
+    const LATE_ROW = (batchId: string): readonly [string, readonly unknown[]] => [
+      `INSERT INTO source_rows (
+         id, batch_id, row_number, data_origin, status, raw_cells, raw_fields,
+         normalized_title, text_transform, row_hash
+       ) VALUES ($1, $2, 99, 'replay', 'accepted', '["x"]'::jsonb, '{}'::jsonb,
+                 'Ransomware strikes a second hospital', 'html-to-text@1', $3)`,
+      [randomUUID(), batchId, hash('9')],
+    ];
+
+    it('classifies a row that commits before the freeze', async () => {
+      const fresh = await seedBatch(isolated.db, 'CS50', () => 'selected');
+      const outcome = await withRival(async (connection) =>
         classifyBatch(
           isolated.db,
           { batchId: fresh.batchId },
           {
             pageSize: 2,
-            beforePage: async (index) => {
-              if (index !== 1) return;
-              // A seventh row lands and commits while the run is paging.
-              await rival.withTransaction(async (tx) => {
-                await tx.query(
-                  `INSERT INTO source_rows (
-                     id, batch_id, row_number, data_origin, status, raw_cells, raw_fields,
-                     normalized_title, text_transform, row_hash
-                   ) VALUES ($1, $2, $3, 'replay', 'accepted', '["x"]'::jsonb, '{}'::jsonb,
-                             'Ransomware strikes a second hospital', 'html-to-text@1', $4)`,
-                  [randomUUID(), fresh.batchId, ROWS.length + 1, hash('9')],
-                );
+            beforeFreeze: async () => {
+              // Nothing is locked yet, so this commits outright. The freeze
+              // that follows takes its snapshot after it.
+              const [sql, values] = LATE_ROW(fresh.batchId);
+              await connection.withTransaction(async (tx) => {
+                await tx.query(sql, values);
               });
             },
           },
         ),
       );
-      // The run saw one stable snapshot, so its counters describe exactly the
-      // results it stored. Under the rejected two-pass design the counting pass
-      // and the classifying pass could see different data.
-      expect(outcome.run.status).toBe('completed');
-      expect(outcome.run.classifiedRowCount).toBe(ROWS.length);
-      expect(await runCounters(outcome.run.id)).toEqual({
-        total: outcome.run.classifiedRowCount,
-        include: outcome.run.includeCount,
-        exclude: outcome.run.excludeCount,
-        review: outcome.run.reviewCount,
-      });
-      // The row that arrived late is reported as uncovered rather than hidden:
-      // the report tells the truth instead of a stale counter doing so.
-      const report = await reportRun(isolated.db, outcome.run.id);
-      expect(report.unclassifiedRows).toBe(1);
-      expect(report.reconciled).toBe(false);
+      expect(outcome.run.classifiedRowCount).toBe(ROWS.length + 1);
+      await assertReconciled(outcome.run.id, fresh.batchId);
     });
 
-    it('refuses to let a source row be re-hashed under a stored result', async () => {
-      const fresh = await seedBatch(isolated.db, 'CS11', () => 'selected');
-      let rivalOutcome: Promise<unknown> | null = null;
-      const outcome = await withRival(async (rival) => {
-        const run = await classifyBatch(
-          isolated.db,
-          { batchId: fresh.batchId },
-          {
-            pageSize: 2,
-            beforePage: (index) => {
-              if (index !== 1) return;
-              // Row 1 already has a stored result in this run, so this UPDATE
-              // blocks on the lock that result holds. It is deliberately not
-              // awaited here: awaiting it would stall the run that must commit
-              // before the lock is released.
-              rivalOutcome = rival.withTransaction(async (tx) => {
-                await tx.query('UPDATE source_rows SET row_hash = $2 WHERE id = $1', [
-                  fresh.rowIds[0],
-                  hash('8'),
-                ]);
-              });
-            },
-          },
-        );
-        let rivalError: unknown;
-        try {
-          await rivalOutcome;
-        } catch (error) {
-          rivalError = error;
+    it('writes no run when a row commits while the freeze is waiting', async () => {
+      const fresh = await seedBatch(isolated.db, 'CS51', () => 'selected');
+      /**
+       * Waits until PostgreSQL reports a session blocked on a lock in this
+       * database. The condition is observable state, not elapsed time, so the
+       * interleaving is exact rather than hopeful.
+       */
+      const untilBlocked = async (): Promise<void> => {
+        for (let attempt = 0; attempt < 20_000; attempt += 1) {
+          const blocked = await isolated.db.withClient((c) =>
+            c.query<{ count: string }>(
+              `SELECT count(*)::text AS count FROM pg_catalog.pg_stat_activity
+                WHERE datname = pg_catalog.current_database()
+                  AND wait_event_type = 'Lock'`,
+            ),
+          );
+          if (blocked.rows[0]?.count !== '0') return;
+          await new Promise((resolve) => setImmediate(resolve));
         }
-        expect(isDatabaseError(rivalError)).toBe(true);
-        expect(isDatabaseError(rivalError) ? rivalError.code : '').toBe('23503');
-        return run;
-      });
-      expect(outcome.run.status).toBe('completed');
-      const mismatched = await isolated.db.withClient((c) =>
-        c.query<{ count: string }>(
-          `SELECT count(*)::text AS count
-             FROM classification_results r
-             JOIN source_rows s ON s.id = r.source_row_id
-            WHERE r.run_id = $1 AND r.row_hash <> s.row_hash`,
-          [outcome.run.id],
-        ),
-      );
-      expect(mismatched.rows[0]?.count).toBe('0');
-    });
+        throw new Error('the classifier never blocked on the batch lock');
+      };
 
-    it('fails the whole run rather than storing a fingerprint that has moved on', async () => {
-      const fresh = await seedBatch(isolated.db, 'CS12', () => 'selected');
-      const before = await isolated.db.withClient((c) =>
-        c.query<{ runs: string; results: string }>(
-          `SELECT (SELECT count(*) FROM classification_runs)::text AS runs,
-                  (SELECT count(*) FROM classification_results)::text AS results`,
-        ),
-      );
-      let caught: unknown;
-      await withRival(async (rival) => {
+      let rivalDone: Promise<unknown> | null = null;
+      let failure: unknown;
+      await withRival(async (connection) => {
         try {
           await classifyBatch(
             isolated.db,
             { batchId: fresh.batchId },
             {
               pageSize: 2,
-              beforePage: async (index) => {
-                if (index !== 1) return;
-                // The last row has not been read yet, so nothing references it
-                // and the change commits immediately. The run's snapshot still
-                // holds the old hash.
-                await rival.withTransaction(async (tx) => {
-                  await tx.query('UPDATE source_rows SET row_hash = $2 WHERE id = $1', [
-                    fresh.rowIds[ROWS.length - 1],
-                    hash('8'),
-                  ]);
+              beforeFreeze: async () => {
+                let release = (): void => undefined;
+                const gate = new Promise<void>((resolve) => {
+                  release = resolve;
                 });
+                const [sql, values] = LATE_ROW(fresh.batchId);
+                let inserted = (): void => undefined;
+                const ready = new Promise<void>((resolve) => {
+                  inserted = resolve;
+                });
+                rivalDone = connection.withTransaction(async (tx) => {
+                  await tx.query(sql, values);
+                  inserted();
+                  await gate;
+                });
+                // The insert holds the batch row it bumped. Release it only
+                // once the classifier's freeze is demonstrably waiting for it.
+                await ready;
+                void untilBlocked().then(release);
               },
             },
           );
         } catch (error) {
-          caught = error;
+          failure = error;
         }
+        await rivalDone;
       });
-      // PostgreSQL refuses the stale write either as a serialization failure,
-      // when the referential check cannot lock a row changed after the run's
-      // snapshot, or as a plain foreign-key violation. Both mean the same
-      // thing here: a fingerprint that has moved on is never stored.
-      expect(isDatabaseError(caught)).toBe(true);
-      expect(['40001', '23503']).toContain(isDatabaseError(caught) ? caught.code : '');
-      const after = await isolated.db.withClient((c) =>
-        c.query<{ runs: string; results: string }>(
-          `SELECT (SELECT count(*) FROM classification_runs)::text AS runs,
-                  (SELECT count(*) FROM classification_results)::text AS results`,
+
+      // The classifier refused rather than committing a run over a source set
+      // that had already moved.
+      expect(failure).toBeDefined();
+      expect(failure).toMatchObject({ code: 'batch_source_set_changed' });
+      const state = await isolated.db.withClient((c) =>
+        c.query<{ runs: string; rows: string }>(
+          `SELECT (SELECT count(*) FROM classification_runs WHERE batch_id = $1)::text AS runs,
+                  (SELECT count(*) FROM source_rows WHERE batch_id = $1)::text AS rows`,
+          [fresh.batchId],
         ),
       );
-      expect(after.rows[0]).toEqual(before.rows[0]);
+      expect(state.rows[0]).toEqual({ runs: '0', rows: String(ROWS.length + 1) });
+      // The batch is still mutable, because nothing froze it.
+      const batch = await isolated.db.withClient((c) => getImportBatch(c, fresh.batchId));
+      expect(batch?.sourceSetFrozenAt).toBeNull();
+      // Classifying again now succeeds and covers the row that arrived.
+      const retry = await classifyBatch(isolated.db, { batchId: fresh.batchId });
+      expect(retry.run.classifiedRowCount).toBe(ROWS.length + 1);
+      await assertReconciled(retry.run.id, fresh.batchId);
     });
 
     it('lets exactly one of two identical concurrent invocations create the run', async () => {
-      const fresh = await seedBatch(isolated.db, 'CS13', () => 'selected');
+      const fresh = await seedBatch(isolated.db, 'CS60', () => 'selected');
       const [a, b] = await Promise.all([
         classifyBatch(isolated.db, { batchId: fresh.batchId }, { pageSize: 2 }),
         classifyBatch(isolated.db, { batchId: fresh.batchId }, { pageSize: 2 }),
@@ -535,12 +679,21 @@ describe('classifyBatch against a migrated schema', () => {
         ),
       );
       expect(rows.rows[0]).toEqual({ runs: '1', results: String(ROWS.length) });
-      expect(await runCounters(a.run.id)).toEqual({
-        total: a.run.classifiedRowCount,
-        include: a.run.includeCount,
-        exclude: a.run.excludeCount,
-        review: a.run.reviewCount,
-      });
+      await assertReconciled(a.run.id, fresh.batchId);
+    });
+
+    it('freezes the batch it classified and reports the marker', async () => {
+      const fresh = await seedBatch(isolated.db, 'CS70', () => 'selected');
+      const before = await isolated.db.withClient((c) => getImportBatch(c, fresh.batchId));
+      expect(before?.sourceSetFrozenAt).toBeNull();
+      const outcome = await classifyBatch(isolated.db, { batchId: fresh.batchId });
+      expect(outcome.sourceSetFrozenAt).not.toBe('');
+      expect(outcome.batch.sourceSetFrozenAt).toBe(outcome.sourceSetFrozenAt);
+      // Repeating the run returns the same marker and writes nothing.
+      const again = await classifyBatch(isolated.db, { batchId: fresh.batchId });
+      expect(again.outcome).toBe('already_classified');
+      expect(again.sourceSetFrozenAt).toBe(outcome.sourceSetFrozenAt);
+      await assertReconciled(outcome.run.id, fresh.batchId);
     });
   });
 });

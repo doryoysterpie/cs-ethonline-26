@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   completeClassificationRun,
   countBatchSourceRows,
+  freezeBatchSourceSet,
   countReviewQueue,
   countReviewState,
   countRunDecisions,
@@ -23,6 +24,7 @@ import {
   type NewClassificationRun,
 } from './classification.js';
 import type { Database, Queryable } from './database.js';
+import { getImportBatch } from './ingestion.js';
 import { isDatabaseError } from './errors.js';
 import { runMigrations } from './migrate.js';
 import { openIsolatedSchema, type IsolatedSchema } from './test-support.js';
@@ -170,6 +172,10 @@ async function completeRun(
   const run = newRun(seeded.batchId, overrides);
   await db.withTransaction(
     async (tx) => {
+      // Migration 0005 refuses completion for a batch whose source set is
+      // still mutable, so the freeze comes first exactly as it does in the
+      // worker.
+      await freezeBatchSourceSet(tx, seeded.batchId);
       await insertRunningClassificationRun(tx, run);
       await insertClassificationResults(tx, allResults(run, seeded));
       await completeClassificationRun(
@@ -201,7 +207,7 @@ async function expectRejected(
   return caught.code ?? '';
 }
 
-describe('classification persistence (migrations 0003 and 0004)', () => {
+describe('classification persistence (migrations 0003 to 0005)', () => {
   let isolated: IsolatedSchema;
   let batchA: Seeded;
   let batchB: Seeded;
@@ -611,6 +617,7 @@ describe('classification persistence (migrations 0003 and 0004)', () => {
     it('refuses counters that do not match the stored results', async () => {
       const run = newRun(batchA.batchId);
       const code = await expectRejected(isolated.db, async (tx) => {
+        await freezeBatchSourceSet(tx, batchA.batchId);
         await insertRunningClassificationRun(tx, run);
         await insertClassificationResults(tx, allResults(run, batchA));
         // Sums correctly and equals the batch size, but misreports the split.
@@ -627,6 +634,7 @@ describe('classification persistence (migrations 0003 and 0004)', () => {
     it('refuses completion when the results do not cover every row', async () => {
       const run = newRun(batchA.batchId);
       const code = await expectRejected(isolated.db, async (tx) => {
+        await freezeBatchSourceSet(tx, batchA.batchId);
         await insertRunningClassificationRun(tx, run);
         await insertClassificationResults(tx, [newResult(run, batchA, 0, 'include')]);
         await tx.query(
@@ -643,6 +651,7 @@ describe('classification persistence (migrations 0003 and 0004)', () => {
     it('refuses completion whose row count contradicts the batch coverage', async () => {
       const run = newRun(batchA.batchId);
       const code = await expectRejected(isolated.db, async (tx) => {
+        await freezeBatchSourceSet(tx, batchA.batchId);
         await insertRunningClassificationRun(tx, run);
         await insertClassificationResults(tx, [newResult(run, batchA, 0, 'include')]);
         await tx.query(
@@ -661,6 +670,7 @@ describe('classification persistence (migrations 0003 and 0004)', () => {
     it('refuses a completed status with no completion time', async () => {
       const run = newRun(batchA.batchId);
       const code = await expectRejected(isolated.db, async (tx) => {
+        await freezeBatchSourceSet(tx, batchA.batchId);
         await insertRunningClassificationRun(tx, run);
         await insertClassificationResults(tx, allResults(run, batchA));
         await tx.query(
@@ -671,12 +681,14 @@ describe('classification persistence (migrations 0003 and 0004)', () => {
           [run.id],
         );
       });
+      // A check constraint, evaluated after the guard lets the row through.
       expect(code).toBe('23514');
     });
 
     it('refuses to alter the provenance of a running run', async () => {
       const run = newRun(batchA.batchId);
       const code = await expectRejected(isolated.db, async (tx) => {
+        await freezeBatchSourceSet(tx, batchA.batchId);
         await insertRunningClassificationRun(tx, run);
         await tx.query('UPDATE classification_runs SET ruleset_hash = $2 WHERE id = $1', [
           run.id,
@@ -706,6 +718,7 @@ describe('classification persistence (migrations 0003 and 0004)', () => {
       const run = newRun(batchA.batchId);
       await isolated.db.withTransaction(
         async (tx) => {
+          await freezeBatchSourceSet(tx, batchA.batchId);
           await insertRunningClassificationRun(tx, run);
           await insertClassificationResults(tx, allResults(run, batchA));
           const derived = await deriveRunDecisionCounts(tx, run.id);
@@ -740,6 +753,179 @@ describe('classification persistence (migrations 0003 and 0004)', () => {
       await isolated.db.withClient(async (c) => {
         await c.query('DELETE FROM classification_runs WHERE id = $1', [run.id]);
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Re-audit finding 2: the classified source set is frozen, so a completed
+  // run stays reconciled no matter what happens to the batch afterwards.
+
+  describe('source-set freeze (migration 0005)', () => {
+    let frozenBatch: Seeded;
+
+    beforeAll(async () => {
+      frozenBatch = await seedBatch(isolated.db, 'CS20');
+      await completeRun(isolated.db, frozenBatch);
+    });
+
+    const frozenAt = async (batchId: string): Promise<string | null> => {
+      const record = await isolated.db.withClient((c) => getImportBatch(c, batchId));
+      return record?.sourceSetFrozenAt ?? null;
+    };
+
+    it('marks the batch frozen when a run completes, and keeps the first timestamp', async () => {
+      const first = await frozenAt(frozenBatch.batchId);
+      expect(first).not.toBeNull();
+      // A second run over the same batch must not move the marker.
+      await completeRun(isolated.db, frozenBatch, {
+        rulesetHash: hash('9'),
+        idempotencyKey: randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64),
+      });
+      expect(await frozenAt(frozenBatch.batchId)).toBe(first);
+    });
+
+    /** An import batch with no source rows, so a reassignment cannot collide. */
+    async function emptyBatch(label: string): Promise<string> {
+      const batchId = randomUUID();
+      await isolated.db.withClient(async (c) => {
+        await c.query(
+          `INSERT INTO import_batches (
+             id, data_origin, source_kind, review_label, source_basename, file_sha256, byte_length,
+             header_cells, importer_version, idempotency_key, status, parsed_row_count,
+             accepted_row_count, quarantined_row_count, started_at, completed_at
+           ) VALUES ($1, 'replay', 'weekly', $2, 'seed.csv', $3, 10, '["ch"]'::jsonb,
+                     'editorial-csv-import@1', $4, 'completed', 0, 0, 0, now(), now())`,
+          [batchId, label, hash('a'), randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64)],
+        );
+      });
+      return batchId;
+    }
+
+    it('refuses every source-row mutation of a frozen batch', async () => {
+      const rowId = frozenBatch.rowIds[0] ?? '';
+      const destination = await emptyBatch('CS23');
+      const cases: [name: string, sql: string, values: readonly unknown[]][] = [
+        [
+          'insert',
+          `INSERT INTO source_rows (
+             id, batch_id, row_number, data_origin, status, raw_cells, raw_fields,
+             normalized_title, text_transform, row_hash
+           ) VALUES ($1, $2, 99, 'replay', 'accepted', '["x"]'::jsonb, '{}'::jsonb,
+                     'late arrival', 'html-to-text@1', $3)`,
+          [randomUUID(), frozenBatch.batchId, hash('5')],
+        ],
+        ['delete', 'DELETE FROM source_rows WHERE id = $1', [rowId]],
+        ['row hash', 'UPDATE source_rows SET row_hash = $2 WHERE id = $1', [rowId, hash('6')]],
+        [
+          'normalized title',
+          'UPDATE source_rows SET normalized_title = $2 WHERE id = $1',
+          [rowId, 'rewritten'],
+        ],
+        [
+          'derived summary',
+          'UPDATE source_rows SET derived_summary_text = $2 WHERE id = $1',
+          [rowId, 'rewritten'],
+        ],
+        [
+          'derived description',
+          'UPDATE source_rows SET derived_description_text = $2 WHERE id = $1',
+          [rowId, 'rewritten'],
+        ],
+        [
+          'ingestion status',
+          `UPDATE source_rows SET status = 'quarantined' WHERE id = $1`,
+          [rowId],
+        ],
+        [
+          'batch reassignment',
+          'UPDATE source_rows SET batch_id = $2 WHERE id = $1',
+          [rowId, destination],
+        ],
+        [
+          'origin reassignment',
+          `UPDATE source_rows SET data_origin = 'live' WHERE id = $1`,
+          [rowId],
+        ],
+      ];
+      for (const [name, sql, values] of cases) {
+        const code = await expectRejected(isolated.db, (tx) => tx.query(sql, values));
+        // Some of these are refused by the immediate foreign key that binds a
+        // stored result to its source row before the freeze trigger runs at
+        // the end of the statement. Either way the mutation is refused; the
+        // freeze is what covers the cases the key does not reach.
+        expect(['P0001', '23503'], name).toContain(code);
+      }
+      // Nothing moved.
+      expect(
+        await isolated.db.withClient((c) => countBatchSourceRows(c, frozenBatch.batchId)),
+      ).toBe(3);
+    });
+
+    it('refuses bulk removal that would empty a frozen batch', async () => {
+      for (const sql of ['TRUNCATE source_rows', 'TRUNCATE import_batches CASCADE']) {
+        const code = await expectRejected(isolated.db, (tx) => tx.query(sql));
+        // PostgreSQL refuses to truncate a table another table references at
+        // all (0A000); where it would proceed, the freeze trigger refuses it.
+        expect(['P0001', '0A000'], sql).toContain(code);
+      }
+      const code = await expectRejected(isolated.db, (tx) =>
+        tx.query('DELETE FROM import_batches WHERE id = $1', [frozenBatch.batchId]),
+      );
+      expect(code).toBe('P0001');
+    });
+
+    it('protects the freeze marker itself', async () => {
+      for (const sql of [
+        'UPDATE import_batches SET source_set_frozen_at = NULL WHERE id = $1',
+        'UPDATE import_batches SET source_set_frozen_at = now() WHERE id = $1',
+        `UPDATE import_batches SET data_origin = 'live' WHERE id = $1`,
+      ]) {
+        const code = await expectRejected(isolated.db, (tx) =>
+          tx.query(sql, [frozenBatch.batchId]),
+        );
+        expect(code, sql).toBe('P0001');
+      }
+      expect(await frozenAt(frozenBatch.batchId)).not.toBeNull();
+    });
+
+    it('leaves an unfrozen batch fully mutable', async () => {
+      const open = await seedBatch(isolated.db, 'CS21');
+      expect(await frozenAt(open.batchId)).toBeNull();
+      await isolated.db.withTransaction(async (tx) => {
+        await tx.query('UPDATE source_rows SET normalized_title = $2 WHERE id = $1', [
+          open.rowIds[0],
+          'still editable',
+        ]);
+        // The human review entry references the row, so it goes first; that
+        // ordering is ingestion's business and is unaffected by the freeze.
+        await tx.query('DELETE FROM review_entries WHERE source_row_id = $1', [open.rowIds[2]]);
+        await tx.query('DELETE FROM source_rows WHERE id = $1', [open.rowIds[2]]);
+      });
+      expect(await isolated.db.withClient((c) => countBatchSourceRows(c, open.batchId))).toBe(2);
+      // Every mutation bumps the parent batch, which is what makes a
+      // concurrent classifier fail rather than miss the change.
+      const version = await isolated.db.withClient((c) =>
+        c.query<{ v: number }>('SELECT source_set_version AS v FROM import_batches WHERE id = $1', [
+          open.batchId,
+        ]),
+      );
+      expect(version.rows[0]?.v).toBeGreaterThan(0);
+    });
+
+    it('refuses to complete a run whose batch was never frozen', async () => {
+      const open = await seedBatch(isolated.db, 'CS22');
+      const run = newRun(open.batchId);
+      const code = await expectRejected(isolated.db, async (tx) => {
+        await insertRunningClassificationRun(tx, run);
+        await insertClassificationResults(tx, allResults(run, open));
+        await completeClassificationRun(
+          tx,
+          run.id,
+          await deriveRunDecisionCounts(tx, run.id),
+          new Date().toISOString(),
+        );
+      });
+      expect(code).toBe('P0001');
     });
   });
 });
