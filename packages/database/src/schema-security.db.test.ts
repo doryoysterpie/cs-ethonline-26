@@ -41,6 +41,12 @@ const SHADOW_TABLES = `
     id uuid PRIMARY KEY, batch_id uuid, status text);
   CREATE TABLE IF NOT EXISTS %S.import_batches (
     id uuid PRIMARY KEY, source_set_frozen_at timestamptz, source_set_version integer);
+  CREATE TABLE IF NOT EXISTS %S.incident_memberships (
+    id uuid PRIMARY KEY, clustering_run_id uuid, source_row_id uuid);
+  CREATE TABLE IF NOT EXISTS %S.incident_clusters (
+    id uuid PRIMARY KEY, clustering_run_id uuid, member_count integer);
+  CREATE TABLE IF NOT EXISTS %S.clustering_runs (
+    id uuid PRIMARY KEY, status text);
   CREATE TABLE IF NOT EXISTS %S.schema_migrations (
     version integer PRIMARY KEY, name text, checksum text,
     applied_at timestamptz DEFAULT now());`;
@@ -118,6 +124,9 @@ describe('search-path capture (migration 0005)', () => {
           'classification_runs',
           'import_batches',
           'schema_migrations',
+          'incident_memberships',
+          'incident_clusters',
+          'clustering_runs',
         ]) {
           await client.query(`DROP TABLE IF EXISTS ${quoteIdentifier(role)}.${table}`);
         }
@@ -143,6 +152,9 @@ describe('search-path capture (migration 0005)', () => {
     expect(functions.rows.map((row) => row.name)).toEqual([
       'classification_result_guard',
       'classification_run_guard',
+      'clustering_output_guard',
+      'clustering_review_guard',
+      'clustering_run_guard',
       'frozen_batch_truncate_guard',
       'import_batch_freeze_guard',
       'source_rows_freeze_guard',
@@ -248,7 +260,7 @@ describe('search-path capture (migration 0005)', () => {
     const status = await migrationStatus(isolated.db);
     expect(status.pending).toEqual([]);
     expect(status.drift).toEqual([]);
-    expect(status.applied).toHaveLength(5);
+    expect(status.applied).toHaveLength(6);
     // A rerun stays a no-op rather than reapplying into the shadow schema.
     expect((await runMigrations(isolated.db)).applied).toEqual([]);
 
@@ -263,11 +275,18 @@ describe('search-path capture (migration 0005)', () => {
         `SELECT count(*)::text AS count FROM ${quoteIdentifier(isolated.name)}.schema_migrations`,
       ),
     );
-    expect(real.rows[0]?.count).toBe('5');
+    expect(real.rows[0]?.count).toBe('6');
   });
 
   it('leaves every shadow table empty', async () => {
-    for (const table of ['classification_results', 'source_rows', 'classification_runs']) {
+    for (const table of [
+      'classification_results',
+      'source_rows',
+      'classification_runs',
+      'incident_memberships',
+      'incident_clusters',
+      'clustering_runs',
+    ]) {
       const rows = await base.withClient((client) =>
         client.query<{ count: string }>(
           `SELECT count(*)::text AS count FROM ${quoteIdentifier(role)}.${table}`,
