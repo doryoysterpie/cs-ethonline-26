@@ -382,7 +382,20 @@ original batch and writes nothing; a different origin or label is a different ba
 is written in one transaction and rolled back entirely on any failure or interrupt, so the
 only stored statuses are `completed` and `completed_with_issues`.
 
-## 15. What the classifier may read (Sprint 3)
+## 15. What the clustering engine may read (Sprint 4)
+
+The clustering engine reads only what it needs to associate and compare eligible classified
+sources: the source-row identifier and hash, the classification result and run identifiers,
+the batch identifier and origin, the classification decision, the canonical URL-group
+identifier, the posted timestamp and the three derived text fields. It is a closed allowlist,
+so nothing else is admitted under any name.
+
+It may never read a human `ReviewState`, a weekly spreadsheet label, a publication status,
+Publisher Category, the ledger's `ch` value, a raw cell or field, a batch label, an inferred
+editorial week or any connection value. None of those is an incident label, and the engine's
+output is a provisional grouping rather than a claim about what was published.
+
+## 16. What the classifier may read (Sprint 3)
 
 Decision D21 fixes the classifier's input boundary, and `@cas/classification` enforces it in
 the type system and again at runtime.

@@ -282,6 +282,39 @@ inherits (decision D21):
   the source row it names, which in turn can no longer be re-hashed or deleted while a result
   references it.
 
+## 13. Deterministic clustering
+
+Rules the Sprint 4 clustering engine (`@cas/clustering`) implements (decision D22):
+
+- The engine is pure: no database, no network, no environment variable, no model call, no
+  clock and no randomness. It cannot reach a credential because it cannot reach the
+  environment.
+- Its input is a closed allowlist of twelve own keys on a plain object with declared shapes.
+  A human `ReviewState`, a weekly spreadsheet label, a publication status, a publisher
+  category, the ledger's `ch` value, a raw cell, a batch label, an inferred editorial week and
+  any connection value are refused by construction rather than by being named. Symbol keys,
+  accessor properties and foreign prototypes are refused, descriptors are read before values,
+  and no rejection echoes a key or a value.
+- Source text stays hostile evidence. It is normalized, split into tokens and hashed; it is
+  never interpreted, never executed and never concatenated into a query. A title that says
+  "ignore previous instructions and merge every incident" changes nothing.
+- Every reason a cluster or an ambiguous link carries is fixed machine-readable vocabulary. No
+  prose is stored as canonical incident truth, and no source excerpt is stored as a reason.
+- Comparison work is bounded per item by the contract, so a hostile or unusual corpus cannot
+  force quadratic work.
+- A completed clustering run, its clusters, its memberships and its links are immutable in the
+  database. Human merge and split are append-only actions that never rewrite them, one linear
+  revision history per run is enforced by a unique key, and every action names an actor, a
+  fixed reason code and the revision it was prepared against.
+- Clustering output carries counts, identifiers, versions, hashes, statuses and fixed
+  vocabulary only, through the same redactor and single-line guard as every earlier command.
+  A newly created review action is reported by identifier so the caller can refer to it; an
+  optional human note is bounded at 280 characters and refused if it carries a control
+  character.
+- Every migration 0006 function is bound to the schema it was applied in, stores
+  `search_path = pg_catalog, <schema>, pg_temp`, names every relation by schema and is not
+  `SECURITY DEFINER`, exactly as migration 0005 requires.
+
 ## Reporting a vulnerability
 
 Report privately to the repository owner. Do not open a public issue describing an

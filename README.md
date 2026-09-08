@@ -28,81 +28,29 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 3 corrected twice, pending Codex Desktop verification: every imported source row
-carries a machine classification and the needs-review queue is populated.** On 7 September
-2026 a deterministic, versioned rule-based classifier (decision D21) classified all 24,248
-imported rows across the three batches: 13,015 include, 55 exclude, 11,178 needs-review, one
-result per row, every run reconciled against its batch. Candidate-retention is 0.992307 on
-CS79 and 1.0 on CS86 against a 0.98 target: those two files are weekly **candidate** cut-downs,
-so the figures measure retention against the owner's intermediate candidate decisions, not
-agreement with the final published selection. They are calibration evidence for a high-recall
-filter, not end-to-end editorial accuracy, publication recall or validated incident truth. The
-weekly candidate decisions never reach the classifier; a regression test proves removing,
-replacing or flipping them changes no decision, and nothing in the classifier is fitted or
-weighted from them. No model is called and no Anthropic credential is read, because D9 is
-unresolved.
+**Sprint 4 implemented, pending independent Codex Desktop audit: eligible classified sources
+now become provisional canonical incidents.** On 8 September 2026 a deterministic, model-free
+clustering engine (decision D22) consolidated exact URL duplicates, detected syndication and
+grouped separate reports into provisional incidents for all three accepted Sprint 3
+classification runs: 24,193 eligible results became 23,596 provisional incidents, every
+eligible result covered exactly once, no excluded result covered at all, and every run
+reconciled. A human can merge and split incidents through an append-only review layer that
+never rewrites what the machine produced. These are structural counts, not clustering
+accuracy: no machine-readable record of the final editorial outcome exists yet
+(`docs/SPRINT-4-REPORT.md`). The ten-protocol administrative-event watchlist is **blocked on
+an owner decision**, recorded with three options in section 10 of that report.
 
-Two independent audits have returned CHANGES REQUIRED. The first found five problems; the
-auditor later confirmed two of them closed, the exact input allowlist and the count-only queue
-output, and reopened the other three. The second correction binds every database integrity
-function to the schema it was applied in, so a schema named after the connecting role can no
-longer capture the guards or the migration table; freezes a batch's source set before it is
-classified, so a completed run cannot become unreconciled when the batch changes afterwards;
-and makes the behaviour contract the thing the classifier executes, so a hash can no longer
-move without the behaviour moving with it.
-
-Decisions are unchanged on all three batches across every generation. Sections 12, 13 and 14
-of `docs/SPRINT-3-REPORT.md` record the findings, the root causes, the evidence and the full
-audit history, including a superseded intermediate version that exists only as historical runs
-in the local database. Every claim there is pending Codex Desktop verification; nothing in
-this repository declares Sprint 3 accepted.
-
-**Sprint 2 audited: Codex Desktop issued PASS for `000c3410` on 7 September 2026. The local
-PostgreSQL foundation and the manual CSV ingestion path are proven on the real exports.** On 6 September 2026 a fresh local
-PostgreSQL 17 database was migrated by the checksummed forward-only runner in `@cas/database`,
-a second run was a no-op, and `@cas/worker` validated and imported the three real exports as
-`replay` data: 23,910 rows from the living RSS ledger and 157 CS79 and 181 CS86 rows from two
-weekly candidate cut-downs, every logical row stored,
-CS79 completing with three quarantined rows whose issues are recorded by code, weekly review
-state kept in its own tables, duplicate URLs kept as separate rows linked by canonical URL,
-and a second import of the same files writing nothing (`docs/SPRINT-2-REPORT.md`, decision
-D20). No real row, credential or generated output is in Git; fixtures are synthetic.
-
-**Sprint 1 audited: Codex issued PASS for `56bc95c4` on 6 September 2026. The live Graph
-proof passes on provider-validated evidence.** On 6 September 2026 at 00:19 America/Toronto, one common
-standardized GraphQL query, run by `@cas/graph-evidence` against The Graph gateway, returned
-live data for five Ethereum lending deployments at block 25915866. The gate validated each
-response's provider-returned slug, network, protocol type and schema version against the
-registry's declared expectations, required a present and distinct deployment ID, counted
-five distinct canonical identities (normalized chain plus provider slug), subgraph IDs and
-deployment IDs, and computed a deterministic 24-hour TVL-delta signal for each with complete
-provenance. Both Base targets passed the same validation at block 50939508, so Base is kept
-as the secondary chain with thin coverage (`docs/SPRINT-1-REPORT.md`, decisions D17 to D19).
-Decision D20 records the initial watchlist selected on that evidence and the Sprint 2 input
-rules.
-
-Everything else is still a placeholder. No clustering logic, drafting logic, payment code or
-dashboard exists yet (`docs/SPRINT_BOARD.md`).
-
-## Build sequence and the Graph gate
-
-| Sprint | Dates (Sept) | Scope                                                                                                 |
-| ------ | ------------ | ----------------------------------------------------------------------------------------------------- |
-| 1      | 5            | live Graph provider proof, Messari standardized-schema spike, Ethereum mandatory, Base four-hour gate |
-| 2      | 5 to 6       | Postgres schema, editorial-feed import, normalization, provenance                                     |
-| 3      | 6 to 7       | high-recall classification, review queue, Check-in #1                                                 |
-| 4      | 7 to 8       | clustering, canonical incidents, Graph correlation, evidence-state resolver, anomaly feed             |
-| 5      | 8 to 9       | drafting pipeline, live crypto section, fixed historical draft                                        |
-| 6      | 9 to 10      | Next.js dashboard, review workflow, draft editor, MCP server, `SKILL.md`, Check-in #2, Graph gate     |
-| 7      | 10 to 11     | holdout evaluation, fixtures, clean-install verification, Graph-track hardening                       |
-| 8      | 11 to 12     | conditional Hedera and Bazantic work; feature freeze 12 September at 12:00 PM                         |
-| 9      | 12 to 13     | videos, submission documentation, final checks, submission before 13 September at 12:00 PM            |
-
-At the Graph release gate at the end of 10 September, six deliverables must be complete and
-demonstrable, not in progress: live Graph anomaly detection, editorial connection,
-clustering, evidence states and provenance, an editable draft, and reusable MCP tooling with
-`SKILL.md` and clean installation. If the gate fails, Hedera and Bazantic are dropped and
-Sprints 7 and 8 finish and harden the Graph submission (decision D16).
+**Sprint 3 accepted at `71394c9b8e732bc7508b6276eafcbbac414c3a07`**, after two independent
+Codex Desktop audits and two correction passes. A deterministic, versioned rule-based
+classifier (decision D21) classified all 24,248 imported rows across the three batches: 13,015
+include, 55 exclude, 11,178 needs-review, one result per row, every run reconciled against its
+batch. Candidate-retention is 0.992307 on CS79 and 1.0 on CS86 against a 0.98 target: those
+two files are weekly **candidate** cut-downs, so the figures measure retention against the
+owner's intermediate candidate decisions, not agreement with the final published selection.
+They are calibration evidence for a high-recall filter, not end-to-end editorial accuracy,
+publication recall or validated incident truth. The weekly candidate decisions never reach the
+classifier, and nothing in it is fitted or weighted from them. No model is called and no
+Anthropic credential is read, because D9 is unresolved.
 
 ## The vertical slice
 
@@ -161,7 +109,7 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 3                                                                       |
+| Path                      | Package               | State after Sprint 4                                                                       |
 | ------------------------- | --------------------- | ------------------------------------------------------------------------------------------ |
 | `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                     |
 | `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification and calibration commands; 126 tests    |
@@ -171,7 +119,7 @@ allows; otherwise they are dropped. Requirement status per track is in
 | `packages/database`       | `@cas/database`       | implemented: migration runner, four migrations, ingestion and classification ops; 24 tests |
 | `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work       |
 | `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 55 unit tests |
-| `packages/clustering`     | `@cas/clustering`     | placeholder                                                                                |
+| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 41 tests    |
 | `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests |
 | `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                |
 | `packages/drafting`       | `@cas/drafting`       | placeholder                                                                                |
@@ -361,19 +309,20 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 
 ## Documentation
 
-| Document                         | Content                                                                     |
-| -------------------------------- | --------------------------------------------------------------------------- |
-| `docs/ARCHITECTURE.md`           | components, runtime data flow, contract boundary, dependency rules          |
-| `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules       |
-| `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure  |
-| `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule  |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D21                                         |
-| `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence |
-| `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1 draft, not submitted                                    |
-| `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                        |
-| `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria |
-| `docs/SECURITY.md`               | security policy                                                             |
-| `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                     |
-| `docs/SPRINT-1-REPORT.md`        | Sprint 1 live Graph proof: discovery, selection, results, evidence          |
-| `docs/SPRINT-2-REPORT.md`        | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports  |
-| `LICENSE`                        | Apache License 2.0                                                          |
+| Document                         | Content                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `docs/ARCHITECTURE.md`           | components, runtime data flow, contract boundary, dependency rules              |
+| `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules           |
+| `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure      |
+| `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule      |
+| `docs/DECISIONS.md`              | append-only decision log, D1 to D22                                             |
+| `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence     |
+| `docs/SPRINT-4-REPORT.md`        | Sprint 4 clustering proof: engine, migration 0006, human review layer, evidence |
+| `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1 draft, not submitted                                        |
+| `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                            |
+| `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria     |
+| `docs/SECURITY.md`               | security policy                                                                 |
+| `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                         |
+| `docs/SPRINT-1-REPORT.md`        | Sprint 1 live Graph proof: discovery, selection, results, evidence              |
+| `docs/SPRINT-2-REPORT.md`        | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports      |
+| `LICENSE`                        | Apache License 2.0                                                              |
