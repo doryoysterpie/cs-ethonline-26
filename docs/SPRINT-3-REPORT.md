@@ -592,7 +592,10 @@ correction.
 
 Codex Desktop reviewed `4e9245b01f5f57bb1970c9e4e562823e14ab9c72` and returned CHANGES
 REQUIRED with three implementation findings and one documentation finding. The corrections are
-additive commits on the same branch, ending at `8aeba7290bd1b555a092acbe63cb5b0be7276fde`.
+additive commits on the same branch: `cbcc402`, `a1ff07d`, `8aeba72` and `0c6222c`, the last
+of which removes a constant the executable contract replaced. The complete final
+implementation SHA is `0c6222c799145b1646a557a8d1f7169c308c373e`; the documentation SHA is the
+branch head, given in the handoff, because a commit cannot contain its own identifier.
 Migrations 0001 to 0004 are byte-identical and keep their applied checksums.
 
 ### Finding 1. Guard and migration checks could be redirected by search-path capture
