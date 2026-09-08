@@ -3,7 +3,8 @@
 Secret-free readiness matrix. First verified on 4 September 2026 on the project owner's
 development machine; The Graph row re-verified on 5 September 2026 by the Sprint 1 live
 probe; the local Postgres row re-verified on 6 September 2026 by the Sprint 2 migration and
-import, and again on 7 September 2026 by the Sprint 3 migration and classification runs. Deadlines follow the gate-aligned implementation sequence (decision D16). Evidence
+import, again on 7 September 2026 by the Sprint 3 migration and classification runs, and
+again on 8 September 2026 by the Sprint 4 migration and clustering runs. Deadlines follow the gate-aligned implementation sequence (decision D16). Evidence
 never includes a token, key, connection string or secret suffix. An environment-variable
 check records only whether a name is set, never its value. No account is marked ready
 without such evidence.

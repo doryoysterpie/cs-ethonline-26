@@ -67,6 +67,14 @@ gaps where a row was withdrawn.
 
 ## B. The Graph: Best Use of Composable or Standardized Graph Products, $5,000
 
+**Watchlist status, 8 September 2026.** Seven protocol identities are proven live on the
+standardized-TVL lane. Plan 2.0's separate ten-protocol _administrative-event_ watchlist is
+**not** delivered and is **blocked on an owner decision**: the live query document reads the
+Messari standardized lending schema, which exposes no administrative event, so no number of
+additional deployments on that lane could satisfy it, and D20 forbids presenting one lane as
+the other. Section 10 of `SPRINT-4-REPORT.md` records three options and a recommendation. No
+document may claim the ten-protocol administrative-event requirement has been delivered.
+
 The track qualifies through **either** of two routes. The project's primary route is the
 second; a second Graph product is not required.
 

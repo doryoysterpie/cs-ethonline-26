@@ -625,3 +625,53 @@ entries are unchanged except for status pointers.
   This clarification establishes data provenance and the editorial stages. It does not resolve
   D10: the automated week boundary, the late-arriving-story rule and the publication cutoff
   all remain open.
+
+## D22 Sprint 4 clustering: deterministic stages, conservative grouping, human corrections
+
+- **Date:** 2026-09-08
+- **Status:** ACCEPTED
+- **Decision:**
+  - **Deterministic and model-free.** Clustering is a pure function of its declared inputs
+    and a versioned contract. No model, no network, no environment, no clock, no randomness
+    and no human label. D9 is still unresolved, and nothing in Sprint 4 depends on it.
+  - **Eligibility.** Only `include` and `review` classification results of one explicitly
+    named completed classification run are eligible. `exclude` results are retained with
+    their decision and rationale and receive no incident membership at all.
+  - **Three distinct concepts, kept distinct.** An exact URL duplicate is the same canonical
+    URL group. Syndication is substantially identical reporting carried by different URLs or
+    publishers. An incident group is separate reports that plausibly describe the same
+    underlying event. Each is reasoned about separately, and each leaves its own trace on the
+    record.
+  - **Conservative separation.** A merge must be positively supported. Shared generic
+    security vocabulary is never sufficient. Where the evidence is close to a threshold the
+    reports stay separate and the relationship is recorded as an ambiguous link for human
+    review. False splits are preferred to unsupported false merges.
+  - **Immutability.** A completed clustering run and its base clusters and memberships are
+    immutable, enforced by the database as in Sprint 3.
+  - **Human corrections are a separate layer.** Merge and split are append-only review
+    actions over a completed run. They never rewrite machine output. The effective incident
+    view is derived deterministically from the base output plus the ordered accepted actions,
+    so the machine record and the human record can always be told apart.
+  - **Provenance.** Every effective membership retains its source row and hash, its
+    classification result, its batch and origin, its classification run and its clustering
+    run. A membership may not cross any of them.
+  - **What the counts are not.** Sprint 4 reports structural counts from real data. They do
+    not establish clustering precision or agreement with any published issue, because the
+    project holds no machine-readable record of the final editorial outcome. Establishing
+    that requires weekly Excel cut-downs paired with their final Substack reports, through
+    the explicit reviewed mapping recorded in the 2026-09-07 amendment to D21.
+  - **Scope of a run.** Clustering operates on one explicitly named classification run. No
+    editorial week is inferred, because D10 remains unresolved.
+- **Rationale:** The pipeline's value depends on a human trusting the grouping, and an
+  unsupported merge destroys that trust faster than an obvious split. A deterministic engine
+  driven by a hashed contract can be audited line by line, reproduced exactly and re-run
+  without a credential, which no model call can offer while D9 is open. Separating the human
+  layer from the machine layer keeps the machine record falsifiable: it stays exactly what
+  the engine produced, whatever the reviewer later decides.
+- **Consequences:** `@cas/clustering` carries the executable contract and the pure engine;
+  `@cas/database` gains migration `0006_incident_clustering.sql` with the run, cluster,
+  membership, ambiguous-link and review-action tables; `@cas/worker` gains the clustering
+  commands. The dashboard, the drafting system, the evidence-state resolver and the anomaly
+  feed are explicitly out of Sprint 4. D9 and D10 both stay unresolved.
+- **Decided by:** Project owner, Sprint 4 implementation instruction of 2026-09-08.
+- **Supersedes:** none. Builds on D15, D21 and the accepted Sprint 3 result.
