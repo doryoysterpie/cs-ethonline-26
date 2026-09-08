@@ -28,7 +28,7 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 3 corrected after audit, pending Codex Desktop re-audit: every imported source row
+**Sprint 3 corrected twice, pending Codex Desktop verification: every imported source row
 carries a machine classification and the needs-review queue is populated.** On 7 September
 2026 a deterministic, versioned rule-based classifier (decision D21) classified all 24,248
 imported rows across the three batches: 13,015 include, 55 exclude, 11,178 needs-review, one
@@ -37,21 +37,27 @@ on CS79 and 1.0 on CS86 against a 0.98 target. The historical weekly selections 
 the classifier; a regression test proves removing, replacing or flipping them changes no
 decision. No model is called and no Anthropic credential is read, because D9 is unresolved.
 
-Codex Desktop returned CHANGES REQUIRED on the first candidate. All five findings are fixed on
-the same branch: a result's row hash is now bound to its source row by foreign key and a
-completed run is immutable in the database; the run makes one pass under a repeatable-read
-snapshot and derives its counters from its stored results; the ruleset hash covers every
-component that can change a decision; the classifier input is a closed allowlist rather than a
-denylist; and the queue command prints a count and nothing else. The corrected implementation
-reproduces the same decisions on all three batches. Section 12 of `docs/SPRINT-3-REPORT.md`
-records the findings, the root causes and the evidence. Sprint 3 is not accepted until Codex
-Desktop issues PASS.
+Two independent audits have returned CHANGES REQUIRED. The first found five problems; the
+auditor later confirmed two of them closed, the exact input allowlist and the count-only queue
+output, and reopened the other three. The second correction binds every database integrity
+function to the schema it was applied in, so a schema named after the connecting role can no
+longer capture the guards or the migration table; freezes a batch's source set before it is
+classified, so a completed run cannot become unreconciled when the batch changes afterwards;
+and makes the behaviour contract the thing the classifier executes, so a hash can no longer
+move without the behaviour moving with it.
+
+Decisions are unchanged on all three batches across every generation. Sections 12, 13 and 14
+of `docs/SPRINT-3-REPORT.md` record the findings, the root causes, the evidence and the full
+audit history, including a superseded intermediate version that exists only as historical runs
+in the local database. Every claim there is pending Codex Desktop verification; nothing in
+this repository declares Sprint 3 accepted.
 
 **Sprint 2 audited: Codex Desktop issued PASS for `000c3410` on 7 September 2026. The local
 PostgreSQL foundation and the manual CSV ingestion path are proven on the real exports.** On 6 September 2026 a fresh local
 PostgreSQL 17 database was migrated by the checksummed forward-only runner in `@cas/database`,
 a second run was a no-op, and `@cas/worker` validated and imported the three real exports as
-`replay` data: 23,910 master rows, 157 CS79 rows and 181 CS86 rows, every logical row stored,
+`replay` data: 23,910 rows from the living master RSS ledger, 157 CS79 rows and 181 CS86 rows,
+every logical row stored,
 CS79 completing with three quarantined rows whose issues are recorded by code, weekly review
 state kept in its own tables, duplicate URLs kept as separate rows linked by canonical URL,
 and a second import of the same files writing nothing (`docs/SPRINT-2-REPORT.md`, decision

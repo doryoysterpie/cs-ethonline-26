@@ -10,19 +10,29 @@ Sprint 0; section 14 records how the Sprint 2 importer enforces them (decision D
 **The present manual workflow**, as stated by the project owner, is background for
 understanding the data and the labels. It is not the runtime design.
 
-1. A longstanding Excel-based RSS aggregation collects the broad universe of incoming cyber
-   and adjacent technology stories. This is the **master feed**.
-2. The project owner manually reviews one weekly window and marks each story for retention or
-   rejection. This is **weekly manual selection**.
-3. A weekly sheet, such as CS79 or CS86, preserves that source-level selection. Claude then
-   reformats the selected material and consolidates duplicate reporting. This is **incident
-   clustering and editorial transformation**.
+1. Make continuously assembles an RSS feed of incoming cyber and adjacent technology
+   stories, maintained and exported in Excel. This one continuously growing file is the
+   **living master RSS ledger**. It is a single accumulating ledger, not a series of
+   independent files.
+2. The project owner manually cuts that living ledger down for one editorial week, keeping
+   the cyberattacks and other stories of interest and setting the rest aside. The result is a
+   **weekly editorial cut-down list**.
+3. A weekly sheet, such as CS79 or CS86, is one of those cut-down lists and preserves the
+   human editorial decisions it records. That is the **human review snapshot** this project
+   stores. Claude then reformats the retained material and consolidates duplicate reporting.
 4. The project owner turns that output into the published weekly post. This is the
    **published issue**.
 
 ```
-master feed → weekly manual selection → incident clustering and editorial transformation → published issue
+living master RSS ledger → weekly editorial cut-down list → human review snapshot
+   → editorial transformation → published issue
 ```
+
+**What a weekly list is not.** CS79 and CS86 are not weekly master feeds, and the project does
+not hold eighty-eight independent weekly master datasets. There is one living ledger and a
+number of human cut-down lists taken from it. Any statement that implies otherwise is wrong,
+including any reading of the batch table in which each weekly import is a separate corpus:
+a weekly import is a snapshot of human decisions over rows drawn from the same ledger.
 
 **The target runtime flow** (decision D15) removes the manual selection bottleneck from the
 front of the pipeline and moves the human to the end, where review is of a queue rather than
@@ -42,8 +52,13 @@ current feed → import and normalization → automated high-recall classificati
    → human review and editorial output
 ```
 
-The historical CS79 and CS86 selections are calibration and evaluation labels for steps 3
-to 6. They are never a production filter or a prerequisite for processing a current feed.
+The historical CS79 and CS86 cut-down lists supply calibration and evaluation labels for
+steps 3 to 6. They are never a production filter or a prerequisite for processing a current
+feed, and the deterministic rules of decision D21 are not trained on them: nothing in the
+classifier is fitted, weighted or selected from a label. Future holdout protection will come
+from withholding particular weekly cut-down lists from development, not from pretending the
+continuously growing ledger is partitioned into independent weekly master files. Decision D10,
+which fixes the automated week boundary and cutoff, remains unresolved.
 Live Graph signals run in parallel to this flow and attach corroborating evidence to canonical
 incidents; they do not replace editorial ingestion (`ARCHITECTURE.md` section 3).
 
@@ -88,16 +103,19 @@ the required and recognized header names the Sprint 2 importer enforces.
 
 **Representative files inspected outside the repository**
 
-| File              | Records | Window                           | `TRUE` | `FALSE`    |
-| ----------------- | ------- | -------------------------------- | ------ | ---------- |
-| Master RSS export | 23,910  | 1 March 2025 to 4 September 2026 | 133    | not stated |
-| CS79              | 157     | 21 to 27 June 2026               | 130    | 27         |
-| CS86              | 181     | 9 to 15 August 2026              | 161    | 20         |
+| File                                | Records | Window                           | `TRUE` | `FALSE`    |
+| ----------------------------------- | ------- | -------------------------------- | ------ | ---------- |
+| Living master RSS ledger export     | 23,910  | 1 March 2025 to 4 September 2026 | 133    | not stated |
+| CS79 weekly editorial cut-down list | 157     | 21 to 27 June 2026               | 130    | 27         |
+| CS86 weekly editorial cut-down list | 181     | 9 to 15 August 2026              | 161    | 20         |
+
+The two weekly rows are cut-down lists taken from the same ledger, not independent weekly
+master feeds.
 
 These counts describe the inspected exports only. They are not permanent contractual values
 and no code may depend on them.
 
-## 3. Master-feed state versus weekly snapshot labels
+## 3. Ledger working state versus weekly review labels
 
 The same column name, `ch`, carries two different meanings.
 

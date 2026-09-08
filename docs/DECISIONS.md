@@ -577,3 +577,24 @@ entries are unchanged except for status pointers.
   the database re-derives from the stored results. The `classification queue` command is
   count-only. Decisions on all three real batches are unchanged. Details and evidence are in
   section 12 of `SPRINT-3-REPORT.md`.
+- **Second amendment, 2026-09-08 (re-audit correction).** Codex Desktop re-audited the first
+  correction and returned CHANGES REQUIRED, closing the input allowlist and the queue output
+  and reopening three findings. The decision itself is again unchanged; these particulars are.
+  The classifier identity is now `rules-classifier@3` with ruleset
+  `classification-behavior-contract@2` and engine `classification-engine@2`, and the contract
+  is the artefact the classifier executes rather than a description beside it: fields that
+  could not be executed were removed, and the taxonomy is carried in the contract instead of
+  imported past it. `@cas/database` gains migration
+  `0005_classification_schema_security.sql`, which binds every integrity function to the
+  schema it is applied in and freezes a batch's source set before it may be classified. A run
+  may not complete until its batch is frozen, and a frozen batch's rows are immutable, so a
+  completed run stays reconciled against the live batch. Decisions on all three real batches
+  are unchanged again. Details and evidence are in sections 13 and 14 of
+  `SPRINT-3-REPORT.md`.
+- **Calibration wording, 2026-09-08.** The project owner clarified the data workflow: Make
+  assembles one living master RSS ledger, maintained in Excel, and the owner manually cuts
+  that ledger down into a weekly editorial list. CS79 and CS86 are two of those weekly
+  cut-down lists, not independent weekly master feeds, and there are no eighty-eight
+  independent weekly master datasets. The deterministic rules are not trained on them: they
+  are measured against them. Future holdout protection will come from withholding particular
+  weekly lists from development. This clarification does not resolve D10.

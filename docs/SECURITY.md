@@ -265,6 +265,17 @@ inherits (decision D21):
   commands. The queue command is count-only: it prints one line holding one integer, has no
   paging flag, and reaches the database through an aggregate query. No compiled command emits
   a per-row queue export; per-row access is reserved for the authenticated review interface.
+- Every database connection addresses one explicit application schema, defaulting to `public`
+  rather than to the server's `"$user", public`, with `pg_temp` named last. Every integrity
+  function stores `search_path = pg_catalog, <schema>, pg_temp` and names every relation by
+  schema, so a role that can create a schema named after itself cannot put shadow tables in
+  front of the real ones, and the migration runner cannot be redirected to inspect or apply
+  migrations in the wrong schema. No integrity function is `SECURITY DEFINER`.
+- A batch's source set is frozen before it is classified and is immutable afterwards: no
+  insertion, deletion, rehashing, text or status change, batch or origin reassignment, or bulk
+  removal is accepted, and the freeze marker itself cannot be moved or cleared. A run cannot
+  complete until its batch is frozen, so a completed record stays reconciled against the live
+  batch rather than only against the snapshot it happened to read.
 - A completed classification run is immutable in the database, not merely in the application.
   Its decisions, rationales, counters and provenance cannot be updated or deleted, its results
   cannot be added to, changed or removed, and a result's row hash is bound by foreign key to

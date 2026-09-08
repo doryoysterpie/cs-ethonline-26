@@ -28,14 +28,14 @@ issue codes rather than dropped, weekly review state kept in its own tables, dup
 kept as separate rows, and a repeated import writing nothing. Relational constraints make a
 provenance contradiction impossible.
 
-**Sprint 3, classification and the needs-review queue. Corrected after audit, pending
-re-audit.** A deterministic, versioned, rule-based high-recall classifier assigns every
+**Sprint 3, classification and the needs-review queue. Corrected twice, pending verification.** A deterministic, versioned, rule-based high-recall classifier assigns every
 imported row a machine decision with stable rationale codes. All 24,248 rows are classified,
 one result per row, reconciled against the batch. The needs-review queue is derived per run.
-The independent audit returned five findings on the first candidate, covering result
-integrity, transaction isolation, the coverage of the ruleset hash, the input boundary and
-command output. All five are fixed on the branch and the corrected implementation reproduces
-the same decisions; the sprint is not accepted until the auditor issues a pass.
+Two independent audits have returned findings: five on the first candidate, of which two were
+later confirmed closed, and four on the second. The corrections cover database schema binding,
+an immutable classified source set, an executable behaviour contract, the input boundary and
+command output. Decisions are unchanged across every generation. The sprint is not accepted
+until the auditor issues a pass, and this draft has not been submitted.
 
 ## Numbers, as measured
 
