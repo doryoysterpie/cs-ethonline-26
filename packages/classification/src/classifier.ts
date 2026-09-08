@@ -1,26 +1,29 @@
 import type { ClassificationDecision } from '@cas/contracts';
-import { CLASSIFICATION_SIGNALS, type SignalTier } from '@cas/taxonomy';
+import type { SignalTier } from '@cas/taxonomy';
 
 import {
   BEHAVIOR_CONTRACT,
-  RATIONALE_CODES,
+  isDeepFrozen,
   type BehaviorContract,
+  type DecisionRuleContract,
+  type EmitCondition,
   type RationaleCode,
+  type RulePredicate,
 } from './contract.js';
 import { assertClassificationInput, type ClassificationInput } from './input.js';
 import { assembleText } from './text.js';
 
 /**
- * The Sprint 3 high-recall classifier (decision D21), corrected after the
- * Codex Desktop audit.
+ * The Sprint 3 high-recall classifier (decision D21), corrected twice.
  *
  * Pure and deterministic: no database, no network, no environment variable,
- * no model call, no clock, no randomness and no human label. Every
- * behaviour-affecting parameter comes from the behaviour contract, so the
- * stored ruleset hash covers what the code actually does. The engine below,
- * meaning how the matching expression is built and how the rules are walked,
- * is the residue the declarations cannot express; it is pinned by
- * `contract.engineVersion`.
+ * no model call, no clock, no randomness and no human label.
+ *
+ * The engine below executes the supplied contract and nothing else. It
+ * imports no taxonomy, hard-codes no precedence, and holds no default-contract
+ * cache. The only thing it decides for itself is how to build the alternation,
+ * how to de-duplicate matches, and how to sort the matched signal identifiers;
+ * that residue is pinned by `contract.engineVersion`.
  *
  * Recall posture: uncertainty routes to `review`. A source is excluded only
  * when the text carries explicit out-of-scope vocabulary and no security
@@ -31,7 +34,7 @@ export interface ClassificationResult {
   readonly sourceRowId: string;
   readonly rowHash: string;
   readonly decision: ClassificationDecision;
-  /** Fixed vocabulary, sorted, never source text. */
+  /** Fixed vocabulary, in the order the fired rule emits them. Never source text. */
   readonly rationaleCodes: readonly RationaleCode[];
   /** Policy signal identifiers that matched, sorted. Never source text. */
   readonly matchedSignals: readonly string[];
@@ -48,7 +51,12 @@ interface TierMatch {
 interface TierMatcher {
   readonly source: string;
   readonly byTerm: ReadonlyMap<string, string>;
+  readonly patterns: readonly { readonly id: string; readonly source: string }[];
 }
+
+type TierMatchers = Readonly<Record<SignalTier, TierMatcher>>;
+
+const TIERS: readonly SignalTier[] = ['decisive', 'contextual', 'out_of_scope'];
 
 /** Escapes a term so it is matched literally; policy terms carry no regex syntax. */
 function escapeTerm(term: string): string {
@@ -56,157 +64,221 @@ function escapeTerm(term: string): string {
 }
 
 /**
- * One alternation per tier. Term ordering, the boundary class and case
- * sensitivity all come from the contract, so a change to any of them changes
- * the hash as well as the behaviour.
+ * One alternation per tier, built from the supplied contract's own signals.
+ * Term ordering, the boundary class and the pattern signals all come from the
+ * contract, so a change to any of them changes the matching behaviour as well
+ * as the hash.
  */
 function buildTierMatcher(tier: SignalTier, contract: BehaviorContract): TierMatcher {
+  const matching = contract.matching;
   const byTerm = new Map<string, string>();
-  for (const signal of CLASSIFICATION_SIGNALS) {
+  for (const signal of matching.termSignals) {
     if (signal.tier !== tier) continue;
     for (const term of signal.terms) byTerm.set(term, signal.id);
   }
   const terms = [...byTerm.keys()];
-  if (contract.matching.termOrdering === 'longest-first-then-lexicographic') {
+  if (matching.termOrdering === 'longest-first-then-lexicographic') {
     terms.sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0));
   }
-  const boundary = contract.matching.boundaryCharacterClass;
+  const boundary = matching.boundaryCharacterClass;
+  const wrap = (body: string): string =>
+    boundary.length === 0 ? body : `(?<![${boundary}])(?:${body})(?![${boundary}])`;
   const alternation = terms.map(escapeTerm).join('|');
-  const source =
-    terms.length === 0 ? '(?!)' : `(?<![${boundary}])(?:${alternation})(?![${boundary}])`;
-  return { source, byTerm };
+  return {
+    source: terms.length === 0 ? '(?!)' : wrap(alternation),
+    byTerm,
+    patterns: matching.patternSignals
+      .filter((pattern) => pattern.tier === tier)
+      .map((pattern) => ({ id: pattern.id, source: wrap(pattern.pattern) })),
+  };
 }
 
-const MATCHERS = {
-  decisive: buildTierMatcher('decisive', BEHAVIOR_CONTRACT),
-  contextual: buildTierMatcher('contextual', BEHAVIOR_CONTRACT),
-  out_of_scope: buildTierMatcher('out_of_scope', BEHAVIOR_CONTRACT),
-} as const;
+function buildMatchers(contract: BehaviorContract): TierMatchers {
+  return {
+    decisive: buildTierMatcher('decisive', contract),
+    contextual: buildTierMatcher('contextual', contract),
+    out_of_scope: buildTierMatcher('out_of_scope', contract),
+  };
+}
 
-function matchTier(text: string, matcher: TierMatcher): string[] {
+/**
+ * Matchers are cached per contract object, and only for a contract that
+ * cannot change afterwards. A mutable contract is rebuilt on every call, so
+ * editing one between calls can never return the matchers of the version it
+ * no longer describes, and two contracts can never share an entry.
+ */
+const MATCHER_CACHE = new WeakMap<BehaviorContract, TierMatchers>();
+
+function matchersFor(contract: BehaviorContract): TierMatchers {
+  const cached = MATCHER_CACHE.get(contract);
+  if (cached !== undefined) return cached;
+  const built = buildMatchers(contract);
+  if (isDeepFrozen(contract.matching)) MATCHER_CACHE.set(contract, built);
+  return built;
+}
+
+function matchTier(text: string, matcher: TierMatcher, caseSensitive: boolean): string[] {
   const found = new Set<string>();
+  const flags = caseSensitive ? 'gu' : 'giu';
   // A fresh regex per call keeps `lastIndex` state out of the module, so
   // repeated calls cannot influence one another.
-  const regex = new RegExp(matcher.source, 'gu');
-  for (const match of text.matchAll(regex)) {
-    const id = matcher.byTerm.get(match[0]);
+  for (const match of text.matchAll(new RegExp(matcher.source, flags))) {
+    const id = matcher.byTerm.get(caseSensitive ? match[0] : match[0].toLowerCase());
     if (id !== undefined) found.add(id);
+  }
+  for (const pattern of matcher.patterns) {
+    if (new RegExp(pattern.source, caseSensitive ? 'u' : 'iu').test(text)) found.add(pattern.id);
   }
   return [...found].sort();
 }
 
 function matchSignals(text: string, contract: BehaviorContract): TierMatch {
-  const decisive = new Set(matchTier(text, MATCHERS.decisive));
-  const boundary = contract.matching.boundaryCharacterClass;
-  for (const pattern of contract.matching.patternSignals) {
-    const regex = new RegExp(`(?<![${boundary}])(?:${pattern.pattern})(?![${boundary}])`, 'u');
-    if (regex.test(text)) decisive.add(pattern.id);
-  }
+  const matchers = matchersFor(contract);
+  const caseSensitive = contract.matching.caseSensitive;
   return {
-    decisive: [...decisive].sort(),
-    contextual: matchTier(text, MATCHERS.contextual),
-    outOfScope: matchTier(text, MATCHERS.out_of_scope),
+    decisive: matchTier(text, matchers.decisive, caseSensitive),
+    contextual: matchTier(text, matchers.contextual, caseSensitive),
+    outOfScope: matchTier(text, matchers.out_of_scope, caseSensitive),
   };
 }
 
 function scoreOf(match: TierMatch, contract: BehaviorContract): number {
-  const weights = contract.scoring.weights;
-  const score =
-    match.decisive.length * (weights['decisive'] ?? 0) +
-    match.contextual.length * (weights['contextual'] ?? 0) +
-    match.outOfScope.length * (weights['out_of_scope'] ?? 0);
-  return Math.max(contract.scoring.minimum, score);
-}
-
-function result(
-  input: ClassificationInput,
-  decision: ClassificationDecision,
-  rationaleCodes: readonly RationaleCode[],
-  matchedSignals: readonly string[],
-  signalScore: number,
-): ClassificationResult {
-  return {
-    sourceRowId: input.sourceRowId,
-    rowHash: input.rowHash,
-    decision,
-    rationaleCodes: [...rationaleCodes].sort(),
-    matchedSignals,
-    signalScore,
-  };
+  const { weights, minimum, maximum } = contract.scoring;
+  const raw =
+    match.decisive.length * (weights.decisive ?? 0) +
+    match.contextual.length * (weights.contextual ?? 0) +
+    match.outOfScope.length * (weights.out_of_scope ?? 0);
+  const floored = Math.max(minimum, raw);
+  return maximum === null ? floored : Math.min(maximum, floored);
 }
 
 /**
- * Classifies one source row by walking `contract.decisionRules` in order.
- * The rule that fires supplies both the decision and the rationale codes, so
- * the mapping between them is declared rather than hidden in branches.
+ * Everything a predicate or an emission condition may inspect, computed at
+ * most once and only when a rule actually asks for it. A quarantined row
+ * therefore never has its text assembled or matched.
+ */
+class Evaluation {
+  private assembled: string | null = null;
+  private matched: TierMatch | null = null;
+
+  constructor(
+    readonly input: ClassificationInput,
+    readonly contract: BehaviorContract,
+  ) {}
+
+  get text(): string {
+    if (this.assembled === null) this.assembled = assembleText(this.input, this.contract);
+    return this.assembled;
+  }
+
+  get match(): TierMatch {
+    if (this.matched === null) this.matched = matchSignals(this.text, this.contract);
+    return this.matched;
+  }
+
+  get decisiveMet(): boolean {
+    return this.match.decisive.length >= this.contract.thresholds.decisiveHitsForInclude;
+  }
+
+  get contextualMet(): boolean {
+    return (
+      this.match.contextual.length >= this.contract.thresholds.distinctContextualHitsForInclude
+    );
+  }
+
+  get outOfScopeMet(): boolean {
+    return this.match.outOfScope.length >= this.contract.thresholds.outOfScopeHitsForExclude;
+  }
+
+  get inScope(): boolean {
+    return this.decisiveMet || this.contextualMet;
+  }
+}
+
+function predicateHolds(predicate: RulePredicate, evaluation: Evaluation): boolean {
+  switch (predicate) {
+    case 'status_quarantined':
+      return evaluation.input.status === 'quarantined';
+    case 'text_absent':
+      return evaluation.text.length === 0;
+    case 'in_scope_and_out_of_scope':
+      return evaluation.inScope && evaluation.outOfScopeMet;
+    case 'in_scope':
+      return evaluation.inScope;
+    case 'out_of_scope_without_in_scope':
+      return (
+        evaluation.outOfScopeMet &&
+        evaluation.match.decisive.length === 0 &&
+        evaluation.match.contextual.length === 0
+      );
+    case 'always':
+      return true;
+    default:
+      throw new TypeError('behaviour contract declares an unknown rule predicate');
+  }
+}
+
+function emissionHolds(
+  condition: EmitCondition,
+  evaluation: Evaluation,
+  emittedSoFar: number,
+): boolean {
+  switch (condition) {
+    case 'always':
+      return true;
+    case 'decisive_threshold_met':
+      return evaluation.decisiveMet;
+    case 'contextual_threshold_met':
+      return evaluation.contextualMet;
+    case 'single_contextual_signal':
+      return evaluation.match.contextual.length === 1;
+    case 'any_out_of_scope_signal':
+      return evaluation.match.outOfScope.length > 0;
+    case 'no_other_code_emitted':
+      return emittedSoFar === 0;
+    default:
+      throw new TypeError('behaviour contract declares an unknown emission condition');
+  }
+}
+
+function codesFor(rule: DecisionRuleContract, evaluation: Evaluation): RationaleCode[] {
+  const codes: RationaleCode[] = [];
+  for (const emission of rule.emit) {
+    if (emissionHolds(emission.when, evaluation, codes.length)) codes.push(emission.code);
+  }
+  return codes;
+}
+
+/**
+ * Classifies one source row by walking `contract.decisionRules` in the order
+ * the contract declares. The first rule whose predicate holds supplies the
+ * decision, the rationale codes and the score, so reversing the rules changes
+ * precedence and rewriting an emission changes the stored rationale.
  */
 export function classify(
   input: ClassificationInput,
   contract: BehaviorContract = BEHAVIOR_CONTRACT,
 ): ClassificationResult {
-  assertClassificationInput(input);
-  const thresholds = contract.thresholds;
-  const decisiveNeeded = thresholds['decisiveHitsForInclude'] ?? 1;
-  const contextualNeeded = thresholds['distinctContextualHitsForInclude'] ?? 2;
-  const outOfScopeNeeded = thresholds['outOfScopeHitsForExclude'] ?? 1;
+  assertClassificationInput(input, contract);
+  const evaluation = new Evaluation(input, contract);
 
-  if (input.status === 'quarantined') {
-    return result(
-      input,
-      'review',
-      [RATIONALE_CODES.rowQuarantined],
-      [],
-      contract.scoring.quarantinedScore,
-    );
+  for (const rule of contract.decisionRules) {
+    if (!predicateHolds(rule.when, evaluation)) continue;
+    const scored = rule.score === 'computed';
+    return {
+      sourceRowId: input.sourceRowId,
+      rowHash: input.rowHash,
+      decision: rule.decision,
+      rationaleCodes: codesFor(rule, evaluation),
+      matchedSignals: scored
+        ? [
+            ...evaluation.match.decisive,
+            ...evaluation.match.contextual,
+            ...evaluation.match.outOfScope,
+          ].sort()
+        : [],
+      signalScore: scored ? scoreOf(evaluation.match, contract) : rule.score,
+    };
   }
-
-  const text = assembleText(input, contract);
-  if (text.length === 0) {
-    return result(
-      input,
-      'review',
-      [RATIONALE_CODES.textAbsent],
-      [],
-      contract.scoring.textAbsentScore,
-    );
-  }
-
-  const match = matchSignals(text, contract);
-  const matchedSignals = [...match.decisive, ...match.contextual, ...match.outOfScope].sort();
-  const signalScore = scoreOf(match, contract);
-  const inScope =
-    match.decisive.length >= decisiveNeeded || match.contextual.length >= contextualNeeded;
-  const outOfScopeHit = match.outOfScope.length >= outOfScopeNeeded;
-
-  if (inScope && outOfScopeHit) {
-    // The conflict codes carry the in-scope evidence with them, so a reviewer
-    // sees which side of the conflict fired rather than only that one existed.
-    const codes: RationaleCode[] = [
-      RATIONALE_CODES.outOfScopeSignal,
-      RATIONALE_CODES.signalsConflicting,
-    ];
-    if (match.decisive.length >= decisiveNeeded) codes.push(RATIONALE_CODES.decisiveSignal);
-    if (match.contextual.length >= contextualNeeded) codes.push(RATIONALE_CODES.contextualSignals);
-    return result(input, 'review', codes, matchedSignals, signalScore);
-  }
-  if (inScope) {
-    const codes: RationaleCode[] = [];
-    if (match.decisive.length >= decisiveNeeded) codes.push(RATIONALE_CODES.decisiveSignal);
-    if (match.contextual.length >= contextualNeeded) codes.push(RATIONALE_CODES.contextualSignals);
-    return result(input, 'include', codes, matchedSignals, signalScore);
-  }
-  if (outOfScopeHit && match.decisive.length === 0 && match.contextual.length === 0) {
-    return result(
-      input,
-      'exclude',
-      [RATIONALE_CODES.outOfScopeSignal, RATIONALE_CODES.noSignalMatch],
-      matchedSignals,
-      signalScore,
-    );
-  }
-  const codes: RationaleCode[] = [];
-  if (match.contextual.length === 1) codes.push(RATIONALE_CODES.contextualSignalSingle);
-  if (match.outOfScope.length > 0) codes.push(RATIONALE_CODES.outOfScopeSignal);
-  if (codes.length === 0) codes.push(RATIONALE_CODES.noSignalMatch);
-  return result(input, 'review', codes, matchedSignals, signalScore);
+  throw new TypeError('behaviour contract has no rule that applies to this input');
 }

@@ -39,13 +39,24 @@ function reasonFor(input: unknown): string {
 
 describe('closed input allowlist', () => {
   it('admits exactly the six documented fields', () => {
-    expect([...ALLOWED_INPUT_KEYS].sort()).toEqual([
+    // The contract carries each admitted key with the shape it must have, and
+    // the boundary reads both from the contract rather than from a constant
+    // beside it.
+    expect(ALLOWED_INPUT_KEYS.map((field) => field.key).sort()).toEqual([
       'derivedDescriptionText',
       'derivedSummaryText',
       'normalizedTitle',
       'rowHash',
       'sourceRowId',
       'status',
+    ]);
+    expect(ALLOWED_INPUT_KEYS.map((field) => field.kind).sort()).toEqual([
+      'identifier',
+      'identifier',
+      'status',
+      'text',
+      'text',
+      'text',
     ]);
     expect(reasonFor(valid())).toBe('accepted');
     expect(reasonFor(valid({ status: 'quarantined' }))).toBe('accepted');
@@ -94,10 +105,10 @@ describe('closed input allowlist', () => {
   });
 
   it('rejects a missing field', () => {
-    for (const key of ALLOWED_INPUT_KEYS) {
+    for (const field of ALLOWED_INPUT_KEYS) {
       const partial: Record<string, unknown> = { ...valid() };
-      delete partial[key];
-      expect(reasonFor(partial), key).toBe(CLASSIFICATION_INPUT_REJECTIONS.missingKey);
+      delete partial[field.key];
+      expect(reasonFor(partial), field.key).toBe(CLASSIFICATION_INPUT_REJECTIONS.missingKey);
     }
   });
 

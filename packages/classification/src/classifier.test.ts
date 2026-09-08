@@ -49,9 +49,12 @@ describe('classify: the three decisions', () => {
       }),
     );
     expect(result.decision).toBe('exclude');
-    expect(result.rationaleCodes).toEqual(
-      [RATIONALE_CODES.noSignalMatch, RATIONALE_CODES.outOfScopeSignal].sort(),
-    );
+    // Emission order is behaviour now, so the codes arrive in the order the
+    // rule declares rather than sorted.
+    expect(result.rationaleCodes).toEqual([
+      RATIONALE_CODES.outOfScopeSignal,
+      RATIONALE_CODES.noSignalMatch,
+    ]);
     expect(result.matchedSignals).toEqual(['lifestyle']);
   });
 

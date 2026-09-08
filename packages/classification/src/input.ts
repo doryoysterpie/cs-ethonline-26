@@ -1,6 +1,6 @@
 import type { SourceRowStatus } from '@cas/contracts';
 
-import { ALLOWED_INPUT_KEYS, type AllowedInputKey } from './contract.js';
+import { BEHAVIOR_CONTRACT, type BehaviorContract } from './contract.js';
 
 /**
  * The classifier's input boundary: a closed allowlist.
@@ -15,6 +15,10 @@ import { ALLOWED_INPUT_KEYS, type AllowedInputKey } from './contract.js';
  * Error messages are fixed per reason. They never echo a key name or a value,
  * so a rejected object cannot leak a label, a token or source text through
  * the error itself.
+ *
+ * The admitted keys and their shapes come from the behaviour contract rather
+ * than from a constant beside it, so the hashed `allowedInputKeys` is what
+ * actually decides admission. Emptying it admits nothing.
  */
 export interface ClassificationInput {
   /** Source row identifier, used only to associate the result with the row. */
@@ -66,13 +70,6 @@ export class ClassificationInputError extends Error {
   }
 }
 
-const ALLOWED = new Set<string>(ALLOWED_INPUT_KEYS);
-const TEXT_FIELDS: readonly AllowedInputKey[] = [
-  'normalizedTitle',
-  'derivedSummaryText',
-  'derivedDescriptionText',
-];
-
 function reject(reason: ClassificationInputRejection): never {
   throw new ClassificationInputError(reason);
 }
@@ -83,7 +80,12 @@ function reject(reason: ClassificationInputRejection): never {
  * own key, a symbol key, an accessor, or a non-plain prototype is refused
  * before a single rule runs.
  */
-export function assertClassificationInput(input: ClassificationInput): void {
+export function assertClassificationInput(
+  input: ClassificationInput,
+  contract: BehaviorContract = BEHAVIOR_CONTRACT,
+): void {
+  const fields = contract.allowedInputKeys;
+  const allowed = new Set<string>(fields.map((field) => field.key));
   if (
     input === null ||
     typeof input !== 'object' ||
@@ -104,28 +106,28 @@ export function assertClassificationInput(input: ClassificationInput): void {
   const record = input as unknown as Record<string, unknown>;
   const ownKeys = Object.getOwnPropertyNames(record);
   for (const key of ownKeys) {
-    if (!ALLOWED.has(key)) reject(CLASSIFICATION_INPUT_REJECTIONS.unexpectedKey);
+    if (!allowed.has(key)) reject(CLASSIFICATION_INPUT_REJECTIONS.unexpectedKey);
   }
-  for (const key of ALLOWED_INPUT_KEYS) {
-    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+  // Descriptors are inspected before any value is read, so an accessor is
+  // refused rather than invoked.
+  for (const field of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(record, field.key);
     if (descriptor === undefined) reject(CLASSIFICATION_INPUT_REJECTIONS.missingKey);
     if (descriptor.get !== undefined || descriptor.set !== undefined) {
       reject(CLASSIFICATION_INPUT_REJECTIONS.accessorProperty);
     }
   }
-  for (const key of ['sourceRowId', 'rowHash'] as const) {
-    const value = record[key];
-    if (typeof value !== 'string' || value.length === 0) {
-      reject(CLASSIFICATION_INPUT_REJECTIONS.invalidIdentifier);
-    }
-  }
-  const status = record['status'];
-  if (status !== 'accepted' && status !== 'quarantined') {
-    reject(CLASSIFICATION_INPUT_REJECTIONS.invalidStatus);
-  }
-  for (const key of TEXT_FIELDS) {
-    const value = record[key];
-    if (value !== null && typeof value !== 'string') {
+  for (const field of fields) {
+    const value = record[field.key];
+    if (field.kind === 'identifier') {
+      if (typeof value !== 'string' || value.length === 0) {
+        reject(CLASSIFICATION_INPUT_REJECTIONS.invalidIdentifier);
+      }
+    } else if (field.kind === 'status') {
+      if (value !== 'accepted' && value !== 'quarantined') {
+        reject(CLASSIFICATION_INPUT_REJECTIONS.invalidStatus);
+      }
+    } else if (value !== null && typeof value !== 'string') {
       reject(CLASSIFICATION_INPUT_REJECTIONS.invalidTextField);
     }
   }

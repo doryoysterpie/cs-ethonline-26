@@ -1,42 +1,53 @@
 import { createHash } from 'node:crypto';
 
+import type { ClassificationDecision } from '@cas/contracts';
 import {
-  canonicalSignalPolicy,
+  CLASSIFICATION_SIGNALS,
   CLASSIFICATION_SIGNAL_POLICY_VERSION,
   CVE_IDENTIFIER_PATTERN,
+  CVE_SIGNAL_ID,
   POLICY_THRESHOLDS,
   SIGNAL_WEIGHTS,
+  type SignalTier,
 } from '@cas/taxonomy';
 
 /**
- * The classifier's behaviour contract.
+ * The classifier's behaviour contract: the executable source of truth.
  *
- * Codex Desktop's Sprint 3 audit found that the previous ruleset hash covered
- * only version strings and the signal policy, so a material implementation
- * change could keep the same stored hash. This module fixes that: every
- * behaviour-affecting parameter is declared here, the executable classifier
- * reads its values from here rather than from duplicated constants, and the
- * hash covers the whole document.
+ * Codex Desktop's re-audit found the previous contract only partly
+ * executable. Reversing `decisionRules`, rewriting a rationale mapping,
+ * setting `scoring.maximum` to zero and emptying `allowedInputKeys` each
+ * changed the stored hash while the compiled classifier returned exactly the
+ * same decision, codes and score, because the engine hard-coded its
+ * precedence, imported the taxonomy directly and cached its matchers from the
+ * default contract. A hash that moves without behaviour is worse than no
+ * hash: it invents run identities that mean nothing.
  *
- * What a version string can still hide is the *engine*: the code that builds
- * the matching expression and walks the rules. `engineVersion` stands for
- * exactly that residue and must be incremented whenever `classifier.ts`
- * changes behaviour in a way the declarations below cannot express. That
- * limitation is deliberate, minimal and recorded in the Sprint 3 report.
+ * Every field below is now read by `classify(input, contract)` at run time.
+ * Fields that could not be connected to execution were removed rather than
+ * kept for appearance: the prose descriptions of the word-boundary rule, the
+ * duplicate-handling rule, the truncation rule, the scoring formula and the
+ * text-assembly version string are all gone, and the separate signal-policy
+ * blob is gone because the policy itself is now inline and executed.
+ *
+ * Five identity fields remain that no engine can execute: the classifier,
+ * ruleset, engine and policy versions, and the mode. They are deliberately
+ * hashed. They are the run's identity, they are stored on every run, and they
+ * are what a reviewer uses to tell two runs apart. They are declared together
+ * below and named as identity, not as behaviour.
+ *
+ * `engineVersion` is the honest residue: the code in `classifier.ts` that
+ * builds the alternation, de-duplicates matches and sorts the matched signal
+ * identifiers cannot be expressed declaratively. It must be incremented
+ * whenever that code changes what the classifier returns.
  */
 
-export const CLASSIFIER_VERSION = 'rules-classifier@2';
-export const RULESET_VERSION = 'classification-behavior-contract@1';
+export const CLASSIFIER_VERSION = 'rules-classifier@3';
+export const RULESET_VERSION = 'classification-behavior-contract@2';
 export const CLASSIFIER_MODE = 'rules' as const;
+export const ENGINE_VERSION = 'classification-engine@2';
 
-/**
- * Incremented whenever the matching or rule-walking code in `classifier.ts`
- * changes behaviour that the declarative fields cannot capture, for example
- * how the alternation is built or how matches are de-duplicated.
- */
-export const ENGINE_VERSION = 'classification-engine@1';
-
-/** Stable rationale codes. The contract maps every outcome to one of these. */
+/** Stable rationale codes. Every code a rule may emit comes from this set. */
 export const RATIONALE_CODES = {
   rowQuarantined: 'row_quarantined',
   textAbsent: 'text_absent',
@@ -49,112 +60,171 @@ export const RATIONALE_CODES = {
 } as const;
 export type RationaleCode = (typeof RATIONALE_CODES)[keyof typeof RATIONALE_CODES];
 
-/** The six fields the classifier may read, in the order the text is assembled. */
+/** How the boundary validates one admitted field's runtime value. */
+export type InputFieldKind = 'identifier' | 'status' | 'text';
+
+export interface InputFieldContract {
+  readonly key: string;
+  readonly kind: InputFieldKind;
+}
+
+/**
+ * The exact set of own keys an input may carry, with the shape each must
+ * have. The boundary admits these and nothing else, so emptying or editing
+ * this list changes what the classifier accepts.
+ */
+export const ALLOWED_INPUT_KEYS: readonly InputFieldContract[] = [
+  { key: 'sourceRowId', kind: 'identifier' },
+  { key: 'rowHash', kind: 'identifier' },
+  { key: 'status', kind: 'status' },
+  { key: 'normalizedTitle', kind: 'text' },
+  { key: 'derivedSummaryText', kind: 'text' },
+  { key: 'derivedDescriptionText', kind: 'text' },
+];
+
 export const INPUT_FIELD_ORDER = [
   'normalizedTitle',
   'derivedSummaryText',
   'derivedDescriptionText',
 ] as const;
-export type InputTextField = (typeof INPUT_FIELD_ORDER)[number];
-
-export const ALLOWED_INPUT_KEYS = [
-  'sourceRowId',
-  'rowHash',
-  'status',
-  'normalizedTitle',
-  'derivedSummaryText',
-  'derivedDescriptionText',
-] as const;
-export type AllowedInputKey = (typeof ALLOWED_INPUT_KEYS)[number];
 
 export interface TextAssemblyContract {
-  readonly version: string;
-  /** Fields concatenated in this order. Order is behaviour: it is preserved in the hash. */
-  readonly fieldOrder: readonly InputTextField[];
+  /** Fields concatenated in this order. Order changes what phrases can form. */
+  readonly fieldOrder: readonly string[];
   /** Inserted between fields so a phrase cannot form across a boundary. */
   readonly fieldSeparator: string;
-  /** What an absent field contributes. */
-  readonly nullHandling: string;
-  /** What a field that normalizes to the empty string contributes. */
-  readonly emptyHandling: string;
+  /** `skip` omits an absent field; `empty` contributes an empty part. */
+  readonly nullHandling: 'skip' | 'empty';
+  /** `skip` omits a field that normalizes to nothing; `keep` retains it. */
+  readonly emptyHandling: 'skip' | 'keep';
   readonly unicodeNormalizationForm: 'NFC' | 'NFD' | 'NFKC' | 'NFKD';
-  readonly caseNormalization: string;
-  readonly whitespaceNormalization: string;
-  /** `null` means no truncation: the complete normalized fields are evaluated. */
+  readonly caseNormalization: 'lowercase' | 'none';
+  readonly whitespaceNormalization: 'collapse' | 'none';
+  /** `null` evaluates the whole text; a number truncates to that many characters. */
   readonly maxInputCharacters: number | null;
-  readonly truncation: string;
+}
+
+export interface TermSignalContract {
+  readonly id: string;
+  readonly tier: SignalTier;
+  /** Whole-word phrases, matched literally. */
+  readonly terms: readonly string[];
+}
+
+export interface PatternSignalContract {
+  readonly id: string;
+  readonly tier: SignalTier;
+  /** A regular-expression body, wrapped in the contract's boundary class. */
+  readonly pattern: string;
 }
 
 export interface MatchingContract {
-  readonly wordBoundary: string;
+  /** Character class used for the boundary lookarounds around every term. */
   readonly boundaryCharacterClass: string;
-  readonly termOrdering: string;
-  readonly duplicateHandling: string;
+  readonly termOrdering: 'longest-first-then-lexicographic' | 'declaration-order';
   readonly caseSensitive: boolean;
-  readonly patternSignals: readonly { readonly id: string; readonly pattern: string }[];
+  /** The taxonomy the classifier executes. There is no other source. */
+  readonly termSignals: readonly TermSignalContract[];
+  readonly patternSignals: readonly PatternSignalContract[];
+}
+
+export interface ThresholdsContract {
+  readonly decisiveHitsForInclude: number;
+  readonly distinctContextualHitsForInclude: number;
+  readonly outOfScopeHitsForExclude: number;
+}
+
+/** Conditions a rule may test. Each is implemented by the engine. */
+export type RulePredicate =
+  | 'status_quarantined'
+  | 'text_absent'
+  | 'in_scope_and_out_of_scope'
+  | 'in_scope'
+  | 'out_of_scope_without_in_scope'
+  | 'always';
+
+/** Conditions under which a rule emits one of its rationale codes. */
+export type EmitCondition =
+  | 'always'
+  | 'decisive_threshold_met'
+  | 'contextual_threshold_met'
+  | 'single_contextual_signal'
+  | 'any_out_of_scope_signal'
+  | 'no_other_code_emitted';
+
+export interface RationaleEmission {
+  readonly code: RationaleCode;
+  readonly when: EmitCondition;
 }
 
 export interface DecisionRuleContract {
-  readonly order: number;
   readonly id: string;
-  readonly when: string;
-  readonly decision: 'include' | 'exclude' | 'review';
-  readonly rationaleCodes: readonly RationaleCode[];
+  readonly when: RulePredicate;
+  readonly decision: ClassificationDecision;
+  /**
+   * Emitted in this order when their conditions hold. The order is behaviour:
+   * the stored rationale array is the emission order, not a sorted copy.
+   */
+  readonly emit: readonly RationaleEmission[];
+  /** `computed` scores from the matched signals; a number is used verbatim. */
+  readonly score: 'computed' | number;
 }
 
 export interface ScoringContract {
-  readonly formula: string;
-  readonly weights: Readonly<Record<string, number>>;
+  /** Weight per tier, multiplied by the count of distinct signals in it. */
+  readonly weights: Readonly<Record<SignalTier, number>>;
   readonly minimum: number;
-  /** `null` means no fixed upper bound: the score grows with the distinct signal count. */
+  /** `null` leaves the score unbounded above; a number clamps it. */
   readonly maximum: number | null;
-  readonly quarantinedScore: number;
-  readonly textAbsentScore: number;
 }
 
 export interface BehaviorContract {
+  // Identity. Not executable, deliberately hashed, stored on every run.
   readonly classifierVersion: string;
   readonly rulesetVersion: string;
-  readonly mode: 'rules';
   readonly engineVersion: string;
   readonly policyVersion: string;
-  readonly allowedInputKeys: readonly AllowedInputKey[];
+  readonly mode: 'rules';
+  // Behaviour. Every field below is read by `classify` at run time.
+  readonly allowedInputKeys: readonly InputFieldContract[];
   readonly textAssembly: TextAssemblyContract;
   readonly matching: MatchingContract;
-  readonly thresholds: Readonly<Record<string, number>>;
+  readonly thresholds: ThresholdsContract;
+  /** Walked in this order. Array order is precedence. */
   readonly decisionRules: readonly DecisionRuleContract[];
-  readonly rationaleCodes: Readonly<Record<string, string>>;
   readonly scoring: ScoringContract;
-  /** The signal policy, parsed from its own canonical form so it is covered here too. */
-  readonly signalPolicy: unknown;
 }
 
-export const BEHAVIOR_CONTRACT: BehaviorContract = {
+/** The signal policy, carried inline so the engine has no second source. */
+const TERM_SIGNALS: readonly TermSignalContract[] = CLASSIFICATION_SIGNALS.map((signal) => ({
+  id: signal.id,
+  tier: signal.tier,
+  terms: [...signal.terms].sort(),
+})).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+const CONTRACT: BehaviorContract = {
   classifierVersion: CLASSIFIER_VERSION,
   rulesetVersion: RULESET_VERSION,
-  mode: CLASSIFIER_MODE,
   engineVersion: ENGINE_VERSION,
   policyVersion: CLASSIFICATION_SIGNAL_POLICY_VERSION,
+  mode: CLASSIFIER_MODE,
   allowedInputKeys: ALLOWED_INPUT_KEYS,
   textAssembly: {
-    version: 'classification-text-assembly@2',
     fieldOrder: INPUT_FIELD_ORDER,
     fieldSeparator: '\n',
     nullHandling: 'skip',
     emptyHandling: 'skip',
     unicodeNormalizationForm: 'NFC',
-    caseNormalization: 'locale-independent-lowercase',
-    whitespaceNormalization: 'collapse-runs-to-single-space-and-trim',
+    caseNormalization: 'lowercase',
+    whitespaceNormalization: 'collapse',
     maxInputCharacters: null,
-    truncation: 'none',
   },
   matching: {
-    wordBoundary: 'unicode-letter-or-number-lookaround',
     boundaryCharacterClass: '\\p{L}\\p{N}',
     termOrdering: 'longest-first-then-lexicographic',
-    duplicateHandling: 'distinct-signal-identifiers',
     caseSensitive: false,
-    patternSignals: [{ id: 'cve_identifier', pattern: CVE_IDENTIFIER_PATTERN }],
+    termSignals: TERM_SIGNALS,
+    patternSignals: [{ id: CVE_SIGNAL_ID, tier: 'decisive', pattern: CVE_IDENTIFIER_PATTERN }],
   },
   thresholds: {
     decisiveHitsForInclude: POLICY_THRESHOLDS.decisiveHitsForInclude,
@@ -163,76 +233,97 @@ export const BEHAVIOR_CONTRACT: BehaviorContract = {
   },
   decisionRules: [
     {
-      order: 1,
       id: 'quarantined_row',
-      when: 'status == quarantined',
+      when: 'status_quarantined',
       decision: 'review',
-      rationaleCodes: [RATIONALE_CODES.rowQuarantined],
+      emit: [{ code: RATIONALE_CODES.rowQuarantined, when: 'always' }],
+      score: 0,
     },
     {
-      order: 2,
       id: 'no_usable_text',
-      when: 'assembled text is empty',
+      when: 'text_absent',
       decision: 'review',
-      rationaleCodes: [RATIONALE_CODES.textAbsent],
+      emit: [{ code: RATIONALE_CODES.textAbsent, when: 'always' }],
+      score: 0,
     },
     {
-      order: 3,
       id: 'in_scope_conflicting',
-      when: 'in scope AND out_of_scope hits >= outOfScopeHitsForExclude',
+      when: 'in_scope_and_out_of_scope',
       decision: 'review',
-      // The first two always fire; the in-scope codes fire with whichever side
-      // of the conflict was met, so the reviewer sees the evidence, not only
-      // that a conflict existed.
-      rationaleCodes: [
-        RATIONALE_CODES.outOfScopeSignal,
-        RATIONALE_CODES.signalsConflicting,
-        RATIONALE_CODES.decisiveSignal,
-        RATIONALE_CODES.contextualSignals,
+      emit: [
+        { code: RATIONALE_CODES.outOfScopeSignal, when: 'always' },
+        { code: RATIONALE_CODES.signalsConflicting, when: 'always' },
+        { code: RATIONALE_CODES.decisiveSignal, when: 'decisive_threshold_met' },
+        { code: RATIONALE_CODES.contextualSignals, when: 'contextual_threshold_met' },
       ],
+      score: 'computed',
     },
     {
-      order: 4,
       id: 'in_scope',
-      when: 'decisive hits >= decisiveHitsForInclude OR contextual hits >= distinctContextualHitsForInclude',
+      when: 'in_scope',
       decision: 'include',
-      rationaleCodes: [RATIONALE_CODES.decisiveSignal, RATIONALE_CODES.contextualSignals],
-    },
-    {
-      order: 5,
-      id: 'out_of_scope_only',
-      when: 'out_of_scope hits >= outOfScopeHitsForExclude AND decisive hits == 0 AND contextual hits == 0',
-      decision: 'exclude',
-      rationaleCodes: [RATIONALE_CODES.outOfScopeSignal, RATIONALE_CODES.noSignalMatch],
-    },
-    {
-      order: 6,
-      id: 'otherwise',
-      when: 'no earlier rule applied',
-      decision: 'review',
-      rationaleCodes: [
-        RATIONALE_CODES.contextualSignalSingle,
-        RATIONALE_CODES.outOfScopeSignal,
-        RATIONALE_CODES.noSignalMatch,
+      emit: [
+        { code: RATIONALE_CODES.decisiveSignal, when: 'decisive_threshold_met' },
+        { code: RATIONALE_CODES.contextualSignals, when: 'contextual_threshold_met' },
       ],
+      score: 'computed',
+    },
+    {
+      id: 'out_of_scope_only',
+      when: 'out_of_scope_without_in_scope',
+      decision: 'exclude',
+      emit: [
+        { code: RATIONALE_CODES.outOfScopeSignal, when: 'always' },
+        { code: RATIONALE_CODES.noSignalMatch, when: 'always' },
+      ],
+      score: 'computed',
+    },
+    {
+      id: 'otherwise',
+      when: 'always',
+      decision: 'review',
+      emit: [
+        { code: RATIONALE_CODES.contextualSignalSingle, when: 'single_contextual_signal' },
+        { code: RATIONALE_CODES.outOfScopeSignal, when: 'any_out_of_scope_signal' },
+        { code: RATIONALE_CODES.noSignalMatch, when: 'no_other_code_emitted' },
+      ],
+      score: 'computed',
     },
   ],
-  rationaleCodes: RATIONALE_CODES,
   scoring: {
-    formula: 'sum(distinct-signals-per-tier * tier-weight)',
     weights: SIGNAL_WEIGHTS,
     minimum: 0,
     maximum: null,
-    quarantinedScore: 0,
-    textAbsentScore: 0,
   },
-  signalPolicy: JSON.parse(canonicalSignalPolicy()) as unknown,
 };
 
 /**
+ * Freezes an object and everything reachable from it.
+ *
+ * The production contract is frozen because the matcher cache keys on object
+ * identity: a contract that could be edited after its matchers were built
+ * would keep returning matchers for the version it no longer describes.
+ */
+export function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== 'object') return value;
+  Object.freeze(value);
+  for (const entry of Object.values(value as Record<string, unknown>)) deepFreeze(entry);
+  return value;
+}
+
+/** True when nothing reachable from `value` can be changed. */
+export function isDeepFrozen(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return true;
+  if (!Object.isFrozen(value)) return false;
+  return Object.values(value as Record<string, unknown>).every(isDeepFrozen);
+}
+
+export const BEHAVIOR_CONTRACT: BehaviorContract = deepFreeze(CONTRACT);
+
+/**
  * Deterministic canonical serialization: object keys sorted, array order
- * preserved because order is behaviour, `null` distinguished from absent, and
- * numbers and strings kept as their own types. No locale-dependent
+ * preserved because array order is behaviour, `null` distinguished from
+ * absent, and numbers and strings kept as their own types. No locale-dependent
  * formatting is used, so the result is identical on any machine.
  */
 export function canonicalize(value: unknown): string {
