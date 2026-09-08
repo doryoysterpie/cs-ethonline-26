@@ -22,7 +22,24 @@ import {
 } from './classification/output.js';
 import { calibrateRun, reportRun, reviewQueue } from './classification/report.js';
 import { classifyBatch } from './classification/run.js';
-import { toSingleLine } from './editorial/display.js';
+import {
+  formatClusteringReport,
+  formatClusteringRun,
+  formatEffectiveView,
+  formatReviewAction,
+  formatReviewCounts,
+} from './clustering/output.js';
+import { reportClusteringRun } from './clustering/report.js';
+import {
+  effectiveIncidents,
+  mergeIncidents,
+  reviewCounts,
+  splitIncident,
+  MAX_MERGE_INCIDENTS,
+  MAX_SPLIT_MEMBERSHIPS,
+} from './clustering/review.js';
+import { clusterClassificationRun } from './clustering/run.js';
+import { hasControlCharacter, toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
 import { assertImportRequest, importCsvFile } from './editorial/import.js';
 import {
@@ -46,6 +63,12 @@ import { validateCsvFile } from './editorial/validate.js';
  *   classification report    --run UUID
  *   classification queue     --run UUID
  *   classification calibrate --run UUID
+ *   clustering run          --classification-run UUID
+ *   clustering report       --run UUID
+ *   clustering review-count --run UUID
+ *   clustering effective    --run UUID
+ *   clustering merge        --run UUID --incidents UUID,UUID --reason CODE
+ *   clustering split        --run UUID --incident UUID --members UUID,... --reason CODE
  *
  * Exit codes: 0 success (a completed_with_issues import is a success that
  * retained every row); 2 configuration; 3 structural input; 4 database;
@@ -81,6 +104,12 @@ const USAGE = [
   '  classification report --run <uuid>',
   '  classification queue --run <uuid>',
   '  classification calibrate --run <uuid>',
+  '  clustering run --classification-run <uuid>',
+  '  clustering report --run <uuid>',
+  '  clustering review-count --run <uuid>',
+  '  clustering effective --run <uuid>',
+  '  clustering merge --run <uuid> --incidents <uuid,uuid> --reason <code> [--note <text>]',
+  '  clustering split --run <uuid> --incident <uuid> --members <uuid,...> --reason <code> [--note <text>]',
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -115,8 +144,11 @@ function parseBatchId(value: string | undefined): string | null {
   return value.toLowerCase();
 }
 
-/** A classification command names its subject explicitly; there is no "latest" default. */
-function requireUuid(value: string | undefined, flag: 'batch' | 'run'): string {
+/** A classification or clustering command names its subject explicitly; there is no "latest" default. */
+function requireUuid(
+  value: string | undefined,
+  flag: 'batch' | 'run' | 'classification-run' | 'incident',
+): string {
   if (value === undefined || value.length === 0) {
     throw configurationError(`${flag}_id_required`, `--${flag} is required`);
   }
@@ -277,11 +309,121 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       for (const line of formatCalibration(report, redact)) emit(line);
       return EXIT_CODES.ok;
     }
+    if (group === 'clustering' && command === 'run') {
+      const classificationRunId = requireUuid(values['classification-run'], 'classification-run');
+      const outcome = await withDatabase(options.env, (db) =>
+        clusterClassificationRun(db, { classificationRunId }),
+      );
+      for (const line of formatClusteringRun(outcome, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'clustering' && command === 'report') {
+      const runId = requireUuid(values.run, 'run');
+      const report = await withDatabase(options.env, (db) => reportClusteringRun(db, runId));
+      for (const line of formatClusteringReport(report, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'clustering' && command === 'review-count') {
+      const runId = requireUuid(values.run, 'run');
+      const counts = await withDatabase(options.env, (db) => reviewCounts(db, runId));
+      for (const line of formatReviewCounts(counts, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'clustering' && command === 'effective') {
+      const runId = requireUuid(values.run, 'run');
+      const view = await withDatabase(options.env, (db) => effectiveIncidents(db, runId));
+      for (const line of formatEffectiveView(view, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'clustering' && command === 'merge') {
+      const runId = requireUuid(values.run, 'run');
+      const incidentIds = parseIdList(values.incidents, 'incidents', MAX_MERGE_INCIDENTS);
+      const outcome = await withDatabase(options.env, (db) =>
+        mergeIncidents(db, {
+          runId,
+          incidentIds,
+          reasonCode: parseReasonCode(values.reason),
+          actor: parseActor(values.actor),
+          note: parseNote(values.note),
+        }),
+      );
+      for (const line of formatReviewAction(outcome, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'clustering' && command === 'split') {
+      const runId = requireUuid(values.run, 'run');
+      const incidentId = requireUuid(values.incident, 'incident');
+      const membershipIds = parseIdList(values.members, 'members', MAX_SPLIT_MEMBERSHIPS);
+      const outcome = await withDatabase(options.env, (db) =>
+        splitIncident(db, {
+          runId,
+          incidentId,
+          membershipIds,
+          reasonCode: parseReasonCode(values.reason),
+          actor: parseActor(values.actor),
+          note: parseNote(values.note),
+        }),
+      );
+      for (const line of formatReviewAction(outcome, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
     for (const line of USAGE) emitError(line);
     return fail(configurationError('command_unknown', 'unknown command'));
   } catch (error) {
     return fail(error);
   }
+}
+
+const REASON_CODE = /^[a-z][a-z0-9_]{2,63}$/;
+const ACTOR = /^[a-z][a-z0-9_.:-]{1,63}$/;
+
+/**
+ * A bounded comma-separated identifier list. Every element is validated as a
+ * UUID before any database access, and the count is bounded so a review
+ * command cannot become a bulk edit.
+ */
+function parseIdList(value: string | undefined, flag: string, maximum: number): string[] {
+  if (value === undefined || value.length === 0) {
+    throw configurationError(`${flag}_required`, `--${flag} is required`);
+  }
+  const parts = value.split(',').map((part) => part.trim());
+  if (parts.length > maximum) {
+    throw configurationError(`${flag}_too_many`, `--${flag} names more ids than permitted`);
+  }
+  for (const part of parts) {
+    if (!UUID.test(part)) {
+      throw configurationError(`${flag}_invalid`, `--${flag} must be a comma-separated UUID list`);
+    }
+  }
+  return parts.map((part) => part.toLowerCase());
+}
+
+/** Fixed vocabulary chosen by the reviewer, never free-form source text. */
+function parseReasonCode(value: string | undefined): string {
+  if (value === undefined || !REASON_CODE.test(value)) {
+    throw configurationError('reason_invalid', '--reason must be a short lower-case code');
+  }
+  return value;
+}
+
+function parseActor(value: string | undefined): string {
+  const actor = value ?? 'owner';
+  if (!ACTOR.test(actor)) {
+    throw configurationError('actor_invalid', '--actor must be a short lower-case identifier');
+  }
+  return actor;
+}
+
+/** An optional bounded human note. It is stored, never interpreted. */
+function parseNote(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (value.length === 0 || value.length > 280) {
+    throw configurationError('note_invalid', '--note must be between 1 and 280 characters');
+  }
+  if (hasControlCharacter(value)) {
+    throw configurationError('note_invalid', '--note must not contain control characters');
+  }
+  return value;
 }
 
 const PARSE_OPTIONS = {
@@ -291,6 +433,13 @@ const PARSE_OPTIONS = {
   'review-label': { type: 'string' },
   batch: { type: 'string' },
   run: { type: 'string' },
+  'classification-run': { type: 'string' },
+  incidents: { type: 'string' },
+  incident: { type: 'string' },
+  members: { type: 'string' },
+  reason: { type: 'string' },
+  note: { type: 'string' },
+  actor: { type: 'string' },
 } as const;
 
 interface ParsedValues {
@@ -300,6 +449,13 @@ interface ParsedValues {
   readonly 'review-label'?: string | undefined;
   readonly batch?: string | undefined;
   readonly run?: string | undefined;
+  readonly 'classification-run'?: string | undefined;
+  readonly incidents?: string | undefined;
+  readonly incident?: string | undefined;
+  readonly members?: string | undefined;
+  readonly reason?: string | undefined;
+  readonly note?: string | undefined;
+  readonly actor?: string | undefined;
 }
 
 export async function main(): Promise<void> {

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@cas/classification": "workspace:*",
+    "@cas/clustering": "workspace:*",
     "@cas/contracts": "workspace:*",
     "@cas/database": "workspace:*",
     "csv-parse": "catalog:",

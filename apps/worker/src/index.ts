@@ -113,4 +113,32 @@ export {
   type ClassifyBatchRequest,
   type IdempotencyInputs as RunIdempotencyInputs,
 } from './classification/run.js';
+export {
+  formatClusteringReport,
+  formatClusteringRun,
+  formatEffectiveView,
+  formatReviewAction,
+  formatReviewCounts,
+} from './clustering/output.js';
+export { reportClusteringRun, type ClusteringReport } from './clustering/report.js';
+export {
+  effectiveIncidents,
+  mergeIncidents,
+  reviewCounts,
+  splitIncident,
+  MAX_MERGE_INCIDENTS,
+  MAX_SPLIT_MEMBERSHIPS,
+  type EffectiveIncident,
+  type EffectiveView,
+  type ReviewActionOutcome,
+  type ReviewCounts,
+} from './clustering/review.js';
+export {
+  clusterClassificationRun,
+  computeClusteringIdempotencyKey,
+  DEFAULT_PAGE_SIZE as CLUSTERING_PAGE_SIZE,
+  type ClusterRunOptions,
+  type ClusterRunOutcome,
+  type ClusterRunRequest,
+} from './clustering/run.js';
 export { run, type CliIo, type CliOptions } from './cli.js';
