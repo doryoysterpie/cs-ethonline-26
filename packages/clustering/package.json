@@ -2,7 +2,7 @@
   "name": "@cas/clustering",
   "version": "0.0.0",
   "private": true,
-  "description": "Canonical incident clustering. Placeholder after Sprint 0.",
+  "description": "Deterministic incident clustering: exact URL duplicates, syndication and conservative incident grouping, driven by a versioned executable contract. Pure: no database, network, environment, model, clock or randomness. Sprint 4, decision D22.",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,15 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*"
   }
 }
