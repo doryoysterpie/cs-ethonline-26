@@ -1,6 +1,6 @@
 import pg from 'pg';
 
-import { assertSchemaName, type DatabaseConfig } from './config.js';
+import { assertSchemaName, DEFAULT_APPLICATION_SCHEMA, type DatabaseConfig } from './config.js';
 import { classifyDriverError, DatabaseError } from './errors.js';
 import { connectionSecrets, createRedactor, type Redactor } from './redact.js';
 
@@ -44,16 +44,29 @@ function wrap(client: pg.PoolClient): Queryable {
 
 export class Database {
   readonly redact: Redactor;
-  readonly schema: string | null;
+  /**
+   * The one schema this handle addresses. Never null: an unspecified schema
+   * resolves to `public`, never to a role-controlled default.
+   */
+  readonly schema: string;
   private readonly pool: pg.Pool;
   private ended = false;
 
   constructor(config: DatabaseConfig, options: DatabaseOptions = {}) {
-    if (config.schema !== null) assertSchemaName(config.schema);
-    this.schema = config.schema;
+    const schema = config.schema ?? DEFAULT_APPLICATION_SCHEMA;
+    // Validated as a plain lowercase identifier before it reaches a startup
+    // parameter or an interpolated identifier anywhere in the package.
+    assertSchemaName(schema);
+    this.schema = schema;
     this.redact = createRedactor(connectionSecrets(config.connectionString));
-    const startupOptions = ['-c TimeZone=UTC'];
-    if (config.schema !== null) startupOptions.push(`-c search_path=${config.schema}`);
+    // The search path is always exactly one application schema followed by
+    // `pg_temp`. Codex Desktop's re-audit showed why: with no explicit path
+    // PostgreSQL uses `"$user", public`, so a role that can create a schema
+    // named after itself silently captures every unqualified relation, and
+    // with `pg_temp` unlisted PostgreSQL searches the session's temporary
+    // schema first. Naming `pg_temp` last puts it after the application
+    // schema instead of before it, and omitting `$user` removes the capture.
+    const startupOptions = ['-c TimeZone=UTC', `-c search_path=${schema},pg_temp`];
     this.pool = new pg.Pool({
       connectionString: config.connectionString,
       max: options.maxConnections ?? 4,

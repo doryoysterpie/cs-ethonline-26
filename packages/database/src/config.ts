@@ -15,9 +15,16 @@ export const DATABASE_URL_VARIABLE = 'DATABASE_URL';
 
 export interface DatabaseConfig {
   readonly connectionString: string;
-  /** Optional schema placed first on `search_path`; used by isolated test schemas. */
+  /**
+   * The single schema the connection addresses. `null` means the production
+   * default below; it never means "let the server decide", because the server's
+   * own default is the role-controlled `"$user", public`.
+   */
   readonly schema: string | null;
 }
+
+/** Production target when no isolated schema is requested. */
+export const DEFAULT_APPLICATION_SCHEMA = 'public';
 
 const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 

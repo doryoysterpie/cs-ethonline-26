@@ -21,6 +21,7 @@ describe('loadMigrations', () => {
       '0002_provenance_integrity.sql',
       '0003_classification.sql',
       '0004_classification_integrity.sql',
+      '0005_classification_schema_security.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));
@@ -34,13 +35,15 @@ describe('loadMigrations', () => {
     expect(files[2]?.name).toBe('classification');
     expect(files[3]?.version).toBe(4);
     expect(files[3]?.name).toBe('classification_integrity');
+    expect(files[4]?.version).toBe(5);
+    expect(files[4]?.name).toBe('classification_schema_security');
   });
 
   it('pins the checksums of the applied migrations, which must never change', async () => {
-    // 0001 and 0002 were applied and audited in Sprint 2, and 0003 was applied
-    // to the working database before the Sprint 3 audit. Editing any of them
+    // 0001 and 0002 were applied and audited in Sprint 2; 0003 and 0004 were
+    // applied to the working database before the re-audit. Editing any of them
     // would be drift on every existing database, so their bytes are pinned
-    // here. The audit correction is migration 0004, which is additive.
+    // here. The re-audit correction is migration 0005, which is additive.
     for (const [fileName, expected] of [
       [
         '0001_editorial_ingestion.sql',
@@ -53,6 +56,10 @@ describe('loadMigrations', () => {
       [
         '0003_classification.sql',
         '60d24e6ce016db85d6ff6f8f0066d5cad4641f156f3cb56fed1e452c0ac17dc6',
+      ],
+      [
+        '0004_classification_integrity.sql',
+        '89763968c272d178a6a40c8f83ed5b28907c7e727393901ff99681b7b13ec719',
       ],
     ] as const) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, fileName));

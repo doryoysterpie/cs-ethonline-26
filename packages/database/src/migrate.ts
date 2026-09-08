@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { Database, Queryable } from './database.js';
 import { DatabaseError } from './errors.js';
+import { quoteIdentifier } from './schema.js';
 
 /**
  * Deterministic, forward-only migration runner.
@@ -60,13 +61,24 @@ export const MIGRATIONS_DIRECTORY = fileURLToPath(new URL('../migrations/', impo
 const FILE_NAME = /^(\d{4})_([a-z0-9_]+)\.sql$/;
 const LOCK_CLASS = 7231;
 
-const CREATE_SCHEMA_MIGRATIONS = `
-CREATE TABLE IF NOT EXISTS schema_migrations (
+/**
+ * Every statement below names the migration table by schema.
+ *
+ * Codex Desktop's re-audit created a schema named after the application role,
+ * placed a `schema_migrations` table in it, and watched `db:check` create and
+ * read that table instead of the real one, reporting four applied migrations
+ * as none. Unqualified names are the whole reason that worked, so the runner
+ * now takes its schema from the handle and quotes it as an identifier.
+ */
+function createSchemaMigrations(schema: string): string {
+  return `
+CREATE TABLE IF NOT EXISTS ${quoteIdentifier(schema)}.schema_migrations (
   version    integer     PRIMARY KEY,
   name       text        NOT NULL,
   checksum   text        NOT NULL,
-  applied_at timestamptz NOT NULL DEFAULT now()
+  applied_at timestamptz NOT NULL DEFAULT pg_catalog.now()
 )`;
+}
 
 export async function loadMigrations(
   directory: string = MIGRATIONS_DIRECTORY,
@@ -98,14 +110,15 @@ export async function loadMigrations(
   return files;
 }
 
-async function readApplied(client: Queryable): Promise<AppliedMigration[]> {
+async function readApplied(client: Queryable, schema: string): Promise<AppliedMigration[]> {
   const result = await client.query<{
     version: number;
     name: string;
     checksum: string;
     applied_at: string;
   }>(
-    "SELECT version, name, checksum, to_json(applied_at) #>> '{}' AS applied_at FROM schema_migrations ORDER BY version",
+    `SELECT version, name, checksum, pg_catalog.to_json(applied_at) #>> '{}' AS applied_at
+       FROM ${quoteIdentifier(schema)}.schema_migrations ORDER BY version`,
   );
   return result.rows.map((row) => ({
     version: row.version,
@@ -135,15 +148,19 @@ async function withMigrationLock<T>(
   db: Database,
   fn: (client: Queryable) => Promise<T>,
 ): Promise<T> {
+  // The lock is keyed by the handle's schema rather than by `current_schema()`,
+  // so it cannot follow a captured search path to a different schema's lock.
   return db.withClient(async (client) => {
-    await client.query('SELECT pg_advisory_lock($1::int, hashtext(current_schema()))', [
+    await client.query('SELECT pg_catalog.pg_advisory_lock($1::int, pg_catalog.hashtext($2))', [
       LOCK_CLASS,
+      db.schema,
     ]);
     try {
       return await fn(client);
     } finally {
-      await client.query('SELECT pg_advisory_unlock($1::int, hashtext(current_schema()))', [
+      await client.query('SELECT pg_catalog.pg_advisory_unlock($1::int, pg_catalog.hashtext($2))', [
         LOCK_CLASS,
+        db.schema,
       ]);
     }
   });
@@ -170,8 +187,8 @@ export async function migrationStatus(
 ): Promise<MigrationStatus> {
   const files = await loadMigrations(options.directory);
   return withMigrationLock(db, async (client) => {
-    await client.query(CREATE_SCHEMA_MIGRATIONS);
-    const applied = await readApplied(client);
+    await client.query(createSchemaMigrations(db.schema));
+    const applied = await readApplied(client, db.schema);
     const appliedVersions = new Set(applied.map((row) => row.version));
     return {
       applied,
@@ -190,8 +207,8 @@ export async function runMigrations(
     throw new DatabaseError('migration', 'no migration files found');
   }
   return withMigrationLock(db, async (client) => {
-    await client.query(CREATE_SCHEMA_MIGRATIONS);
-    const applied = await readApplied(client);
+    await client.query(createSchemaMigrations(db.schema));
+    const applied = await readApplied(client, db.schema);
     const drift = detectDrift(applied, files);
     if (drift.length > 0) throw driftError(drift);
     const appliedVersions = new Set(applied.map((row) => row.version));
@@ -202,7 +219,8 @@ export async function runMigrations(
       try {
         await client.query(file.sql);
         await client.query(
-          'INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)',
+          `INSERT INTO ${quoteIdentifier(db.schema)}.schema_migrations (version, name, checksum)
+             VALUES ($1, $2, $3)`,
           [file.version, file.name, file.checksum],
         );
         await client.query('COMMIT');
