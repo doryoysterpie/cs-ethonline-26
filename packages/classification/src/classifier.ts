@@ -56,8 +56,6 @@ interface TierMatcher {
 
 type TierMatchers = Readonly<Record<SignalTier, TierMatcher>>;
 
-const TIERS: readonly SignalTier[] = ['decisive', 'contextual', 'out_of_scope'];
-
 /** Escapes a term so it is matched literally; policy terms carry no regex syntax. */
 function escapeTerm(term: string): string {
   return term.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
