@@ -535,8 +535,9 @@ entries are unchanged except for status pointers.
     settings or spending cap. No Anthropic SDK, no model-backed code path and no model call
     is added in Sprint 3. Even if `ANTHROPIC_API_KEY` is present in the environment, nothing
     in this sprint reads or uses it.
-  - **Calibration, not filtering.** CS79 and CS86 are calibration datasets. They are not a
-    production filter and not holdouts. Historical selections never enter the classifier:
+  - **Calibration, not filtering.** CS79 and CS86 are calibration datasets, and the 2026-09-07
+    amendment below states precisely what they calibrate. They are not a production filter and
+    not holdouts. Historical candidate decisions never enter the classifier:
     they are not passed to it, not used as features, not used to choose which rows are
     classified, not used to vary rules for particular source-row identifiers, and never
     encoded as special cases. Classification runs first and calibration is a separate
@@ -577,7 +578,7 @@ entries are unchanged except for status pointers.
   the database re-derives from the stored results. The `classification queue` command is
   count-only. Decisions on all three real batches are unchanged. Details and evidence are in
   section 12 of `SPRINT-3-REPORT.md`.
-- **Second amendment, 2026-09-08 (re-audit correction).** Codex Desktop re-audited the first
+- **Second amendment, 2026-09-07 (re-audit correction).** Codex Desktop re-audited the first
   correction and returned CHANGES REQUIRED, closing the input allowlist and the queue output
   and reopening three findings. The decision itself is again unchanged; these particulars are.
   The classifier identity is now `rules-classifier@3` with ruleset
@@ -591,10 +592,36 @@ entries are unchanged except for status pointers.
   completed run stays reconciled against the live batch. Decisions on all three real batches
   are unchanged again. Details and evidence are in sections 13 and 14 of
   `SPRINT-3-REPORT.md`.
-- **Calibration wording, 2026-09-08.** The project owner clarified the data workflow: Make
-  assembles one living master RSS ledger, maintained in Excel, and the owner manually cuts
-  that ledger down into a weekly editorial list. CS79 and CS86 are two of those weekly
-  cut-down lists, not independent weekly master feeds, and there are no eighty-eight
-  independent weekly master datasets. The deterministic rules are not trained on them: they
-  are measured against them. Future holdout protection will come from withholding particular
-  weekly lists from development. This clarification does not resolve D10.
+- **Data-lineage clarification, 2026-09-07.** The project owner set out the editorial
+  workflow in full, and it has five stages, not three: Make aggregates many websites into one
+  living RSS ledger maintained and exported through Excel; the owner cuts that living feed
+  down to an Excel list of possible cyberattack incidents and other stories of interest for
+  one editorial week; Claude reformats and deduplicates that list; the owner then performs
+  further selection, ordering and editing; and the result is published on Substack.
+
+  ```
+  living RSS ledger → weekly candidate cut-down → reformatted and deduplicated candidate draft
+     → owner's final editorial decisions → published Substack report
+  ```
+
+  What follows for this decision. CS79 and CS86 are weekly **candidate** cut-downs, not
+  weekly master RSS datasets, and there are no eighty-eight independent weekly master
+  datasets. A row kept in a weekly cut-down is a possible story, not a confirmed incident, and
+  a weekly sheet is not final publication ground truth. Their review states therefore measure
+  retention against the owner's intermediate candidate decisions, not agreement with the final
+  published selection: the retention figures stay as technical calibration evidence and must
+  never be presented as end-to-end editorial accuracy, publication recall or validated
+  incident truth. Publisher Category, the ledger's `ch` working state and weekly spreadsheet
+  inclusion are none of them definitive incident labels. The deterministic rules remain
+  measured against these files, never trained on them.
+
+  A future end-to-end evaluation must pair weekly Excel cut-downs with their corresponding
+  final Substack reports, reconstruct the final include, exclude and incident-grouping
+  outcomes through an explicit reviewed mapping, preserve provenance from the living ledger
+  through the candidate list to the publication, and reserve an untouched group of paired
+  weeks for holdout evaluation before the wider archive is exposed to development. That split
+  was not invented here.
+
+  This clarification establishes data provenance and the editorial stages. It does not resolve
+  D10: the automated week boundary, the late-arriving-story rule and the publication cutoff
+  all remain open.

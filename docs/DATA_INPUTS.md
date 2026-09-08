@@ -10,29 +10,38 @@ Sprint 0; section 14 records how the Sprint 2 importer enforces them (decision D
 **The present manual workflow**, as stated by the project owner, is background for
 understanding the data and the labels. It is not the runtime design.
 
-1. Make continuously assembles an RSS feed of incoming cyber and adjacent technology
-   stories, maintained and exported in Excel. This one continuously growing file is the
-   **living master RSS ledger**. It is a single accumulating ledger, not a series of
-   independent files.
-2. The project owner manually cuts that living ledger down for one editorial week, keeping
-   the cyberattacks and other stories of interest and setting the rest aside. The result is a
-   **weekly editorial cut-down list**.
-3. A weekly sheet, such as CS79 or CS86, is one of those cut-down lists and preserves the
-   human editorial decisions it records. That is the **human review snapshot** this project
-   stores. Claude then reformats the retained material and consolidates duplicate reporting.
-4. The project owner turns that output into the published weekly post. This is the
-   **published issue**.
+1. Make continuously aggregates many websites into a living RSS feed, maintained and exported
+   through Excel. This one continuously growing file is the **living RSS ledger**. It is a
+   single accumulating ledger, not a series of independent files.
+2. The project owner manually reviews that living feed and creates an Excel cut-down of the
+   possible cyberattack incidents and other stories of interest for one editorial week. The
+   result is a **weekly candidate cut-down**.
+3. The weekly cut-down is still an intermediate candidate list. It is not the complete source
+   of truth for which stories become Cyberattack Sunday incidents.
+4. Claude currently receives the weekly Excel export, reformats it and deduplicates the
+   possible stories. The result is a **reformatted and deduplicated candidate draft**.
+5. The project owner then performs further editorial selection, ordering and editing. Those
+   are the **final editorial decisions**, and they happen after the candidate draft exists.
+6. The report is published on Substack. The **published Substack report** is the closest
+   available record of the final editorial outcome.
 
 ```
-living master RSS ledger → weekly editorial cut-down list → human review snapshot
-   → editorial transformation → published issue
+living RSS ledger → weekly candidate cut-down → reformatted and deduplicated candidate draft
+   → owner's final editorial decisions → published Substack report
 ```
 
-**What a weekly list is not.** CS79 and CS86 are not weekly master feeds, and the project does
-not hold eighty-eight independent weekly master datasets. There is one living ledger and a
-number of human cut-down lists taken from it. Any statement that implies otherwise is wrong,
-including any reading of the batch table in which each weekly import is a separate corpus:
-a weekly import is a snapshot of human decisions over rows drawn from the same ledger.
+**What a weekly sheet is and is not.** CS79 and CS86 are weekly candidate cut-downs. They are
+not weekly master RSS datasets, and the project does not hold eighty-eight independent weekly
+master datasets: there is one living ledger and a number of candidate lists drawn from it.
+A row retained in a weekly cut-down is a **possible** story, not a confirmed cyberattack
+incident, and a weekly sheet is not final publication ground truth, because two editorial
+stages still follow it. Any reading of the batch table in which each weekly import is a
+separate corpus, or in which weekly inclusion equals incident truth, is wrong.
+
+**No field in these files is a definitive incident label.** Publisher Category is the
+publisher's own taxonomy, the ledger's `ch` column is the owner's working state on the living
+feed, and weekly spreadsheet inclusion is a candidate decision. None of the three establishes
+that a story became a published incident, and no code may treat any of them as if it did.
 
 **The target runtime flow** (decision D15) removes the manual selection bottleneck from the
 front of the pipeline and moves the human to the end, where review is of a queue rather than
@@ -52,13 +61,28 @@ current feed → import and normalization → automated high-recall classificati
    → human review and editorial output
 ```
 
-The historical CS79 and CS86 cut-down lists supply calibration and evaluation labels for
-steps 3 to 6. They are never a production filter or a prerequisite for processing a current
-feed, and the deterministic rules of decision D21 are not trained on them: nothing in the
-classifier is fitted, weighted or selected from a label. Future holdout protection will come
-from withholding particular weekly cut-down lists from development, not from pretending the
-continuously growing ledger is partitioned into independent weekly master files. Decision D10,
-which fixes the automated week boundary and cutoff, remains unresolved.
+The CS79 and CS86 candidate cut-downs are calibration datasets for steps 3 to 6, with
+one precise meaning: their spreadsheet review states measure retention against the owner's
+**intermediate weekly candidate decisions**. They do not measure agreement with the final
+published incident selection, because the final selection is made two stages later. They are
+never a production filter or a prerequisite for processing a current feed, and the
+deterministic rules of decision D21 are not trained on them: nothing in the classifier is
+fitted, weighted or selected from a label, and the classifier never reads one. Decision D10,
+which fixes the automated week boundary, the late-arriving-story rule and the publication
+cutoff, remains unresolved; nothing in this section resolves it.
+
+**What an end-to-end evaluation will require, and does not yet have.** Measuring the pipeline
+against the real editorial outcome needs the published reports, not the candidate lists. That
+work, when it is scheduled, must:
+
+- pair weekly Excel cut-downs with their corresponding final Substack reports;
+- reconstruct the final include, exclude and incident-grouping outcomes through an explicit,
+  reviewed mapping process rather than by inference;
+- preserve provenance from the living ledger through the candidate list to the publication;
+- reserve an untouched group of paired weeks for holdout evaluation before the wider archive
+  is exposed to development.
+
+That split has not been made, and this correction pass does not invent it.
 Live Graph signals run in parallel to this flow and attach corroborating evidence to canonical
 incidents; they do not replace editorial ingestion (`ARCHITECTURE.md` section 3).
 
@@ -73,29 +97,29 @@ Column names are reproduced exactly, including capitalization and spaces.
 
 **Master RSS export**
 
-| Column         | Notes                                                               |
-| -------------- | ------------------------------------------------------------------- |
-| `ch`           | Current working state. Not a stable label. See section 3.           |
-| `Date Posted`  | UTC timestamp in the inspected export. Raw value must be preserved. |
-| `Date Updated` | UTC timestamp in the inspected export. Raw value must be preserved. |
-| `Title`        | Publisher-supplied.                                                 |
-| `Author`       | May be absent.                                                      |
-| `Description`  | May contain HTML, entities, links and long bodies. May be absent.   |
-| `Summary`      | May contain HTML, entities, links and long bodies. May be absent.   |
-| `URL`          | Original URL. Exact duplicates exist.                               |
-| `Category`     | Publisher-supplied, inconsistent. May be absent.                    |
+| Column         | Notes                                                                            |
+| -------------- | -------------------------------------------------------------------------------- |
+| `ch`           | Current working state. Not a stable label, not an incident label. See section 3. |
+| `Date Posted`  | UTC timestamp in the inspected export. Raw value must be preserved.              |
+| `Date Updated` | UTC timestamp in the inspected export. Raw value must be preserved.              |
+| `Title`        | Publisher-supplied.                                                              |
+| `Author`       | May be absent.                                                                   |
+| `Description`  | May contain HTML, entities, links and long bodies. May be absent.                |
+| `Summary`      | May contain HTML, entities, links and long bodies. May be absent.                |
+| `URL`          | Original URL. Exact duplicates exist.                                            |
+| `Category`     | Publisher-supplied, inconsistent. May be absent.                                 |
 
 **Weekly snapshot sheet (CS79, CS86 and similar)**
 
-| Column         | Notes                                                |
-| -------------- | ---------------------------------------------------- |
-| `ch`           | Stable selection label for that week. See section 3. |
-| `Date Posted`  | As above.                                            |
-| `Date Updated` | As above.                                            |
-| `Title`        | As above.                                            |
-| `Summary`      | As above.                                            |
-| `URL`          | As above.                                            |
-| `Category`     | As above.                                            |
+| Column         | Notes                                                                       |
+| -------------- | --------------------------------------------------------------------------- |
+| `ch`           | Stable candidate label for that week, not an incident label. See section 3. |
+| `Date Posted`  | As above.                                                                   |
+| `Date Updated` | As above.                                                                   |
+| `Title`        | As above.                                                                   |
+| `Summary`      | As above.                                                                   |
+| `URL`          | As above.                                                                   |
+| `Category`     | As above.                                                                   |
 
 Some exports include unnamed blank columns. The importer must ignore them safely, by name
 rather than by position, and must not fail on their presence or absence. Section 14 records
@@ -103,14 +127,15 @@ the required and recognized header names the Sprint 2 importer enforces.
 
 **Representative files inspected outside the repository**
 
-| File                                | Records | Window                           | `TRUE` | `FALSE`    |
-| ----------------------------------- | ------- | -------------------------------- | ------ | ---------- |
-| Living master RSS ledger export     | 23,910  | 1 March 2025 to 4 September 2026 | 133    | not stated |
-| CS79 weekly editorial cut-down list | 157     | 21 to 27 June 2026               | 130    | 27         |
-| CS86 weekly editorial cut-down list | 181     | 9 to 15 August 2026              | 161    | 20         |
+| File                           | Records | Window                           | `TRUE` | `FALSE`    |
+| ------------------------------ | ------- | -------------------------------- | ------ | ---------- |
+| Living RSS ledger export       | 23,910  | 1 March 2025 to 4 September 2026 | 133    | not stated |
+| CS79 weekly candidate cut-down | 157     | 21 to 27 June 2026               | 130    | 27         |
+| CS86 weekly candidate cut-down | 181     | 9 to 15 August 2026              | 161    | 20         |
 
-The two weekly rows are cut-down lists taken from the same ledger, not independent weekly
-master feeds.
+The two weekly rows are candidate cut-downs drawn from the same ledger, not independent weekly
+master feeds, and their `TRUE` counts are candidate decisions rather than published
+incidents.
 
 These counts describe the inspected exports only. They are not permanent contractual values
 and no code may depend on them.
@@ -119,26 +144,31 @@ and no code may depend on them.
 
 The same column name, `ch`, carries two different meanings.
 
-**In a weekly snapshot sheet**, `ch` is a preserved label for that week's review:
+**In a weekly candidate cut-down**, `ch` is a preserved label for that week's candidate
+review:
 
-- `TRUE` means the project owner retained the source as a story of interest or potential
-  Cyberattack Sunday material.
-- `FALSE` means the project owner rejected the source during that week's review.
-- A retained source is not necessarily a unique incident. Several retained sources may
-  describe the same underlying incident.
-- A retained source is not guaranteed to appear separately in the final publication.
+- `TRUE` means the project owner kept the source as a possible cyberattack incident or a
+  story of interest for that week.
+- `FALSE` means the project owner set the source aside during that week's review.
+- A kept source is a candidate, not a confirmed incident, and not an incident label.
+- A kept source is not necessarily a unique incident. Several may describe the same one.
+- A kept source is not guaranteed to appear in the published report at all: the owner's final
+  selection, ordering and editing happen after the candidate draft is produced.
 
-**In the master RSS export**, `ch` is the current working state of an ongoing review:
+**In the living ledger export**, `ch` is the current working state of an ongoing review:
 
 - In the inspected master export, all 133 `TRUE` records fall between 30 August and
   4 September 2026, the window under review at export time.
-- Older sources that were `TRUE` in CS79 and CS86 appear as `FALSE` in the current master
+- Older sources that were `TRUE` in CS79 and CS86 appear as `FALSE` in the current ledger
   export, because the working state was reset once those weeks were published.
-- Therefore a historical `FALSE` in the master export must never be treated as a negative
+- Therefore a historical `FALSE` in the ledger export must never be treated as a negative
   classification label. It means only "not currently under review".
 
-Stable selection labels may come only from preserved weekly snapshots or from another
-explicitly versioned review record.
+Stable candidate labels may come only from preserved weekly cut-downs or from another
+explicitly versioned review record. Neither `ch` value, in either file, is an incident label,
+and neither is Publisher Category, which is the publisher's own taxonomy. The authoritative
+record of what became an incident is the published Substack report, which this project does
+not yet hold in machine-readable form.
 
 The system represents **human** review state as an explicit enum, `ReviewState`, defined in
 `@cas/contracts`:
@@ -172,19 +202,24 @@ in `packages/contracts` prove the two enums share no value and are distinct type
 
 Four distinct judgments, each with its own record:
 
-| Judgment                 | Unit              | Made by                               | Record                                      |
-| ------------------------ | ----------------- | ------------------------------------- | ------------------------------------------- |
-| Automated classification | one source record | pipeline, `@cas/classification`       | `ClassificationDecision` with its rationale |
-| Source selection         | one source record | project owner, weekly review or queue | `ReviewState` in a versioned review record  |
-| Incident clustering      | many sources      | pipeline, with editorial review       | canonical incident with members             |
-| Final publication        | one incident      | project owner, at publication         | published issue                             |
+| Judgment                 | Unit              | Made by                                 | Record                                      |
+| ------------------------ | ----------------- | --------------------------------------- | ------------------------------------------- |
+| Automated classification | one source record | pipeline, `@cas/classification`         | `ClassificationDecision` with its rationale |
+| Candidate selection      | one source record | project owner, weekly cut-down or queue | `ReviewState` in a versioned review record  |
+| Incident clustering      | many sources      | pipeline, with editorial review         | canonical incident with members             |
+| Final editorial outcome  | one incident      | project owner, before publishing        | published Substack report                   |
 
-An included source may be clustered into an incident that is not published. An incident may
+An included source may be clustered into an incident that is never published. An incident may
 be published from sources some of which were individually unremarkable. A source the
-classifier excluded may still be selected by a human from the retained records. Evaluation
-of the pipeline must measure each judgment against its own record, never against a different
-stage's record: classification recall against snapshot selections, clustering against the
-published grouping, inclusion against the published issue.
+classifier excluded may still be picked up by a human from the retained records. A source the
+owner kept in a weekly candidate cut-down may be dropped during the final editorial pass.
+
+Evaluation must therefore measure each judgment against its own record and never against a
+different stage's: classification retention against the weekly candidate decisions, clustering
+against the published grouping, and final inclusion against the published Substack report.
+A retention figure computed against a candidate cut-down is evidence about a candidate filter.
+It is not end-to-end editorial accuracy, not publication recall and not validated incident
+truth, and it must never be reported as any of those.
 
 ## 5. Nullable and untrusted fields
 

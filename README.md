@@ -32,10 +32,15 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 carries a machine classification and the needs-review queue is populated.** On 7 September
 2026 a deterministic, versioned rule-based classifier (decision D21) classified all 24,248
 imported rows across the three batches: 13,015 include, 55 exclude, 11,178 needs-review, one
-result per row, every run reconciled against its batch. Selected-retention recall is 0.992307
-on CS79 and 1.0 on CS86 against a 0.98 target. The historical weekly selections never reach
-the classifier; a regression test proves removing, replacing or flipping them changes no
-decision. No model is called and no Anthropic credential is read, because D9 is unresolved.
+result per row, every run reconciled against its batch. Candidate-retention is 0.992307 on
+CS79 and 1.0 on CS86 against a 0.98 target: those two files are weekly **candidate** cut-downs,
+so the figures measure retention against the owner's intermediate candidate decisions, not
+agreement with the final published selection. They are calibration evidence for a high-recall
+filter, not end-to-end editorial accuracy, publication recall or validated incident truth. The
+weekly candidate decisions never reach the classifier; a regression test proves removing,
+replacing or flipping them changes no decision, and nothing in the classifier is fitted or
+weighted from them. No model is called and no Anthropic credential is read, because D9 is
+unresolved.
 
 Two independent audits have returned CHANGES REQUIRED. The first found five problems; the
 auditor later confirmed two of them closed, the exact input allowlist and the count-only queue
@@ -56,8 +61,8 @@ this repository declares Sprint 3 accepted.
 PostgreSQL foundation and the manual CSV ingestion path are proven on the real exports.** On 6 September 2026 a fresh local
 PostgreSQL 17 database was migrated by the checksummed forward-only runner in `@cas/database`,
 a second run was a no-op, and `@cas/worker` validated and imported the three real exports as
-`replay` data: 23,910 rows from the living master RSS ledger, 157 CS79 rows and 181 CS86 rows,
-every logical row stored,
+`replay` data: 23,910 rows from the living RSS ledger and 157 CS79 and 181 CS86 rows from two
+weekly candidate cut-downs, every logical row stored,
 CS79 completing with three quarantined rows whose issues are recorded by code, weekly review
 state kept in its own tables, duplicate URLs kept as separate rows linked by canonical URL,
 and a second import of the same files writing nothing (`docs/SPRINT-2-REPORT.md`, decision
@@ -115,6 +120,35 @@ The charter's must-ship list, whose numbering the Graph release gate uses:
 The runtime order differs from this list. Editorial ingestion and automated classification
 come first; Graph signals run in parallel and corroborate canonical incidents; the human
 reviews a queue at the end (`docs/ARCHITECTURE.md` section 3, decision D15).
+
+## The editorial workflow being automated
+
+```
+living RSS ledger → weekly candidate cut-down → reformatted and deduplicated candidate draft
+   → owner's final editorial decisions → published Substack report
+```
+
+Make continuously aggregates many websites into a living RSS feed, maintained and exported
+through Excel. The owner reviews that living feed and cuts it down to the possible cyberattack
+incidents and other stories of interest for one editorial week. That cut-down is a candidate
+list, not the final word: Claude reformats and deduplicates it, and the owner then makes the
+final selection, ordering and editing before publishing on Substack. The published report is
+the closest available record of the final editorial outcome, and this project does not yet
+hold those reports in machine-readable form.
+
+CS79 and CS86 are two weekly candidate cut-downs. They are not weekly master RSS datasets,
+there are no eighty-eight independent weekly master datasets, and a row kept in one is a
+possible story rather than a confirmed incident. Neither Publisher Category, nor the ledger's
+`ch` working state, nor weekly inclusion is a definitive incident label
+(`docs/DATA_INPUTS.md` sections 1, 3 and 4).
+
+End-to-end evaluation will need the published reports: pairing weekly cut-downs with their
+Substack reports, reconstructing the final include, exclude and grouping outcomes through an
+explicit reviewed mapping, preserving provenance from the ledger through the candidate list to
+the publication, and reserving an untouched group of paired weeks as a holdout before the
+wider archive is opened to development. That split has not been made. Decision D10, which
+fixes the automated week boundary, the late-arriving-story rule and the publication cutoff,
+stays unresolved.
 
 ## Sponsor-track priority
 

@@ -263,6 +263,11 @@ before classifying them. The upgrade and immutability evidence in section 12 com
 working database established in Sprint 2, which already held the same three batches under
 migrations 0001 to 0003. `DATABASE_URL` was never printed.
 
+**A note on the word "master".** The importer's `--kind master` names the source kind of the
+living RSS ledger export, and the batch and run rows below inherit it. It is not a claim that
+the project holds weekly master datasets: there is one living ledger, and CS79 and CS86 are
+weekly candidate cut-downs drawn from it (`DATA_INPUTS.md` section 1).
+
 **Import into the clean database.** 23,910 master rows accepted with no issues; 157 CS79 rows
 with 3 quarantined and 5 issue codes; 181 CS86 rows accepted with no issues. Review snapshots:
 CS79 with 130 selected and 27 rejected, CS86 with 161 selected and 20 rejected. These match
@@ -299,7 +304,9 @@ the whole output: one line each, no identifier, row number, score or rationale c
 | `signals_conflicting`      |     43 |    0 |    0 |
 | `row_quarantined`          |      0 |    3 |    0 |
 
-**Calibration, CS79.** Labelled rows 157: selected 130, rejected 27, unreviewed 0.
+**Calibration, CS79.** A weekly candidate cut-down: 157 rows carrying candidate decisions,
+130 kept, 27 set aside, 0 unreviewed. Every figure below measures agreement with that
+candidate stage.
 
 | Decision | selected | rejected |
 | -------- | -------: | -------: |
@@ -307,10 +314,12 @@ the whole output: one line each, no identifier, row number, score or rationale c
 | exclude  |        1 |        0 |
 | review   |       25 |       21 |
 
-Selected-retention recall **0.992307**, target 0.98, met. Strict include recall 0.8. Include
-precision against selected 0.945454. Needs-review 46, rate 0.292993. Automation rate 0.707006.
+Candidate-retention **0.992307**, target 0.98, met. Strict include recall 0.8. Include
+precision against kept candidates 0.945454. Needs-review 46, rate 0.292993. Automation rate
+0.707006.
 
-**Calibration, CS86.** Labelled rows 181: selected 161, rejected 20, unreviewed 0.
+**Calibration, CS86.** A weekly candidate cut-down: 181 rows, 161 kept, 20 set aside, 0
+unreviewed.
 
 | Decision | selected | rejected |
 | -------- | -------: | -------: |
@@ -318,11 +327,21 @@ precision against selected 0.945454. Needs-review 46, rate 0.292993. Automation 
 | exclude  |        0 |        0 |
 | review   |       44 |       14 |
 
-Selected-retention recall **1.0**, target 0.98, met. Strict include recall 0.726708. Include
-precision against selected 0.951219. Needs-review 58, rate 0.320441. Automation rate 0.679558.
+Candidate-retention **1.0**, target 0.98, met. Strict include recall 0.726708. Include
+precision against kept candidates 0.951219. Needs-review 58, rate 0.320441. Automation rate
+0.679558.
+
+**What these two figures are evidence of.** CS79 and CS86 are weekly _candidate_ cut-downs,
+produced at the second of five editorial stages. A retention figure computed against them
+says how much of the owner's intermediate candidate list a high-recall filter keeps. It is not
+end-to-end editorial accuracy, not publication recall, and not validated incident truth,
+because the owner's final selection, ordering and editing all happen after the candidate draft
+is produced, and the published Substack report is the record of that outcome. This project
+does not yet hold those reports in machine-readable form, so no end-to-end figure exists and
+none is claimed.
 
 **Provenance.** The human review tables were identical before and after classification: 2
-snapshots, 338 entries, 291 selected, 47 rejected. The master `ch` column is not read by any
+snapshots, 338 entries, 291 kept, 47 set aside. The ledger's `ch` column is not read by any
 classification query. Every stored result carries the batch and run that produced it.
 
 ## 8. Judgment calls and deviations
@@ -332,7 +351,8 @@ classification query. Every stored result carries the batch and run that produce
   meaning the text carried explicit sports vocabulary and no security vocabulary of any tier.
   Retention still exceeds the target at 0.992307. The rules were **not** changed in response:
   tightening exclusion after seeing which labelled row it cost would be fitting the classifier
-  to the calibration set, which decision D21 forbids. A future ruleset version may require two
+  to the calibration set, which decision D21 forbids. It would also be fitting it to a
+  candidate decision rather than to a published outcome. A future ruleset version may require two
   distinct out-of-scope signals for exclusion; that would be a general change, would alter the
   ruleset hash and would produce a new run.
 - **One pass per run under a repeatable-read snapshot.** The rejected candidate made two
@@ -364,15 +384,24 @@ classification query. Every stored result carries the batch and run that produce
   0005, including the whole immutability matrix, the schema-capture regressions and the
   source-set freeze, is therefore unproven by continuous integration and must be re-proven by
   any reviewer with a local database.
-- **Calibration is not a training set, and there is no holdout yet.** The weekly editorial
-  cut-down lists supply labels the deterministic rules are measured against, never fitted to.
-  A holdout will come from withholding particular weekly lists from development, not from
-  partitioning the living master ledger, and none has been withheld yet.
-- **Calibration is not a holdout.** CS79 and CS86 are calibration sets. The recall figures
-  describe them, not unseen weeks, and no holdout evaluation has been run; that is Sprint 7.
+- **Calibration is not a training set, and there is no holdout yet.** The weekly candidate
+  cut-downs supply labels the deterministic rules are measured against, never fitted
+  to. A holdout will come from withholding whole paired weeks from development, not from
+  partitioning the living ledger, and none has been withheld yet.
+- **Calibration is not a holdout, and it is not the editorial outcome.** CS79 and CS86 are
+  weekly candidate cut-downs used as calibration sets. Their figures describe the candidate
+  stage on those two weeks, not unseen weeks and not what was published. No end-to-end
+  evaluation has been run, and none can be until weekly cut-downs are paired with their
+  published Substack reports.
+- **The end-to-end evaluation is specified but not scheduled.** It will pair weekly Excel
+  cut-downs with their final Substack reports, reconstruct the include, exclude and
+  incident-grouping outcomes through an explicit reviewed mapping, preserve provenance from
+  the living ledger through the candidate list to the publication, and reserve an untouched
+  group of paired weeks as a holdout before the wider archive is opened to development. That
+  split has not been made and was not invented here.
 - **Precision is not a Sprint 3 target.** The classifier includes 6 rejected rows in each
   calibration week, and the needs-review queue holds about 30 percent of a weekly batch and
-  11,074 rows of the master feed. That is the intended high-recall posture, but the queue is
+  11,074 rows of the ledger batch. That is the intended high-recall posture, but the queue is
   large enough that the Sprint 6 review workflow will need ordering.
 - **Check-in #1 has not been submitted.** `docs/CHECKIN-1-DRAFT.md` is ready; submitting it is
   a human action, due 7 September 2026 at 11:59 PM America/Toronto.
@@ -764,10 +793,11 @@ a run returned the same run identifier and wrote nothing. `calibrate` on the mas
 `count=46` and `count=58`, one line each. The human review tables were unchanged throughout:
 2 snapshots, 338 entries, 291 selected, 47 rejected.
 
-Calibration, recomputed from the final runs: CS79 selected-retention recall **0.992307**,
-strict include recall 0.8, include precision against selected 0.945454, queue rate 0.292993;
-CS86 selected-retention recall **1.0**, strict include recall 0.726708, include precision
-0.951219, queue rate 0.320441. Both meet the 0.98 target.
+Calibration, recomputed from the final runs: CS79 candidate-retention **0.992307**, strict
+include recall 0.8, include precision against kept candidates 0.945454, queue rate 0.292993;
+CS86 candidate-retention **1.0**, strict include recall 0.726708, include precision 0.951219,
+queue rate 0.320441. Both meet the 0.98 target. Both measure the weekly candidate stage only,
+as section 7 explains.
 
 These figures match the two earlier generations exactly, which is the expected result: none of
 the four findings concerned classification behaviour. That the counts are unchanged is proven
