@@ -23,6 +23,7 @@ describe('loadMigrations', () => {
       '0004_classification_integrity.sql',
       '0005_classification_schema_security.sql',
       '0006_incident_clustering.sql',
+      '0007_clustering_integrity.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));
@@ -40,13 +41,18 @@ describe('loadMigrations', () => {
     expect(files[4]?.name).toBe('classification_schema_security');
     expect(files[5]?.version).toBe(6);
     expect(files[5]?.name).toBe('incident_clustering');
+    expect(files[6]?.version).toBe(7);
+    expect(files[6]?.name).toBe('clustering_integrity');
   });
 
   it('pins the checksums of the applied migrations, which must never change', async () => {
     // Migrations 0001 to 0005 were applied to the working database and
-    // accepted with Sprint 3. Editing any of them would be drift on every
-    // existing database, so their bytes are pinned here. Sprint 4 adds
-    // migration 0006, which is additive.
+    // accepted with Sprint 3. Migration 0006 was applied to it during Sprint 4
+    // and its bytes are the ones Codex Desktop's audit recorded, so it is
+    // pinned here too: the Sprint 4 correction is additive in 0007 and may not
+    // touch anything already applied. 0007 is pinned from the moment it is
+    // applied, for the same reason. Editing any of them would be drift on
+    // every existing database.
     for (const [fileName, expected] of [
       [
         '0001_editorial_ingestion.sql',
@@ -67,6 +73,14 @@ describe('loadMigrations', () => {
       [
         '0005_classification_schema_security.sql',
         'f94c3342c1e2eb4d0d884a98b8afb8909d49d217fc0c3fdb094a3359004ae4de',
+      ],
+      [
+        '0006_incident_clustering.sql',
+        'cb88b6a9ba6891cb211372f3542cf1fae78a11fdb3dfe442ae1ce777b0d860b2',
+      ],
+      [
+        '0007_clustering_integrity.sql',
+        '1f066032ae936ce2b68be05c7d76e5c781e4d9277255bee0f5fd3da6e22d1449',
       ],
     ] as const) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, fileName));
