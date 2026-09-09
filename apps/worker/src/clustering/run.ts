@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   clusterEligible,
   CLUSTERING_CONTRACT,
+  ClusteringBoundError,
   contractHash,
   CONTRACT_VERSION,
   ENGINE_VERSION,
@@ -201,7 +202,26 @@ export async function clusterClassificationRun(
           }
         }
 
-        const outcome = clusterEligible(inputs, contract);
+        // A bound the engine cannot satisfy fails the whole transaction: the
+        // `running` run row inserted above is rolled back with it, so no
+        // partial clusters, memberships or links survive and no completed run
+        // is ever written. The message states the fixed condition and the
+        // numeric bound only; nothing derived from a URL or from source text
+        // reaches the output.
+        let outcome;
+        try {
+          outcome = clusterEligible(inputs, contract);
+        } catch (error) {
+          if (error instanceof ClusteringBoundError) {
+            throw new IngestionError(
+              'structural',
+              error.reason,
+              'clustering refused the run: one exact-URL duplicate group exceeds the cluster bound',
+              { bound: error.bound },
+            );
+          }
+          throw error;
+        }
 
         const clusterIds = new Map<string, string>();
         const clusters: NewIncidentCluster[] = outcome.clusters.map((cluster) => {

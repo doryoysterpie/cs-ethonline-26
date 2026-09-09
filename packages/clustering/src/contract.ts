@@ -19,8 +19,8 @@ import { createHash } from 'node:crypto';
  * out rather than hashed for appearance.
  */
 
-export const ENGINE_VERSION = 'clustering-engine@1';
-export const CONTRACT_VERSION = 'clustering-behavior-contract@1';
+export const ENGINE_VERSION = 'clustering-engine@2';
+export const CONTRACT_VERSION = 'clustering-behavior-contract@2';
 export const CLUSTERING_MODE = 'deterministic' as const;
 
 /** Stable machine-readable reasons. Never a source excerpt. */
@@ -34,6 +34,7 @@ export const REASON_CODES = {
   ambiguousBelowThreshold: 'ambiguous_below_threshold',
   ambiguousOutsideTimeWindow: 'ambiguous_outside_time_window',
   blockBoundReached: 'block_bound_reached',
+  clusterBoundReached: 'cluster_bound_reached',
 } as const;
 export type ReasonCode = (typeof REASON_CODES)[keyof typeof REASON_CODES];
 
@@ -163,7 +164,37 @@ export interface RepresentativeContract {
 
 export interface BoundsContract {
   readonly maximumInputs: number;
+  /**
+   * The largest cluster the engine may produce, counted in `clusterSizeUnit`.
+   *
+   * Checked before every union, against the cumulative size of the two
+   * union-find components being joined, not against the size of the pair. The
+   * first audit of Sprint 4 rejected a check that read the pair alone: a chain
+   * of pairs each individually under the bound accumulated a 501-member
+   * component while `boundsReached` stayed at zero.
+   */
   readonly maximumClusterSize: number;
+  /**
+   * What `maximumClusterSize` counts. `rows` counts the source rows that
+   * would end up in the cluster, which is what a membership row is and what a
+   * reader sees. `duplicate-groups` counts exact-URL groups instead, so a
+   * corpus of large duplicate groups can pass a bound that its row count
+   * exceeds many times over.
+   */
+  readonly clusterSizeUnit: 'rows' | 'duplicate-groups';
+  /**
+   * What to do when one exact-URL duplicate group is already larger than
+   * `maximumClusterSize` before any merge is considered.
+   *
+   * A duplicate group is a fact, not an inference: those rows carry the same
+   * canonical URL, so splitting them would publish one report as several and
+   * admitting them would publish a cluster past the declared bound.
+   * `reject-run` refuses the whole run with a fixed condition and the numeric
+   * bound, which is the shipped choice because a failed run is recoverable and
+   * a silently oversized cluster is not. `admit-and-record` keeps the group
+   * whole, admits the oversized cluster and records the bound instead.
+   */
+  readonly oversizedDuplicateGroupBehaviour: 'reject-run' | 'admit-and-record';
   readonly maximumAmbiguousLinks: number;
 }
 
@@ -279,6 +310,8 @@ const CONTRACT: ClusteringContract = {
   bounds: {
     maximumInputs: 250000,
     maximumClusterSize: 500,
+    clusterSizeUnit: 'rows',
+    oversizedDuplicateGroupBehaviour: 'reject-run',
     maximumAmbiguousLinks: 50000,
   },
 };

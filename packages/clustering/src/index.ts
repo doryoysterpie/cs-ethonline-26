@@ -53,8 +53,11 @@ export {
   tokenize,
 } from './text.js';
 export {
+  CLUSTERING_BOUND_REJECTIONS,
+  ClusteringBoundError,
   clusterEligible,
   type AmbiguousLink,
+  type ClusteringBoundRejection,
   type ClusteringOutcome,
   type ClusteringStats,
   type ClusterKind,

@@ -12,7 +12,7 @@ import {
   isDeepFrozen,
   type ClusteringContract,
 } from './contract.js';
-import { clusterEligible } from './engine.js';
+import { ClusteringBoundError, clusterEligible } from './engine.js';
 import { ClusteringInputError, type ClusteringInput } from './input.js';
 
 /**
@@ -156,6 +156,7 @@ function observed(contract: ClusteringContract, inputs: readonly ClusteringInput
     });
   } catch (error) {
     if (error instanceof ClusteringInputError) return `rejected:${error.reason}`;
+    if (error instanceof ClusteringBoundError) return `rejected:${error.reason}`;
     throw error;
   }
 }
@@ -570,6 +571,51 @@ const BEHAVIOUR_MUTATIONS: readonly MutationCase[] = [
     },
   ],
   [
+    // Two exact-URL duplicate groups carrying identical reporting, 300 rows
+    // each. Their union weighs 600 rows but only 2 duplicate groups, so the
+    // two units disagree about whether the shipped 500 bound permits it.
+    'bounds: cluster size unit',
+    (c) => {
+      const next = clone(c);
+      return { ...next, bounds: { ...next.bounds, clusterSizeUnit: 'duplicate-groups' } };
+    },
+    () => {
+      const text =
+        'Kestrelvale Water district notified Bridgeport customers after Volt Typhoon disrupted its billing portal';
+      return ['ldg-a', 'ldg-b'].flatMap((group) =>
+        Array.from({ length: 300 }, (_, index) =>
+          row({
+            id: `${group}-${String(index).padStart(3, '0')}`,
+            urlGroupId: group,
+            normalizedTitle: text,
+            derivedSummaryText: text,
+          }),
+        ),
+      );
+    },
+  ],
+  [
+    // One exact-URL duplicate group already past the shipped bound before any
+    // merge is considered: the shipped policy refuses the run, the alternative
+    // admits the oversized cluster and records the bound.
+    'bounds: oversized duplicate group behaviour',
+    (c) => {
+      const next = clone(c);
+      return {
+        ...next,
+        bounds: { ...next.bounds, oversizedDuplicateGroupBehaviour: 'admit-and-record' },
+      };
+    },
+    () =>
+      Array.from({ length: 501 }, (_, index) =>
+        row({
+          id: `odg-${String(index).padStart(4, '0')}`,
+          urlGroupId: 'odg',
+          normalizedTitle: 'Kestrelvale Water district notified Bridgeport customers',
+        }),
+      ),
+  ],
+  [
     'bounds: maximum ambiguous links',
     (c) => {
       const next = clone(c);
@@ -586,8 +632,8 @@ const IDENTITY_MUTATIONS: readonly [name: string, mutate: Mutation][] = [
 
 describe('the clustering contract is executed, not described', () => {
   it('publishes a stable identity and a reproducible hash', () => {
-    expect(ENGINE_VERSION).toBe('clustering-engine@1');
-    expect(CONTRACT_VERSION).toBe('clustering-behavior-contract@1');
+    expect(ENGINE_VERSION).toBe('clustering-engine@2');
+    expect(CONTRACT_VERSION).toBe('clustering-behavior-contract@2');
     expect(CLUSTERING_MODE).toBe('deterministic');
     expect(contractHash()).toMatch(/^[0-9a-f]{64}$/u);
     expect(new Set(Array.from({ length: 20 }, () => contractHash())).size).toBe(1);

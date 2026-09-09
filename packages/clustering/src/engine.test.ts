@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { CLUSTERING_CONTRACT, REASON_CODES, type ClusteringContract } from './contract.js';
-import { clusterEligible, type ClusteringOutcome, type IncidentCluster } from './engine.js';
+import {
+  CLUSTERING_BOUND_REJECTIONS,
+  ClusteringBoundError,
+  clusterEligible,
+  type ClusteringOutcome,
+  type IncidentCluster,
+} from './engine.js';
 import { ClusteringInputError, type ClusteringInput } from './input.js';
 
 /**
@@ -434,6 +440,246 @@ describe('determinism and safety', () => {
     expect(outcome.stats.boundsReached).toBeGreaterThan(0);
     expect(outcome.stats.comparisons).toBeLessThan((size * (size - 1)) / 2);
     expect(outcome.clusters).toHaveLength(size);
+  });
+});
+
+/**
+ * The cluster bound, which the first Sprint 4 audit found unenforced.
+ *
+ * A chain corpus is built so that report i and report i+1 share two rare
+ * link tokens and a two-token spine carried by every report. That gives each
+ * adjacent pair four shared distinctive tokens, two of them rare, and a
+ * distinctive-token similarity of one half, which clears every incident
+ * criterion; non-adjacent reports share only the spine, whose document
+ * frequency puts it beyond both the blocking-key and the rarity caps, so they
+ * are never even compared. The graph is therefore exactly a chain, and its
+ * component grows one report at a time until something stops it.
+ */
+const SPINE = 'alphaspine betaspine';
+
+function link(index: number): string {
+  return `linkaa${index} linkbb${index}`;
+}
+
+/** A chain of `length` single-row reports, numbered from `first`. */
+function chain(
+  prefix: string,
+  length: number,
+  first: number,
+  extra: (i: number) => string,
+): {
+  rows: ClusteringInput[];
+} {
+  const rows = Array.from({ length }, (_, i) => {
+    const parts = [SPINE];
+    if (i > 0) parts.push(link(first + i - 1));
+    if (i < length - 1) parts.push(link(first + i));
+    parts.push(extra(i));
+    return row({
+      id: `${prefix}-${String(i).padStart(4, '0')}`,
+      normalizedTitle: parts.join(' ').trim(),
+    });
+  });
+  return { rows };
+}
+
+function unbounded(size: number): ClusteringContract {
+  return {
+    ...CLUSTERING_CONTRACT,
+    bounds: { ...CLUSTERING_CONTRACT.bounds, maximumClusterSize: size },
+  };
+}
+
+function memberCount(outcome: ClusteringOutcome): number {
+  return outcome.clusters.reduce((total, cluster) => total + cluster.members.length, 0);
+}
+
+describe('the cluster bound holds over a whole component', () => {
+  it('forms one 501-member component when the bound is lifted', () => {
+    // Establishes that the corpus really does chain; without this the bounded
+    // case below could pass because nothing merged at all.
+    const { rows } = chain('chain', 501, 0, () => '');
+    const outcome = clusterEligible(rows, unbounded(100000));
+    expect(outcome.clusters).toHaveLength(1);
+    expect(outcome.clusters[0]?.members).toHaveLength(501);
+  });
+
+  it('refuses the union that would make a 501-member component, and says so', () => {
+    const { rows } = chain('chain', 501, 0, () => '');
+    const outcome = clusterEligible(rows);
+    expect(memberCount(outcome)).toBe(501);
+    expect(outcome.stats.largestClusterSize).toBeLessThanOrEqual(
+      CLUSTERING_CONTRACT.bounds.maximumClusterSize,
+    );
+    for (const cluster of outcome.clusters) {
+      expect(cluster.members.length).toBeLessThanOrEqual(
+        CLUSTERING_CONTRACT.bounds.maximumClusterSize,
+      );
+    }
+    expect(outcome.stats.boundsReached).toBeGreaterThan(0);
+    expect(
+      outcome.clusters.some((cluster) =>
+        cluster.reasonCodes.includes(REASON_CODES.clusterBoundReached),
+      ),
+    ).toBe(true);
+  });
+
+  it('admits a component of exactly the maximum without recording a bound', () => {
+    const { rows } = chain('exact', 500, 0, () => '');
+    const outcome = clusterEligible(rows);
+    expect(outcome.clusters).toHaveLength(1);
+    expect(outcome.clusters[0]?.members).toHaveLength(500);
+    expect(outcome.stats.largestClusterSize).toBe(500);
+    expect(outcome.stats.boundsReached).toBe(0);
+    expect(outcome.clusters[0]?.reasonCodes).not.toContain(REASON_CODES.clusterBoundReached);
+  });
+
+  /**
+   * Two chains joined by one bridge whose blocking keys sort after every link
+   * key, so both components are complete before the bridge is considered:
+   * 300 and 201 rows, whose union would be 501.
+   */
+  function bridged(): ClusteringInput[] {
+    const bridge = 'zzbridgeaa zzbridgebb';
+    const left = chain('left', 300, 0, (i) => (i === 299 ? bridge : '')).rows;
+    const right = chain('right', 201, 1000, (i) => (i === 0 ? bridge : '')).rows;
+    return [...left, ...right];
+  }
+
+  it('refuses to join two components whose union would exceed the maximum', () => {
+    const outcome = clusterEligible(bridged());
+    expect(outcome.clusters.map((cluster) => cluster.members.length).sort((a, b) => a - b)).toEqual(
+      [201, 300],
+    );
+    expect(outcome.stats.boundsReached).toBeGreaterThan(0);
+    for (const cluster of outcome.clusters) {
+      expect(cluster.reasonCodes).toContain(REASON_CODES.clusterBoundReached);
+    }
+    // The same two components join when the bound permits it, so the refusal
+    // is the bound's doing and not a missing signal.
+    const lifted = clusterEligible(bridged(), unbounded(100000));
+    expect(lifted.clusters).toHaveLength(1);
+    expect(lifted.clusters[0]?.members).toHaveLength(501);
+  });
+
+  it('refuses the same unions whatever order the inputs arrive in', () => {
+    const base = bridged();
+    const expected = JSON.stringify(clusterEligible(base));
+    const reversed = [...base].reverse();
+    // A fixed interleave, not a random shuffle: the test must be reproducible.
+    const interleaved = [
+      ...base.filter((_, index) => index % 3 === 2),
+      ...base.filter((_, index) => index % 3 === 0),
+      ...base.filter((_, index) => index % 3 === 1),
+    ];
+    for (const ordering of [reversed, interleaved]) {
+      expect(JSON.stringify(clusterEligible(ordering))).toBe(expected);
+    }
+  });
+
+  it('refuses the whole run when one exact-URL group already exceeds the maximum', () => {
+    const rows = Array.from({ length: 501 }, (_, index) =>
+      row({
+        id: `dup-${String(index).padStart(4, '0')}`,
+        urlGroupId: 'one-canonical-url',
+        normalizedTitle: 'Kestrelvale Water district notified Bridgeport customers',
+      }),
+    );
+    let thrown: unknown;
+    try {
+      clusterEligible(rows);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ClusteringBoundError);
+    const error = thrown as ClusteringBoundError;
+    expect(error.reason).toBe(CLUSTERING_BOUND_REJECTIONS.exactDuplicateGroupExceedsLimit);
+    expect(error.bound).toBe(500);
+    // The message identifies the condition and the numeric bound, nothing else.
+    expect(error.message).toBe(
+      'clustering refused: exact_duplicate_group_exceeds_limit (maximumClusterSize=500)',
+    );
+    expect(error.message).not.toContain('Kestrelvale');
+    expect(error.message).not.toContain('one-canonical-url');
+    expect(error.message).not.toContain('dup-');
+    // Exactly at the maximum the same group is admitted.
+    expect(clusterEligible(rows.slice(0, 500)).clusters[0]?.members).toHaveLength(500);
+  });
+
+  it('never returns a cluster larger than the configured maximum', () => {
+    for (const inputs of [chain('mixed', 501, 0, () => '').rows, bridged()]) {
+      const outcome = clusterEligible(inputs);
+      for (const cluster of outcome.clusters) {
+        expect(cluster.members.length).toBeLessThanOrEqual(
+          CLUSTERING_CONTRACT.bounds.maximumClusterSize,
+        );
+      }
+    }
+  });
+});
+
+describe('the documented complexity bound', () => {
+  /**
+   * The claim under test is O(G·K·B²): with the contract's K blocking keys per
+   * item and its maximum block size B, the pair loop performs at most
+   * B(B−1)/2 iterations for each of at most G·K blocks. The earlier O(G·C)
+   * claim was wrong because an exhausted comparison budget skips a comparison
+   * without ending the scan, which is exactly what the second case shows.
+   */
+  const CORPUS = 1500;
+
+  /**
+   * `CORPUS` reports of which `blockSize` carry one further token. That token's
+   * document frequency stays inside the blocking-key ratio, so it forms one
+   * admitted block of exactly `blockSize`; every other token is either carried
+   * by the whole corpus, which puts it beyond the ratio, or unique to one
+   * report, whose bucket holds too little to pair. Nothing here syndicates, so
+   * both passes see the same block.
+   */
+  function blocked(blockSize: number): ClusteringInput[] {
+    return Array.from({ length: CORPUS }, (_, index) =>
+      row({
+        id: `blk-${String(index).padStart(4, '0')}`,
+        normalizedTitle: `Quarterly notice ${String(index).padStart(4, '0')} mentioning ${
+          index < blockSize ? 'kestrelvale' : 'ordinary'
+        } operations`,
+      }),
+    );
+  }
+
+  it('performs exactly the pair iterations K and B permit, and no more', () => {
+    const { blocking } = CLUSTERING_CONTRACT;
+    for (const blockSize of [40, 90, 120]) {
+      const outcome = clusterEligible(blocked(blockSize));
+      const groups = outcome.stats.duplicateGroups;
+      expect(groups).toBe(CORPUS);
+      // One admitted block per pass, scanned whole: b(b-1)/2 iterations each.
+      expect(outcome.stats.pairIterations).toBe(blockSize * (blockSize - 1));
+      // Inside the documented O(G·K·B²) envelope for the two passes.
+      expect(outcome.stats.pairIterations).toBeLessThanOrEqual(
+        2 *
+          groups *
+          blocking.keysPerItem *
+          ((blocking.maximumBlockSize * (blocking.maximumBlockSize - 1)) / 2),
+      );
+      // And far under the pairwise cost of the corpus, which is the claim the
+      // blocking bound exists to make.
+      expect(outcome.stats.pairIterations).toBeLessThan((CORPUS * (CORPUS - 1)) / 2);
+    }
+  });
+
+  it('keeps scanning after the comparison budget is spent, which O(G·C) would deny', () => {
+    const inputs = blocked(120);
+    const generous = clusterEligible(inputs);
+    const stingy = clusterEligible(inputs, {
+      ...CLUSTERING_CONTRACT,
+      blocking: { ...CLUSTERING_CONTRACT.blocking, maximumComparisonsPerItem: 1 },
+    });
+    expect(stingy.stats.comparisons).toBeLessThan(generous.stats.comparisons);
+    // Same blocks, same scan: only the admitted subset shrank. An O(G·C) bound
+    // would require the loop to end with the budget; it does not.
+    expect(stingy.stats.pairIterations).toBe(generous.stats.pairIterations);
+    expect(stingy.stats.pairIterations).toBeGreaterThan(stingy.stats.comparisons);
   });
 });
 

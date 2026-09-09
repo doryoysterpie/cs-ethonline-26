@@ -40,14 +40,31 @@ import {
  * near-miss stays separate and becomes an ambiguous link for a human, and
  * every bound that stops work is recorded rather than hidden.
  *
+ * **Cluster size.** `bounds.maximumClusterSize` is checked before every union,
+ * against the cumulative size of the two union-find components being joined
+ * and counted in `bounds.clusterSizeUnit`. Checking the pair alone was the
+ * defect the first Sprint 4 audit found: a chain of pairs each under the bound
+ * accumulated a component past it while nothing was recorded. A refused union
+ * leaves both components standing, increments `boundsReached` and marks the
+ * resulting clusters `cluster_bound_reached`. An exact-URL duplicate group
+ * that already exceeds the bound is not a merge decision at all, so it is
+ * handled by `bounds.oversizedDuplicateGroupBehaviour` instead.
+ *
  * **Complexity.** Let N be the eligible inputs, G the duplicate groups, K the
  * contract's `blocking.keysPerItem`, B its `maximumBlockSize` and C its
  * `maximumComparisonsPerItem`. Assembly, tokenization and grouping are O(N)
  * in the bounded token count. Each blocking pass builds an inverted index in
- * O(G·K) and compares at most min(B, block size) candidates per key with a
- * hard cap of C comparisons per item, so pair work is O(G·C) and never
- * quadratic in N. Blocks larger than B are skipped as uninformative and
- * reported through `block_bound_reached`.
+ * O(G·K), which yields at most G·K blocking keys. A block holding more than B
+ * items is skipped whole as uninformative and reported through
+ * `block_bound_reached`, so every scanned block holds at most B items and
+ * costs at most B(B−1)/2 pair iterations. Pair work is therefore bounded by
+ * O(G·K·B²). C bounds only how many of those iterations become admitted
+ * comparisons: an exhausted per-item budget skips the comparison, it does not
+ * stop the scan, so O(G·C) understates the loop and is not claimed.
+ * With K and B fixed by the contract, cost grows linearly in G and is never
+ * quadratic in N, while the work inside one block is quadratic in B.
+ * `stats.pairIterations` reports the iterations actually performed and a
+ * regression holds it to this bound.
  */
 
 export type ClusterKind =
@@ -96,7 +113,39 @@ export interface ClusteringStats {
   readonly largestClusterSize: number;
   readonly ambiguousLinks: number;
   readonly comparisons: number;
+  /**
+   * Inner pair-loop iterations across both blocking passes, whether or not the
+   * iteration became a comparison. This is the quantity the documented
+   * O(G·K·B²) bound describes; `comparisons` is the smaller admitted subset.
+   */
+  readonly pairIterations: number;
   readonly boundsReached: number;
+}
+
+/** Conditions under which the engine refuses to produce a result at all. */
+export const CLUSTERING_BOUND_REJECTIONS = {
+  exactDuplicateGroupExceedsLimit: 'exact_duplicate_group_exceeds_limit',
+} as const;
+export type ClusteringBoundRejection =
+  (typeof CLUSTERING_BOUND_REJECTIONS)[keyof typeof CLUSTERING_BOUND_REJECTIONS];
+
+/**
+ * A bound the engine cannot satisfy without changing what it reports.
+ *
+ * The message names the fixed condition and the numeric bound only. No URL,
+ * group key, identifier, token or count derived from source text appears in
+ * it, so the failure can be printed and logged wherever an ordinary error can.
+ */
+export class ClusteringBoundError extends Error {
+  readonly reason: ClusteringBoundRejection;
+  readonly bound: number;
+
+  constructor(reason: ClusteringBoundRejection, bound: number) {
+    super(`clustering refused: ${reason} (maximumClusterSize=${bound})`);
+    this.name = 'ClusteringBoundError';
+    this.reason = reason;
+    this.bound = bound;
+  }
 }
 
 export interface ClusteringOutcome {
@@ -147,11 +196,22 @@ function similarityOfSorted(left: Int32Array, right: Int32Array): number {
   return union === 0 ? 0 : shared / union;
 }
 
+/**
+ * Union-find that also carries the size of each component, so the cluster
+ * bound can be tested against what a merge would actually produce rather than
+ * against the two items in front of it.
+ *
+ * `size` is whatever the caller weighs a node by: source rows under the
+ * shipped `clusterSizeUnit: 'rows'`, or one per duplicate group under
+ * `duplicate-groups`. Only the root of a component carries the total.
+ */
 class UnionFind {
   private readonly parent: number[];
+  private readonly size: number[];
 
-  constructor(size: number) {
-    this.parent = Array.from({ length: size }, (_, index) => index);
+  constructor(weights: readonly number[]) {
+    this.parent = Array.from({ length: weights.length }, (_, index) => index);
+    this.size = [...weights];
   }
 
   find(node: number): number {
@@ -166,13 +226,37 @@ class UnionFind {
     return root;
   }
 
+  /** Total weight of the component holding `node`. */
+  componentSize(node: number): number {
+    return this.size[this.find(node)] ?? 0;
+  }
+
+  /**
+   * Whether joining these two components would stay inside `maximum`. Two
+   * nodes already in one component always may: nothing grows. Read before
+   * every `union`, which is why the bound holds over a chain of merges and not
+   * only over the pair that proposed one.
+   */
+  canUnion(left: number, right: number, maximum: number): boolean {
+    const a = this.find(left);
+    const b = this.find(right);
+    if (a === b) return true;
+    return (this.size[a] ?? 0) + (this.size[b] ?? 0) <= maximum;
+  }
+
   /** Always attaches the higher index to the lower, so results never depend on call order. */
   union(left: number, right: number): boolean {
     const a = this.find(left);
     const b = this.find(right);
     if (a === b) return false;
-    if (a < b) this.parent[b] = a;
-    else this.parent[a] = b;
+    const total = (this.size[a] ?? 0) + (this.size[b] ?? 0);
+    if (a < b) {
+      this.parent[b] = a;
+      this.size[a] = total;
+    } else {
+      this.parent[a] = b;
+      this.size[b] = total;
+    }
     return true;
   }
 }
@@ -225,7 +309,7 @@ function candidatePairs(
   units: readonly Unit[],
   contract: ClusteringContract,
   onBound: () => void,
-): { pairs: [number, number][]; comparisons: number } {
+): { pairs: [number, number][]; comparisons: number; iterations: number } {
   const blocking = contract.blocking;
   const frequency = new Map<string, number>();
   for (const unit of units) {
@@ -260,6 +344,10 @@ function candidatePairs(
   const budget = new Map<number, number>();
   const pairs: [number, number][] = [];
   let comparisons = 0;
+  // Every inner-loop step, admitted or not. This is the quantity the
+  // documented O(G·K·B²) bound describes, and counting it is what lets a test
+  // hold the loop to that bound instead of to an asymptotic claim about C.
+  let iterations = 0;
   for (const key of [...index.keys()].sort()) {
     const bucket = index.get(key) ?? [];
     if (bucket.length < 2) continue;
@@ -270,6 +358,7 @@ function candidatePairs(
     const sorted = [...bucket].sort((a, b) => a - b);
     for (let i = 0; i < sorted.length; i += 1) {
       for (let j = i + 1; j < sorted.length; j += 1) {
+        iterations += 1;
         const left = sorted[i] as number;
         const right = sorted[j] as number;
         const spentLeft = budget.get(left) ?? 0;
@@ -291,7 +380,7 @@ function candidatePairs(
       }
     }
   }
-  return { pairs, comparisons };
+  return { pairs, comparisons, iterations };
 }
 
 /** Groups unit indexes by their union-find component, in deterministic order. */
@@ -350,16 +439,53 @@ export function clusterEligible(
     });
   }
 
+  // ------------------------------------------------------- the cluster bound
+  // What `maximumClusterSize` counts, per unit. Under the shipped `rows` it is
+  // the source rows the unit would contribute to a cluster; under
+  // `duplicate-groups` every unit weighs one.
+  const maximumClusterSize = contract.bounds.maximumClusterSize;
+  const rowsCounted = contract.bounds.clusterSizeUnit === 'rows';
+  const unitWeights = units.map((unit) => (rowsCounted ? unit.members.length : 1));
+  // Units and reports whose merge was refused by the bound. Their clusters
+  // carry `cluster_bound_reached`, so a reader can tell a cluster the engine
+  // stopped growing from one it simply never had a reason to grow.
+  const boundRefusedUnits = new Set<number>();
+  const boundRefusedReports = new Set<number>();
+
+  // An exact-URL duplicate group is a fact rather than an inference: those
+  // rows carry the same canonical URL. Splitting it would publish one report
+  // as several; admitting it would publish a cluster past the declared bound.
+  // The contract decides, and the shipped choice refuses the run.
+  for (let index = 0; index < units.length; index += 1) {
+    if ((unitWeights[index] ?? 0) <= maximumClusterSize) continue;
+    if (contract.bounds.oversizedDuplicateGroupBehaviour === 'reject-run') {
+      throw new ClusteringBoundError(
+        CLUSTERING_BOUND_REJECTIONS.exactDuplicateGroupExceedsLimit,
+        maximumClusterSize,
+      );
+    }
+    boundRefusedUnits.add(index);
+    onBound();
+  }
+
   // ---------------------------------------------------------------- stage 2
   // Syndication: substantially identical wording behind different URLs.
-  const syndicationSets = new UnionFind(units.length);
+  const syndicationSets = new UnionFind(unitWeights);
   const stage2 = candidatePairs(units, contract, onBound);
   let comparisons = stage2.comparisons;
+  let pairIterations = stage2.iterations;
   for (const [left, right] of stage2.pairs) {
     const a = units[left] as Unit;
     const b = units[right] as Unit;
     const score = similarityOfSorted(a.shingleHashes, b.shingleHashes);
-    if (score >= contract.similarity.syndicationThreshold) syndicationSets.union(left, right);
+    if (score < contract.similarity.syndicationThreshold) continue;
+    if (!syndicationSets.canUnion(left, right, maximumClusterSize)) {
+      boundRefusedUnits.add(left);
+      boundRefusedUnits.add(right);
+      onBound();
+      continue;
+    }
+    syndicationSets.union(left, right);
   }
 
   interface Report {
@@ -403,7 +529,10 @@ export function clusterEligible(
 
   // ---------------------------------------------------------------- stage 3
   // Incident grouping: separate reports that plausibly describe one event.
-  const incidentSets = new UnionFind(reports.length);
+  const reportWeights = reports.map((report) =>
+    report.unitIndexes.reduce((total, index) => total + (unitWeights[index] ?? 0), 0),
+  );
+  const incidentSets = new UnionFind(reportWeights);
   const reportUnits: Unit[] = reports.map((report) => ({
     index: report.index,
     key: report.fingerprint,
@@ -440,6 +569,7 @@ export function clusterEligible(
 
   const stage3 = candidatePairs(reportUnits, contract, onBound);
   comparisons += stage3.comparisons;
+  pairIterations += stage3.iterations;
   const ambiguousLinks: AmbiguousLink[] = [];
   const mergedByIncidentSignals = new Set<number>();
   const mergedWithTimeProximity = new Set<number>();
@@ -459,10 +589,13 @@ export function clusterEligible(
     const withinWindow = bothTimed
       ? Math.abs((a.earliest ?? 0) - (b.earliest ?? 0)) <= window
       : contract.incident.missingTimestampBehaviour === 'allow';
-    const sizeAfterMerge = (a.unitIndexes.length + b.unitIndexes.length) * 1; // units, not rows, bound the merge
-    const withinSizeBound = sizeAfterMerge <= contract.bounds.maximumClusterSize;
+    // The bound is read from the two components these reports currently
+    // belong to, not from the pair, so a chain of individually small merges
+    // cannot accumulate a component past `maximumClusterSize`.
+    const withinSizeBound = incidentSets.canUnion(left, right, maximumClusterSize);
+    const supported = enoughSignals && enoughSimilarity && withinWindow;
 
-    if (enoughSignals && enoughSimilarity && withinWindow && withinSizeBound) {
+    if (supported && withinSizeBound) {
       if (incidentSets.union(left, right)) {
         mergedByIncidentSignals.add(incidentSets.find(left));
         if (bothTimed) mergedWithTimeProximity.add(incidentSets.find(left));
@@ -470,7 +603,11 @@ export function clusterEligible(
       }
       continue;
     }
-    if (!withinSizeBound) {
+    // Only a merge the evidence would otherwise have made is a bound. A pair
+    // that was never going to merge is not one, so it is not counted as one.
+    if (supported) {
+      boundRefusedReports.add(left);
+      boundRefusedReports.add(right);
       onBound();
       continue;
     }
@@ -555,6 +692,14 @@ export function clusterEligible(
       if (mergedWithTimeProximity.has(root)) codes.push(REASON_CODES.timeProximity);
       if (mergedWithoutTimestamp.has(root)) codes.push(REASON_CODES.timestampAbsent);
     }
+    // A cluster the size bound stopped from growing says so, so it is not read
+    // as a cluster the evidence simply never joined to anything.
+    if (
+      ordered.some((index) => boundRefusedReports.has(index)) ||
+      componentUnits.some((unit) => boundRefusedUnits.has(unit.index))
+    ) {
+      codes.push(REASON_CODES.clusterBoundReached);
+    }
 
     const representative = representativeOf(
       componentUnits.map((unit) => unit.representative),
@@ -604,6 +749,7 @@ export function clusterEligible(
       ),
       ambiguousLinks: ambiguousLinks.length,
       comparisons,
+      pairIterations,
       boundsReached,
     },
   };
