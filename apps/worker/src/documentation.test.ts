@@ -115,8 +115,47 @@ describe('current documentation agrees with itself', () => {
     }
   });
 
-  it('states Sprint 3 as the accepted base at its audited SHA', async () => {
+  it('states the accepted Sprint 3 base and the verified current test counts', async () => {
     const report = await read('docs/SPRINT-4-REPORT.md');
     expect(report).toContain('71394c9b8e732bc7508b6276eafcbbac414c3a07');
+
+    // The reproduction instructions are located by their heading rather than
+    // by a line number, so renumbering a section cannot silently move this
+    // check onto the wrong text. The section runs to the next heading, or to
+    // the end of the document when it is the last one.
+    const heading = /^##\s+\d*\.?\s*Reproduction for Codex Desktop\s*$/mu;
+    const start = report.search(heading);
+    expect(start, 'the reproduction section must be findable by its heading').toBeGreaterThan(-1);
+    const rest = report.slice(start);
+    const nextHeading = rest.slice(1).search(/^##\s/mu);
+    const reproduction = nextHeading === -1 ? rest : rest.slice(0, nextHeading + 1);
+
+    // The instruction a reader would follow today must state what the runner
+    // actually reports: 141 PostgreSQL tests, 80 in the database package and
+    // 61 in the worker.
+    expect(reproduction, 'the reproduction step must state 141 PostgreSQL tests').toMatch(
+      /141 tests/u,
+    );
+    expect(reproduction).toMatch(/80 in `@cas\/database`/u);
+    expect(reproduction).toMatch(/61 in `@cas\/worker`/u);
+    // Codex Desktop found this instruction still claiming the pre-correction
+    // count. No stale figure may reappear in the text a reader acts on.
+    for (const stale of [/\b123\b/u, /\b363\b/u]) {
+      expect(
+        stale.test(reproduction),
+        `the reproduction section must not state ${String(stale)}`,
+      ).toBe(false);
+    }
+
+    // The same figures elsewhere in the current record must agree with it.
+    expect(report).toContain('| **Total**             | **390** |    **141** |');
+    expect(report).toContain('The 141 PostgreSQL tests run only through');
+
+    // The pre-correction counts remain, but only as historical before-and-after
+    // evidence. That row is what the audit explicitly permitted to stay.
+    expect(report).toContain(
+      '| PostgreSQL tests | 123                                                                | 141',
+    );
+    expect(report).toContain('| Offline tests    | 363 claimed, 362 passing');
   });
 });

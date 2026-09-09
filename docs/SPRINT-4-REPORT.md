@@ -628,7 +628,8 @@ merge and split demonstration; then `git diff --check`, `git fsck --full` and
    from `@cas/clustering`, or hash the canonical contract yourself. It must equal section 3.
 3. With a local PostgreSQL 17 and `DATABASE_URL` in an ignored `.env`, run
    `corepack pnpm db:migrate` twice (seven applied, then no-op), `db:check`, and `test:db`
-   (123 tests, which create and drop only `cas_test_*` schemas). One file creates a schema
+   (141 tests: 80 in `@cas/database` and 61 in `@cas/worker`, which create and drop only
+   `cas_test_*` schemas). One file creates a schema
    named after the connecting role to reproduce the Sprint 3 capture, and drops it again.
 4. For the real-data evidence, point `DATABASE_URL` at a database holding the Sprint 2 import
    and the accepted Sprint 3 classification runs, then run `clustering run` for each
