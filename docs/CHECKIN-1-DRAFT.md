@@ -1,8 +1,10 @@
 # Project Check-in #1 draft
 
-**Status: draft, not submitted.** Submission is a human action on the ETHGlobal platform.
-Deadline: **7 September 2026, 11:59 PM America/Toronto**. This draft was prepared on
-7 September 2026 and describes only work that is complete and verified in the repository.
+**Status: SUBMITTED, confirmed by the project owner on 8 September 2026.** The owner states
+this check-in was submitted successfully through the ETHGlobal platform. No submission
+timestamp or receipt identifier is recorded here, because none was supplied and none may be
+invented. Deadline was **7 September 2026, 11:59 PM America/Toronto**. The text below is the
+draft as prepared on 7 September 2026 and is kept unchanged as the record of what was sent.
 
 Project: **Cyberattack Sunday: Onchain Incident Intelligence** (working name CAS Chainwatch).
 Repository: `https://github.com/doryoysterpie/cs-ethonline-26`, public, Apache-2.0.
@@ -100,8 +102,10 @@ reviewed mapping, keeping provenance from the living ledger through the candidat
 publication. A group of paired weeks will be reserved untouched for holdout evaluation before
 the wider archive is opened to development. That split has not been made yet.
 
-## HUMAN ACTION REQUIRED
+## Human action: complete
 
-**The project owner must paste this check-in into the ETHGlobal submission portal today,
-before 7 September 2026, 11:59 PM America/Toronto.** Nothing in this repository submits
-anything, and no part of this draft should be read as saying the check-in was submitted.
+This check-in was submitted by the project owner, who confirmed it on 8 September 2026.
+Nothing in this repository submits anything; the confirmation above is the owner's statement,
+recorded as given and without an invented timestamp or receipt. The next check-in is
+**Thursday 10 September 2026**; its cutoff time is unconfirmed and must be read from the
+portal. Its draft is `docs/CHECKIN-2-DRAFT.md`, which has **not** been submitted.

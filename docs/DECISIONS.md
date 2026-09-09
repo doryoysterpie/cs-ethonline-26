@@ -675,3 +675,51 @@ entries are unchanged except for status pointers.
   feed are explicitly out of Sprint 4. D9 and D10 both stay unresolved.
 - **Decided by:** Project owner, Sprint 4 implementation instruction of 2026-09-08.
 - **Supersedes:** none. Builds on D15, D21 and the accepted Sprint 3 result.
+
+## D23 Administrative-event watchlist: accepted scope deviation
+
+- **Date:** 2026-09-08
+- **Status:** ACCEPTED
+- **Decision:** The project owner selected the explicit scope deviation offered as option B in
+  section 10 of `SPRINT-4-REPORT.md`, in answer to the choice D20 left to Sprint 4.
+  - **What ships.** The hackathon build retains the seven protocol identities already proven
+    live through the standardized TVL lane: Aave v3, Spark, MakerDAO, Compound v3 and Liquity
+    on Ethereum; Seamless and Moonwell on Base.
+  - **Two different capabilities.** The standardized TVL lane and an administrative-event lane
+    are not the same thing. The TVL lane reads protocol identity, total value locked and daily
+    financial snapshots from the Messari standardized lending schema. It emits no
+    administrative event, and in particular it does not read `Upgraded`,
+    `OwnershipTransferred`, `Paused` or token-outflow events.
+  - **No misrepresentation.** No document, submission, README or demo may present TVL coverage
+    as administrative-event coverage, or describe the seven proven identities as an
+    administrative-event watchlist.
+  - **Removed from must-ship scope.** Plan 2.0's ten-protocol administrative-event watchlist is
+    removed from the hackathon must-ship scope as of this date. It is not delivered, and no
+    document may claim otherwise.
+  - **Moved to the post-event roadmap.** The administrative-event lane is deferred to after the
+    event rather than abandoned.
+  - **Nothing fabricated.** No protocol entry, contract address, event signature or live-proof
+    claim is invented to reach a count, and no third-party administrative-event infrastructure
+    is introduced during the remaining gate period.
+  - **What a future implementation must do.** Independently verify each protocol's official
+    contracts, its deployment provenance, the administrative events those contracts actually
+    emit, and live Graph coverage for them, before any watchlist claim is made.
+- **Rationale:** Schedule protection. Building and validating a separate administrative-event
+  lane now means a second query document, verified contract addresses and event signatures for
+  ten protocols, a provider that indexes them, and deployment provenance for each. That is a
+  sprint of its own, and starting it now would jeopardise the Graph release gate at the end of
+  10 September and the primary Cyberattack Sunday deliverable. Declaring the gap plainly costs
+  the submission a claim it could not honestly make anyway.
+- **Consequences:** The seven-protocol live Graph evidence from Sprint 1 is unchanged and
+  remains the project's live Graph capability. The Sprint 4 clustering implementation, the
+  database schema, the classification results and every real-data figure are unchanged: this
+  decision alters documentation and scope, not code. `SPRINT_BOARD.md` no longer carries the
+  watchlist as a Sprint 4 exit item, and `HACKATHON_REQUIREMENTS.md` records the deviation
+  where the requirement was. Sprint 4's clustering work remains pending independent Codex
+  Desktop audit.
+- **Decided by:** Project owner, 8 September 2026, after the three-option recommendation in
+  `SPRINT-4-REPORT.md` section 10.
+- **Supersedes:** the Sprint 4 obligation in D20 to expand the watchlist. D20's statement that
+  the standardized-TVL watchlist does not satisfy and must not silently replace the
+  administrative-event watchlist stands unchanged, and is the reason this deviation is recorded
+  explicitly rather than absorbed quietly.

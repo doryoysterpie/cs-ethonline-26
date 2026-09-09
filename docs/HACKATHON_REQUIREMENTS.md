@@ -67,13 +67,17 @@ gaps where a row was withdrawn.
 
 ## B. The Graph: Best Use of Composable or Standardized Graph Products, $5,000
 
-**Watchlist status, 8 September 2026.** Seven protocol identities are proven live on the
-standardized-TVL lane. Plan 2.0's separate ten-protocol _administrative-event_ watchlist is
-**not** delivered and is **blocked on an owner decision**: the live query document reads the
-Messari standardized lending schema, which exposes no administrative event, so no number of
-additional deployments on that lane could satisfy it, and D20 forbids presenting one lane as
-the other. Section 10 of `SPRINT-4-REPORT.md` records three options and a recommendation. No
-document may claim the ten-protocol administrative-event requirement has been delivered.
+**Watchlist status, 8 September 2026: accepted scope deviation (D23).** Seven protocol
+identities are proven live on the standardized TVL lane, and that lane is the project's live
+Graph capability. Plan 2.0's separate ten-protocol _administrative-event_ watchlist was planned
+and is **not** delivered: the live query document reads the Messari standardized lending
+schema, which emits no administrative event, and it does not read `Upgraded`,
+`OwnershipTransferred`, `Paused` or token-outflow events. On 8 September 2026 the project owner
+removed that watchlist from hackathon must-ship scope and moved it to the post-event roadmap,
+to protect the 10 September Graph release gate. The two lanes are different capabilities and
+neither may be presented as the other; no document, submission or demo may claim the
+ten-protocol administrative-event requirement has been delivered. Decision D23 and section 10
+of `SPRINT-4-REPORT.md` record the deviation.
 
 The track qualifies through **either** of two routes. The project's primary route is the
 second; a second Graph product is not required.
@@ -154,11 +158,11 @@ not applicable to a Start Fresh project.
 
 ## I. Official schedule (America/Toronto)
 
-| #   | Milestone                                        | Source | Requirement verification                                                        | Delivery | Evidence                                                                                                   |
-| --- | ------------------------------------------------ | ------ | ------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
-| I1  | Hacking began 4 September 2026, 12:00 PM         | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | n/a      | Repository created 20:33 the same day                                                                      |
-| I2  | Project Check-in #1: 7 September, 11:59 PM       | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | PLANNED  | Sprint 3 exit gate. `docs/CHECKIN-1-DRAFT.md` is ready; submitting it is a human action, still outstanding |
-| I3  | Project Check-in #2: 10 September, 11:59 PM      | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | PLANNED  | Sprint 6 exit gate, with the Graph release gate                                                            |
-| I4  | Final project submission: 13 September, 12:00 PM | EVENT  | VERIFIED FROM EVENT MATERIAL (also on the information page as "12:00 pm EDT")   | PLANNED  | Sprint 9 exit gate; 14 to 16 September are not build or submission time                                    |
-| I5  | Judging begins: 13 September, 3:00 PM            | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | n/a      | none                                                                                                       |
-| I6  | Team size                                        | EVENT  | UNVERIFIED                                                                      | n/a      | Not stated on the fetched pages                                                                            |
+| #   | Milestone                                        | Source | Requirement verification                                                        | Delivery  | Evidence                                                                                                   |
+| --- | ------------------------------------------------ | ------ | ------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
+| I1  | Hacking began 4 September 2026, 12:00 PM         | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | n/a       | Repository created 20:33 the same day                                                                      |
+| I2  | Project Check-in #1: 7 September, 11:59 PM       | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | DELIVERED | Sprint 3 exit gate. `docs/CHECKIN-1-DRAFT.md` is ready; submitting it is a human action, still outstanding |
+| I3  | Project Check-in #2: 10 September, 11:59 PM      | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | PLANNED   | Sprint 6 exit gate, with the Graph release gate                                                            |
+| I4  | Final project submission: 13 September, 12:00 PM | EVENT  | VERIFIED FROM EVENT MATERIAL (also on the information page as "12:00 pm EDT")   | PLANNED   | Sprint 9 exit gate; 14 to 16 September are not build or submission time                                    |
+| I5  | Judging begins: 13 September, 3:00 PM            | EVENT  | VERIFIED FROM EVENT MATERIAL (transcribed by the project owner; fetch HTTP 500) | n/a       | none                                                                                                       |
+| I6  | Team size                                        | EVENT  | UNVERIFIED                                                                      | n/a       | Not stated on the fetched pages                                                                            |

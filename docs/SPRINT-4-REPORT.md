@@ -20,7 +20,7 @@ count-only evidence from the three imported real batches.
 | Migration added   | `packages/database/migrations/0006_incident_clustering.sql`             |
 | Migrations 1 to 5 | unchanged; checksums verified against the accepted values               |
 | Model calls       | none; no SDK, no model path, no credential read                         |
-| Watchlist         | **BLOCKED — OWNER DECISION** (section 10)                               |
+| Watchlist         | administrative-event lane deferred by accepted scope deviation (D23)    |
 
 ## 1. Sprint 3's status
 
@@ -301,34 +301,47 @@ On a synthetic 16-row fixture batch, classified and clustered through the compil
 Base memberships stayed at 16 throughout, and every effective view accounted for all 16 with
 no membership lost or duplicated.
 
-## 10. The ten-protocol watchlist: BLOCKED — OWNER DECISION
+## 10. The administrative-event watchlist: accepted scope deviation (D23)
 
-D20 requires Sprint 4 either to expand Plan 2.0's ten-protocol **administrative-event**
-watchlist with verified contracts and event sources, or to record an explicit scope deviation,
-and states that the standardized-TVL watchlist "does not satisfy and does not silently
-replace" it. Seven protocol identities are proven live today, all on the TVL lane: Aave v3,
-Spark, MakerDAO, Compound v3 and Liquity on Ethereum, Seamless and Moonwell on Base.
+**Resolved on 8 September 2026.** The project owner selected the explicit scope deviation. It
+is recorded as decision D23 and is no longer a Sprint 4 blocker.
 
-The gap is not three missing entries. It is a missing lane. The live query document reads the
-Messari standardized lending schema: protocol identity, TVL and daily financial snapshots. It
-exposes no administrative event of any kind, so no number of additional deployments on it can
-satisfy an administrative-event requirement, and adding three to reach ten would be exactly
-the conflation D20 forbids. Building the lane needs verified official contract addresses,
-administrative event signatures, a provider that indexes them, and deployment provenance for
-each. None of that exists in the repository, and inventing entries to reach ten is forbidden.
+**The requirement, as it stood.** D20 obliged Sprint 4 either to expand Plan 2.0's
+ten-protocol **administrative-event** watchlist with verified contracts and event sources, or
+to record an explicit scope deviation, and stated that the standardized-TVL watchlist "does
+not satisfy and does not silently replace" it. That requirement is preserved here as history:
+it was planned, and it is not being quietly written out.
 
-Only the project owner can choose between the three honest options, so this exit item is
-marked **BLOCKED — OWNER DECISION** and no Graph feature commit was created. The clustering
-work is complete and is not blocked on it.
+**Why expansion was not the honest answer.** The gap was never three missing entries. It was a
+missing lane. The live query document reads the Messari standardized lending schema: protocol
+identity, total value locked and daily financial snapshots. It emits no administrative event
+of any kind, so no number of additional deployments on it could satisfy an administrative-event
+requirement, and adding three to reach ten would have been exactly the conflation D20 forbids.
+Building the lane needs verified official contract addresses, administrative event signatures,
+a provider that indexes them and deployment provenance for each; none of that exists in the
+repository, and inventing entries to reach a count was never an option.
 
-| Option                                        | What it means                                                                                                                                                                | Cost                                                                                                            |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **A. Build the administrative lane**          | A second query document over subgraphs that index ownership, pause and upgrade events for ten verified contracts                                                             | A sprint of its own; needs address and event verification, and may need a subgraph the free tier does not serve |
-| **B. Record a scope deviation** (recommended) | State in the charter and submission that the hackathon ships the standardized-TVL lane with seven proven identities, and that the administrative-event watchlist is deferred | Honest and cheap; the submission claims less than Plan 2.0 did                                                  |
-| **C. Expand the TVL lane to ten**             | Add three more verified Messari lending deployments, and say plainly that this is the TVL lane, not the administrative-event watchlist                                       | Half a day; satisfies no administrative-event requirement, and must never be described as if it did             |
+**What the deviation says.** The hackathon build retains the seven protocol identities already
+proven live on the standardized TVL lane: Aave v3, Spark, MakerDAO, Compound v3 and Liquity on
+Ethereum; Seamless and Moonwell on Base. The TVL lane and an administrative-event lane are
+different capabilities, and no document, submission or demo may present one as the other. In
+particular, the live lane does not read `Upgraded`, `OwnershipTransferred`, `Paused` or
+token-outflow events, and nothing in this project claims it does. The ten-protocol
+administrative-event watchlist is removed from the hackathon must-ship scope and moved to the
+post-event roadmap. No fabricated protocol entry, contract event or live-proof claim is added,
+and no third-party administrative-event infrastructure is introduced during the remaining gate
+period.
 
-Recommendation: **B**, with **C** as an optional extra if a ten-deployment TVL figure is wanted
-for the submission, provided every document says which lane it means.
+**Why.** Schedule protection. Building and validating the lane now would jeopardise the Graph
+release gate at the end of 10 September and the primary Cyberattack Sunday deliverable.
+
+**What it does not change.** The seven-protocol live Graph evidence from Sprint 1 stands
+exactly as recorded. The clustering implementation, the database schema, the classification
+results and every real-data figure in this report are untouched: this is a scope and
+documentation decision, not a code change. A future administrative-event implementation must
+independently verify each protocol's official contracts, its deployment provenance, the events
+those contracts actually emit and live Graph coverage for them before any watchlist claim is
+made.
 
 ## 11. Judgment calls and deviations
 
@@ -361,10 +374,14 @@ for the submission, provided every document says which lane it means.
   `test:db` with a local `DATABASE_URL`, so every constraint and trigger in migration 0006 is
   unproven by continuous integration and must be re-proven by a reviewer with a database.
 - **D9 and D10 remain unresolved.** No model is chosen; no editorial week is inferred.
-- **The watchlist item is blocked** on the owner decision in section 10.
-- **Check-in #1's submission is unconfirmed.** The draft is ready and states the human action;
-  the project owner has given no confirmation that it was submitted, and this document does
-  not assume one.
+- **No administrative-event lane exists.** The owner accepted the scope deviation recorded as
+  D23, so the ten-protocol administrative-event watchlist is out of hackathon scope and on the
+  post-event roadmap. The live Graph capability is the standardized TVL lane with seven proven
+  identities, and it reads no administrative event.
+- **Check-in #1 was submitted**, confirmed by the project owner on 8 September 2026. No
+  timestamp or receipt identifier is recorded, because none was supplied. Check-in #2 is due
+  on Thursday 10 September 2026 at a cutoff this project has not verified in the portal; its
+  draft is `docs/CHECKIN-2-DRAFT.md` and it has not been submitted.
 - **The migration-loader first-run failure disclosed in Sprint 3 remains unexplained.** It did
   not recur during Sprint 4 verification.
 

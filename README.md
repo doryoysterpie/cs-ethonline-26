@@ -37,8 +37,15 @@ eligible result covered exactly once, no excluded result covered at all, and eve
 reconciled. A human can merge and split incidents through an append-only review layer that
 never rewrites what the machine produced. These are structural counts, not clustering
 accuracy: no machine-readable record of the final editorial outcome exists yet
-(`docs/SPRINT-4-REPORT.md`). The ten-protocol administrative-event watchlist is **blocked on
-an owner decision**, recorded with three options in section 10 of that report.
+(`docs/SPRINT-4-REPORT.md`). Sprint 4 is not accepted until Codex Desktop issues a pass.
+
+**Graph scope, decided 8 September 2026 (D23).** Seven protocol identities are proven live on
+the standardized TVL lane, and that lane is the project's live Graph capability. Plan 2.0's
+separate ten-protocol administrative-event watchlist was planned and is not delivered: the live
+query reads protocol identity, total value locked and daily financial snapshots, and reads no
+administrative event. The project owner has removed that watchlist from hackathon scope by an
+explicit deviation and moved it to the post-event roadmap, to protect the 10 September Graph
+release gate. The two are different capabilities, and neither is presented as the other.
 
 **Sprint 3 accepted at `71394c9b8e732bc7508b6276eafcbbac414c3a07`**, after two independent
 Codex Desktop audits and two correction passes. A deterministic, versioned rule-based
@@ -318,7 +325,8 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 | `docs/DECISIONS.md`              | append-only decision log, D1 to D22                                             |
 | `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence     |
 | `docs/SPRINT-4-REPORT.md`        | Sprint 4 clustering proof: engine, migration 0006, human review layer, evidence |
-| `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1 draft, not submitted                                        |
+| `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1, submitted; owner-confirmed 8 September 2026                |
+| `docs/CHECKIN-2-DRAFT.md`        | Project Check-in #2 draft, due Thursday 10 September; not submitted             |
 | `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                            |
 | `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria     |
 | `docs/SECURITY.md`               | security policy                                                                 |
