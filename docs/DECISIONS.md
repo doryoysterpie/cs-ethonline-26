@@ -723,3 +723,32 @@ entries are unchanged except for status pointers.
   the standardized-TVL watchlist does not satisfy and must not silently replace the
   administrative-event watchlist stands unchanged, and is the reason this deviation is recorded
   explicitly rather than absorbed quietly.
+
+## D24 Sprint 4 cluster-size bound: component-wide, and an oversized duplicate group refuses the run
+
+- **Date:** 2026-09-09
+- **Status:** ACCEPTED
+- **Decision:** The clustering contract's `maximumClusterSize` is enforced against the whole
+  union-find component, counted in source rows, and checked before every union in both the
+  syndication and the incident stage. An exact-URL duplicate group that already exceeds the
+  bound refuses the entire clustering run with a fixed `exact_duplicate_group_exceeds_limit`
+  condition and the numeric bound, rather than being split or admitted.
+  - **Two new contract fields.** `bounds.clusterSizeUnit` names what the bound counts, and
+    `bounds.oversizedDuplicateGroupBehaviour` names what happens to a group already past it.
+    Both are hashed and both change executable behaviour.
+  - **Versions advance.** `clustering-engine@2` and `clustering-behavior-contract@2`, contract
+    hash `f0fc48b986959feb341b2762760a0e570186c84e8dfbf73c8d6eaf17bc0f8967`. The corrected
+    engine therefore creates new runs; runs at the superseded hashes remain immutable
+    historical evidence and no command selects them implicitly.
+- **Rationale:** Codex Desktop's audit of `4da68716` chained 501 unique URL groups into a
+  single 501-member cluster while `boundsReached` stayed at zero, because the check read the
+  pair in front of it rather than what the merge would produce. A bound that a chain can walk
+  past is not a bound. Refusing the run on an oversized duplicate group is the conservative
+  choice of the three available: splitting rows that share a canonical URL would publish one
+  report as several, and admitting them would publish a cluster past the declared bound, while
+  a refused run is recoverable and says exactly why.
+- **Consequences:** Migration 0007 accompanies this decision with the relational corrections
+  the same audit required, and `docs/SPRINT-4-REPORT.md` section 13 records all seven findings.
+  Sprint 4 remains pending an independent re-audit.
+- **Decided by:** Sprint 4 correction pass of 2026-09-09, on the audit's required correction.
+- **Supersedes:** the cluster-bound behaviour described in D22, which is otherwise unchanged.

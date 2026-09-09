@@ -28,16 +28,24 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 4 implemented, pending independent Codex Desktop audit: eligible classified sources
-now become provisional canonical incidents.** On 8 September 2026 a deterministic, model-free
-clustering engine (decision D22) consolidated exact URL duplicates, detected syndication and
-grouped separate reports into provisional incidents for all three accepted Sprint 3
-classification runs: 24,193 eligible results became 23,596 provisional incidents, every
-eligible result covered exactly once, no excluded result covered at all, and every run
-reconciled. A human can merge and split incidents through an append-only review layer that
-never rewrites what the machine produced. These are structural counts, not clustering
-accuracy: no machine-readable record of the final editorial outcome exists yet
-(`docs/SPRINT-4-REPORT.md`). Sprint 4 is not accepted until Codex Desktop issues a pass.
+**Sprint 4 corrected, pending independent Codex Desktop re-audit: eligible classified sources
+now become provisional canonical incidents.** A deterministic, model-free clustering engine
+(decision D22) consolidates exact URL duplicates, detects syndication and groups separate
+reports into provisional incidents. Recomputed on 9 September 2026 for all three accepted
+Sprint 3 classification runs at the corrected contract hash: 24,193 eligible results became
+23,596 provisional incidents, every eligible result covered exactly once, no excluded result
+covered at all, no cluster larger than the 500-member bound, and every run reconciled. A human
+can merge and split incidents through an append-only review layer that never rewrites what the
+machine produced. These are structural counts, not clustering accuracy: no machine-readable
+record of the final editorial outcome exists yet (`docs/SPRINT-4-REPORT.md`).
+
+The first Sprint 4 candidate was rejected on 9 September 2026 with seven findings: a cluster
+bound that did not hold over a whole component, a membership that could name another
+classification run of the same batch, review idempotency that accepted a changed payload,
+review notes validated only at the command line, a default test that opened a socket, a
+contradictory check-in status and an inaccurate complexity claim. All seven are corrected on
+the branch, and section 13 of the Sprint 4 report records each one. Sprint 4 is not accepted
+until Codex Desktop issues a pass.
 
 **Graph scope, decided 8 September 2026 (D23).** Seven protocol identities are proven live on
 the standardized TVL lane, and that lane is the project's live Graph capability. Plan 2.0's
@@ -116,24 +124,24 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 4                                                                       |
-| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------ |
-| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                     |
-| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification and calibration commands; 126 tests    |
-| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                |
-| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                              |
-| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests    |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, four migrations, ingestion and classification ops; 24 tests |
-| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work       |
-| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 55 unit tests |
-| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 41 tests    |
-| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests |
-| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                |
-| `packages/drafting`       | `@cas/drafting`       | placeholder                                                                                |
-| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                |
-| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                           |
-| `data/fixtures`           |                       | synthetic editorial CSV fixtures for every known source hazard (`data/fixtures/README.md`) |
-| `docs`                    |                       | charter documents and sprint reports, listed below                                         |
+| Path                      | Package               | State after Sprint 4                                                                                                           |
+| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                                                         |
+| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering and review commands; 144 offline tests, 61 PostgreSQL          |
+| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                    |
+| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                  |
+| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests                                        |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, seven migrations, ingestion, classification and clustering ops; 24 offline tests, 80 PostgreSQL |
+| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work                                           |
+| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 56 unit tests                                     |
+| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 50 unit tests                                   |
+| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests                                     |
+| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                                                    |
+| `packages/drafting`       | `@cas/drafting`       | placeholder                                                                                                                    |
+| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                    |
+| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                               |
+| `data/fixtures`           |                       | synthetic editorial CSV fixtures for every known source hazard (`data/fixtures/README.md`)                                     |
+| `docs`                    |                       | charter documents and sprint reports, listed below                                                                             |
 
 A placeholder package contains one source file that exports nothing. The intended
 responsibility of each package is in `docs/ARCHITECTURE.md`. Next.js is fixed by the plan for
@@ -316,21 +324,21 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 
 ## Documentation
 
-| Document                         | Content                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------- |
-| `docs/ARCHITECTURE.md`           | components, runtime data flow, contract boundary, dependency rules              |
-| `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules           |
-| `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure      |
-| `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule      |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D22                                             |
-| `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence     |
-| `docs/SPRINT-4-REPORT.md`        | Sprint 4 clustering proof: engine, migration 0006, human review layer, evidence |
-| `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1, submitted; owner-confirmed 8 September 2026                |
-| `docs/CHECKIN-2-DRAFT.md`        | Project Check-in #2 draft, due Thursday 10 September; not submitted             |
-| `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                            |
-| `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria     |
-| `docs/SECURITY.md`               | security policy                                                                 |
-| `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                         |
-| `docs/SPRINT-1-REPORT.md`        | Sprint 1 live Graph proof: discovery, selection, results, evidence              |
-| `docs/SPRINT-2-REPORT.md`        | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports      |
-| `LICENSE`                        | Apache License 2.0                                                              |
+| Document                         | Content                                                                                            |
+| -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `docs/ARCHITECTURE.md`           | components, runtime data flow, contract boundary, dependency rules                                 |
+| `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules                              |
+| `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure                         |
+| `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule                         |
+| `docs/DECISIONS.md`              | append-only decision log, D1 to D22                                                                |
+| `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence                        |
+| `docs/SPRINT-4-REPORT.md`        | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections |
+| `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                   |
+| `docs/CHECKIN-2-DRAFT.md`        | Project Check-in #2 draft, due Thursday 10 September; not submitted                                |
+| `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                                               |
+| `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                        |
+| `docs/SECURITY.md`               | security policy                                                                                    |
+| `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                                            |
+| `docs/SPRINT-1-REPORT.md`        | Sprint 1 live Graph proof: discovery, selection, results, evidence                                 |
+| `docs/SPRINT-2-REPORT.md`        | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                         |
+| `LICENSE`                        | Apache License 2.0                                                                                 |

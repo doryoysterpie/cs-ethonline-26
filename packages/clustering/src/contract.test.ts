@@ -640,6 +640,8 @@ describe('the clustering contract is executed, not described', () => {
   });
 
   it('changes an observable result for every behaviour field it hashes', () => {
+    // Pinned so the count in docs/SPRINT-4-REPORT.md cannot drift from the list.
+    expect(BEHAVIOUR_MUTATIONS.length).toBe(37);
     const seen = new Map<string, string>();
     for (const [name, mutate, inputs] of BEHAVIOUR_MUTATIONS) {
       const build = inputs ?? corpus;

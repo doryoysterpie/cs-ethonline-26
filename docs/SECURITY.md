@@ -315,6 +315,27 @@ Rules the Sprint 4 clustering engine (`@cas/clustering`) implements (decision D2
   `search_path = pg_catalog, <schema>, pg_temp`, names every relation by schema and is not
   `SECURITY DEFINER`, exactly as migration 0005 requires.
 
+**Corrections after the 9 September 2026 audit.**
+
+- The review-note policy is enforced in three places rather than one: `mergeIncidents`,
+  `splitIncident` and the command line all call the same validator, and migration 0007 adds a
+  CHECK constraint so a direct `INSERT` or `UPDATE` cannot store what the API refuses. One to
+  280 characters; absence is `null` and an empty string is refused; no normalization; every C0
+  control, DEL, every C1 control, U+2028 and U+2029 refused. Validation runs before the action
+  is hashed or written, and no message echoes the note.
+- A review action's identity is the whole canonical payload, including the actor, the note and
+  the declared revision. A replay reusing an identity with any field changed is refused with a
+  fixed `review_action_conflict` that echoes nothing the caller supplied and writes nothing.
+  The same canonical string is computed in SQL and stored as a generated column, unique per
+  run, so the database decides identity rather than the application.
+- A membership cannot name a classification run other than the one its clustering run
+  declares. Migration 0007 makes that a composite foreign key, so it holds against a direct
+  statement and not only against the orchestration.
+- The cluster-size bound is checked against the whole union-find component before every union,
+  and an exact-URL duplicate group already past the bound refuses the entire run with a fixed
+  condition and the numeric bound. A refused run rolls back; the error names no URL, group,
+  identifier or token.
+
 ## Reporting a vulnerability
 
 Report privately to the repository owner. Do not open a public issue describing an

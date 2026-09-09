@@ -1275,10 +1275,16 @@ describe('migration 0007 refuses to apply over data that violates it', () => {
     expect(status.drift).toEqual([]);
     const artifacts = await isolated.db.withClient((c) =>
       c.query<{ constraints: string; columns: string; functions: string }>(
-        `SELECT (SELECT count(*)::text FROM pg_catalog.pg_constraint
-                  WHERE conname IN ('incident_memberships_run_classification_fk',
-                                    'clustering_actions_note_policy',
-                                    'clustering_actions_payload_identity')) AS constraints,
+        // Every subquery is scoped to the schema under test. `pg_constraint`
+        // is database-wide, and the project's own schema in the same database
+        // carries these names once migration 0007 is applied there.
+        `SELECT (SELECT count(*)::text FROM pg_catalog.pg_constraint c
+                   JOIN pg_catalog.pg_class t ON t.oid = c.conrelid
+                   JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+                  WHERE n.nspname = current_schema()
+                    AND c.conname IN ('incident_memberships_run_classification_fk',
+                                      'clustering_actions_note_policy',
+                                      'clustering_actions_payload_identity')) AS constraints,
                 (SELECT count(*)::text FROM information_schema.columns
                   WHERE table_schema = current_schema()
                     AND table_name = 'clustering_review_actions'

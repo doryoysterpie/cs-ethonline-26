@@ -53,8 +53,14 @@ groups separate reports into provisional incidents, driven by a versioned execut
 Across the three classification runs, 24,193 eligible results became 23,596 provisional
 incidents, every eligible result covered exactly once, no excluded result covered at all, and
 every run reconciled. A human can merge and split incidents through an append-only review
-layer that never rewrites what the machine produced. Sprint 4 has **not** been audited and is
-not accepted; Codex Desktop reviews it next.
+layer that never rewrites what the machine produced.
+
+Codex Desktop audited it on 9 September and returned seven findings: a cluster bound that did
+not hold over a whole component, a membership that could name another classification run of the
+same batch, review idempotency that accepted a changed payload, notes validated only at the
+command line, a default test that opened a socket, a contradictory check-in status and an
+inaccurate complexity claim. All seven are corrected on the branch and await an independent
+re-audit. Sprint 4 has **not** passed and is not accepted.
 
 **Graph scope decision, being recorded now.** Seven protocol identities are proven live on the
 standardized TVL lane, and that lane is the project's live Graph capability. The separately
@@ -73,8 +79,8 @@ post-event roadmap, to protect the 10 September Graph release gate.
 | Eligible results clustered              | 24,193                                    |
 | Provisional incidents                   | 23,596                                    |
 | Live Graph protocol identities proven   | 7                                         |
-| Automated tests, no database or network | 363                                       |
-| PostgreSQL integration tests            | 123                                       |
+| Automated tests, no database or network | 390                                       |
+| PostgreSQL integration tests            | 141                                       |
 
 **What the clustering counts are and are not.** They are structural: the pipeline covered its
 input exactly and grouped it into that many provisional incidents. They do not establish
