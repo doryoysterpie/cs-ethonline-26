@@ -47,7 +47,7 @@ stored ruleset hash covers the behaviour it actually executes. A deterministic, 
 rule-based classifier assigns every imported row a machine decision with stable rationale
 codes: all 24,248 rows classified, one result per row, each run reconciled against its batch.
 
-**Sprint 4, clustering and canonical incident construction. Built, pending audit.** A
+**Sprint 4, clustering and canonical incident construction. Passed independent audit.** A
 deterministic, model-free engine consolidates exact URL duplicates, detects syndication and
 groups separate reports into provisional incidents, driven by a versioned executable contract.
 Across the three classification runs, 24,193 eligible results became 23,596 provisional
@@ -55,12 +55,17 @@ incidents, every eligible result covered exactly once, no excluded result covere
 every run reconciled. A human can merge and split incidents through an append-only review
 layer that never rewrites what the machine produced.
 
-Codex Desktop audited it on 9 September and returned seven findings: a cluster bound that did
-not hold over a whole component, a membership that could name another classification run of the
-same batch, review idempotency that accepted a changed payload, notes validated only at the
-command line, a default test that opened a socket, a contradictory check-in status and an
-inaccurate complexity claim. All seven are corrected on the branch and await an independent
-re-audit. Sprint 4 has **not** passed and is not accepted.
+Codex Desktop audited it on 9 September and returned seven findings, with an eighth on
+re-audit: a cluster bound that did not hold over a whole component, a membership that could
+name another classification run of the same batch, review idempotency that accepted a changed
+payload, notes validated only at the command line, a default test that opened a socket, a
+contradictory check-in status, an inaccurate complexity claim and a stale test count. All eight
+were corrected and the auditor accepted the result at
+`4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`.
+
+**Sprint 5, Graph evidence, anomaly feed and drafting. In progress, not audited.** It carries
+the Graph-correlation, evidence-state and anomaly-feed work D22 deferred from Sprint 4, then
+the deterministic drafting pipeline.
 
 **Graph scope decision, being recorded now.** Seven protocol identities are proven live on the
 standardized TVL lane, and that lane is the project's live Graph capability. The separately

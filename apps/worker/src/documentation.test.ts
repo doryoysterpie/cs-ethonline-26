@@ -87,31 +87,37 @@ describe('current documentation agrees with itself', () => {
     expect(requirements).toContain('**not submitted**');
   });
 
-  it('records Sprint 4 as pending an independent audit, never as accepted', async () => {
+  it('records Sprint 4 as accepted at its audited SHA, and Sprint 5 as unaudited', async () => {
+    // Sprint 4 was accepted on 9 September 2026. What must not appear now is a
+    // claim that the *current* sprint has passed an audit it has not had.
     for (const document of CURRENT_DOCUMENTS) {
       const text = await read(document);
-      // Affirmative claims only. A document saying Sprint 4 is *not* accepted
-      // is the point, so the negations must survive this check.
       for (const premature of [
-        /Sprint 4 (is|has been|was) (accepted|audited)/i,
-        /Sprint 4 passed (its |the )?audit/i,
-        /Codex Desktop issued PASS for Sprint 4/i,
+        /Sprint 5 (is|has been|was) (accepted|audited)/i,
+        /Sprint 5 passed (its |the )?audit/i,
+        /Codex Desktop issued PASS for Sprint 5/i,
       ]) {
         expect(premature.test(text), `${document} must not claim ${String(premature)}`).toBe(false);
       }
     }
-    const report = await read('docs/SPRINT-4-REPORT.md');
-    expect(report).toContain('Sprint 4 remains pending until Codex Desktop issues PASS.');
+    const sprint4 = await read('docs/SPRINT-4-REPORT.md');
+    expect(sprint4).toContain(
+      'Sprint 4 was accepted by Codex Desktop at `4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`.',
+    );
+    const board = await read('docs/SPRINT_BOARD.md');
+    expect(board).toContain('4a0a847748b1ff73c424934547c8e6ccd8a1cd6b');
   });
 
-  it('records that Sprint 5 has not begun', async () => {
-    const report = await read('docs/SPRINT-4-REPORT.md');
-    expect(report).toContain('Sprint 5 has not begun.');
+  it('records Sprint 5 as in progress and not complete', async () => {
+    const board = await read('docs/SPRINT_BOARD.md');
+    expect(board).toContain('IN PROGRESS');
+    const readme = await read('README.md');
+    expect(readme).toContain('**Sprint 5 in progress');
     for (const document of CURRENT_DOCUMENTS) {
       const text = await read(document);
-      expect(text, `${document} must not announce Sprint 5 work`).not.toContain(
-        'Sprint 5 is underway',
-      );
+      for (const premature of [/Sprint 5 (is )?complete/i, /Sprint 6 (has|had) begun/i]) {
+        expect(premature.test(text), `${document} must not claim ${String(premature)}`).toBe(false);
+      }
     }
   });
 

@@ -28,8 +28,13 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 4 corrected, pending independent Codex Desktop re-audit: eligible classified sources
-now become provisional canonical incidents.** A deterministic, model-free clustering engine
+**Sprint 5 in progress: the Graph evidence, anomaly and drafting layer.** Sprint 4's deferred
+work — correlating canonical incidents with live Graph signals, resolving explicit evidence
+states, and the chain-and-reporting anomaly feed — is being built now, followed by the
+deterministic drafting pipeline. Sprint 5 has not been audited and is not finished.
+
+**Sprint 4 accepted by Codex Desktop at `4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`
+(9 September 2026): eligible classified sources become provisional canonical incidents.** A deterministic, model-free clustering engine
 (decision D22) consolidates exact URL duplicates, detects syndication and groups separate
 reports into provisional incidents. Recomputed on 9 September 2026 for all three accepted
 Sprint 3 classification runs at the corrected contract hash: 24,193 eligible results became
@@ -39,13 +44,13 @@ can merge and split incidents through an append-only review layer that never rew
 machine produced. These are structural counts, not clustering accuracy: no machine-readable
 record of the final editorial outcome exists yet (`docs/SPRINT-4-REPORT.md`).
 
-The first Sprint 4 candidate was rejected on 9 September 2026 with seven findings: a cluster
-bound that did not hold over a whole component, a membership that could name another
-classification run of the same batch, review idempotency that accepted a changed payload,
-review notes validated only at the command line, a default test that opened a socket, a
-contradictory check-in status and an inaccurate complexity claim. All seven are corrected on
-the branch, and section 13 of the Sprint 4 report records each one. Sprint 4 is not accepted
-until Codex Desktop issues a pass.
+The first Sprint 4 candidate was rejected on 9 September 2026 with seven findings, and an
+eighth followed on re-audit: a cluster bound that did not hold over a whole component, a
+membership that could name another classification run of the same batch, review idempotency
+that accepted a changed payload, review notes validated only at the command line, a default
+test that opened a socket, a contradictory check-in status, an inaccurate complexity claim and
+a stale test count in the reproduction instructions. All eight were corrected, and Codex
+Desktop accepted the result. Section 13 of the Sprint 4 report records each one.
 
 **Graph scope, decided 8 September 2026 (D23).** Seven protocol identities are proven live on
 the standardized TVL lane, and that lane is the project's live Graph capability. Plan 2.0's

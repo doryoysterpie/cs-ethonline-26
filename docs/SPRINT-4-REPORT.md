@@ -1,9 +1,10 @@
 # Sprint 4 report: deterministic clustering and canonical incident construction
 
-Result: **CORRECTED, pending independent Codex Desktop re-audit.** Candidate
-`4da687164d09d8845abae51af6151986fe4405c2` was rejected on 9 September 2026 with seven
-findings; section 13 records the correction. Nothing in this document declares Sprint 4
-accepted or audited. All times America/Toronto unless marked UTC.
+Result: **ACCEPTED by Codex Desktop at `4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`**, on
+9 September 2026. Candidate `4da687164d09d8845abae51af6151986fe4405c2` was rejected the same
+day with seven findings and an eighth followed on re-audit; section 13 records the corrections.
+The acceptance is the auditor's, recorded here; nothing in this document is a self-assessment.
+All times America/Toronto unless marked UTC.
 Count-only throughout: no title, URL, summary, description, organisation, cell, connection
 detail or absolute path appears here.
 
@@ -640,9 +641,11 @@ merge and split demonstration; then `git diff --check`, `git fsck --full` and
    explicitly, so none of them is ever selected implicitly.
 7. `apps/worker/src/documentation.test.ts` runs in the default suite and needs nothing but the
    repository's own Markdown.
-8. Nothing in this document has been audited. Sprint 4 is not accepted.
+8. Codex Desktop audited this work independently and accepted it at
+   `4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`. Sprint 5 builds on that SHA and carries the
+   Graph-correlation, evidence-state and anomaly-feed work D22 deferred.
 
 ---
 
-Sprint 4 remains pending until Codex Desktop issues PASS.
-Sprint 5 has not begun.
+Sprint 4 was accepted by Codex Desktop at `4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`.
+Sprint 5 is in progress and has not been audited.
