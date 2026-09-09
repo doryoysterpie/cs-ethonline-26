@@ -1,12 +1,28 @@
 import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
+import { openDatabase, type Database, type DatabaseConfig } from '@cas/database';
 import { describe, expect, it } from 'vitest';
 
-import { run } from './cli.js';
+import { run, type CliOptions } from './cli.js';
 import { EXIT_CODES } from './editorial/errors.js';
 import { fixture, FIXTURES_DIRECTORY } from './test-support.js';
+
+/**
+ * Offline by construction. Nothing in this file opens a socket, resolves a
+ * name, reads a database or reads a secret.
+ *
+ * Sprint 4 tested the connection-failure boundary by pointing a connection
+ * string at a closed loopback port. Codex Desktop's audit ran the suite where
+ * that call returns EPERM rather than ECONNREFUSED, so the assertion failed
+ * and the required verification gate was red in a clean environment (finding
+ * F5). The failure is now injected at the driver seam: the real `Database`,
+ * the real error classification and the real redaction stay in the path, and
+ * only the network leaves it. A trap on the socket and lookup entry points
+ * proves the path is genuinely offline rather than merely believed to be.
+ */
 
 interface Captured {
   readonly out: string[];
@@ -16,11 +32,72 @@ interface Captured {
 async function exec(
   argv: string[],
   env: Record<string, string | undefined> = {},
+  openDatabaseSeam?: CliOptions['openDatabase'],
 ): Promise<Captured & { code: number }> {
   const out: string[] = [];
   const err: string[] = [];
-  const code = await run(argv, { env, io: { log: (l) => out.push(l), error: (l) => err.push(l) } });
+  const code = await run(argv, {
+    env,
+    io: { log: (l) => out.push(l), error: (l) => err.push(l) },
+    ...(openDatabaseSeam === undefined ? {} : { openDatabase: openDatabaseSeam }),
+  });
   return { out, err, code };
+}
+
+/**
+ * A handle whose driver refuses exactly as a refused TCP connection does,
+ * carrying the same system code and a message that names a host and port, so
+ * the redaction and classification under test face a realistic value.
+ */
+function refusingDatabase(config: DatabaseConfig): Database {
+  return openDatabase(config, {
+    connect: () =>
+      Promise.reject(
+        Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), {
+          code: 'ECONNREFUSED',
+        }),
+      ),
+  });
+}
+
+const nodeRequire = createRequire(import.meta.url);
+
+/**
+ * Records and refuses every socket connection and name lookup for the duration
+ * of `fn`. A recorded attempt fails the test; the throw is the fail-safe that
+ * stops a real connection from being made if one is ever attempted.
+ */
+async function withoutNetwork<T>(fn: () => Promise<T>): Promise<{ result: T; attempts: string[] }> {
+  const net = nodeRequire('node:net') as typeof import('node:net');
+  const tls = nodeRequire('node:tls') as typeof import('node:tls');
+  const dns = nodeRequire('node:dns') as typeof import('node:dns');
+  const attempts: string[] = [];
+  const original = {
+    socketConnect: net.Socket.prototype.connect,
+    tlsConnect: tls.connect,
+    lookup: dns.lookup,
+    promisesLookup: dns.promises.lookup,
+    resolve: dns.resolve,
+  };
+  const trap = (name: string) =>
+    function trapped(): never {
+      attempts.push(name);
+      throw new Error(`offline test reached ${name}`);
+    };
+  net.Socket.prototype.connect = trap('net.Socket.connect') as typeof original.socketConnect;
+  tls.connect = trap('tls.connect') as typeof original.tlsConnect;
+  dns.lookup = trap('dns.lookup') as unknown as typeof original.lookup;
+  dns.promises.lookup = trap('dns.promises.lookup') as unknown as typeof original.promisesLookup;
+  dns.resolve = trap('dns.resolve') as unknown as typeof original.resolve;
+  try {
+    return { result: await fn(), attempts };
+  } finally {
+    net.Socket.prototype.connect = original.socketConnect;
+    tls.connect = original.tlsConnect;
+    dns.lookup = original.lookup;
+    dns.promises.lookup = original.promisesLookup;
+    dns.resolve = original.resolve;
+  }
 }
 
 describe('cli configuration handling (no database)', () => {
@@ -269,13 +346,47 @@ describe('cli configuration handling (no database)', () => {
   });
 
   it('never prints a credential-bearing connection string, even on connection failure', async () => {
-    const url = 'postgresql://app:hunter2-marker@127.0.0.1:1/cas';
-    const r = await exec(['db', 'check'], { DATABASE_URL: url });
+    const url = 'postgresql://app:hunter2-marker@127.0.0.1:5432/cas';
+    const r = await exec(['db', 'check'], { DATABASE_URL: url }, refusingDatabase);
     expect(r.code).toBe(EXIT_CODES.database);
     const all = [...r.out, ...r.err].join('\n');
     expect(all).not.toContain('hunter2-marker');
     expect(all).not.toContain('postgresql://');
+    // The driver's own message named a host and a port; the classifier keeps
+    // the system code and discards everything else.
+    expect(all).not.toContain('127.0.0.1');
+    expect(all).not.toContain('connect ECONNREFUSED 127.0.0.1');
     expect(all).toContain('error[database:connection');
+    expect(all).toContain('ECONNREFUSED');
+    expect(r.out).toEqual([]);
+  });
+
+  it('opens no socket and looks up no name while failing on the database', async () => {
+    const url = 'postgresql://app:hunter2-marker@127.0.0.1:5432/cas';
+    const { result, attempts } = await withoutNetwork(async () => {
+      const captured: (Captured & { code: number })[] = [];
+      for (const argv of [
+        ['db', 'check'],
+        ['db', 'migrate'],
+        ['editorial', 'report'],
+        ['classification', 'report', '--run', '11111111-1111-4111-8111-111111111111'],
+        ['clustering', 'report', '--run', '11111111-1111-4111-8111-111111111111'],
+      ]) {
+        captured.push(await exec(argv, { DATABASE_URL: url }, refusingDatabase));
+      }
+      return captured;
+    });
+    // No socket, no DNS lookup, no database, no secret printed, and the exit
+    // status is the documented database one for every command.
+    expect(attempts).toEqual([]);
+    for (const r of result) {
+      expect(r.code).toBe(EXIT_CODES.database);
+      const all = [...r.out, ...r.err].join('\n');
+      expect(all).toContain('error[database:connection');
+      expect(all).not.toContain('hunter2-marker');
+      expect(all).not.toContain('postgresql://');
+      expect(all).not.toContain('127.0.0.1');
+    }
   });
 
   it('refuses to run any command while a password too short to redact is configured', async () => {
@@ -418,7 +529,7 @@ describe('cli configuration handling (no database)', () => {
   });
 
   it('redacts the password alone, not only the whole connection string', async () => {
-    const url = 'postgresql://app:p%40ss-marker@127.0.0.1:1/cas';
+    const url = 'postgresql://app:p%40ss-marker@127.0.0.1:5432/cas';
     const r = await exec(['editorial', 'report', '--batch', 'not-a-uuid'], { DATABASE_URL: url });
     expect(r.code).toBe(EXIT_CODES.configuration);
     const all = [...r.out, ...r.err].join('\n');

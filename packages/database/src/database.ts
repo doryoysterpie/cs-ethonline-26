@@ -21,6 +21,18 @@ export interface Queryable {
 
 export interface DatabaseOptions {
   readonly maxConnections?: number | undefined;
+  /**
+   * How a pooled client is acquired. Defaults to the pool's own `connect`.
+   *
+   * The only supported non-default use is a test that must exercise the
+   * connection-failure boundary without opening a socket. Sprint 4's attempt
+   * at that pointed a connection string at a closed loopback port, which made
+   * the default suite depend on a socket and fail wherever sockets are denied
+   * (audit finding F5). Injecting the driver's failure here keeps the real
+   * pool, the real error classification and the real redaction in the path and
+   * removes only the network.
+   */
+  readonly connect?: (() => Promise<pg.PoolClient>) | undefined;
 }
 
 /** Only the levels this project uses are offered, so a typo cannot widen a snapshot. */
@@ -50,6 +62,7 @@ export class Database {
    */
   readonly schema: string;
   private readonly pool: pg.Pool;
+  private readonly connect: () => Promise<pg.PoolClient>;
   private ended = false;
 
   constructor(config: DatabaseConfig, options: DatabaseOptions = {}) {
@@ -77,12 +90,13 @@ export class Database {
     // would raise it as an uncaught error. Nothing is logged here because a
     // driver message may carry connection details.
     this.pool.on('error', () => undefined);
+    this.connect = options.connect ?? ((): Promise<pg.PoolClient> => this.pool.connect());
   }
 
   private async acquire(): Promise<pg.PoolClient> {
     if (this.ended) throw new DatabaseError('connection', 'database handle already closed');
     try {
-      return await this.pool.connect();
+      return await this.connect();
     } catch (error) {
       throw classifyDriverError(error);
     }

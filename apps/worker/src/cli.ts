@@ -11,6 +11,7 @@ import {
   runMigrations,
   summarizeConnection,
   type Database,
+  type DatabaseConfig,
   type Redactor,
 } from '@cas/database';
 
@@ -22,6 +23,7 @@ import {
 } from './classification/output.js';
 import { calibrateRun, reportRun, reviewQueue } from './classification/report.js';
 import { classifyBatch } from './classification/run.js';
+import { assertReviewNote } from './clustering/note.js';
 import {
   formatClusteringReport,
   formatClusteringRun,
@@ -39,7 +41,7 @@ import {
   MAX_SPLIT_MEMBERSHIPS,
 } from './clustering/review.js';
 import { clusterClassificationRun } from './clustering/run.js';
-import { hasControlCharacter, toSingleLine } from './editorial/display.js';
+import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
 import { assertImportRequest, importCsvFile } from './editorial/import.js';
 import {
@@ -91,6 +93,17 @@ export interface CliOptions {
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly io: CliIo;
   readonly signal?: AbortSignal | undefined;
+  /**
+   * How a database handle is opened. Defaults to the real driver.
+   *
+   * The only supported non-default use is a test that must exercise the
+   * connection-failure boundary. Sprint 4's own attempt at that pointed a
+   * connection string at a closed loopback port, which made the default suite
+   * depend on a socket and fail wherever sockets are denied (audit finding
+   * F5). Injecting the failure keeps the real `Database`, the real error
+   * classification and the real redaction in the path and removes the socket.
+   */
+  readonly openDatabase?: ((config: DatabaseConfig) => Database) | undefined;
 }
 
 const USAGE = [
@@ -184,11 +197,9 @@ function assertConfiguredDatabaseUrl(env: Readonly<Record<string, string | undef
   parseDatabaseConfig(env);
 }
 
-async function withDatabase<T>(
-  env: Readonly<Record<string, string | undefined>>,
-  fn: (db: Database) => Promise<T>,
-): Promise<T> {
-  const db = openDatabase(parseDatabaseConfig(env));
+async function withDatabase<T>(options: CliOptions, fn: (db: Database) => Promise<T>): Promise<T> {
+  const open = options.openDatabase ?? openDatabase;
+  const db = open(parseDatabaseConfig(options.env));
   try {
     return await fn(db);
   } finally {
@@ -223,7 +234,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
   try {
     assertConfiguredDatabaseUrl(options.env);
     if (group === 'db' && command === 'migrate') {
-      const result = await withDatabase(options.env, (db) => runMigrations(db));
+      const result = await withDatabase(options, (db) => runMigrations(db));
       emit(
         `db:migrate: applied=${result.applied.length} alreadyApplied=${result.alreadyApplied} total=${result.total}${
           result.applied.length === 0 ? ' (no-op)' : ''
@@ -234,7 +245,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
     }
     if (group === 'db' && command === 'check') {
       const summary = summarizeConnection(parseDatabaseConfig(options.env).connectionString);
-      const status = await withDatabase(options.env, async (db) => ({
+      const status = await withDatabase(options, async (db) => ({
         version: await db.serverVersion(),
         migrations: await migrationStatus(db),
       }));
@@ -268,7 +279,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       const request = { filePath: file, sourceKind: kind, origin, reviewLabel };
       assertImportRequest(request);
       parseDatabaseConfig(options.env);
-      const outcome = await withDatabase(options.env, (db) =>
+      const outcome = await withDatabase(options, (db) =>
         importCsvFile(db, request, { signal: options.signal }),
       );
       for (const line of formatImportOutcome(outcome, redact)) emit(line);
@@ -276,7 +287,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
     }
     if (group === 'editorial' && command === 'report') {
       const batchId = parseBatchId(values.batch);
-      const reports = await withDatabase(options.env, (db) => reportBatches(db, batchId));
+      const reports = await withDatabase(options, (db) => reportBatches(db, batchId));
       emit(`editorial:report: batches=${reports.length}`);
       for (const report of reports)
         for (const line of formatBatchReport(report, redact)) emit(line);
@@ -287,31 +298,31 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
     if (group === 'classification' && command === 'run') {
       const batchId = requireUuid(values.batch, 'batch');
       parseDatabaseConfig(options.env);
-      const outcome = await withDatabase(options.env, (db) => classifyBatch(db, { batchId }));
+      const outcome = await withDatabase(options, (db) => classifyBatch(db, { batchId }));
       for (const line of formatClassificationRun(outcome, redact)) emit(line);
       return EXIT_CODES.ok;
     }
     if (group === 'classification' && command === 'report') {
       const runId = requireUuid(values.run, 'run');
-      const report = await withDatabase(options.env, (db) => reportRun(db, runId));
+      const report = await withDatabase(options, (db) => reportRun(db, runId));
       for (const line of formatRunReport(report, redact)) emit(line);
       return report.reconciled ? EXIT_CODES.ok : EXIT_CODES.database;
     }
     if (group === 'classification' && command === 'queue') {
       const runId = requireUuid(values.run, 'run');
-      const summary = await withDatabase(options.env, (db) => reviewQueue(db, runId));
+      const summary = await withDatabase(options, (db) => reviewQueue(db, runId));
       for (const line of formatQueue(summary, redact)) emit(line);
       return EXIT_CODES.ok;
     }
     if (group === 'classification' && command === 'calibrate') {
       const runId = requireUuid(values.run, 'run');
-      const report = await withDatabase(options.env, (db) => calibrateRun(db, runId));
+      const report = await withDatabase(options, (db) => calibrateRun(db, runId));
       for (const line of formatCalibration(report, redact)) emit(line);
       return EXIT_CODES.ok;
     }
     if (group === 'clustering' && command === 'run') {
       const classificationRunId = requireUuid(values['classification-run'], 'classification-run');
-      const outcome = await withDatabase(options.env, (db) =>
+      const outcome = await withDatabase(options, (db) =>
         clusterClassificationRun(db, { classificationRunId }),
       );
       for (const line of formatClusteringRun(outcome, redact)) emit(line);
@@ -319,33 +330,32 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
     }
     if (group === 'clustering' && command === 'report') {
       const runId = requireUuid(values.run, 'run');
-      const report = await withDatabase(options.env, (db) => reportClusteringRun(db, runId));
+      const report = await withDatabase(options, (db) => reportClusteringRun(db, runId));
       for (const line of formatClusteringReport(report, redact)) emit(line);
       return EXIT_CODES.ok;
     }
     if (group === 'clustering' && command === 'review-count') {
       const runId = requireUuid(values.run, 'run');
-      const counts = await withDatabase(options.env, (db) => reviewCounts(db, runId));
+      const counts = await withDatabase(options, (db) => reviewCounts(db, runId));
       for (const line of formatReviewCounts(counts, redact)) emit(line);
       return EXIT_CODES.ok;
     }
     if (group === 'clustering' && command === 'effective') {
       const runId = requireUuid(values.run, 'run');
-      const view = await withDatabase(options.env, (db) => effectiveIncidents(db, runId));
+      const view = await withDatabase(options, (db) => effectiveIncidents(db, runId));
       for (const line of formatEffectiveView(view, redact)) emit(line);
       return EXIT_CODES.ok;
     }
     if (group === 'clustering' && command === 'merge') {
+      // Every value is validated before a database handle is opened, as the
+      // ids and labels of the earlier commands are.
       const runId = requireUuid(values.run, 'run');
       const incidentIds = parseIdList(values.incidents, 'incidents', MAX_MERGE_INCIDENTS);
-      const outcome = await withDatabase(options.env, (db) =>
-        mergeIncidents(db, {
-          runId,
-          incidentIds,
-          reasonCode: parseReasonCode(values.reason),
-          actor: parseActor(values.actor),
-          note: parseNote(values.note),
-        }),
+      const reasonCode = parseReasonCode(values.reason);
+      const actor = parseActor(values.actor);
+      const note = parseNote(values.note);
+      const outcome = await withDatabase(options, (db) =>
+        mergeIncidents(db, { runId, incidentIds, reasonCode, actor, note }),
       );
       for (const line of formatReviewAction(outcome, redact)) emit(line);
       return EXIT_CODES.ok;
@@ -354,15 +364,11 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       const runId = requireUuid(values.run, 'run');
       const incidentId = requireUuid(values.incident, 'incident');
       const membershipIds = parseIdList(values.members, 'members', MAX_SPLIT_MEMBERSHIPS);
-      const outcome = await withDatabase(options.env, (db) =>
-        splitIncident(db, {
-          runId,
-          incidentId,
-          membershipIds,
-          reasonCode: parseReasonCode(values.reason),
-          actor: parseActor(values.actor),
-          note: parseNote(values.note),
-        }),
+      const reasonCode = parseReasonCode(values.reason);
+      const actor = parseActor(values.actor);
+      const note = parseNote(values.note);
+      const outcome = await withDatabase(options, (db) =>
+        splitIncident(db, { runId, incidentId, membershipIds, reasonCode, actor, note }),
       );
       for (const line of formatReviewAction(outcome, redact)) emit(line);
       return EXIT_CODES.ok;
@@ -414,16 +420,16 @@ function parseActor(value: string | undefined): string {
   return actor;
 }
 
-/** An optional bounded human note. It is stored, never interpreted. */
+/**
+ * An optional bounded human note. It is stored, never interpreted.
+ *
+ * The policy is not the command line's own: `assertReviewNote` is the single
+ * policy the merge and split worker APIs apply too, and migration 0007 applies
+ * the same one in the database. Sprint 4 shipped it here alone, which is
+ * exactly how the compiled API came to persist a note carrying a newline.
+ */
 function parseNote(value: string | undefined): string | null {
-  if (value === undefined) return null;
-  if (value.length === 0 || value.length > 280) {
-    throw configurationError('note_invalid', '--note must be between 1 and 280 characters');
-  }
-  if (hasControlCharacter(value)) {
-    throw configurationError('note_invalid', '--note must not contain control characters');
-  }
-  return value;
+  return assertReviewNote(value);
 }
 
 const PARSE_OPTIONS = {

@@ -16,6 +16,7 @@ import {
 } from '@cas/database';
 
 import { IngestionError } from '../editorial/errors.js';
+import { assertReviewNote } from './note.js';
 
 /**
  * The human correction layer (decision D22).
@@ -56,12 +57,93 @@ export interface ReviewActionOutcome {
 }
 
 /**
- * The identity of an action is what it does, not when it was asked for. The
- * revision is deliberately excluded: replaying the same request after it
- * landed must find the action it already created, and by then the revision has
- * moved on. Nothing is lost, because after a merge the incidents it consumed
- * are no longer effective incidents, so the same request cannot legitimately
- * describe a second, different action.
+ * The complete semantic payload of a review action: every field that is
+ * persisted or that changes what the action does.
+ *
+ * Sprint 4 shipped an idempotency identity built from a subset of these, so a
+ * replay carrying a different actor or a different note was answered with the
+ * original action and the change was concealed (audit finding F3). The subset
+ * is still what the stored `idempotency_key` records, because that is the
+ * identity of *what was asked for* and it is what the database's uniqueness is
+ * on; but a request that matches an existing key is now compared field by
+ * field against the action already stored, and any difference is a conflict.
+ */
+export interface ReviewActionPayload {
+  readonly operation: 'merge' | 'split';
+  readonly clusteringRunId: string;
+  readonly reasonCode: string;
+  readonly actor: string;
+  /** `null` is absence; an empty string is refused earlier and is not this. */
+  readonly note: string | null;
+  /** The revision the caller declared, or `null` when it declared none. */
+  readonly expectedRevision: number | null;
+  readonly incidentIds: readonly string[];
+  readonly membershipIds: readonly string[];
+}
+
+const PAYLOAD_VERSION = 'cas.clustering.review.v1';
+
+/** Count, then the identifiers lower-cased and ordered by code point. */
+function idList(ids: readonly string[]): string {
+  const normalized = ids.map((id) => id.toLowerCase()).sort();
+  return `${normalized.length}:${normalized.join(',')}`;
+}
+
+/**
+ * A deterministic, injective encoding of the whole payload.
+ *
+ * One field per line; the note length-prefixed in UTF-8 bytes so its content
+ * cannot imitate a field boundary; identifier lists counted and ordered so a
+ * caller's ordering cannot change the identity; absence written as `absent`
+ * so it is distinguishable from an empty value. Migration 0007 builds the
+ * identical string in SQL and stores its digest as a generated column, and a
+ * PostgreSQL test holds the two to the same value.
+ */
+export function canonicalReviewPayload(payload: ReviewActionPayload): string {
+  return [
+    PAYLOAD_VERSION,
+    `operation:${payload.operation}`,
+    `run:${payload.clusteringRunId.toLowerCase()}`,
+    `reason:${payload.reasonCode}`,
+    `actor:${payload.actor}`,
+    payload.note === null
+      ? 'note:absent'
+      : `note:present:${Buffer.byteLength(payload.note, 'utf8')}:${payload.note}`,
+    payload.expectedRevision === null ? 'revision:absent' : `revision:${payload.expectedRevision}`,
+    `incidents:${idList(payload.incidentIds)}`,
+    `memberships:${idList(payload.membershipIds)}`,
+    '',
+  ].join('\n');
+}
+
+export function reviewPayloadDigest(payload: ReviewActionPayload): string {
+  return createHash('sha256').update(canonicalReviewPayload(payload), 'utf8').digest('hex');
+}
+
+/** The payload an already-stored action represents. */
+export function payloadOfAction(action: ReviewActionRecord): ReviewActionPayload {
+  return {
+    operation: action.operation,
+    clusteringRunId: action.clusteringRunId,
+    reasonCode: action.reasonCode,
+    actor: action.actor,
+    note: action.note,
+    expectedRevision: action.expectedRevision,
+    incidentIds: action.affectedIncidentIds,
+    membershipIds: action.affectedMembershipIds,
+  };
+}
+
+/**
+ * The identity of what was asked for: the operation, the run it addresses, the
+ * incidents and memberships it names and the reason given.
+ *
+ * The revision is deliberately excluded here: replaying the same request after
+ * it landed must find the action it already created, and by then the revision
+ * has moved on. Actor and note are excluded here too, and are enforced by the
+ * payload comparison instead, so that a replay differing only in who asked or
+ * what they wrote is refused rather than silently accepted or silently
+ * recorded twice.
  */
 function actionKey(input: {
   readonly operation: string;
@@ -70,15 +152,22 @@ function actionKey(input: {
   readonly membershipIds: readonly string[];
   readonly reasonCode: string;
 }): string {
+  // Encoded exactly as the canonical payload encodes the same fields, so the
+  // key and the payload agree about identifier order and case. They must: a
+  // request whose identifiers differ only in order or case is the same
+  // request, and it has to find its own action rather than a new key.
   return createHash('sha256')
     .update(
-      JSON.stringify({
-        operation: input.operation,
-        clusteringRunId: input.clusteringRunId,
-        incidentIds: [...input.incidentIds].sort(),
-        membershipIds: [...input.membershipIds].sort(),
-        reasonCode: input.reasonCode,
-      }),
+      [
+        PAYLOAD_VERSION,
+        `operation:${input.operation}`,
+        `run:${input.clusteringRunId.toLowerCase()}`,
+        `reason:${input.reasonCode}`,
+        `incidents:${idList(input.incidentIds)}`,
+        `memberships:${idList(input.membershipIds)}`,
+        '',
+      ].join('\n'),
+      'utf8',
     )
     .digest('hex');
 }
@@ -178,6 +267,14 @@ interface ActionRequest {
   readonly reasonCode: string;
   readonly actor: string;
   readonly note?: string | null | undefined;
+  /**
+   * The revision the caller believes it is acting on. Optional: when it is
+   * omitted the current revision stands and nothing is declared, which is what
+   * the command line does. When it is given it must match, and it becomes part
+   * of the action's identity, so a replay declaring a different revision is a
+   * conflict rather than a repeat.
+   */
+  readonly expectedRevision?: number | undefined;
   readonly makeId?: (() => string) | undefined;
   readonly now?: (() => Date) | undefined;
 }
@@ -191,6 +288,7 @@ async function record(
   membershipIds: readonly string[],
   priorRevision: number,
   idempotencyKey: string,
+  submitted: ReviewActionPayload,
 ): Promise<ReviewActionOutcome> {
   const makeId = request.makeId ?? randomUUID;
   const now = request.now ?? (() => new Date());
@@ -213,9 +311,10 @@ async function record(
         batchId: run.batchId,
         operation,
         reasonCode: request.reasonCode,
-        note: request.note ?? null,
+        note: assertReviewNote(request.note),
         actor: request.actor,
         priorRevision,
+        expectedRevision: request.expectedRevision ?? null,
         idempotencyKey,
         affectedIncidentIds: incidentIds,
         affectedMembershipIds: membershipIds,
@@ -224,10 +323,14 @@ async function record(
     });
   } catch (error) {
     if (isDatabaseError(error) && error.code === '23505') {
+      // Two writers raced for one identity. The winner is only this request's
+      // own action if it carries the same payload; otherwise it is a different
+      // action wearing the same key, which is a conflict and not a repeat.
       const winner = await db.withClient((client) =>
         findReviewActionByIdempotencyKey(client, run.id, idempotencyKey),
       );
       if (winner !== null) {
+        assertSamePayload(winner, submitted);
         return { outcome: 'already_recorded', action: winner, revision: winner.resultingRevision };
       }
       throw new IngestionError(
@@ -252,21 +355,71 @@ function configuration(code: string, message: string): IngestionError {
 }
 
 /**
+ * Refuses a request that reuses an existing action's identity while differing
+ * anywhere in its payload.
+ *
+ * The message names the condition alone. It does not echo the actor, the note,
+ * the reason, any identifier or any difference between the two payloads,
+ * because the caller supplying the second payload is not entitled to read the
+ * first.
+ */
+function assertSamePayload(stored: ReviewActionRecord, submitted: ReviewActionPayload): void {
+  if (canonicalReviewPayload(payloadOfAction(stored)) === canonicalReviewPayload(submitted)) {
+    return;
+  }
+  throw new IngestionError(
+    'configuration',
+    'review_action_conflict',
+    'a review action with this identity was already recorded with a different payload',
+  );
+}
+
+/**
  * Looks for an action this request already produced. Checked before the
  * effective view is validated, because once the action landed the incidents it
  * named are no longer effective and validation would refuse its own replay.
+ *
+ * An exact replay returns the original action. A replay that changed any
+ * semantic field fails, writes nothing and does not return the earlier action.
  */
 async function alreadyRecorded(
   db: Database,
   runId: string,
   idempotencyKey: string,
+  submitted: ReviewActionPayload,
 ): Promise<ReviewActionOutcome | null> {
   const found = await db.withClient((client) =>
     findReviewActionByIdempotencyKey(client, runId, idempotencyKey),
   );
-  return found === null
-    ? null
-    : { outcome: 'already_recorded', action: found, revision: found.resultingRevision };
+  if (found === null) return null;
+  assertSamePayload(found, submitted);
+  return { outcome: 'already_recorded', action: found, revision: found.resultingRevision };
+}
+
+/**
+ * A declared revision that no longer matches is stale, not a conflict: the
+ * caller asked to act on a state that has moved, and nothing with that
+ * identity was ever recorded.
+ */
+function assertDeclaredRevision(declared: number | null, current: number): void {
+  if (declared !== null && declared !== current) {
+    throw configuration(
+      'stale_revision',
+      'the clustering review revision moved while this action was being prepared',
+    );
+  }
+}
+
+/** A declared revision must be a whole, non-negative number if it is given. */
+function assertExpectedRevision(value: number | undefined): number | null {
+  if (value === undefined) return null;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw configuration(
+      'expected_revision_invalid',
+      'the declared clustering review revision must be a whole number of zero or more',
+    );
+  }
+  return value;
 }
 
 /** Merges two or more effective incidents of one run into a new effective incident. */
@@ -274,6 +427,10 @@ export async function mergeIncidents(
   db: Database,
   request: ActionRequest & { readonly incidentIds: readonly string[] },
 ): Promise<ReviewActionOutcome> {
+  // Validated before anything is hashed, stored or looked up, so a refused
+  // note never reaches a digest, a database round trip or a printed line.
+  const note = assertReviewNote(request.note);
+  const expectedRevision = assertExpectedRevision(request.expectedRevision);
   const run = await loadCompletedRun(db, request.runId);
   const unique = [...new Set(request.incidentIds)].sort();
   if (unique.length !== request.incidentIds.length) {
@@ -292,9 +449,20 @@ export async function mergeIncidents(
     membershipIds: [],
     reasonCode: request.reasonCode,
   });
-  const replayed = await alreadyRecorded(db, run.id, key);
+  const submitted: ReviewActionPayload = {
+    operation: 'merge',
+    clusteringRunId: run.id,
+    reasonCode: request.reasonCode,
+    actor: request.actor,
+    note,
+    expectedRevision,
+    incidentIds: unique,
+    membershipIds: [],
+  };
+  const replayed = await alreadyRecorded(db, run.id, key, submitted);
   if (replayed !== null) return replayed;
   const view = await effectiveIncidents(db, request.runId);
+  assertDeclaredRevision(expectedRevision, view.revision);
   const known = new Set(view.incidents.map((incident) => incident.effectiveIncidentId));
   for (const id of unique) {
     if (!known.has(id)) {
@@ -304,7 +472,7 @@ export async function mergeIncidents(
       );
     }
   }
-  return record(db, run, request, 'merge', unique, [], view.revision, key);
+  return record(db, run, request, 'merge', unique, [], view.revision, key, submitted);
 }
 
 /** Splits selected memberships out of one effective incident into a new one. */
@@ -315,6 +483,8 @@ export async function splitIncident(
     readonly membershipIds: readonly string[];
   },
 ): Promise<ReviewActionOutcome> {
+  const note = assertReviewNote(request.note);
+  const expectedRevision = assertExpectedRevision(request.expectedRevision);
   const run = await loadCompletedRun(db, request.runId);
   const unique = [...new Set(request.membershipIds)].sort();
   if (unique.length !== request.membershipIds.length) {
@@ -331,9 +501,20 @@ export async function splitIncident(
     membershipIds: unique,
     reasonCode: request.reasonCode,
   });
-  const replayed = await alreadyRecorded(db, run.id, key);
+  const submitted: ReviewActionPayload = {
+    operation: 'split',
+    clusteringRunId: run.id,
+    reasonCode: request.reasonCode,
+    actor: request.actor,
+    note,
+    expectedRevision,
+    incidentIds: [request.incidentId],
+    membershipIds: unique,
+  };
+  const replayed = await alreadyRecorded(db, run.id, key, submitted);
   if (replayed !== null) return replayed;
   const view = await effectiveIncidents(db, request.runId);
+  assertDeclaredRevision(expectedRevision, view.revision);
   const incident = view.incidents.find(
     (candidate) => candidate.effectiveIncidentId === request.incidentId,
   );
@@ -358,7 +539,17 @@ export async function splitIncident(
       'a split must leave at least one membership behind',
     );
   }
-  return record(db, run, request, 'split', [request.incidentId], unique, view.revision, key);
+  return record(
+    db,
+    run,
+    request,
+    'split',
+    [request.incidentId],
+    unique,
+    view.revision,
+    key,
+    submitted,
+  );
 }
 
 export interface ReviewCounts {

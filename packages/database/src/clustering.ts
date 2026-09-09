@@ -114,6 +114,13 @@ export interface NewReviewAction {
   readonly note: string | null;
   readonly actor: string;
   readonly priorRevision: number;
+  /**
+   * The revision the caller declared, or null when it declared none and let
+   * the current revision stand. Part of the canonical payload because it is
+   * part of what was asked for; migration 0007 requires it to agree with
+   * `priorRevision` whenever it is present.
+   */
+  readonly expectedRevision: number | null;
   readonly idempotencyKey: string;
   readonly affectedIncidentIds: readonly string[];
   readonly affectedMembershipIds: readonly string[];
@@ -122,6 +129,12 @@ export interface NewReviewAction {
 
 export interface ReviewActionRecord extends NewReviewAction {
   readonly resultingRevision: number;
+  /**
+   * SHA-256 of the canonical semantic payload, computed by the database as a
+   * generated column (migration 0007). The application never writes it, so a
+   * stored digest cannot disagree with the row it describes.
+   */
+  readonly payloadDigest: string;
 }
 
 const RUN_COLUMNS = `id, classification_run_id, batch_id, data_origin, engine_version,
@@ -593,8 +606,8 @@ export async function countClustersByKind(
 // The human review layer.
 
 const ACTION_COLUMNS = `id, clustering_run_id, batch_id, operation, reason_code, note, actor,
-  prior_revision, resulting_revision, idempotency_key, affected_incident_ids,
-  affected_membership_ids, to_json(created_at) #>> '{}' AS created_at`;
+  prior_revision, expected_revision, resulting_revision, idempotency_key, payload_digest,
+  affected_incident_ids, affected_membership_ids, to_json(created_at) #>> '{}' AS created_at`;
 
 interface ActionRow {
   id: string;
@@ -605,8 +618,10 @@ interface ActionRow {
   note: string | null;
   actor: string;
   prior_revision: number;
+  expected_revision: number | null;
   resulting_revision: number;
   idempotency_key: string;
+  payload_digest: string;
   affected_incident_ids: string[];
   affected_membership_ids: string[];
   created_at: string;
@@ -622,8 +637,10 @@ function toActionRecord(row: ActionRow): ReviewActionRecord {
     note: row.note,
     actor: row.actor,
     priorRevision: row.prior_revision,
+    expectedRevision: row.expected_revision,
     resultingRevision: row.resulting_revision,
     idempotencyKey: row.idempotency_key,
+    payloadDigest: row.payload_digest,
     affectedIncidentIds: row.affected_incident_ids,
     affectedMembershipIds: row.affected_membership_ids,
     createdAt: row.created_at,
@@ -671,11 +688,15 @@ export async function insertReviewAction(
   action: NewReviewAction,
 ): Promise<void> {
   await client.query(
+    // `payload_digest` is GENERATED ALWAYS (migration 0007) and is therefore
+    // absent here by design: the database derives the action's identity from
+    // the row it actually stored.
     `INSERT INTO clustering_review_actions (
        id, clustering_run_id, batch_id, operation, reason_code, note, actor, prior_revision,
-       resulting_revision, idempotency_key, affected_incident_ids, affected_membership_ids,
-       created_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13::timestamptz)`,
+       expected_revision, resulting_revision, idempotency_key, affected_incident_ids,
+       affected_membership_ids, created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb,
+       $14::timestamptz)`,
     [
       action.id,
       action.clusteringRunId,
@@ -685,6 +706,7 @@ export async function insertReviewAction(
       action.note,
       action.actor,
       action.priorRevision,
+      action.expectedRevision,
       action.priorRevision + 1,
       action.idempotencyKey,
       JSON.stringify(action.affectedIncidentIds),
