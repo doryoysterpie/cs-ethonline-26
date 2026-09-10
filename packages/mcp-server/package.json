@@ -15,7 +15,10 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.build.json && vitest run",
+    "test:db": "pnpm -w exec turbo run build --filter=@cas/mcp-server && vitest run --config vitest.db.config.ts",
+    "start": "node dist/bin.js"
   },
   "dependencies": {
     "@cas/contracts": "workspace:*",
@@ -31,5 +34,8 @@
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "bin": {
+    "cas-mcp-server": "./dist/bin.js"
   }
 }
