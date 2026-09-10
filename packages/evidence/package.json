@@ -1,0 +1,29 @@
+{
+  "name": "@cas/evidence",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deterministic Graph-signal correlation, evidence-state resolution and the chain-and-reporting anomaly feed. Pure: no database, network, environment, model, clock or randomness. Sprint 5, decision D25.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

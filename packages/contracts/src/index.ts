@@ -198,3 +198,82 @@ export interface TvlDeltaSignal {
   readonly deltaPercent: string;
   readonly provenance: GraphQueryProvenance;
 }
+
+/**
+ * Evidence state of one canonical incident (Sprint 5, decision D25).
+ *
+ * The vocabulary is fixed and deliberately small. Its whole purpose is to keep
+ * the distance between "somebody reported this" and "the chain shows it"
+ * visible, so a reader is never handed a stronger claim than the evidence
+ * supports.
+ *
+ * - `reported_only`: the incident has reporting evidence and no accepted,
+ *   relevant on-chain evidence. This is the default and the resting state; it
+ *   is not a failure and it is not doubt.
+ * - `onchain_observed`: relevant on-chain activity is observed and accepted,
+ *   but it does not on its own establish the reported cyberattack claim. A
+ *   value movement is telemetry, not testimony.
+ * - `corroborated`: an accepted signal materially supports a *specific*
+ *   reported claim under the declared correlation policy. The claim it
+ *   supports is named; nothing is corroborated in general.
+ * - `contradicted`: accepted evidence conflicts with a specific falsifiable
+ *   claim. Missing data, an absent signal, a stale snapshot or insufficient
+ *   history must never produce this. Absence of evidence is not evidence of
+ *   absence, and the resolver refuses to treat it as such.
+ */
+export const EVIDENCE_STATES = [
+  'reported_only',
+  'onchain_observed',
+  'corroborated',
+  'contradicted',
+] as const;
+export type EvidenceState = (typeof EVIDENCE_STATES)[number];
+
+/**
+ * Lifecycle of one machine-suggested association between an incident and a
+ * Graph signal. A suggestion is never evidence until a human accepts it, and
+ * the machine's suggestion is retained either way so the record shows what was
+ * proposed as well as what was decided.
+ */
+export const ASSOCIATION_STATUSES = ['suggested', 'accepted', 'rejected'] as const;
+export type AssociationStatus = (typeof ASSOCIATION_STATUSES)[number];
+
+/**
+ * What an accepted association asserts about a specific claim. `supports` and
+ * `conflicts` are the only two that can move an evidence state past
+ * `onchain_observed`; `context` records relevant activity that establishes
+ * nothing about the claim.
+ */
+export const ASSOCIATION_RELATIONS = ['supports', 'conflicts', 'context'] as const;
+export type AssociationRelation = (typeof ASSOCIATION_RELATIONS)[number];
+
+/** Label of one anomaly-feed entry. Fixed vocabulary, never free text. */
+export const ANOMALY_LABELS = [
+  'normal',
+  'positive_spike',
+  'negative_spike',
+  'insufficient_history',
+  'stale_observation',
+  'missing_observation',
+] as const;
+export type AnomalyLabel = (typeof ANOMALY_LABELS)[number];
+
+/** Which side of the feed an entry came from. */
+export const ANOMALY_SIGNAL_TYPES = ['chain_tvl', 'reporting_volume'] as const;
+export type AnomalySignalType = (typeof ANOMALY_SIGNAL_TYPES)[number];
+
+/**
+ * Why a draft claim may or may not name a victim (decision D4, provisional).
+ * The condition is carried into the draft so a reader sees the rule that was
+ * applied rather than only its outcome.
+ */
+export const NAMING_DECISIONS = [
+  'named_primary_statement',
+  'named_two_independent_reports',
+  'withheld_insufficient_sourcing',
+] as const;
+export type NamingDecision = (typeof NAMING_DECISIONS)[number];
+
+/** Status of a generated draft. There is no published status: publishing is human. */
+export const DRAFT_STATUSES = ['unpublished_requires_human_review'] as const;
+export type DraftStatus = (typeof DRAFT_STATUSES)[number];
