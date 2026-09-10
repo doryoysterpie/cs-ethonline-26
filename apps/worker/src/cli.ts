@@ -1,9 +1,11 @@
+import { basename } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import type { DataOrigin, EditorialSourceKind } from '@cas/contracts';
 import {
   connectionSecrets,
   createRedactor,
+  getGraphSignal,
   DATABASE_URL_VARIABLE,
   migrationStatus,
   openDatabase,
@@ -41,6 +43,17 @@ import {
   MAX_SPLIT_MEMBERSHIPS,
 } from './clustering/review.js';
 import { clusterClassificationRun } from './clustering/run.js';
+import { buildAnomalyFeed, formatAnomalyFeed } from './evidence/anomaly.js';
+import {
+  formatEvidenceReport,
+  formatSignalRecord,
+  formatSnapshotIngest,
+} from './evidence/output.js';
+import { decideAssociation, evidenceReviewCounts } from './evidence/review.js';
+import { reportEvidenceRun, resolveEvidence } from './evidence/run.js';
+import { ingestSnapshot } from './evidence/signals.js';
+import { buildDraftRequest } from './drafting/build.js';
+import { writeDraft } from './drafting/generate.js';
 import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
 import { assertImportRequest, importCsvFile } from './editorial/import.js';
@@ -123,6 +136,14 @@ const USAGE = [
   '  clustering effective --run <uuid>',
   '  clustering merge --run <uuid> --incidents <uuid,uuid> --reason <code> [--note <text>]',
   '  clustering split --run <uuid> --incident <uuid> --members <uuid,...> --reason <code> [--note <text>]',
+  '  evidence ingest --file <path> --origin <live|fixture|replay>',
+  '  evidence resolve --clustering-run <uuid> --signal-run <uuid>',
+  '  evidence report --run <uuid>',
+  '  evidence signal --id <uuid>',
+  '  evidence review-count --run <uuid>',
+  '  evidence decide --run <uuid> --association <uuid> --operation <accept|reject> --relation <supports|conflicts|context> --reason <code> --actor <name> [--claim <uuid>] [--note <text>]',
+  '  evidence anomaly --signal-run <uuid> [--clustering-run <uuid> --window <isoStart..isoEnd> ...]',
+  '  drafting generate --evidence-run <uuid> --window <isoStart..isoEnd> [--out <directory>]',
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -360,6 +381,122 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       for (const line of formatReviewAction(outcome, redact)) emit(line);
       return EXIT_CODES.ok;
     }
+    if (group === 'evidence' && command === 'ingest') {
+      const file = requireFile(values.file);
+      const origin = parseOrigin(values.origin);
+      const outcome = await withDatabase(options, (db) =>
+        ingestSnapshot(db, { snapshotPath: file, dataOrigin: origin }),
+      );
+      for (const line of formatSnapshotIngest(outcome, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'evidence' && command === 'resolve') {
+      const clusteringRunId = requireUuid(values['classification-run'] ?? values.run, 'run');
+      const signalRunId = requireUuid(values['signal-run'], 'run');
+      const outcome = await withDatabase(options, (db) =>
+        resolveEvidence(db, { clusteringRunId, signalRunId }),
+      );
+      const report = await withDatabase(options, (db) => reportEvidenceRun(db, outcome.run.id));
+      emit(
+        `evidence:resolve: ${outcome.outcome === 'resolved' ? 'resolved' : 'already resolved'} run=${outcome.run.id} suggestions=${outcome.suggestions} unlinkedPairs=${outcome.rejectedPairs}`,
+      );
+      for (const line of formatEvidenceReport(report, redact)) emit(line);
+      return report.reconciled ? EXIT_CODES.ok : EXIT_CODES.database;
+    }
+    if (group === 'evidence' && command === 'report') {
+      const runId = requireUuid(values.run, 'run');
+      const report = await withDatabase(options, (db) => reportEvidenceRun(db, runId));
+      for (const line of formatEvidenceReport(report, redact)) emit(line);
+      return report.reconciled ? EXIT_CODES.ok : EXIT_CODES.database;
+    }
+    if (group === 'evidence' && command === 'signal') {
+      const signalId = requireUuid(values.id, 'run');
+      const signal = await withDatabase(options, (db) =>
+        db.withClient((client) => getGraphSignal(client, signalId)),
+      );
+      if (signal === null) {
+        throw configurationError('signal_not_found', 'no signal with that id');
+      }
+      for (const line of formatSignalRecord(signal, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'evidence' && command === 'review-count') {
+      const runId = requireUuid(values.run, 'run');
+      const counts = await withDatabase(options, (db) => evidenceReviewCounts(db, runId));
+      emit(
+        `evidence:review-count: run=${runId} actions=${counts.actions} accepted=${counts.accepted} rejected=${counts.rejected} revision=${counts.revision}`,
+      );
+      return EXIT_CODES.ok;
+    }
+    if (group === 'evidence' && command === 'decide') {
+      // Every value is validated before a database handle is opened.
+      const runId = requireUuid(values.run, 'run');
+      const associationId = requireUuid(values.association, 'run');
+      const operation = parseOperation(values.operation);
+      const relation = parseRelation(values.relation);
+      const reasonCode = parseReasonCode(values.reason);
+      const actor = parseActor(values.actor);
+      const note = parseNote(values.note);
+      const claimId = values.claim === undefined ? null : requireUuid(values.claim, 'run');
+      const outcome = await withDatabase(options, (db) =>
+        decideAssociation(db, {
+          runId,
+          associationId,
+          operation,
+          relation,
+          claimId,
+          reasonCode,
+          actor,
+          rationale: note,
+        }),
+      );
+      emit(
+        `evidence:decide: ${outcome.outcome === 'recorded' ? 'recorded' : 'already recorded'} action=${outcome.action.id} revision=${outcome.revision}`,
+      );
+      return EXIT_CODES.ok;
+    }
+    if (group === 'evidence' && command === 'anomaly') {
+      const signalRunId = requireUuid(values['signal-run'], 'run');
+      const clusteringRunId = values.run === undefined ? undefined : requireUuid(values.run, 'run');
+      const windows = parseWindows(values.window);
+      const feed = await withDatabase(options, (db) =>
+        buildAnomalyFeed(db, {
+          signalRunId,
+          ...(clusteringRunId === undefined ? {} : { clusteringRunId }),
+          ...(windows === undefined ? {} : { windows }),
+        }),
+      );
+      for (const line of formatAnomalyFeed(feed, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'drafting' && command === 'generate') {
+      const evidenceRunId = requireUuid(values['evidence-run'], 'run');
+      const windows = parseWindows(values.window);
+      const first = windows?.[0];
+      if (first === undefined) {
+        throw configurationError(
+          'windows_required',
+          '--window is required as <isoStart>..<isoEnd>; no editorial week is inferred',
+        );
+      }
+      const directory = values.out ?? 'output/drafts';
+      const request = await withDatabase(options, (db) =>
+        buildDraftRequest(db, {
+          evidenceRunId,
+          periodStart: first.startsAt,
+          periodEnd: first.endsAt,
+        }),
+      );
+      const written = await writeDraft(request, directory);
+      emit(
+        `drafting:generate: draft=${request.draftId} evidenceRun=${evidenceRunId} origin=${request.dataOrigin} status=unpublished_requires_human_review`,
+      );
+      emit(
+        `counts: incidents=${written.draft.provenance.counts.incidents} claimsWritten=${written.claimsWritten} claimsOmitted=${written.claimsOmitted} namesWithheld=${written.namesWithheld} crypto=${written.draft.provenance.counts.cryptoIncidents}`,
+      );
+      emit(`files: draft=${basename(written.draftPath)} sidecar=${basename(written.sidecarPath)}`);
+      return EXIT_CODES.ok;
+    }
     if (group === 'clustering' && command === 'split') {
       const runId = requireUuid(values.run, 'run');
       const incidentId = requireUuid(values.incident, 'incident');
@@ -412,6 +549,45 @@ function parseReasonCode(value: string | undefined): string {
   return value;
 }
 
+function parseOperation(value: string | undefined): 'accept' | 'reject' {
+  if (value === 'accept' || value === 'reject') return value;
+  throw configurationError('operation_invalid', '--operation must be accept or reject');
+}
+
+function parseRelation(value: string | undefined): 'supports' | 'conflicts' | 'context' {
+  if (value === 'supports' || value === 'conflicts' || value === 'context') return value;
+  throw configurationError('relation_invalid', '--relation must be supports, conflicts or context');
+}
+
+/**
+ * Explicit window bounds, `<isoStart>..<isoEnd>`, repeatable. No editorial
+ * week is inferred here or anywhere: decision D10 has not fixed one.
+ */
+function parseWindows(
+  values: readonly string[] | undefined,
+): readonly { readonly startsAt: string; readonly endsAt: string }[] | undefined {
+  if (values === undefined || values.length === 0) return undefined;
+  if (values.length > 64) {
+    throw configurationError('windows_invalid', 'too many --window values');
+  }
+  return values.map((value) => {
+    const parts = value.split('..');
+    const startsAt = parts[0] ?? '';
+    const endsAt = parts[1] ?? '';
+    if (
+      parts.length !== 2 ||
+      Number.isNaN(Date.parse(startsAt)) ||
+      Number.isNaN(Date.parse(endsAt))
+    ) {
+      throw configurationError('windows_invalid', '--window must be <isoStart>..<isoEnd>');
+    }
+    if (Date.parse(endsAt) <= Date.parse(startsAt)) {
+      throw configurationError('windows_invalid', '--window must end after it starts');
+    }
+    return { startsAt, endsAt };
+  });
+}
+
 function parseActor(value: string | undefined): string {
   const actor = value ?? 'owner';
   if (!ACTOR.test(actor)) {
@@ -446,6 +622,15 @@ const PARSE_OPTIONS = {
   reason: { type: 'string' },
   note: { type: 'string' },
   actor: { type: 'string' },
+  'signal-run': { type: 'string' },
+  'evidence-run': { type: 'string' },
+  out: { type: 'string' },
+  association: { type: 'string' },
+  operation: { type: 'string' },
+  relation: { type: 'string' },
+  claim: { type: 'string' },
+  id: { type: 'string' },
+  window: { type: 'string', multiple: true },
 } as const;
 
 interface ParsedValues {
@@ -453,6 +638,15 @@ interface ParsedValues {
   readonly kind?: string | undefined;
   readonly origin?: string | undefined;
   readonly 'review-label'?: string | undefined;
+  readonly 'signal-run'?: string | undefined;
+  readonly 'evidence-run'?: string | undefined;
+  readonly out?: string | undefined;
+  readonly association?: string | undefined;
+  readonly operation?: string | undefined;
+  readonly relation?: string | undefined;
+  readonly claim?: string | undefined;
+  readonly id?: string | undefined;
+  readonly window?: string[] | undefined;
   readonly batch?: string | undefined;
   readonly run?: string | undefined;
   readonly 'classification-run'?: string | undefined;

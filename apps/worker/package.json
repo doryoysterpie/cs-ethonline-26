@@ -16,6 +16,8 @@
     "@cas/clustering": "workspace:*",
     "@cas/contracts": "workspace:*",
     "@cas/database": "workspace:*",
+    "@cas/drafting": "workspace:*",
+    "@cas/evidence": "workspace:*",
     "csv-parse": "catalog:",
     "htmlparser2": "catalog:"
   },

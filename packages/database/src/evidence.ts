@@ -918,3 +918,161 @@ export async function listEvidenceActions(
   );
   return result.rows.map(toAction);
 }
+
+/**
+ * Count-only reporting figures for one explicit window of one batch.
+ *
+ * The window is the caller's: two instants, both supplied. Nothing here infers
+ * an editorial week, because decision D10 has not fixed one, and no weekly
+ * candidate decision is read.
+ */
+export async function countReportingWindow(
+  client: Queryable,
+  clusteringRunId: string,
+  startsAt: string,
+  endsAt: string,
+): Promise<{
+  readonly sourceStoryCount: number;
+  readonly incidentCount: number;
+  readonly multiSourceIncidentCount: number;
+}> {
+  const result = await client.query<{
+    stories: string;
+    incidents: string;
+    multi_source: string;
+  }>(
+    `WITH windowed AS (
+       SELECT m.incident_cluster_id, m.source_row_id
+         FROM incident_memberships m
+         JOIN source_rows r ON r.id = m.source_row_id
+        WHERE m.clustering_run_id = $1
+          AND r.posted_at >= $2::timestamptz AND r.posted_at < $3::timestamptz
+     ), per_incident AS (
+       SELECT incident_cluster_id, count(*) AS members FROM windowed GROUP BY incident_cluster_id
+     )
+     SELECT (SELECT count(*)::text FROM windowed) AS stories,
+            (SELECT count(*)::text FROM per_incident) AS incidents,
+            (SELECT count(*)::text FROM per_incident WHERE members > 1) AS multi_source`,
+    [clusteringRunId, startsAt, endsAt],
+  );
+  const row = result.rows[0];
+  return {
+    sourceStoryCount: Number(row?.stories ?? '0'),
+    incidentCount: Number(row?.incidents ?? '0'),
+    multiSourceIncidentCount: Number(row?.multi_source ?? '0'),
+  };
+}
+
+/** Every distinct signal target seen in one run, for the anomaly feed. */
+export async function listSignalTargets(
+  client: Queryable,
+  signalRunId: string,
+): Promise<
+  { readonly chain: ChainId; readonly protocolSlug: string; readonly dataOrigin: DataOrigin }[]
+> {
+  const result = await client.query<{
+    chain: ChainId;
+    protocol_slug: string;
+    data_origin: DataOrigin;
+  }>(
+    `SELECT DISTINCT chain, protocol_slug, data_origin FROM graph_signals
+      WHERE signal_run_id = $1 ORDER BY chain, protocol_slug`,
+    [signalRunId],
+  );
+  return result.rows.map((row) => ({
+    chain: row.chain,
+    protocolSlug: row.protocol_slug,
+    dataOrigin: row.data_origin,
+  }));
+}
+
+/**
+ * Draft input for one evidence run: each incident with its resolved state and
+ * the source rows behind it.
+ *
+ * This is the only query in the project that returns source text, and it
+ * exists because a draft is made of text. It is never printed by a command:
+ * the drafting path writes to an ignored directory and the command reports
+ * counts. Nothing here returns a raw cell, a `ch` value or a review state.
+ */
+export async function listDraftIncidents(
+  client: Queryable,
+  evidenceRunId: string,
+  limit: number,
+): Promise<
+  {
+    readonly incidentId: string;
+    readonly clusteringRunId: string;
+    readonly batchId: string;
+    readonly dataOrigin: DataOrigin;
+    readonly state: string;
+    readonly claimId: string | null;
+    readonly acceptedAssociationCount: number;
+    readonly hasSubject: boolean;
+    readonly sources: readonly {
+      readonly sourceRowId: string;
+      readonly title: string | null;
+      readonly publisher: string | null;
+      readonly url: string | null;
+      readonly postedAt: string | null;
+    }[];
+  }[]
+> {
+  if (limit < 1 || limit > 5000) {
+    throw new DatabaseError('query', 'draft page size outside the permitted range');
+  }
+  const result = await client.query<{
+    incident_id: string;
+    clustering_run_id: string;
+    batch_id: string;
+    data_origin: DataOrigin;
+    state: string;
+    claim_id: string | null;
+    accepted_association_count: number;
+    has_subject: boolean;
+    sources: {
+      sourceRowId: string;
+      title: string | null;
+      publisher: string | null;
+      url: string | null;
+      postedAt: string | null;
+    }[];
+  }>(
+    `SELECT s.incident_cluster_id AS incident_id, s.clustering_run_id, s.batch_id,
+            r.data_origin, s.state, s.claim_id, s.accepted_association_count,
+            (sub.id IS NOT NULL) AS has_subject,
+            coalesce(
+              (SELECT jsonb_agg(jsonb_build_object(
+                        'sourceRowId', sr.id,
+                        'title', sr.normalized_title,
+                        'publisher', sr.raw_category,
+                        'url', sr.canonical_url,
+                        'postedAt', to_json(sr.posted_at) #>> '{}')
+                       ORDER BY sr.id)
+                 FROM incident_memberships m
+                 JOIN source_rows sr ON sr.id = m.source_row_id
+                WHERE m.incident_cluster_id = s.incident_cluster_id
+                  AND m.clustering_run_id = s.clustering_run_id),
+              '[]'::jsonb) AS sources
+       FROM incident_evidence_states s
+       JOIN evidence_runs r ON r.id = s.evidence_run_id
+       LEFT JOIN incident_subjects sub
+              ON sub.incident_cluster_id = s.incident_cluster_id
+             AND sub.clustering_run_id = s.clustering_run_id
+      WHERE s.evidence_run_id = $1
+      ORDER BY s.incident_cluster_id
+      LIMIT $2`,
+    [evidenceRunId, limit],
+  );
+  return result.rows.map((row) => ({
+    incidentId: row.incident_id,
+    clusteringRunId: row.clustering_run_id,
+    batchId: row.batch_id,
+    dataOrigin: row.data_origin,
+    state: row.state,
+    claimId: row.claim_id,
+    acceptedAssociationCount: row.accepted_association_count,
+    hasSubject: row.has_subject,
+    sources: row.sources,
+  }));
+}

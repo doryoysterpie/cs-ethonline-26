@@ -101,6 +101,12 @@ importers:
       '@cas/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@cas/drafting':
+        specifier: workspace:*
+        version: link:../../packages/drafting
+      '@cas/evidence':
+        specifier: workspace:*
+        version: link:../../packages/evidence
       csv-parse:
         specifier: 'catalog:'
         version: 7.0.2
