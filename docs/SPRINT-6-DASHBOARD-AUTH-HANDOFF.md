@@ -238,8 +238,13 @@ DASHBOARD_MEMORY_STORE_SEED=/absolute/path/outside/the/repo/seed.json \
 corepack pnpm --filter @cas/dashboard start
 ```
 
-The reproduction from a clean clone was run after the commits below landed, and its result is
-recorded in the final commit of the branch (`docs: record the clean-checkout reproduction`).
+Result of that reproduction on this machine (10 September 2026), from a fresh clone of the
+branch at `d2bd8dcaf3281c3e1152e4d189fbe3d1050dc265` into an empty directory, with only
+migrations 0001 to 0008 present: `pnpm install --frozen-lockfile` completed in 5.5 seconds;
+`pnpm verify` passed (formatting clean, 22 typecheck tasks, 18 test tasks with the same 559
+offline tests, 14 build tasks); `pnpm test:db` passed with 90, 92 and 11 tests; the browser
+suite passed 20 of 20 in 13.1 seconds; `pnpm audit` found no known vulnerabilities. Every
+figure is the runner's own summary line. The clone was deleted afterwards.
 
 ## 9. What is deliberately not done, and why
 
