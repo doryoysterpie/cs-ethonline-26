@@ -101,8 +101,22 @@ describe('the built stdio entry point', () => {
     expect(() => process.kill(pid as number, 0)).toThrow();
     const stderr = Buffer.concat(stderrChunks).toString('utf8');
     expect(stderr).toContain(
-      'cas-mcp-server ready transport=stdio database=absent graph_credential=absent',
+      'cas-mcp-server ready transport=stdio database=absent graph_credential=absent mode=production database_role=absent',
     );
+  });
+
+  it('refuses an unknown mode with a fixed line, exit code 2, and no echo', async () => {
+    const child = spawn(process.execPath, [BIN], {
+      env: { PATH: process.env['PATH'] ?? '', CAS_MCP_MODE: 'staging-secret-name' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const err: Buffer[] = [];
+    child.stderr.on('data', (chunk: Buffer) => err.push(chunk));
+    const code = await exitOf(child);
+    expect(code).toBe(2);
+    const stderr = Buffer.concat(err).toString('utf8');
+    expect(stderr).toContain('failed to start');
+    expect(stderr).not.toContain('staging');
   });
 
   it('keeps stdout for protocol messages only and never writes a secret to stderr', async () => {
@@ -131,6 +145,11 @@ describe('the built stdio entry point', () => {
     }
     const stderr = Buffer.concat(err).toString('utf8');
     expect(stderr).toContain('database=configured graph_credential=configured');
+    // The seed URL names no reachable role: the start-up check reports the
+    // role unverified with a fixed reason, and every stored call would verify
+    // again on its own connection before reading.
+    expect(stderr).toContain('database role unverified reason=database_unavailable');
+    expect(stderr).toContain('database_role=unverified');
     expect(stderr).not.toContain(SECRET_API_KEY);
     expect(stderr).not.toContain('seedpassword');
     expect(stderr).not.toContain('postgres://');

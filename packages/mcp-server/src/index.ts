@@ -48,8 +48,13 @@ export {
 export {
   CallLimiter,
   ENVIRONMENT_NAMES,
+  MODE_VARIABLE,
+  STORE_MODES,
   createRuntime,
   invokeTool,
+  parseStoreMode,
+  type DatabaseRoleVerification,
+  type InvokeOptions,
   type RuntimeOptions,
   type ToolInvocation,
   type ToolRuntime,
@@ -73,12 +78,14 @@ export {
 export {
   EVIDENCE_TRUST,
   hasControlCharacter,
+  quoteBoundedEvidence,
   quoteEvidence,
   safeDisplay,
   toSingleLine,
+  type BoundedTextField,
   type QuotedEvidence,
 } from './safety/text.js';
-export { RESULT_NOTICE, TELEMETRY_SENTENCE } from './schemas/common.js';
+export { ANOMALY_BOUNDARY_SENTENCE, RESULT_NOTICE, TELEMETRY_SENTENCE } from './schemas/common.js';
 export {
   CHAIN_ANOMALY_MODES,
   DRAFT_SECTIONS,
@@ -102,15 +109,34 @@ export {
   type ListIncidentsOutput,
 } from './schemas/output.js';
 export { SERVER_INSTRUCTIONS, SERVER_NAME, SERVER_VERSION, createCasMcpServer } from './server.js';
-export { PostgresReadStore, readOnly } from './store/postgres-store.js';
+export {
+  PostgresReadStore,
+  PostgresReadStoreProvider,
+  textFetchMargin,
+  withReadOnlyConnection,
+  type PostgresReadStoreOptions,
+  type StoreMode,
+} from './store/postgres-store.js';
+export {
+  PRIVILEGE_CHECKS,
+  REQUIRED_TABLES,
+  verifyDatabasePrivileges,
+  type PrivilegeCheck,
+  type PrivilegeReport,
+} from './store/privileges.js';
 export type {
+  BoundedText,
   DraftIncidentRow,
+  DraftSourceRow,
   EvidenceRunRow,
   IncidentAssociationRow,
   IncidentReadStore,
+  IncidentReadStoreProvider,
   IncidentSourceRow,
   IncidentSummaryRow,
+  ReadTransactionOptions,
   SignalObservationRow,
+  SignalRunBoundary,
   SignalRunRow,
   SignalTargetRow,
 } from './store/read-store.js';

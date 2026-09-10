@@ -10,14 +10,19 @@ import {
 
 import { createRuntime, type RuntimeOptions, type ToolRuntime } from './runtime.js';
 import { createCasMcpServer } from './server.js';
+import { PRIVILEGE_CHECKS, type PrivilegeReport } from './store/privileges.js';
 import type {
+  BoundedText,
   DraftIncidentRow,
   EvidenceRunRow,
   IncidentAssociationRow,
   IncidentReadStore,
+  IncidentReadStoreProvider,
   IncidentSourceRow,
   IncidentSummaryRow,
+  ReadTransactionOptions,
   SignalObservationRow,
+  SignalRunBoundary,
   SignalRunRow,
   SignalTargetRow,
 } from './store/read-store.js';
@@ -35,6 +40,13 @@ const char = (code: number): string => String.fromCodePoint(code);
 export function uuidFrom(n: number, group = 0): string {
   const tail = n.toString(16).padStart(12, '0');
   return `${group.toString(16).padStart(8, '0')}-0000-4000-8000-${tail}`;
+}
+
+/** A stored text value as the store would fetch it, whole. */
+export function boundedText(value: string | null): BoundedText | null {
+  return value === null
+    ? null
+    : { fragment: value, characters: [...value].length, bytes: Buffer.byteLength(value, 'utf8') };
 }
 
 /** Hostile strings that must come back escaped, never interpreted. */
@@ -75,17 +87,28 @@ const DAY = 86_400;
 /** 2026-09-04T09:11:23Z, the as-of instant the replay fixtures are labelled at. */
 export const AS_OF = '2026-09-04T09:11:23Z';
 const AS_OF_SECONDS = Math.floor(Date.parse(AS_OF) / 1000);
+/** Completion instant of the fixture signal run; every fixture observation precedes it. */
+export const FIXTURE_RUN_COMPLETED_AT = '2026-09-04T03:20:00.000Z';
 
 function iso(seconds: number): string {
   return new Date(seconds * 1000).toISOString();
 }
 
-/** Twelve daily observations ending 6 hours before the as-of instant. */
-function series(values: readonly string[], endOffsetSeconds = 6 * 3600): SignalObservationRow[] {
+let nextSignal = 1;
+
+/** Twelve daily observations ending 6 hours before the as-of instant, all from the fixture run. */
+function series(
+  values: readonly string[],
+  signalRunId: string,
+  endOffsetSeconds = 6 * 3600,
+): SignalObservationRow[] {
   const end = AS_OF_SECONDS - endOffsetSeconds;
   return values.map((deltaPercent, index) => ({
     observedAt: iso(end - (values.length - 1 - index) * DAY),
     deltaPercent,
+    signalRunId,
+    signalId: uuidFrom(nextSignal++, 7),
+    runCompletedAt: FIXTURE_RUN_COMPLETED_AT,
   }));
 }
 
@@ -171,16 +194,16 @@ export function buildFixture(): Fixture {
         acceptedAssociationCount: index < 2 ? 1 : 0,
         subjectChain: index === 0 ? 'ethereum' : index === 1 ? 'base' : null,
         subjectProtocolSlug: index === 0 ? 'aave-v3' : index === 1 ? 'moonwell' : null,
-        headline,
+        headline: boundedText(headline),
         earliestReportedAt: '2026-09-02T14:22:09.000Z',
         dataOrigin: origin,
       },
       sources: [
         {
           sourceRowId: sourceA,
-          title: headline,
-          publisher: HOSTILE.separator,
-          url: `https://seed.example/story/${index}?utm=${HOSTILE.newline}`,
+          title: boundedText(headline),
+          publisher: boundedText(HOSTILE.separator),
+          url: boundedText(`https://seed.example/story/${index}?utm=${HOSTILE.newline}`),
           postedAt: '2026-09-02T14:22:09.000Z',
           decision: 'include',
         },
@@ -188,7 +211,7 @@ export function buildFixture(): Fixture {
           ? [
               {
                 sourceRowId: sourceB,
-                title: HOSTILE.newline,
+                title: boundedText(HOSTILE.newline),
                 publisher: null,
                 url: null,
                 postedAt: null,
@@ -215,7 +238,7 @@ export function buildFixture(): Fixture {
     summary: {
       ...(incidents[2]?.summary as IncidentSummaryRow),
       incidentId: uuidFrom(90, 2),
-      headline: 'A foreign incident of another run',
+      headline: boundedText('A foreign incident of another run'),
     },
     sources: [],
     associations: [],
@@ -239,7 +262,7 @@ export function buildFixture(): Fixture {
     targetCount: 6,
     signalCount: 6,
     failedTargetCount: 0,
-    completedAt: '2026-09-04T03:20:00.000Z',
+    completedAt: FIXTURE_RUN_COMPLETED_AT,
   };
   const targets: SignalTargetRow[] = [
     { chain: 'base', protocolSlug: 'moonwell', dataOrigin: origin },
@@ -251,14 +274,14 @@ export function buildFixture(): Fixture {
   ];
   const quiet = ['0.4', '-0.3', '0.5', '-0.2', '0.1', '0.3', '-0.4', '0.2', '-0.1', '0.3', '0.2'];
   const history = new Map<string, readonly SignalObservationRow[]>([
-    ['ethereum:aave-v3:replay', series([...quiet, '0.29'])],
-    ['ethereum:spark-lend:replay', series([...quiet, '31.5'])],
-    ['ethereum:compound-v3:replay', series([...quiet, '-27.8'])],
-    ['ethereum:liquity:replay', series(['0.2', '0.1', '0.33'])],
+    ['ethereum:aave-v3:replay', series([...quiet, '0.29'], signalRunId)],
+    ['ethereum:spark-lend:replay', series([...quiet, '31.5'], signalRunId)],
+    ['ethereum:compound-v3:replay', series([...quiet, '-27.8'], signalRunId)],
+    ['ethereum:liquity:replay', series(['0.2', '0.1', '0.33'], signalRunId)],
     // A live series for the same target that a replay evaluation must never read.
-    ['ethereum:aave-v3:live', series([...quiet, '99.9'])],
-    ['base:moonwell:replay', series([...quiet.slice(0, 8), '0.2'], 3 * DAY)],
-    ['base:seamless-protocol:replay', series([...quiet, '-0.31'])],
+    ['ethereum:aave-v3:live', series([...quiet, '99.9'], signalRunId)],
+    ['base:moonwell:replay', series([...quiet.slice(0, 8), '0.2'], signalRunId, 3 * DAY)],
+    ['base:seamless-protocol:replay', series([...quiet, '-0.31'], signalRunId)],
   ]);
   return {
     evidenceRun: run,
@@ -273,16 +296,34 @@ export function buildFixture(): Fixture {
   };
 }
 
-/** An in-memory read store over the fixture. It records every call and has no write method. */
-export class FakeStore implements IncidentReadStore {
+/**
+ * An in-memory read store over the fixture, and its own provider. It records
+ * every call, counts its transactions, honours the abort signal exactly as
+ * the PostgreSQL provider does, and has no write method.
+ */
+export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
   readonly calls: string[] = [];
   readonly fixture: Fixture;
   /** When set, every method waits forever: the deadline test. */
   hang = false;
   closed = false;
+  transactions = 0;
 
   constructor(fixture: Fixture = buildFixture()) {
     this.fixture = fixture;
+  }
+
+  async withReadTransaction<T>(
+    fn: (store: IncidentReadStore) => Promise<T>,
+    options: ReadTransactionOptions = {},
+  ): Promise<T> {
+    options.signal?.throwIfAborted();
+    this.transactions += 1;
+    return fn(this);
+  }
+
+  async verifyPrivileges(): Promise<PrivilegeReport> {
+    return { ok: true, checks: PRIVILEGE_CHECKS.map((code) => ({ code, ok: true })), failed: [] };
   }
 
   private async record(method: string): Promise<void> {
@@ -364,28 +405,39 @@ export class FakeStore implements IncidentReadStore {
     );
   }
 
-  async listSignalTargets(signalRunId: string, limit: number): Promise<SignalTargetRow[]> {
+  async listSignalTargets(boundary: SignalRunBoundary, limit: number): Promise<SignalTargetRow[]> {
     await this.record('listSignalTargets');
-    if (signalRunId !== this.fixture.signalRun.id) return [];
+    if (boundary.signalRunId !== this.fixture.signalRun.id) return [];
     return this.fixture.targets.slice(0, limit);
   }
 
+  /** The fixture's boundary semantics: same origin, run completed at or before, observed at or before as-of. */
   async listSignalHistory(
+    boundary: SignalRunBoundary,
     chain: ChainId,
     protocolSlug: string,
-    dataOrigin: DataOrigin,
     limit: number,
   ): Promise<SignalObservationRow[]> {
-    await this.record(`listSignalHistory:${dataOrigin}`);
-    return [...(this.fixture.history.get(`${chain}:${protocolSlug}:${dataOrigin}`) ?? [])].slice(
-      -limit,
-    );
+    await this.record(`listSignalHistory:${boundary.dataOrigin}`);
+    const rows = this.fixture.history.get(`${chain}:${protocolSlug}:${boundary.dataOrigin}`) ?? [];
+    return rows
+      .filter(
+        (row) =>
+          Date.parse(row.runCompletedAt) <= Date.parse(boundary.completedAt) &&
+          Date.parse(row.observedAt) <= Date.parse(boundary.asOf),
+      )
+      .sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt))
+      .slice(-limit);
   }
 
-  async listDraftIncidents(evidenceRunId: string, limit: number): Promise<DraftIncidentRow[]> {
+  async listDraftIncidents(
+    evidenceRunId: string,
+    incidentLimit: number,
+    sourcesPerIncidentLimit: number,
+  ): Promise<DraftIncidentRow[]> {
     await this.record('listDraftIncidents');
     return this.incidentsOf(evidenceRunId)
-      .slice(0, limit)
+      .slice(0, incidentLimit)
       .map((incident) => ({
         incidentId: incident.summary.incidentId,
         clusteringRunId: this.fixture.evidenceRun.clusteringRunId,
@@ -393,7 +445,8 @@ export class FakeStore implements IncidentReadStore {
         dataOrigin: incident.summary.dataOrigin,
         state: incident.summary.state,
         hasSubject: incident.summary.subjectChain !== null,
-        sources: incident.sources.map((source) => ({
+        sourceTotal: incident.sources.length,
+        sources: incident.sources.slice(0, sourcesPerIncidentLimit).map((source) => ({
           sourceRowId: source.sourceRowId,
           title: source.title,
           publisher: source.publisher,

@@ -11,6 +11,7 @@ import {
   quoteIdentifier,
   runMigrations,
   type Database,
+  type DatabaseConfig,
   type Queryable,
 } from '@cas/database';
 
@@ -24,14 +25,30 @@ import {
  * and every counter is what the database re-derives. Nothing here imports an
  * application, because no package may depend on one.
  *
+ * `openTestDatabase` creates a database of its own, migrates it, applies the
+ * reader-role template and returns a configuration that connects as that
+ * role, so the suites run the tools under the production credential. The
+ * database and the role are named `cas_mcp_test_<random>` and dropped on
+ * close; if a run is killed, drop the leftovers by hand:
+ * `DROP DATABASE cas_mcp_test_... WITH (FORCE); DROP ROLE cas_mcp_test_...`.
+ *
  * Every title, publisher and URL is invented. Hostile strings are built from
  * code points so this file holds no control byte.
  */
 
 const FIXTURES = fileURLToPath(new URL('../../../data/fixtures/evidence/', import.meta.url));
+const ROLE_TEMPLATE = fileURLToPath(new URL('../sql/mcp-reader-role.sql', import.meta.url));
 const char = (code: number): string => String.fromCodePoint(code);
 
 export const DB_SECRET_API_KEY = 'graphkey0123456789abcdef0123456789';
+
+/** Every default run of the seed completes at this instant. */
+export const SEED_INSTANT = '2026-09-04T10:00:00.000Z';
+
+/** Completion instant of replay snapshot `day` (1 to 12): one per day, ending at the seed instant. */
+export function replayRunInstant(day: number): string {
+  return new Date(Date.UTC(2026, 7, 24 + (day - 1), 10)).toISOString();
+}
 
 /** Rows the seed stores. Titles carry the hostile strings a tool must escape. */
 export const SEED_ROWS: readonly {
@@ -109,25 +126,211 @@ export async function openMigratedSchema(): Promise<IsolatedSchema> {
   };
 }
 
+// ---------------------------------------------------------------------------
+// A database of its own, with the reader role provisioned by the template.
+
+export interface TestDatabase {
+  readonly name: string;
+  /** The administrator's handle on the test database, schema `public`. */
+  readonly admin: Database;
+  readonly adminConfig: DatabaseConfig;
+  /** The provisioned reader role, and a configuration that connects as it. */
+  readonly readerRole: string;
+  readonly readerConfig: DatabaseConfig;
+  close(): Promise<void>;
+}
+
+/**
+ * The same connection, another database, and an explicit user: a spawned
+ * command inherits no `USER`, so a string that leaves the role to the driver's
+ * default would connect as nobody.
+ */
+function withDatabase(connectionString: string, database: string, user: string): string {
+  const url = new URL(connectionString);
+  url.pathname = `/${database}`;
+  if (url.username.length === 0 && url.host.length > 0) url.username = user;
+  return url.toString();
+}
+
+function withCredentials(connectionString: string, user: string, password: string): string {
+  const url = new URL(connectionString);
+  if (url.host.length === 0) {
+    throw new Error('the test harness needs a TCP connection string to connect as the reader role');
+  }
+  url.username = user;
+  url.password = password;
+  return url.toString();
+}
+
+/** Applies the administrator template for `role` on `schema`, then sets a password out of band. */
+export async function provisionReaderRole(
+  admin: Database,
+  role: string,
+  schema: string,
+  password: string,
+): Promise<void> {
+  const template = await readFile(ROLE_TEMPLATE, 'utf8');
+  if (!/^[0-9a-f]+$/u.test(password)) throw new Error('test passwords are hexadecimal');
+  await admin.withClient(async (client) => {
+    await client.query("SELECT pg_catalog.set_config('cas.mcp_role', $1, false)", [role]);
+    await client.query("SELECT pg_catalog.set_config('cas.mcp_schema', $1, false)", [schema]);
+    await client.query(template);
+    await client.query(`ALTER ROLE ${quoteIdentifier(role)} PASSWORD '${password}'`);
+  });
+}
+
+export async function openTestDatabase(): Promise<TestDatabase> {
+  const baseConfig = parseDatabaseConfig(process.env);
+  const base = openDatabase(baseConfig, { maxConnections: 2 });
+  const name = `cas_mcp_test_${randomBytes(6).toString('hex')}`;
+  const readerRole = `cas_mcp_test_${randomBytes(6).toString('hex')}`;
+  const password = randomBytes(24).toString('hex');
+  const adminUser = await base.withClient(async (client) => {
+    const result = await client.query<{ u: string }>('SELECT current_user::pg_catalog.text AS u');
+    return result.rows[0]?.u ?? '';
+  });
+  await base.withClient((client) => client.query(`CREATE DATABASE ${quoteIdentifier(name)}`));
+  const adminConfig: DatabaseConfig = {
+    connectionString: withDatabase(baseConfig.connectionString, name, adminUser),
+    schema: null,
+  };
+  const admin = openDatabase(adminConfig, { maxConnections: 4 });
+  try {
+    await runMigrations(admin);
+    await provisionReaderRole(admin, readerRole, 'public', password);
+  } catch (error) {
+    await admin.end();
+    await base.withClient((client) =>
+      client.query(`DROP DATABASE ${quoteIdentifier(name)} WITH (FORCE)`),
+    );
+    await base.withClient((client) =>
+      client.query(`DROP ROLE IF EXISTS ${quoteIdentifier(readerRole)}`),
+    );
+    await base.end();
+    throw error;
+  }
+  const readerConfig: DatabaseConfig = {
+    connectionString: withCredentials(adminConfig.connectionString, readerRole, password),
+    schema: null,
+  };
+  return {
+    name,
+    admin,
+    adminConfig,
+    readerRole,
+    readerConfig,
+    async close() {
+      await admin.end();
+      await base.withClient((client) =>
+        client.query(`DROP DATABASE ${quoteIdentifier(name)} WITH (FORCE)`),
+      );
+      await base.withClient((client) =>
+        client.query(`DROP ROLE IF EXISTS ${quoteIdentifier(readerRole)}`),
+      );
+      await base.end();
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Signal runs.
+
 const hex64 = (seed: string): string => createHash('sha256').update(seed).digest('hex');
 const hex16 = (seed: string): string => hex64(seed).slice(0, 16);
 const randomHex64 = (): string => randomBytes(32).toString('hex');
 
-export interface SeededPipeline {
-  readonly batchId: string;
-  readonly classificationRunId: string;
-  readonly clusteringRunId: string;
-  readonly evidenceRunId: string;
-  readonly signalRunIds: readonly string[];
-  /** The twelfth replay run, the one the evidence run names. */
-  readonly latestSignalRunId: string;
-  /** A live-origin copy of the twelfth snapshot, for the mixed-origin proof. */
-  readonly liveSignalRunId: string;
-  readonly incidentIds: readonly string[];
-  readonly sourceRowIds: readonly string[];
-  readonly corroboratedIncidentId: string;
-  readonly observedIncidentId: string;
-  readonly reportedOnlyIncidentIds: readonly string[];
+export interface SyntheticObservation {
+  readonly chain: ChainId;
+  readonly protocolSlug: string;
+  readonly observedAt: string;
+  readonly deltaPercent: string;
+  readonly baselineObservedAt?: string | undefined;
+  readonly currentTvlUsd?: string | undefined;
+  readonly baselineTvlUsd?: string | undefined;
+  readonly deltaUsd?: string | undefined;
+  readonly subgraphDeploymentId?: string | null | undefined;
+  readonly blockNumber?: number | null | undefined;
+  readonly blockHash?: string | null | undefined;
+}
+
+export interface SyntheticRun {
+  readonly origin: DataOrigin;
+  readonly observations: readonly SyntheticObservation[];
+  readonly startedAt: string;
+  /** Null leaves the run `running`: no completion instant, never read by a boundary. */
+  readonly completedAt: string | null;
+  readonly signalVersion?: string | undefined;
+  readonly gatewayHost?: string | undefined;
+  readonly querySha256?: string | undefined;
+}
+
+/** One signal run under the guard triggers: inserted running, its signals written, then completed. */
+export async function insertSyntheticSignalRun(
+  tx: Queryable,
+  run: SyntheticRun,
+): Promise<{ runId: string; signalIds: Map<string, string> }> {
+  const runId = randomUUID();
+  await tx.query(
+    `INSERT INTO graph_signal_runs (
+       id, data_origin, signal_version, contract_version, contract_hash, query_sha256,
+       gateway_host, idempotency_key, status, target_count, signal_count, failed_target_count,
+       started_at, completed_at
+     ) VALUES ($1, $2, $3, 'evidence-behavior-contract@1', $4, $5, $6, $7,
+               'running', $8, 0, 0, $9::timestamptz, NULL)`,
+    [
+      runId,
+      run.origin,
+      run.signalVersion ?? 'standardized-tvl-signal@1',
+      hex64('contract'),
+      run.querySha256 ?? hex64('query'),
+      run.gatewayHost ?? 'gateway.fixture.example',
+      randomHex64(),
+      run.observations.length,
+      run.startedAt,
+    ],
+  );
+  const signalIds = new Map<string, string>();
+  for (const o of run.observations) {
+    const id = randomUUID();
+    signalIds.set(`${o.chain}:${o.protocolSlug}`, id);
+    const baselineObservedAt =
+      o.baselineObservedAt ?? new Date(Date.parse(o.observedAt) - 86_400_000).toISOString();
+    await tx.query(
+      `INSERT INTO graph_signals (
+         id, signal_run_id, data_origin, chain, protocol_slug, subgraph_deployment_id,
+         block_number, block_hash, observed_at, baseline_observed_at, elapsed_seconds,
+         current_tvl_usd, baseline_tvl_usd, delta_usd, delta_percent, response_digest, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $10::timestamptz, $11,
+                 $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16, $17::timestamptz)`,
+      [
+        id,
+        runId,
+        run.origin,
+        o.chain,
+        o.protocolSlug,
+        o.subgraphDeploymentId ?? null,
+        o.blockNumber ?? null,
+        o.blockHash ?? null,
+        o.observedAt,
+        baselineObservedAt,
+        Math.max(0, Math.round((Date.parse(o.observedAt) - Date.parse(baselineObservedAt)) / 1000)),
+        o.currentTvlUsd ?? '1000.00',
+        o.baselineTvlUsd ?? '1000.00',
+        o.deltaUsd ?? '0.00',
+        o.deltaPercent,
+        hex64(`${runId}:${o.chain}:${o.protocolSlug}`),
+        run.startedAt,
+      ],
+    );
+  }
+  if (run.completedAt !== null) {
+    await tx.query(
+      `UPDATE graph_signal_runs SET status = 'completed', signal_count = $2, completed_at = $3::timestamptz
+        WHERE id = $1`,
+      [runId, run.observations.length, run.completedAt],
+    );
+  }
+  return { runId, signalIds };
 }
 
 interface SnapshotFile {
@@ -148,103 +351,131 @@ interface SnapshotFile {
   }[];
 }
 
-async function insertSignalRun(
+async function insertSnapshotRun(
   tx: Queryable,
   snapshot: SnapshotFile,
   origin: DataOrigin,
-  startedAt: string,
+  instant: string,
 ): Promise<{ runId: string; signalIds: Map<string, string> }> {
-  const runId = randomUUID();
-  await tx.query(
-    `INSERT INTO graph_signal_runs (
-       id, data_origin, signal_version, contract_version, contract_hash, query_sha256,
-       gateway_host, idempotency_key, status, target_count, signal_count, failed_target_count,
-       started_at, completed_at
-     ) VALUES ($1, $2, 'standardized-tvl-signal@1', 'evidence-behavior-contract@1', $3, $4, $5, $6,
-               'running', $7, 0, 0, $8::timestamptz, NULL)`,
-    [
-      runId,
-      origin,
-      hex64('contract'),
-      snapshot.querySha256,
-      snapshot.gatewayHost,
-      randomHex64(),
-      snapshot.observations.length,
-      startedAt,
-    ],
-  );
-  const signalIds = new Map<string, string>();
-  for (const o of snapshot.observations) {
-    const id = randomUUID();
-    signalIds.set(`${o.chain}:${o.protocolSlug}`, id);
-    await tx.query(
-      `INSERT INTO graph_signals (
-         id, signal_run_id, data_origin, chain, protocol_slug, subgraph_deployment_id,
-         block_number, block_hash, observed_at, baseline_observed_at, elapsed_seconds,
-         current_tvl_usd, baseline_tvl_usd, delta_usd, delta_percent, response_digest, created_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $10::timestamptz, $11,
-                 $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16, $17::timestamptz)`,
-      [
-        id,
-        runId,
-        origin,
-        o.chain,
-        o.protocolSlug,
-        o.subgraphDeploymentId,
-        o.blockNumber,
-        o.blockHash,
-        o.observedAt,
-        o.baselineObservedAt,
-        Math.max(
-          0,
-          Math.round((Date.parse(o.observedAt) - Date.parse(o.baselineObservedAt)) / 1000),
-        ),
-        o.currentTvlUsd,
-        o.baselineTvlUsd,
-        o.deltaUsd,
-        o.deltaPercent,
-        hex64(`${runId}:${o.chain}:${o.protocolSlug}`),
-        startedAt,
-      ],
-    );
-  }
-  await tx.query(
-    `UPDATE graph_signal_runs SET status = 'completed', signal_count = $2, completed_at = $3::timestamptz
-      WHERE id = $1`,
-    [runId, snapshot.observations.length, startedAt],
-  );
-  return { runId, signalIds };
+  return insertSyntheticSignalRun(tx, {
+    origin,
+    observations: snapshot.observations,
+    startedAt: instant,
+    completedAt: instant,
+    gatewayHost: snapshot.gatewayHost,
+    querySha256: snapshot.querySha256,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The pipeline seed.
+
+export interface SeedRow {
+  readonly title: string;
+  readonly publisher: string;
+  readonly slug: string;
+  readonly group: string;
+}
+
+export interface SeedSignalRuns {
+  readonly latest: string;
+  readonly runIds: string[];
+  readonly liveRunId: string;
+  readonly signalIds: Map<string, string>;
+  readonly instants?: string[] | undefined;
+}
+
+export interface SeedOptions {
+  readonly rows?: readonly SeedRow[] | undefined;
+  /** Source-row identifiers per row, when a test needs a fixed order. */
+  readonly rowIds?: readonly string[] | undefined;
+  /** Row indices per incident. Default: the first two eligible rows together, every other one alone. */
+  readonly clusters?: readonly (readonly number[])[] | undefined;
+  /** Row indices classified `exclude`. Default: the last row. */
+  readonly excluded?: readonly number[] | undefined;
+  readonly signalRuns?: SeedSignalRuns | undefined;
+  /** Further suggested associations: incident by cluster index, signal by `chain:slug`. */
+  readonly extraAssociations?:
+    readonly { readonly clusterIndex: number; readonly signalKey: string }[] | undefined;
+}
+
+export interface SeededPipeline {
+  readonly batchId: string;
+  readonly classificationRunId: string;
+  readonly clusteringRunId: string;
+  readonly evidenceRunId: string;
+  readonly signalRunIds: readonly string[];
+  /** Completion instant of each replay run, one day apart. */
+  readonly signalRunInstants: readonly string[];
+  /** The twelfth replay run, the one the evidence run names. */
+  readonly latestSignalRunId: string;
+  /** A live-origin copy of the twelfth snapshot, for the mixed-origin proof. */
+  readonly liveSignalRunId: string;
+  readonly signalIds: ReadonlyMap<string, string>;
+  readonly incidentIds: readonly string[];
+  /** Incident identifiers in cluster order. */
+  readonly clusterIds: readonly string[];
+  readonly sourceRowIds: readonly string[];
+  readonly associationIds: readonly string[];
+  readonly corroboratedIncidentId: string;
+  readonly observedIncidentId: string;
+  readonly reportedOnlyIncidentIds: readonly string[];
 }
 
 /**
  * Seeds one complete pipeline. `rows` default to the hostile seed; the last
  * row is classified `exclude` and never becomes an incident, the first two
- * rows form one two-member incident, and every other row is a singleton.
+ * rows form one two-member incident, and every other row is a singleton. The
+ * first incident is corroborated by an accepted association to aave-v3 on
+ * Ethereum and the second is observed through an accepted association to
+ * seamless-protocol on Base.
  */
 export async function seedPipeline(
   db: Database,
-  options: {
-    readonly rows?: readonly { title: string; publisher: string; slug: string; group: string }[];
-    readonly signalRuns?: {
-      latest: string;
-      runIds: string[];
-      liveRunId: string;
-      signalIds: Map<string, string>;
-    };
-  } = {},
+  options: SeedOptions = {},
 ): Promise<SeededPipeline> {
   const rows = options.rows ?? SEED_ROWS;
-  const startedAt = '2026-09-04T10:00:00.000Z';
+  const startedAt = SEED_INSTANT;
   const postedAt = '2026-09-04T00:11:07.000Z';
   const batchId = randomUUID();
   const classificationRunId = randomUUID();
   const clusteringRunId = randomUUID();
   const evidenceRunId = randomUUID();
-  const sourceRowIds = rows.map(() => randomUUID());
+  const sourceRowIds = options.rowIds ?? rows.map(() => randomUUID());
+  if (sourceRowIds.length !== rows.length) throw new Error('one identifier per row');
   const resultIds = rows.map(() => randomUUID());
   const rowHashes = rows.map((row, index) => hex64(`${batchId}:${index}:${row.slug}`));
 
+  const excluded = new Set(
+    options.excluded ??
+      (options.clusters === undefined
+        ? [rows.length - 1]
+        : rows
+            .map((_, index) => index)
+            .filter((i) => !options.clusters?.some((c) => c.includes(i)))),
+  );
+  const decisions = rows.map((_, index) => (excluded.has(index) ? 'exclude' : 'include'));
+  const eligible = decisions
+    .map((d, index) => (d === 'include' ? index : -1))
+    .filter((i) => i >= 0);
+  let plan: number[][];
+  if (options.clusters === undefined) {
+    const [first, second, ...rest] = eligible;
+    plan = [];
+    if (first !== undefined && second !== undefined) plan.push([first, second]);
+    for (const index of rest) plan.push([index]);
+  } else {
+    plan = options.clusters.map((members) => [...members]);
+    const covered = new Set(plan.flat());
+    for (const index of eligible) {
+      if (!covered.has(index)) throw new Error(`eligible row ${index} belongs to no cluster`);
+    }
+  }
+  if (plan.length < 2) throw new Error('seed needs two incidents');
+  const clusters = plan.map((members) => ({ id: randomUUID(), members }));
+
   let signals = options.signalRuns;
+  const instants: string[] = signals?.instants ?? [];
 
   await db.withTransaction(async (tx) => {
     await tx.query(
@@ -294,7 +525,7 @@ export async function seedPipeline(
       batchId,
     ]);
 
-    // Classification: every row but the last is included; the last is excluded.
+    // Classification.
     await tx.query(
       `INSERT INTO classification_runs (
          id, batch_id, data_origin, classifier_version, ruleset_version, ruleset_hash, mode,
@@ -304,7 +535,6 @@ export async function seedPipeline(
                  'rules', $4, 'running', $5, 0, 0, 0, 0, $6::timestamptz, NULL)`,
       [classificationRunId, batchId, hex64('ruleset'), randomHex64(), rows.length, startedAt],
     );
-    const decisions = rows.map((_, index) => (index === rows.length - 1 ? 'exclude' : 'include'));
     for (const [index] of rows.entries()) {
       await tx.query(
         `INSERT INTO classification_results (
@@ -331,7 +561,7 @@ export async function seedPipeline(
       [classificationRunId, rows.length, includeCount, rows.length - includeCount, startedAt],
     );
 
-    // Clustering: rows 0 and 1 share one incident; every other included row is a singleton.
+    // Clustering, by the plan.
     await tx.query(
       `INSERT INTO clustering_runs (
          id, classification_run_id, batch_id, data_origin, engine_version, contract_version,
@@ -350,14 +580,6 @@ export async function seedPipeline(
         startedAt,
       ],
     );
-    const eligible = decisions
-      .map((d, index) => (d === 'include' ? index : -1))
-      .filter((i) => i >= 0);
-    const clusters: { id: string; members: number[] }[] = [];
-    const [first, second, ...rest] = eligible;
-    if (first !== undefined && second !== undefined)
-      clusters.push({ id: randomUUID(), members: [first, second] });
-    for (const index of rest) clusters.push({ id: randomUUID(), members: [index] });
     for (const cluster of clusters) {
       await tx.query(
         `INSERT INTO incident_clusters (
@@ -418,7 +640,8 @@ export async function seedPipeline(
       ],
     );
 
-    // Signal runs: the twelve replay snapshots, plus a live-origin copy of the twelfth.
+    // Signal runs: the twelve replay snapshots, each completed one day after
+    // the last, plus a live-origin copy of the twelfth.
     if (signals === undefined) {
       const runIds: string[] = [];
       let latest = '';
@@ -426,20 +649,22 @@ export async function seedPipeline(
       for (let day = 1; day <= 12; day += 1) {
         const file = `${FIXTURES}snapshots/replay-${String(day).padStart(2, '0')}.json`;
         const snapshot = JSON.parse(await readFile(file, 'utf8')) as SnapshotFile;
-        const inserted = await insertSignalRun(tx, snapshot, 'replay', startedAt);
+        const instant = replayRunInstant(day);
+        const inserted = await insertSnapshotRun(tx, snapshot, 'replay', instant);
         runIds.push(inserted.runId);
+        instants.push(instant);
         latest = inserted.runId;
         signalIds = inserted.signalIds;
       }
       const twelfth = JSON.parse(
         await readFile(`${FIXTURES}snapshots/replay-12.json`, 'utf8'),
       ) as SnapshotFile;
-      const live = await insertSignalRun(tx, twelfth, 'live', startedAt);
-      signals = { latest, runIds, liveRunId: live.runId, signalIds };
+      const live = await insertSnapshotRun(tx, twelfth, 'live', replayRunInstant(12));
+      signals = { latest, runIds, liveRunId: live.runId, signalIds, instants };
     }
 
-    // Subjects, recorded by a person: the two-member incident is about aave-v3 on
-    // Ethereum; the next singleton is about seamless-protocol on Base.
+    // Subjects, recorded by a person: the first incident is about aave-v3 on
+    // Ethereum; the second is about seamless-protocol on Base.
     const corroborated = clusters[0];
     const observed = clusters[1];
     if (corroborated === undefined || observed === undefined)
@@ -490,6 +715,18 @@ export async function seedPipeline(
         chain: 'base',
       },
     ];
+    for (const extra of options.extraAssociations ?? []) {
+      const cluster = clusters[extra.clusterIndex];
+      const signal = signals.signalIds.get(extra.signalKey);
+      if (cluster === undefined || signal === undefined)
+        throw new Error('extra association names an unknown cluster or signal');
+      associations.push({
+        id: randomUUID(),
+        cluster: cluster.id,
+        signal,
+        chain: extra.signalKey.split(':')[0] as ChainId,
+      });
+    }
     for (const association of associations) {
       await tx.query(
         `INSERT INTO incident_signal_associations (
@@ -553,13 +790,20 @@ export async function seedPipeline(
     }
     await tx.query(
       `UPDATE evidence_runs
-          SET status = 'completed', incident_count = $2, signal_count = $3, suggestion_count = 2,
-              reported_only_count = $4, onchain_observed_count = 1, corroborated_count = 1,
-              contradicted_count = 0, completed_at = $5::timestamptz
+          SET status = 'completed', incident_count = $2, signal_count = $3, suggestion_count = $4,
+              reported_only_count = $5, onchain_observed_count = 1, corroborated_count = 1,
+              contradicted_count = 0, completed_at = $6::timestamptz
         WHERE id = $1`,
-      [evidenceRunId, clusters.length, signals.signalIds.size, clusters.length - 2, startedAt],
+      [
+        evidenceRunId,
+        clusters.length,
+        signals.signalIds.size,
+        associations.length,
+        clusters.length - 2,
+        startedAt,
+      ],
     );
-    return { clusters };
+    return { clusters, associations };
   });
 
   const clusterIds = await db.withClient(async (client) => {
@@ -570,6 +814,13 @@ export async function seedPipeline(
     );
     return result.rows;
   });
+  const associationIds = await db.withClient(async (client) => {
+    const result = await client.query<{ id: string }>(
+      `SELECT id FROM incident_signal_associations WHERE evidence_run_id = $1 ORDER BY created_at, id`,
+      [evidenceRunId],
+    );
+    return result.rows.map((row) => row.id);
+  });
   if (signals === undefined) throw new Error('signal runs were not seeded');
   return {
     batchId,
@@ -577,16 +828,48 @@ export async function seedPipeline(
     clusteringRunId,
     evidenceRunId,
     signalRunIds: signals.runIds,
+    signalRunInstants: instants,
     latestSignalRunId: signals.latest,
     liveSignalRunId: signals.liveRunId,
+    signalIds: signals.signalIds,
     incidentIds: clusterIds.map((row) => row.id),
+    clusterIds: clusters.map((cluster) => cluster.id),
     sourceRowIds,
+    associationIds,
     corroboratedIncidentId: clusterIds.find((row) => row.state === 'corroborated')?.id ?? '',
     observedIncidentId: clusterIds.find((row) => row.state === 'onchain_observed')?.id ?? '',
     reportedOnlyIncidentIds: clusterIds
       .filter((row) => row.state === 'reported_only')
       .map((row) => row.id),
   };
+}
+
+/** One committed human decision, appended after the seed's two: the interleaving proof. */
+export async function insertReviewAction(
+  db: Database,
+  evidenceRunId: string,
+  associationId: string,
+  operation: 'accept' | 'reject',
+  priorRevision: number,
+): Promise<void> {
+  await db.withTransaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO evidence_review_actions (
+         id, evidence_run_id, association_id, operation, relation, claim_id, reason_code,
+         rationale, actor, prior_revision, resulting_revision, idempotency_key, created_at
+       ) VALUES ($1, $2, $3, $4, 'context', NULL, 'seed_interleaved', NULL,
+                 'seed.reviewer', $5, $6, $7, now())`,
+      [
+        randomUUID(),
+        evidenceRunId,
+        associationId,
+        operation,
+        priorRevision,
+        priorRevision + 1,
+        randomHex64(),
+      ],
+    );
+  });
 }
 
 /** Row count and an order-independent digest of every base table in the schema. */

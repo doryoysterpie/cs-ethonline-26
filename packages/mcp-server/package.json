@@ -18,7 +18,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.build.json && vitest run",
     "test:db": "pnpm -w exec turbo run build --filter=@cas/mcp-server && vitest run --config vitest.db.config.ts",
-    "start": "node dist/bin.js"
+    "start": "node dist/bin.js",
+    "verify-role": "node dist/verify-role.js"
   },
   "dependencies": {
     "@cas/contracts": "workspace:*",
@@ -36,6 +37,7 @@
     "vitest": "catalog:"
   },
   "bin": {
-    "cas-mcp-server": "./dist/bin.js"
+    "cas-mcp-server": "./dist/bin.js",
+    "cas-mcp-verify-role": "./dist/verify-role.js"
   }
 }

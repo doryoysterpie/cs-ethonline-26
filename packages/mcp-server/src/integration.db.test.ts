@@ -1,16 +1,17 @@
-import { isDatabaseError } from '@cas/database';
+import { isDatabaseError, openDatabase } from '@cas/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   DB_SECRET_API_KEY,
-  openMigratedSchema,
+  openTestDatabase,
   schemaDigest,
   seedPipeline,
+  SEED_INSTANT,
   SEED_ROWS,
-  type IsolatedSchema,
   type SeededPipeline,
+  type TestDatabase,
 } from './db-support.js';
-import { PostgresReadStore, readOnly } from './store/postgres-store.js';
+import { withReadOnlyConnection } from './store/postgres-store.js';
 import {
   connectInMemory,
   hasRawControl,
@@ -20,55 +21,82 @@ import {
 } from './test-support.js';
 
 /**
- * Every tool against a migrated PostgreSQL schema, through the MCP client,
- * with the whole schema digested before and after so the read-only claim is
- * a measurement rather than an assertion.
+ * Every tool against a migrated database, through the MCP client, as the
+ * provisioned reader role in production mode, with the whole schema digested
+ * before and after so the read-only claim is a measurement rather than an
+ * assertion.
  */
 
-describe('the MCP tools against a migrated schema', () => {
-  let isolated: IsolatedSchema;
+async function readerBackends(database: TestDatabase): Promise<number> {
+  return database.admin.withClient(async (client) => {
+    const result = await client.query<{ n: string }>(
+      `SELECT pg_catalog.count(*)::pg_catalog.text AS n
+         FROM pg_catalog.pg_stat_activity WHERE usename = $1`,
+      [database.readerRole],
+    );
+    return Number(result.rows[0]?.n ?? '0');
+  });
+}
+
+async function eventually(condition: () => Promise<boolean>, timeoutMs = 5000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await condition()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return condition();
+}
+
+describe('the MCP tools against a migrated database, as the reader role', () => {
+  let database: TestDatabase;
   let seeded: SeededPipeline;
   let foreign: SeededPipeline;
   let harness: Harness;
   let before: Map<string, string>;
 
   beforeAll(async () => {
-    isolated = await openMigratedSchema();
-    seeded = await seedPipeline(isolated.db);
-    foreign = await seedPipeline(isolated.db, {
+    database = await openTestDatabase();
+    seeded = await seedPipeline(database.admin);
+    foreign = await seedPipeline(database.admin, {
       rows: SEED_ROWS.slice(0, 4),
       signalRuns: {
         latest: seeded.latestSignalRunId,
         runIds: [...seeded.signalRunIds],
         liveRunId: seeded.liveSignalRunId,
-        signalIds: await isolated.db.withClient(async (client) => {
-          const result = await client.query<{ chain: string; protocol_slug: string; id: string }>(
-            `SELECT chain, protocol_slug, id FROM graph_signals WHERE signal_run_id = $1`,
-            [seeded.latestSignalRunId],
-          );
-          return new Map(result.rows.map((row) => [`${row.chain}:${row.protocol_slug}`, row.id]));
-        }),
+        signalIds: new Map(seeded.signalIds),
+        instants: [...seeded.signalRunInstants],
       },
     });
-    before = await schemaDigest(isolated.db, isolated.name);
+    before = await schemaDigest(database.admin, 'public');
+    // The runtime builds its own provider from the reader's connection
+    // string, exactly as the entry point does, in the default mode.
     harness = await connectInMemory({
-      env: { GRAPH_API_KEY: DB_SECRET_API_KEY },
-      store: new PostgresReadStore(isolated.db),
+      env: {
+        DATABASE_URL: database.readerConfig.connectionString,
+        GRAPH_API_KEY: DB_SECRET_API_KEY,
+      },
+      store: undefined,
       live: null,
     });
   });
 
   afterAll(async () => {
     await harness?.close();
-    await isolated?.close();
+    await database?.close();
   });
 
-  it('seeded a completed pipeline the guards accepted', () => {
+  it('seeded a completed pipeline the guards accepted, and runs in production mode as a verified reader', async () => {
     expect(seeded.incidentIds).toHaveLength(5);
     expect(seeded.signalRunIds).toHaveLength(12);
     expect(seeded.corroboratedIncidentId).not.toBe('');
     expect(seeded.observedIncidentId).not.toBe('');
     expect(foreign.incidentIds).toHaveLength(2);
+    expect(harness.runtime.mode).toBe('production');
+    expect(await harness.runtime.verifyDatabaseRole()).toEqual({
+      status: 'verified',
+      failed: [],
+      errorCode: null,
+    });
   });
 
   it('lists the run in pages, with origin, provenance and escaped headlines', async () => {
@@ -102,6 +130,10 @@ describe('the MCP tools against a migrated schema', () => {
     expect((corroborated?.['evidence'] as Record<string, unknown>)['state']).toBe('corroborated');
     expect(corroborated?.['memberCount']).toBe(2);
     expect((corroborated?.['subject'] as Record<string, unknown>)['protocolSlug']).toBe('aave-v3');
+    // Every headline was fetched whole and says so.
+    for (const incident of all) {
+      expect((incident['headline'] as Record<string, unknown>)['truncated']).toBe(false);
+    }
   });
 
   it('explains an incident with its sources and the human decision beside the machine suggestion', async () => {
@@ -114,6 +146,11 @@ describe('the MCP tools against a migrated schema', () => {
     const sources = explained['sources'] as Record<string, unknown>[];
     expect(sources).toHaveLength(2);
     expect(sources.map((s) => s['classificationDecision'])).toEqual(['include', 'include']);
+    for (const source of sources) {
+      for (const field of ['title', 'publisher', 'url']) {
+        expect((source[field] as Record<string, unknown>)['truncated']).toBe(false);
+      }
+    }
     const associations = explained['associations'] as Record<string, unknown>[];
     expect(associations).toHaveLength(1);
     expect(associations[0]?.['machineSuggestion']).toEqual({
@@ -162,7 +199,7 @@ describe('the MCP tools against a migrated schema', () => {
     expect(textOf(unknownRun)).toContain('evidence_run_not_found');
   });
 
-  it('labels the replay signal run exactly as the fixtures say, from replay history only', async () => {
+  it('labels the replay signal run exactly as the fixtures say, from replay history inside its boundary', async () => {
     const result = await harness.client.callTool({
       name: 'chain_anomalies',
       arguments: {
@@ -187,6 +224,17 @@ describe('the MCP tools against a migrated schema', () => {
     // The live copy of the twelfth snapshot exists in the same tables and was not read:
     // aave-v3 would otherwise carry thirteen observations and a different label.
     expect(stored['targetsEvaluated']).toBe(7);
+    // The boundary is the named run's completion; all twelve replay runs lie inside it.
+    const boundary = stored['boundary'] as Record<string, unknown>;
+    expect(Date.parse(boundary['completedAt'] as string)).toBe(
+      Date.parse(seeded.signalRunInstants[11] ?? ''),
+    );
+    expect(boundary['contributingRunCount']).toBe(12);
+    const aave = entries.find((e) => e['protocolSlug'] === 'aave-v3');
+    expect((aave?.['provenance'] as Record<string, unknown>)['latestSignalRunId']).toBe(
+      seeded.latestSignalRunId,
+    );
+    expect(aave?.['provenanceId']).toBe(seeded.latestSignalRunId);
   });
 
   it('labels the live-origin run from live history only, never from the replay series', async () => {
@@ -206,8 +254,10 @@ describe('the MCP tools against a migrated schema', () => {
     for (const entry of entries) {
       expect(entry['dataOrigin']).toBe('live');
       expect(entry['label']).toBe('insufficient_history');
+      expect((entry['provenance'] as Record<string, unknown>)['contributingRunCount']).toBe(1);
     }
     expect(stored['observationsRead']).toBe(6);
+    expect((stored['boundary'] as Record<string, unknown>)['contributingRunCount']).toBe(1);
   });
 
   it('previews every draft section without writing anything', async () => {
@@ -229,6 +279,11 @@ describe('the MCP tools against a migrated schema', () => {
       expect(hasRawControl(markdown.replace(/\n/g, ''))).toBe(false);
       expect(markdown).not.toContain(DB_SECRET_API_KEY);
       expect(markdown).not.toContain('<system>');
+      expect(structured(result)['bounds']).toMatchObject({
+        sourcesOmitted: 0,
+        incidentsWithOmittedSources: 0,
+        sourcesConsidered: 6,
+      });
     }
   });
 
@@ -259,20 +314,21 @@ describe('the MCP tools against a migrated schema', () => {
     );
   });
 
-  it('leaves every table byte-identical after all of the above', async () => {
-    const after = await schemaDigest(isolated.db, isolated.name);
+  it('leaves every table byte-identical after all of the above, and no reader connection behind', async () => {
+    const after = await schemaDigest(database.admin, 'public');
     expect([...after.keys()]).toEqual([...before.keys()]);
     for (const [table, digest] of before) {
       expect(after.get(table), table).toBe(digest);
     }
     expect(before.size).toBeGreaterThanOrEqual(17);
+    expect(await eventually(async () => (await readerBackends(database)) === 0)).toBe(true);
   });
 
-  it('runs on a connection the database itself holds read-only', async () => {
+  it('runs on a connection the database itself holds read-only, as a role that cannot write anyway', async () => {
     let failure: unknown;
     try {
-      await readOnly(isolated.db, async (tx) => {
-        await tx.query(`INSERT INTO url_groups (id, canonical_url) VALUES ($1, $2)`, [
+      await withReadOnlyConnection(database.readerConfig, async (client) => {
+        await client.query(`INSERT INTO url_groups (id, canonical_url) VALUES ($1, $2)`, [
           '00000000-0000-4000-8000-000000000000',
           'https://write.example/never',
         ]);
@@ -281,21 +337,39 @@ describe('the MCP tools against a migrated schema', () => {
       failure = error;
     }
     expect(isDatabaseError(failure) && failure.code).toBe('25006');
-    const after = await schemaDigest(isolated.db, isolated.name);
+    // Outside the read-only transaction the role itself lacks the privilege.
+    const plain = openDatabase(database.readerConfig, { maxConnections: 1 });
+    let denied: unknown;
+    try {
+      await plain.withClient((client) =>
+        client.query(`INSERT INTO url_groups (id, canonical_url) VALUES ($1, $2)`, [
+          '00000000-0000-4000-8000-000000000001',
+          'https://write.example/never',
+        ]),
+      );
+    } catch (error) {
+      denied = error;
+    } finally {
+      await plain.end();
+    }
+    expect(isDatabaseError(denied) && denied.code).toBe('42501');
+    const after = await schemaDigest(database.admin, 'public');
     expect(after.get('url_groups')).toBe(before.get('url_groups'));
   });
 
-  it('cancels a statement that outlives the budget', async () => {
+  it('cancels a statement that outlives the budget and destroys its connection', async () => {
     let failure: unknown;
     const started = Date.now();
     try {
-      await readOnly(isolated.db, async (tx) => {
-        await tx.query('SELECT pg_sleep(30)');
+      await withReadOnlyConnection(database.readerConfig, async (client) => {
+        await client.query('SELECT pg_catalog.pg_sleep(30)');
       });
     } catch (error) {
       failure = error;
     }
     expect(isDatabaseError(failure) && failure.code).toBe('57014');
     expect(Date.now() - started).toBeLessThan(20_000);
+    expect(await eventually(async () => (await readerBackends(database)) === 0)).toBe(true);
+    expect(Date.parse(SEED_INSTANT)).toBeGreaterThan(0);
   });
 });

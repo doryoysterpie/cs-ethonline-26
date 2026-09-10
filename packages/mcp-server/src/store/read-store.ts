@@ -1,14 +1,40 @@
 import type { AssociationRelation, ChainId, DataOrigin, EvidenceState } from '@cas/contracts';
 
+import type { PrivilegeReport } from './privileges.js';
+
 /**
- * The only read operations the tools need, as an interface.
+ * The only read operations the tools need, as two interfaces.
  *
- * The PostgreSQL implementation runs every method inside a `READ ONLY`
- * transaction with a statement timeout, and the tests substitute an in-memory
- * store. Nothing here can write, and nothing here returns a raw cell, a
- * derived body text, a review note, a rationale, an actor or a credential:
- * the row types below are the whole surface.
+ * `IncidentReadStoreProvider` opens one read transaction per tool call and
+ * hands the call an `IncidentReadStore` bound to that transaction's
+ * connection, so every constituent read of one call (run metadata, incidents,
+ * sources, associations, review state, targets, signal history, draft data)
+ * comes from one snapshot. It takes the call's abort signal, so the runtime
+ * that owns cancellation can stop follow-on reads without a second deadline.
+ *
+ * The PostgreSQL implementation runs the transaction `REPEATABLE READ` and
+ * `READ ONLY` with a statement timeout, verifies the role's privileges before
+ * any application read in production mode, and destroys the connection when
+ * the call ends. The tests substitute an in-memory store. Nothing here can
+ * write, and nothing here returns a raw cell, a derived body text, a review
+ * note, a rationale, an actor or a credential: the row types below are the
+ * whole surface.
  */
+
+/**
+ * A text column as the store fetches it: a bounded prefix and the stored
+ * value's true size. The prefix is at most the display bound plus the
+ * sentinel margin, so a 48,000-character cell never crosses the wire, and the
+ * true size lets the display layer say, truthfully, that it was cut.
+ */
+export interface BoundedText {
+  /** The first characters of the stored value. */
+  readonly fragment: string;
+  /** Characters (code points) of the whole stored value, as PostgreSQL counts them. */
+  readonly characters: number;
+  /** Bytes of the whole stored value in UTF-8. */
+  readonly bytes: number;
+}
 
 export interface EvidenceRunRow {
   readonly id: string;
@@ -41,16 +67,16 @@ export interface IncidentSummaryRow {
   readonly subjectChain: ChainId | null;
   readonly subjectProtocolSlug: string | null;
   /** Normalized title of the representative source row, bounded by the query. */
-  readonly headline: string | null;
+  readonly headline: BoundedText | null;
   readonly earliestReportedAt: string | null;
   readonly dataOrigin: DataOrigin;
 }
 
 export interface IncidentSourceRow {
   readonly sourceRowId: string;
-  readonly title: string | null;
-  readonly publisher: string | null;
-  readonly url: string | null;
+  readonly title: BoundedText | null;
+  readonly publisher: BoundedText | null;
+  readonly url: BoundedText | null;
   readonly postedAt: string | null;
   readonly decision: 'include' | 'review';
 }
@@ -87,15 +113,52 @@ export interface SignalRunRow {
   readonly completedAt: string | null;
 }
 
+/**
+ * The evaluation boundary of one stored anomaly request. It is fixed by the
+ * named completed run and the caller's as-of instant, never by the clock or
+ * by whatever has been stored since:
+ *
+ *   - only completed runs of the same origin and signal version count
+ *     (a running run has no completion instant and is never read; the schema
+ *     has no failed state, so there is nothing else to exclude);
+ *   - only runs completed at or before the named run's completion count, so a
+ *     later run cannot change the named run's result;
+ *   - only observations at or before `asOf` count, and that cut is applied
+ *     before any limit, so the most recent rows of a series can never crowd
+ *     out the rows that were current at the as-of instant.
+ */
+export interface SignalRunBoundary {
+  readonly signalRunId: string;
+  readonly dataOrigin: DataOrigin;
+  readonly signalVersion: string;
+  /** Completion instant of the named run. */
+  readonly completedAt: string;
+  /** The caller's as-of instant, ISO 8601 UTC. */
+  readonly asOf: string;
+}
+
 export interface SignalTargetRow {
   readonly chain: ChainId;
   readonly protocolSlug: string;
   readonly dataOrigin: DataOrigin;
 }
 
+/** One observation with the run and signal that actually produced it. */
 export interface SignalObservationRow {
   readonly observedAt: string;
   readonly deltaPercent: string;
+  readonly signalRunId: string;
+  readonly signalId: string;
+  /** Completion instant of the run the observation belongs to. */
+  readonly runCompletedAt: string;
+}
+
+export interface DraftSourceRow {
+  readonly sourceRowId: string;
+  readonly title: BoundedText | null;
+  readonly publisher: BoundedText | null;
+  readonly url: BoundedText | null;
+  readonly postedAt: string | null;
 }
 
 export interface DraftIncidentRow {
@@ -105,15 +168,18 @@ export interface DraftIncidentRow {
   readonly dataOrigin: DataOrigin;
   readonly state: EvidenceState;
   readonly hasSubject: boolean;
-  readonly sources: readonly {
-    readonly sourceRowId: string;
-    readonly title: string | null;
-    readonly publisher: string | null;
-    readonly url: string | null;
-    readonly postedAt: string | null;
-  }[];
+  /** Source rows the incident actually has, whether or not they were fetched. */
+  readonly sourceTotal: number;
+  /** The first `sourcesPerIncidentLimit` sources in source-row order. */
+  readonly sources: readonly DraftSourceRow[];
 }
 
+export interface ReadTransactionOptions {
+  /** The call's abort signal. Once aborted, no further statement is sent. */
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** The read surface of one transaction. Every method reads the same snapshot. */
 export interface IncidentReadStore {
   getEvidenceRun(evidenceRunId: string): Promise<EvidenceRunRow | null>;
   listIncidentSummaries(
@@ -133,13 +199,29 @@ export interface IncidentReadStore {
     limit: number,
   ): Promise<IncidentAssociationRow[]>;
   getSignalRun(signalRunId: string): Promise<SignalRunRow | null>;
-  listSignalTargets(signalRunId: string, limit: number): Promise<SignalTargetRow[]>;
+  /** Distinct targets observed by completed runs inside the boundary, in a fixed order. */
+  listSignalTargets(boundary: SignalRunBoundary, limit: number): Promise<SignalTargetRow[]>;
+  /** The most recent `limit` observations of one target inside the boundary, oldest first. */
   listSignalHistory(
+    boundary: SignalRunBoundary,
     chain: ChainId,
     protocolSlug: string,
-    dataOrigin: DataOrigin,
     limit: number,
   ): Promise<SignalObservationRow[]>;
-  listDraftIncidents(evidenceRunId: string, limit: number): Promise<DraftIncidentRow[]>;
+  listDraftIncidents(
+    evidenceRunId: string,
+    incidentLimit: number,
+    sourcesPerIncidentLimit: number,
+  ): Promise<DraftIncidentRow[]>;
+}
+
+/** Opens one read transaction per tool call. */
+export interface IncidentReadStoreProvider {
+  withReadTransaction<T>(
+    fn: (store: IncidentReadStore) => Promise<T>,
+    options?: ReadTransactionOptions,
+  ): Promise<T>;
+  /** The privilege matrix of the configured credential, on a connection of its own. */
+  verifyPrivileges(options?: ReadTransactionOptions): Promise<PrivilegeReport>;
   close(): Promise<void>;
 }
