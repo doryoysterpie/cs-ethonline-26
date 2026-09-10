@@ -6,6 +6,8 @@ packages:
 # reference these with "catalog:" so the lockfile records one exact version.
 catalog:
   '@eslint/js': 10.0.1
+  '@modelcontextprotocol/client': 2.0.0
+  '@modelcontextprotocol/server': 2.0.0
   '@types/node': 24.13.3
   '@types/pg': 8.23.1
   csv-parse: 7.0.2
@@ -17,6 +19,7 @@ catalog:
   typescript: 6.0.3
   typescript-eslint: 8.69.0
   vitest: 4.1.11
+  zod: 4.5.4
 
 # Supply-chain control: refuse to resolve any version published less than
 # 24 hours ago (value in minutes). Do not lower this to install a dependency.

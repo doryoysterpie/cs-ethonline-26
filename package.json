@@ -28,7 +28,12 @@
     "classify:report": "pnpm -s --filter @cas/worker cli classification report",
     "classify:queue": "pnpm -s --filter @cas/worker cli classification queue",
     "classify:calibrate": "pnpm -s --filter @cas/worker cli classification calibrate",
-    "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db"
+    "mcp:setup": "pnpm install --frozen-lockfile && turbo run build --filter=@cas/mcp-server...",
+    "mcp:build": "turbo run build --filter=@cas/mcp-server...",
+    "mcp:start": "node packages/mcp-server/dist/bin.js",
+    "mcp:test": "pnpm --filter @cas/mcp-server test",
+    "mcp:test:db": "pnpm --filter @cas/mcp-server test:db",
+    "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db && pnpm --filter @cas/mcp-server test:db"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",

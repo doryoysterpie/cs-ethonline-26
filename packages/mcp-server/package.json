@@ -2,7 +2,7 @@
   "name": "@cas/mcp-server",
   "version": "0.0.0",
   "private": true,
-  "description": "MCP tooling exposing incident intelligence. Placeholder after Sprint 0.",
+  "description": "Read-only MCP tooling over the incident store: list_incidents, explain_incident, chain_anomalies and draft_section over local stdio only. Parallel MCP tooling track (decision D28), pending independent audit.",
   "type": "module",
   "exports": {
     ".": {
@@ -17,7 +17,19 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@cas/contracts": "workspace:*",
+    "@cas/database": "workspace:*",
+    "@cas/drafting": "workspace:*",
+    "@cas/evidence": "workspace:*",
+    "@cas/graph-evidence": "workspace:*",
+    "@modelcontextprotocol/server": "catalog:",
+    "zod": "catalog:"
+  },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@modelcontextprotocol/client": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
