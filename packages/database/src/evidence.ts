@@ -587,6 +587,47 @@ export async function insertIncidentSubject(
   );
 }
 
+export type IncidentSubjectRecord = NewIncidentSubject;
+
+/** The subject recorded for one incident of one clustering run, if any. */
+export async function getIncidentSubject(
+  client: Queryable,
+  clusteringRunId: string,
+  incidentClusterId: string,
+): Promise<IncidentSubjectRecord | null> {
+  const result = await client.query<{
+    id: string;
+    clustering_run_id: string;
+    batch_id: string;
+    incident_cluster_id: string;
+    chain: ChainId;
+    protocol_slug: string;
+    actor: string;
+    reason_code: string;
+    created_at: string;
+  }>(
+    `SELECT id, clustering_run_id, batch_id, incident_cluster_id, chain, protocol_slug,
+            actor, reason_code, to_json(created_at) #>> '{}' AS created_at
+       FROM incident_subjects
+      WHERE clustering_run_id = $1 AND incident_cluster_id = $2`,
+    [clusteringRunId, incidentClusterId],
+  );
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : {
+        id: row.id,
+        clusteringRunId: row.clustering_run_id,
+        batchId: row.batch_id,
+        incidentClusterId: row.incident_cluster_id,
+        chain: row.chain,
+        protocolSlug: row.protocol_slug,
+        actor: row.actor,
+        reasonCode: row.reason_code,
+        createdAt: row.created_at,
+      };
+}
+
 /**
  * Every incident of one clustering run, with its recorded subject when it has
  * one and its earliest reported instant. This is exactly the shape the pure

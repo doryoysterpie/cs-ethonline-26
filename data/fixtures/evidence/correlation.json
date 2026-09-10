@@ -1,0 +1,182 @@
+{
+  "incidents": [
+    {
+      "incidentId": "51494e44-02f7-4c1d-b60d-59c17edb1828",
+      "label": "corroborated-aave",
+      "clusteringRunId": "61c7a0cd-21f3-45a6-b254-362ef58ad0b9",
+      "batchId": "4cd28acf-cf1e-4895-a30b-c08dc541e6bd",
+      "chain": "ethereum",
+      "protocolSlug": "aave-v3",
+      "earliestReportedAt": "2026-08-30T14:22:09Z",
+      "claimIds": ["3b602e51-aa65-443d-b612-49ca9ea2bb56"]
+    },
+    {
+      "incidentId": "03bfe732-a1d4-4a52-956c-2f2347ea9d8e",
+      "label": "contradicted-compound",
+      "clusteringRunId": "61c7a0cd-21f3-45a6-b254-362ef58ad0b9",
+      "batchId": "4cd28acf-cf1e-4895-a30b-c08dc541e6bd",
+      "chain": "ethereum",
+      "protocolSlug": "compound-v3",
+      "earliestReportedAt": "2026-08-30T14:22:09Z",
+      "claimIds": ["ed76a5d0-89b4-4597-a91f-6f1b04cb89e8"]
+    },
+    {
+      "incidentId": "4a9e9517-10d1-4576-8328-2f8c554542de",
+      "label": "observed-moonwell",
+      "clusteringRunId": "61c7a0cd-21f3-45a6-b254-362ef58ad0b9",
+      "batchId": "4cd28acf-cf1e-4895-a30b-c08dc541e6bd",
+      "chain": "base",
+      "protocolSlug": "moonwell",
+      "earliestReportedAt": "2026-08-30T14:22:09Z",
+      "claimIds": ["30d2f1cc-3327-4a35-97b3-1d2b5315f453"]
+    },
+    {
+      "incidentId": "613d8921-0abd-4b0f-9f2b-dc41b798b76d",
+      "label": "unnamed-protocol",
+      "clusteringRunId": "61c7a0cd-21f3-45a6-b254-362ef58ad0b9",
+      "batchId": "4cd28acf-cf1e-4895-a30b-c08dc541e6bd",
+      "chain": null,
+      "protocolSlug": null,
+      "earliestReportedAt": "2026-08-30T14:22:09Z",
+      "claimIds": ["32f27267-4e02-47cd-a660-9ef2079fb7a9"]
+    },
+    {
+      "incidentId": "f72cc836-af53-4340-b649-ac870e404155",
+      "label": "chain-mismatch-spark",
+      "clusteringRunId": "61c7a0cd-21f3-45a6-b254-362ef58ad0b9",
+      "batchId": "4cd28acf-cf1e-4895-a30b-c08dc541e6bd",
+      "chain": "base",
+      "protocolSlug": "spark-lend",
+      "earliestReportedAt": "2026-08-30T14:22:09Z",
+      "claimIds": ["d6c07177-e0b5-48bd-b287-b99ec2bc7d90"]
+    },
+    {
+      "incidentId": "72553037-cbd4-4976-bd52-b46cb2c13af7",
+      "label": "outside-window-liquity",
+      "clusteringRunId": "61c7a0cd-21f3-45a6-b254-362ef58ad0b9",
+      "batchId": "4cd28acf-cf1e-4895-a30b-c08dc541e6bd",
+      "chain": "ethereum",
+      "protocolSlug": "liquity",
+      "earliestReportedAt": "2026-08-30T14:22:09Z",
+      "claimIds": ["45d8c905-3d94-49ec-b202-f3ac69389861"]
+    },
+    {
+      "incidentId": "ee1fc4da-26cc-4ad9-b274-18fdf94fad45",
+      "label": "below-floor-makerdao",
+      "clusteringRunId": "61c7a0cd-21f3-45a6-b254-362ef58ad0b9",
+      "batchId": "4cd28acf-cf1e-4895-a30b-c08dc541e6bd",
+      "chain": "ethereum",
+      "protocolSlug": "makerdao",
+      "earliestReportedAt": "2026-08-30T14:22:09Z",
+      "claimIds": ["e0185dd5-cbe0-4a5a-aeb9-5c1b839537bf"]
+    },
+    {
+      "incidentId": "69cdbc94-d690-4124-825f-a995b9495d5f",
+      "label": "no-reported-time-seamless",
+      "clusteringRunId": "61c7a0cd-21f3-45a6-b254-362ef58ad0b9",
+      "batchId": "4cd28acf-cf1e-4895-a30b-c08dc541e6bd",
+      "chain": "base",
+      "protocolSlug": "seamless-protocol",
+      "earliestReportedAt": null,
+      "claimIds": ["70390ec9-80a1-4753-9bda-803290fb8ced"]
+    }
+  ],
+  "signals": [
+    {
+      "signalId": "e3f7348d-289b-46ca-97e3-228042de763d",
+      "label": "aave-drop",
+      "signalRunId": "057a7336-24a3-4094-aacb-b3ea349eabcc",
+      "chain": "ethereum",
+      "protocolSlug": "aave-v3",
+      "observedAt": "2026-08-30T20:22:09Z",
+      "deltaPercent": "-18.4"
+    },
+    {
+      "signalId": "814cd81b-b31e-4261-aa2d-0b35a0a9d049",
+      "label": "compound-rise",
+      "signalRunId": "057a7336-24a3-4094-aacb-b3ea349eabcc",
+      "chain": "ethereum",
+      "protocolSlug": "compound-v3",
+      "observedAt": "2026-08-31T02:22:09Z",
+      "deltaPercent": "22.1"
+    },
+    {
+      "signalId": "10980f50-ac33-41f9-a16a-f6afc4602907",
+      "label": "moonwell-drop",
+      "signalRunId": "057a7336-24a3-4094-aacb-b3ea349eabcc",
+      "chain": "base",
+      "protocolSlug": "moonwell",
+      "observedAt": "2026-08-30T17:22:09Z",
+      "deltaPercent": "-9.7"
+    },
+    {
+      "signalId": "81d6292c-6e46-422e-be00-09a3cd382ee0",
+      "label": "spark-ethereum",
+      "signalRunId": "057a7336-24a3-4094-aacb-b3ea349eabcc",
+      "chain": "ethereum",
+      "protocolSlug": "spark-lend",
+      "observedAt": "2026-08-30T18:22:09Z",
+      "deltaPercent": "-14.2"
+    },
+    {
+      "signalId": "c0cd3bbf-db13-4a86-89a7-04cef33ecbeb",
+      "label": "liquity-late",
+      "signalRunId": "057a7336-24a3-4094-aacb-b3ea349eabcc",
+      "chain": "ethereum",
+      "protocolSlug": "liquity",
+      "observedAt": "2026-09-03T14:22:09Z",
+      "deltaPercent": "-16.8"
+    },
+    {
+      "signalId": "9c9f284f-66c7-439f-941b-9e033d3a3b13",
+      "label": "makerdao-small",
+      "signalRunId": "057a7336-24a3-4094-aacb-b3ea349eabcc",
+      "chain": "ethereum",
+      "protocolSlug": "makerdao",
+      "observedAt": "2026-08-30T16:22:09Z",
+      "deltaPercent": "1.2"
+    },
+    {
+      "signalId": "ac2e37c2-2a99-428f-a9ea-c4631d2d2679",
+      "label": "seamless-drop",
+      "signalRunId": "057a7336-24a3-4094-aacb-b3ea349eabcc",
+      "chain": "base",
+      "protocolSlug": "seamless-protocol",
+      "observedAt": "2026-08-30T19:22:09Z",
+      "deltaPercent": "-11.3"
+    }
+  ],
+  "decisions": [
+    {
+      "incidentId": "51494e44-02f7-4c1d-b60d-59c17edb1828",
+      "signalId": "e3f7348d-289b-46ca-97e3-228042de763d",
+      "claimId": "3b602e51-aa65-443d-b612-49ca9ea2bb56",
+      "relation": "supports",
+      "status": "accepted"
+    },
+    {
+      "incidentId": "03bfe732-a1d4-4a52-956c-2f2347ea9d8e",
+      "signalId": "814cd81b-b31e-4261-aa2d-0b35a0a9d049",
+      "claimId": "ed76a5d0-89b4-4597-a91f-6f1b04cb89e8",
+      "relation": "conflicts",
+      "status": "accepted"
+    },
+    {
+      "incidentId": "4a9e9517-10d1-4576-8328-2f8c554542de",
+      "signalId": "10980f50-ac33-41f9-a16a-f6afc4602907",
+      "claimId": null,
+      "relation": "context",
+      "status": "accepted"
+    }
+  ],
+  "expectedStates": {
+    "corroborated-aave": "corroborated",
+    "contradicted-compound": "contradicted",
+    "observed-moonwell": "onchain_observed",
+    "unnamed-protocol": "reported_only",
+    "chain-mismatch-spark": "reported_only",
+    "outside-window-liquity": "reported_only",
+    "below-floor-makerdao": "reported_only",
+    "no-reported-time-seamless": "reported_only"
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "gatewayHost": "gateway.fixture.example",
+  "querySha256": "d8d8de086d784f6bf3a6a33f26bf1bacbf22944df319a73c0099b05e7cd64bc9",
+  "observations": [
+    {
+      "chain": "ethereum",
+      "protocolSlug": "aave-v3",
+      "subgraphDeploymentId": "MM5jyh7quFSHXhH8siGcCehrjmbqyG9G",
+      "blockNumber": 21062000,
+      "blockHash": "0x90a37358ac9453577c2db807e82fc0e634912bd7c33367fefaf926ec85ed0593",
+      "observedAt": "2026-09-03T03:17:41Z",
+      "baselineObservedAt": "2026-09-02T03:17:41Z",
+      "currentTvlUsd": "7398658400.00",
+      "baselineTvlUsd": "7412000000.00",
+      "deltaUsd": "-13341600.00",
+      "deltaPercent": "-0.18"
+    },
+    {
+      "chain": "ethereum",
+      "protocolSlug": "spark-lend",
+      "subgraphDeploymentId": "KrrdEMs2yxbcmX7Q4wbi3F41jMU2zyAh",
+      "blockNumber": 21062000,
+      "blockHash": "0x5bd3b71bcdf18c914128063a34c7becdce1d007fa51c7d7fc744bec891dd638f",
+      "observedAt": "2026-09-03T03:17:41Z",
+      "baselineObservedAt": "2026-09-02T03:17:41Z",
+      "currentTvlUsd": "2177542500.00",
+      "baselineTvlUsd": "2183000000.00",
+      "deltaUsd": "-5457500.00",
+      "deltaPercent": "-0.25"
+    },
+    {
+      "chain": "ethereum",
+      "protocolSlug": "compound-v3",
+      "subgraphDeploymentId": "HcVEm6Pk4HGiiiyjHzw2PWmEuyDEPQza",
+      "blockNumber": 21062000,
+      "blockHash": "0x647cff804fee7f6a5e50befab7fe173029459cb3c415e986ac35b4a22fba0543",
+      "observedAt": "2026-09-03T03:17:41Z",
+      "baselineObservedAt": "2026-09-02T03:17:41Z",
+      "currentTvlUsd": "1108305600.00",
+      "baselineTvlUsd": "1104000000.00",
+      "deltaUsd": "4305600.00",
+      "deltaPercent": "0.39"
+    },
+    {
+      "chain": "ethereum",
+      "protocolSlug": "makerdao",
+      "subgraphDeploymentId": "q5EdPZ53reuh8PUK9u7hEmPHr13TwKs5",
+      "blockNumber": 21062000,
+      "blockHash": "0x942cfe31226ee92b4298db3b23aa99de1a5d47c76588ee1b8ee3d94e364d8232",
+      "observedAt": "2026-09-03T03:17:41Z",
+      "baselineObservedAt": "2026-09-02T03:17:41Z",
+      "currentTvlUsd": "5320000000.00",
+      "baselineTvlUsd": "5320000000.00",
+      "deltaUsd": "0.00",
+      "deltaPercent": "0"
+    },
+    {
+      "chain": "ethereum",
+      "protocolSlug": "liquity",
+      "subgraphDeploymentId": "ooxUQA4BD1MJamBY8CvrDB8g5NZfX25q",
+      "blockNumber": 21062000,
+      "blockHash": "0x31dfd62a15682902081e65eeacb52284b8cd4eb780a2b5c3788a8366a477e40d",
+      "observedAt": "2026-09-03T03:17:41Z",
+      "baselineObservedAt": "2026-09-02T03:17:41Z",
+      "currentTvlUsd": "610653600.00",
+      "baselineTvlUsd": "612000000.00",
+      "deltaUsd": "-1346400.00",
+      "deltaPercent": "-0.22"
+    },
+    {
+      "chain": "base",
+      "protocolSlug": "seamless-protocol",
+      "subgraphDeploymentId": "e8Z4MNL4v1R2osoGjiN2s3aDYC7v6rNU",
+      "blockNumber": 19512000,
+      "blockHash": "0xbdf92030f071f5edf268af9ca321a6a0c49ff020b407fd458f4d569e07c341f8",
+      "observedAt": "2026-09-03T03:17:41Z",
+      "baselineObservedAt": "2026-09-02T03:17:41Z",
+      "currentTvlUsd": "185048800.00",
+      "baselineTvlUsd": "184000000.00",
+      "deltaUsd": "1048800.00",
+      "deltaPercent": "0.57"
+    }
+  ]
+}

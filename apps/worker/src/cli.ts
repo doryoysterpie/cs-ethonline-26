@@ -52,6 +52,7 @@ import {
 import { decideAssociation, evidenceReviewCounts } from './evidence/review.js';
 import { reportEvidenceRun, resolveEvidence } from './evidence/run.js';
 import { ingestSnapshot } from './evidence/signals.js';
+import { recordIncidentSubject } from './evidence/subject.js';
 import { buildDraftRequest } from './drafting/build.js';
 import { writeDraft } from './drafting/generate.js';
 import { toSingleLine } from './editorial/display.js';
@@ -137,12 +138,13 @@ const USAGE = [
   '  clustering merge --run <uuid> --incidents <uuid,uuid> --reason <code> [--note <text>]',
   '  clustering split --run <uuid> --incident <uuid> --members <uuid,...> --reason <code> [--note <text>]',
   '  evidence ingest --file <path> --origin <live|fixture|replay>',
+  '  evidence subject --run <uuid> --incident <uuid> --chain <ethereum|base> --protocol <slug> --reason <code> [--actor <name>]',
   '  evidence resolve --clustering-run <uuid> --signal-run <uuid>',
   '  evidence report --run <uuid>',
   '  evidence signal --id <uuid>',
   '  evidence review-count --run <uuid>',
   '  evidence decide --run <uuid> --association <uuid> --operation <accept|reject> --relation <supports|conflicts|context> --reason <code> --actor <name> [--claim <uuid>] [--note <text>]',
-  '  evidence anomaly --signal-run <uuid> [--clustering-run <uuid> --window <isoStart..isoEnd> ...]',
+  '  evidence anomaly --signal-run <uuid> [--as-of <iso>] [--clustering-run <uuid> --window <isoStart..isoEnd> ...]',
   '  drafting generate --evidence-run <uuid> --window <isoStart..isoEnd> [--out <directory>]',
 ];
 
@@ -390,6 +392,30 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       for (const line of formatSnapshotIngest(outcome, redact)) emit(line);
       return EXIT_CODES.ok;
     }
+    if (group === 'evidence' && command === 'subject') {
+      const clusteringRunId = requireUuid(values.run, 'run');
+      const incidentId = requireUuid(values.incident, 'run');
+      const chain = parseChain(values.chain);
+      const protocolSlug = parseProtocolSlug(values.protocol);
+      const reasonCode = parseReasonCode(values.reason);
+      const actor = parseActor(values.actor);
+      const outcome = await withDatabase(options, (db) =>
+        recordIncidentSubject(db, {
+          clusteringRunId,
+          incidentId,
+          chain,
+          protocolSlug,
+          actor,
+          reasonCode,
+        }),
+      );
+      emit(
+        `evidence:subject: ${outcome.outcome === 'recorded' ? 'recorded' : 'already recorded'}` +
+          ` incident=${outcome.subject.incidentClusterId} chain=${outcome.subject.chain}` +
+          ` protocol=${outcome.subject.protocolSlug}`,
+      );
+      return EXIT_CODES.ok;
+    }
     if (group === 'evidence' && command === 'resolve') {
       const clusteringRunId = requireUuid(values['classification-run'] ?? values.run, 'run');
       const signalRunId = requireUuid(values['signal-run'], 'run');
@@ -459,11 +485,17 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       const signalRunId = requireUuid(values['signal-run'], 'run');
       const clusteringRunId = values.run === undefined ? undefined : requireUuid(values.run, 'run');
       const windows = parseWindows(values.window);
+      // Replaying a dated fixture against the wall clock would call every
+      // observation stale, which is true of the clock and useless as a
+      // demonstration. The as-of instant is explicit and never defaulted to a
+      // fixture's own dates, so a live run cannot silently acquire one.
+      const asOf = parseInstant(values['as-of']);
       const feed = await withDatabase(options, (db) =>
         buildAnomalyFeed(db, {
           signalRunId,
           ...(clusteringRunId === undefined ? {} : { clusteringRunId }),
           ...(windows === undefined ? {} : { windows }),
+          ...(asOf === undefined ? {} : { now: () => asOf }),
         }),
       );
       for (const line of formatAnomalyFeed(feed, redact)) emit(line);
@@ -559,6 +591,33 @@ function parseRelation(value: string | undefined): 'supports' | 'conflicts' | 'c
   throw configurationError('relation_invalid', '--relation must be supports, conflicts or context');
 }
 
+function parseChain(value: string | undefined): 'ethereum' | 'base' {
+  if (value === 'ethereum' || value === 'base') return value;
+  throw configurationError('chain_invalid', '--chain must be ethereum or base');
+}
+
+/**
+ * The provider-returned protocol slug the Sprint 1 identity gate validated.
+ * It is compared with a stored signal by equality, so a near miss is a
+ * refusal rather than a fuzzy match.
+ */
+function parseProtocolSlug(value: string | undefined): string {
+  if (value === undefined || !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(value)) {
+    throw configurationError('protocol_invalid', '--protocol must be a lower-case provider slug');
+  }
+  return value;
+}
+
+/** An explicit instant, for replaying dated data against a fixed clock. */
+function parseInstant(value: string | undefined): Date | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    throw configurationError('instant_invalid', '--as-of must be an ISO 8601 instant');
+  }
+  return new Date(parsed);
+}
+
 /**
  * Explicit window bounds, `<isoStart>..<isoEnd>`, repeatable. No editorial
  * week is inferred here or anywhere: decision D10 has not fixed one.
@@ -623,6 +682,9 @@ const PARSE_OPTIONS = {
   note: { type: 'string' },
   actor: { type: 'string' },
   'signal-run': { type: 'string' },
+  'as-of': { type: 'string' },
+  chain: { type: 'string' },
+  protocol: { type: 'string' },
   'evidence-run': { type: 'string' },
   out: { type: 'string' },
   association: { type: 'string' },
@@ -639,6 +701,9 @@ interface ParsedValues {
   readonly origin?: string | undefined;
   readonly 'review-label'?: string | undefined;
   readonly 'signal-run'?: string | undefined;
+  readonly 'as-of'?: string | undefined;
+  readonly chain?: string | undefined;
+  readonly protocol?: string | undefined;
   readonly 'evidence-run'?: string | undefined;
   readonly out?: string | undefined;
   readonly association?: string | undefined;
