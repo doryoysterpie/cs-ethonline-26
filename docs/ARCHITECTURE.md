@@ -372,3 +372,44 @@ from the base output plus ordered human actions. There is no implicit "latest ru
 Out of scope and not implemented in Sprint 4: the dashboard, the drafting system, the
 evidence-state resolver, the anomaly feed, any model call, and any editorial week boundary
 (D10 stays unresolved).
+
+## 13. Sprint 5 boundary: `@cas/evidence`, `@cas/drafting` and the evidence tables
+
+Implemented and tested in Sprint 5 (`SPRINT-5-REPORT.md`, decision D25), and **pending an
+independent audit**. Both new packages are pure: no database, no network, no environment, no
+clock, no randomness and no model call.
+
+`@cas/evidence` is deliberately a separate package from `@cas/clustering`. Clustering's
+contract was audited and accepted at a fixed hash; keeping the two apart means a change to one
+cannot move the other's identity.
+
+| Module                                 | Responsibility                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@cas/evidence/src/contract.ts`        | The executable evidence contract and its SHA-256: correlation rule and windows, the ordered resolution rules, the anomaly baseline and thresholds, the reporting-anomaly rules and the bounds. Every hashed field changes observable behaviour and is pinned by a mutation test.                                          |
+| `@cas/evidence/src/correlate.ts`       | Correlation and evidence-state resolution. `IncidentSubject` carries identifiers, a chain, a protocol slug and a timestamp, and no text field of any kind, so no headline can produce a link. The resolver counts only accepted associations, and its last rule is unconditional, so absence resolves to `reported_only`. |
+| `@cas/evidence/src/anomaly.ts`         | The chain and reporting halves of the feed, in that fixed order: freshness, history length, gaps, threshold. Every entry carries its data origin and a fixed sentence stating what it does not establish.                                                                                                                 |
+| `@cas/drafting/src/contract.ts`        | The executable drafting contract and its SHA-256: sections, style, the naming policy (D4, provisional), ordering and bounds.                                                                                                                                                                                              |
+| `@cas/drafting/src/draft.ts`           | Deterministic assembly of the Markdown draft and the structured provenance sidecar. Section generation is isolated, so one section can be regenerated without touching the others.                                                                                                                                        |
+| `@cas/database/src/evidence.ts`        | Parameterized signal, association, state, subject and review-action operations, bounded reads, and count-only aggregates. Signal history is scoped by data origin, so a replayed series never enters a live baseline.                                                                                                     |
+| `@cas/worker/src/evidence/signals.ts`  | Snapshot ingestion. The file is validated against a closed set of fields before a row is written, and the host pattern admits no scheme, userinfo, path or query, so no credential can pass through it. The origin is a required argument with no default.                                                                |
+| `@cas/worker/src/evidence/subject.ts`  | Recording which chain and protocol an incident is about, by a named person. Append-only; a disagreeing second recording is a conflict, never an overwrite.                                                                                                                                                                |
+| `@cas/worker/src/evidence/run.ts`      | Orchestration: one repeatable-read transaction, the run inserted `running`, completion the database validates. The run's identity includes a digest of every decision bearing on the clustering run, so an acceptance produces a new run and a bare replay does not.                                                      |
+| `@cas/worker/src/evidence/review.ts`   | The narrow surface where a suggestion becomes evidence. Payload-complete idempotency including actor and rationale, and the Sprint 4 note policy applied before anything is hashed or written.                                                                                                                            |
+| `@cas/worker/src/evidence/anomaly.ts`  | Builds the feed from stored rows only. A reporting window is two instants the caller supplied; no editorial week is inferred, because D10 has not fixed one.                                                                                                                                                              |
+| `@cas/worker/src/drafting/build.ts`    | Assembles a draft request from one completed evidence run. It repeats reported headlines and extracts nothing, so every claim is `reported` and every name is withheld.                                                                                                                                                   |
+| `@cas/worker/src/drafting/generate.ts` | Writes the draft with the exclusive flag, so an existing draft is never overwritten and the refusal is the filesystem's rather than a check that could race (D3, provisional).                                                                                                                                            |
+
+Migration 0008 adds seven tables and five guard functions. The composite foreign keys are the
+mechanism: an association's key names its evidence run, clustering run, batch and signal run
+together, so a cross-run, cross-batch or cross-chain substitution cannot be written at all
+rather than being rejected on inspection. Two CHECK constraints refuse a `corroborated` or
+`contradicted` row that rests on no accepted association or names no claim.
+
+Inputs: an explicit completed clustering run, an explicit completed signal run, and explicit
+period bounds. Outputs: suggested associations, resolved evidence states, an anomaly feed and
+an unpublished draft with a provenance sidecar. There is no implicit "latest run" and no
+implicit period.
+
+Out of scope and not implemented in Sprint 5: the dashboard, the MCP server, any model call,
+any live Graph request, any automatic extraction of a protocol identity from text, and any
+editorial week boundary (D10 stays unresolved).

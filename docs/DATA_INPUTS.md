@@ -420,3 +420,50 @@ labels produce identical decisions.
 Machine decisions live in their own tables. Nothing in the classification path writes to
 `review_snapshots` or `review_entries`, and the needs-review queue is derived from a
 classification run rather than copied into the human review records.
+
+## 17. What the evidence layer may read (Sprint 5)
+
+The correlator's input carries the incident, clustering-run and batch identifiers, an
+explicitly recorded chain, an explicitly recorded protocol slug, the earliest reported instant
+and the claim identifiers. **It carries no text field of any kind** — no title, no summary, no
+description, no body — so no headline can produce a link no matter what words it contains.
+
+An incident's chain and protocol identity is recorded by a named person through
+`evidence subject`. Nothing extracts it from text, and an incident whose subject nobody
+recorded never correlates. That is the intended behaviour, not a gap: a rule that read a
+headline for a protocol name would be the mechanism by which a report quietly becomes a
+confirmed on-chain fact.
+
+The recorded slug must be the provider-returned identity the Sprint 1 gate validated, and it is
+compared with a stored signal by equality. A near miss is a refusal, never a fuzzy match.
+
+The evidence layer may never read a human `ReviewState`, a weekly spreadsheet label, a
+publication status, Publisher Category, the ledger's `ch` value, a raw cell or field, a batch
+label, an inferred editorial week or any connection value.
+
+## 18. Graph signal snapshots (Sprint 5)
+
+A snapshot is a set of normalized TVL-delta observations for the seven identities decision D23
+retained. It is untrusted input like any editorial file, and it is validated against a closed
+set of fields before a single row is written.
+
+| Field                                                         | Rule                                                     |
+| ------------------------------------------------------------- | -------------------------------------------------------- |
+| `gatewayHost`                                                 | a bare hostname; no scheme, userinfo, path or query      |
+| `querySha256`                                                 | 64 lower-case hexadecimal characters                     |
+| `chain`                                                       | `ethereum` or `base`                                     |
+| `protocolSlug`                                                | lower-case provider slug                                 |
+| `subgraphDeploymentId`                                        | alphanumeric, or absent                                  |
+| `blockNumber`                                                 | a non-negative integer, or absent                        |
+| `blockHash`                                                   | `0x` and 64 lower-case hexadecimal characters, or absent |
+| `observedAt`, `baselineObservedAt`                            | parseable instants                                       |
+| `currentTvlUsd`, `baselineTvlUsd`, `deltaUsd`, `deltaPercent` | plain decimals; no exponent, no `NaN`, no `Infinity`     |
+
+An unknown key at either level is refused, and a snapshot naming one target twice is refused.
+The host and digest patterns admit no credential, and there is no column anywhere for a
+provider payload, an Authorization header or an API key.
+
+The data origin is a required argument with no default and no inference. It is stored on the
+signal run and on every signal, printed on every anomaly line, and it scopes the history query,
+so a replayed series can never enter a live target's baseline and a fixture demonstration can
+never present itself as a live observation.

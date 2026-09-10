@@ -2,8 +2,8 @@
 
 **Status: draft, not submitted.** Submission is a human action on the ETHGlobal platform.
 Due **Thursday 10 September 2026**; the cutoff time is **unconfirmed** and must be read from
-the portal rather than assumed. This draft was prepared on 8 September 2026 and describes only
-work that is complete and verified in the repository.
+the portal rather than assumed. This draft was prepared on 8 September 2026 and updated on
+10 September 2026. It describes only work that is complete and verified in the repository.
 
 Check-in #1 was submitted and confirmed by the project owner on 8 September 2026.
 
@@ -63,9 +63,33 @@ contradictory check-in status, an inaccurate complexity claim and a stale test c
 were corrected and the auditor accepted the result at
 `4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`.
 
-**Sprint 5, Graph evidence, anomaly feed and drafting. In progress, not audited.** It carries
-the Graph-correlation, evidence-state and anomaly-feed work D22 deferred from Sprint 4, then
-the deterministic drafting pipeline.
+**Sprint 5, Graph evidence, anomaly feed and drafting. Implementation finished, not audited.**
+It carries the Graph-correlation, evidence-state and anomaly-feed work D22 deferred from
+Sprint 4, and adds the deterministic drafting pipeline (decision D25, migration 0008).
+
+An incident correlates with a Graph signal only on a chain and protocol identity a person
+recorded, inside a declared window, at a movement of at least five percent. **Nothing reads
+text anywhere in that path**: the correlator's input has no title, summary or body field, so no
+headline can produce a link whatever words it contains. A machine suggestion is not evidence
+either: it stays a suggestion until a named person accepts it, and the database refuses a
+corroboration that rests on nothing. Absence of a signal never counts against a claim — every
+incident with no accepted evidence resolves to `reported_only`, and no rule anywhere has "no
+signal found" as its condition.
+
+The anomaly feed the 10 September gate requires produces both halves on real data: chain
+movements against a rolling baseline, and reporting-volume movements against explicitly bounded
+prior windows. Too little history, a gap in a series and a reading past the freshness limit are
+each reported as themselves and none of them is ever a spike, because a spike is a statement
+about data that exists. Every entry carries its data origin and a fixed sentence saying what it
+does not establish.
+
+The drafter is deterministic and calls no model. Two drafts were generated from real imported
+weeks, each marked unpublished and requiring human review, each with a machine-readable
+provenance record beside every claim, and neither committed. Because nothing extracts a victim
+name, every claim is marked as reported and every name is withheld.
+
+**Sprint 5 has not been audited.** Codex Desktop audits this project independently, and no
+result has been issued for Sprint 5.
 
 **Graph scope decision, being recorded now.** Seven protocol identities are proven live on the
 standardized TVL lane, and that lane is the project's live Graph capability. The separately
@@ -84,8 +108,17 @@ post-event roadmap, to protect the 10 September Graph release gate.
 | Eligible results clustered              | 24,193                                    |
 | Provisional incidents                   | 23,596                                    |
 | Live Graph protocol identities proven   | 7                                         |
-| Automated tests, no database or network | 390                                       |
-| PostgreSQL integration tests            | 141                                       |
+| Evidence states resolved on real data   | 23,596, all `reported_only`               |
+| Automated tests, no database or network | 482                                       |
+| PostgreSQL integration tests            | 173                                       |
+
+**What the evidence counts are and are not.** Every real incident resolves to
+`reported_only`, and zero associations were suggested, because no real incident has a recorded
+chain and protocol subject and nothing in the system extracts one from text. That is the
+correct output of the input available, not a shortfall: a pipeline that produced links here
+would be producing them from headlines, which is precisely what this design refuses to do. The
+correlation, review and resolution path is proven end to end against synthetic data in
+PostgreSQL, and this draft claims no real-data demonstration of it.
 
 **What the clustering counts are and are not.** They are structural: the pipeline covered its
 input exactly and grouped it into that many provisional incidents. They do not establish
@@ -102,9 +135,12 @@ unresolved, so the classifier and the clustering engine are both deterministic. 
 which fixes the automated editorial week boundary and publication cutoff, is also unresolved,
 so every operation names an explicit batch or run rather than inferring a week.
 
-Sprint 5 has not begun. The drafting pipeline, the dashboard, the evidence-state resolver, the
-anomaly feed and the MCP server follow, before the Graph release gate at the end of
-10 September.
+Decisions D3, which fixes where a draft is written, and D4, which fixes the naming policy, are
+still provisional. Both are implemented as configurable policies at their conservative
+settings, and neither is presented here as decided.
+
+The dashboard and the MCP server have not begun. They follow, with the Graph release gate at
+the end of 10 September.
 
 ## HUMAN ACTION REQUIRED
 

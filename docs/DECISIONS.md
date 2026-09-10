@@ -752,3 +752,61 @@ entries are unchanged except for status pointers.
   Sprint 4 remains pending an independent re-audit.
 - **Decided by:** Sprint 4 correction pass of 2026-09-09, on the audit's required correction.
 - **Supersedes:** the cluster-bound behaviour described in D22, which is otherwise unchanged.
+
+## D25 Sprint 5 evidence, anomaly and drafting design
+
+- **Date:** 2026-09-10
+- **Status:** ACCEPTED
+- **Decision:** Sprint 5 adds a Graph evidence layer, a chain-and-reporting anomaly feed and a
+  deterministic drafting pipeline, built on six commitments.
+  - **Correlation reads no text at all.** An incident correlates with a Graph signal only when
+    a person has recorded that incident's chain and protocol identity and it equals the
+    identity the signal carries, inside a declared window, at a movement of at least five
+    percent. There is no extraction: no rule reads a headline for a protocol name. An incident
+    with no recorded subject never correlates, which is the intended outcome rather than a gap.
+  - **A machine suggestion is not evidence.** `correlation.suggestionIsEvidence` is `false`, so
+    a suggestion is `context` and nothing stronger until a named person accepts it. Only an
+    accepted association reaches the resolver. This is the mechanism that stops a value
+    movement from quietly turning a report into a confirmed cyberattack.
+  - **Four evidence states, and absence is never evidence against.** `reported_only`,
+    `onchain_observed`, `corroborated`, `contradicted`. The ordered resolution rules end in a
+    rule whose condition is `always`, so a missing signal, a stale observation and an empty
+    history all fall through to `reported_only`. No rule has "no evidence" as its condition.
+  - **A movement is never anomalous on data that is absent.** Too little history produces
+    `insufficient_history`, a gap produces `missing_observation`, an old reading produces
+    `stale_observation`, and none of the three is a spike. Every entry carries a fixed sentence
+    saying what it does not establish, and its data origin.
+  - **No editorial week is inferred.** D10 is unresolved, so every command that needs a period
+    takes explicit validated bounds or an explicit imported batch, and no weekly candidate
+    decision is read as a feature or a label.
+  - **Nothing is model-generated.** D9 is unresolved. The drafter is deterministic: no SDK, no
+    model, no key. Every draft says so in its own text, is marked
+    `unpublished_requires_human_review`, and is never overwritten.
+  - **Versions and hashes.** `evidence-resolver@1` with `evidence-behavior-contract@1`, hash
+    `faabdade6fb05e0fd8a3f7dcf92807731da126642954e4ddcd9db28ac8dec873`; `deterministic-drafter@1`
+    with `drafting-behavior-contract@1`, hash
+    `f89382d6794e77a90eb11df841de234421dee2a75651d1cb95187b29b6ddade3`. Every hashed field
+    changes observable behaviour, and each is pinned by a mutation test.
+  - **A resolution's identity includes the human judgement behind it.** The evidence run's
+    idempotency key covers the clustering run, the signal run, the contract hash, the resolver
+    version and a digest of every decision bearing on that clustering run. A replay that
+    changes nothing is a no-op; an acceptance makes the next resolution a new immutable run.
+  - **`@cas/evidence` is a package of its own.** Clustering's contract was audited and accepted
+    at a fixed hash. Keeping the two apart means a change to one cannot move the other's
+    identity.
+- **Rationale:** The September 10 gate needs the anomaly feed and the evidence layer, and the
+  primary deliverable needs a draft. The risk in building both at once is that a plausible
+  correlation quietly becomes a published assertion about a named organisation. Every
+  commitment above exists to make that specific failure structurally impossible rather than
+  merely unlikely: the correlator cannot read a name, the resolver cannot count an undecided
+  suggestion, the database refuses a corroboration with nothing behind it, and the drafter
+  proposes no name at all.
+- **Consequences:** Migration 0008 adds seven tables and five guard functions, checksum
+  `548c810d925d113f2d5ab74f399d3dff9b22f9e144bd2202072489a030344449`. Recording an incident's
+  subject becomes a command, because without one the evidence layer would correlate nothing
+  ever. D3 and D4 remain PROVISIONAL and are implemented as configurable policies at their
+  conservative settings; neither is owner-confirmed. Sprint 5 remains pending an independent
+  Codex Desktop audit.
+- **Decided by:** Sprint 5 implementation of 2026-09-09 and 2026-09-10, on the owner's brief.
+- **Supersedes:** nothing. It builds on D21 (classification), D22 and D24 (clustering) and D23
+  (the seven retained live identities), and it does not revisit D9, D10, D3 or D4.

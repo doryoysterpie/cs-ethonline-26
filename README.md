@@ -29,9 +29,14 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 ## Current status
 
 **Sprint 5 in progress: the Graph evidence, anomaly and drafting layer.** Sprint 4's deferred
-work — correlating canonical incidents with live Graph signals, resolving explicit evidence
-states, and the chain-and-reporting anomaly feed — is being built now, followed by the
-deterministic drafting pipeline. Sprint 5 has not been audited and is not finished.
+work is built — correlation on recorded chain and protocol identity, the four evidence states,
+the chain-and-reporting anomaly feed — together with the deterministic drafting pipeline
+(decision D25, migration 0008). Correlation reads no text of any kind, a machine suggestion is
+never evidence until a named person accepts it, and the absence of a signal never counts
+against a claim. Nothing is model-generated: there is no SDK, no model path and no credential
+read. The implementation is finished; **Sprint 5 has not been audited**, and no part of this
+repository may be read as saying otherwise until Codex Desktop issues a result
+(`docs/SPRINT-5-REPORT.md`).
 
 **Sprint 4 accepted by Codex Desktop at `4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`
 (9 September 2026): eligible classified sources become provisional canonical incidents.** A deterministic, model-free clustering engine
@@ -129,24 +134,26 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 4                                                                                                           |
-| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                                                         |
-| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering and review commands; 144 offline tests, 61 PostgreSQL          |
-| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                    |
-| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                  |
-| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests                                        |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, seven migrations, ingestion, classification and clustering ops; 24 offline tests, 80 PostgreSQL |
-| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work                                           |
-| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 56 unit tests                                     |
-| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 50 unit tests                                   |
-| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests                                     |
-| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                                                    |
-| `packages/drafting`       | `@cas/drafting`       | placeholder                                                                                                                    |
-| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                    |
-| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                               |
-| `data/fixtures`           |                       | synthetic editorial CSV fixtures for every known source hazard (`data/fixtures/README.md`)                                     |
-| `docs`                    |                       | charter documents and sprint reports, listed below                                                                             |
+| Path                      | Package               | State after Sprint 5                                                                                                                       |
+| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                                                                     |
+| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering, evidence, anomaly and drafting commands; 146 offline tests, 92 PostgreSQL |
+| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                                |
+| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                              |
+| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests                                                    |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, eight migrations, ingestion, classification, clustering and evidence ops; 24 offline tests, 81 PostgreSQL   |
+| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work                                                       |
+| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 56 unit tests                                                 |
+| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 50 unit tests                                               |
+| `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25); 69 unit tests                                              |
+| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests                                                 |
+| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                                                                |
+| `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25); 19 unit tests. No model is called                                  |
+| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                |
+| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                           |
+| `data/fixtures`           |                       | synthetic editorial CSV fixtures and synthetic evidence replay fixtures (`data/fixtures/README.md`)                                        |
+| `tools`                   |                       | `offline-sandbox.sb`, a sandbox profile that denies all network access, for proving the default suite is offline                           |
+| `docs`                    |                       | charter documents and sprint reports, listed below                                                                                         |
 
 A placeholder package contains one source file that exports nothing. The intended
 responsibility of each package is in `docs/ARCHITECTURE.md`. Next.js is fixed by the plan for
@@ -335,9 +342,10 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 | `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules                              |
 | `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure                         |
 | `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule                         |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D22                                                                |
+| `docs/DECISIONS.md`              | append-only decision log, D1 to D25                                                                |
 | `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence                        |
 | `docs/SPRINT-4-REPORT.md`        | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections |
+| `docs/SPRINT-5-REPORT.md`        | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting; pending audit       |
 | `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                   |
 | `docs/CHECKIN-2-DRAFT.md`        | Project Check-in #2 draft, due Thursday 10 September; not submitted                                |
 | `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                                               |

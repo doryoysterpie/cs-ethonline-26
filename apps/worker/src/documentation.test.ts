@@ -33,6 +33,7 @@ const CURRENT_DOCUMENTS = [
   'docs/HACKATHON_REQUIREMENTS.md',
   'docs/SPRINT_BOARD.md',
   'docs/SPRINT-4-REPORT.md',
+  'docs/SPRINT-5-REPORT.md',
   'docs/CHECKIN-1-DRAFT.md',
   'docs/CHECKIN-2-DRAFT.md',
 ];
@@ -157,11 +158,46 @@ describe('current documentation agrees with itself', () => {
     expect(report).toContain('| **Total**             | **390** |    **141** |');
     expect(report).toContain('The 141 PostgreSQL tests run only through');
 
+    // Sprint 4's figures are correct at Sprint 4's SHA, and its reproduction
+    // section says so in its own first step. Nothing rewrites them here.
+    expect(reproduction).toMatch(/Check out `sprint-4\/clustering-incidents` at the final SHA/u);
+
     // The pre-correction counts remain, but only as historical before-and-after
     // evidence. That row is what the audit explicitly permitted to stay.
     expect(report).toContain(
       '| PostgreSQL tests | 123                                                                | 141',
     );
     expect(report).toContain('| Offline tests    | 363 claimed, 362 passing');
+  });
+
+  it('states the current test counts in the Sprint 5 record a reader acts on', async () => {
+    // Finding F8 was a reproduction instruction that had gone stale against
+    // the runner. The lesson applies to every report as it is written, not
+    // only to the one the finding was raised against.
+    const report = await read('docs/SPRINT-5-REPORT.md');
+    expect(report).toContain('4a0a847748b1ff73c424934547c8e6ccd8a1cd6b');
+    expect(report).toMatch(/\*\*482 offline tests\*\*/u);
+    expect(report).toMatch(
+      /\*\*173 PostgreSQL integration tests\*\*: 81 in `@cas\/database`, 92 in `@cas\/worker`/u,
+    );
+    // The per-package table must sum to the total it claims.
+    const rows = [...report.matchAll(/^\| `@cas\/[a-z-]+`\s*\|\s*(\d+) \|$/gmu)];
+    expect(rows).toHaveLength(9);
+    expect(rows.reduce((total, row) => total + Number(row[1]), 0)).toBe(482);
+    // And it must not claim an audit it has not had.
+    expect(report).toContain('**Sprint 5 remains pending until Codex Desktop issues PASS.**');
+  });
+
+  it('states the hashes and the migration checksum consistently across documents', async () => {
+    const report = await read('docs/SPRINT-5-REPORT.md');
+    const decisions = await read('docs/DECISIONS.md');
+    for (const value of [
+      'faabdade6fb05e0fd8a3f7dcf92807731da126642954e4ddcd9db28ac8dec873',
+      'f89382d6794e77a90eb11df841de234421dee2a75651d1cb95187b29b6ddade3',
+      '548c810d925d113f2d5ab74f399d3dff9b22f9e144bd2202072489a030344449',
+    ]) {
+      expect(report, `the Sprint 5 report must state ${value}`).toContain(value);
+      expect(decisions, `D25 must state ${value}`).toContain(value);
+    }
   });
 });
