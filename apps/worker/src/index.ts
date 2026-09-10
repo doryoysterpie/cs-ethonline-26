@@ -141,4 +141,34 @@ export {
   type ClusterRunOutcome,
   type ClusterRunRequest,
 } from './clustering/run.js';
+export { buildAnomalyFeed, type AnomalyRequest } from './evidence/anomaly.js';
+export {
+  reportEvidenceRun,
+  resolveEvidence,
+  type EvidenceReport,
+  type EvidenceRunOutcome,
+  type EvidenceRunRequest,
+} from './evidence/run.js';
+export {
+  ingestSnapshot,
+  type IngestSnapshotOutcome,
+  type IngestSnapshotRequest,
+} from './evidence/signals.js';
+export {
+  recordIncidentSubject,
+  type RecordSubjectOutcome,
+  type RecordSubjectRequest,
+} from './evidence/subject.js';
+export {
+  decideAssociation,
+  evidenceReviewCounts,
+  type EvidenceDecisionOutcome,
+  type EvidenceDecisionRequest,
+} from './evidence/review.js';
+export { buildDraftRequest, type BuildDraftRequest } from './drafting/build.js';
+export {
+  assertReviewNote,
+  REVIEW_NOTE_MAX_LENGTH,
+  REVIEW_NOTE_MIN_LENGTH,
+} from './clustering/note.js';
 export { run, type CliIo, type CliOptions } from './cli.js';

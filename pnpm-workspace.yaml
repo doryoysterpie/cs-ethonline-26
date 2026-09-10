@@ -2,17 +2,38 @@ packages:
   - apps/*
   - packages/*
 
+# Lifecycle scripts stay refused. `argon2` ships prebuilt binaries for every
+# platform this project runs on (darwin-arm64, linux-x64), which node-gyp-build
+# loads at require time without its install script, so the script is refused
+# rather than allowed: no native compilation happens at install and no
+# install-time code from the package runs.
+allowBuilds:
+  argon2: false
+
 # Single source of truth for every third-party version. Package manifests
 # reference these with "catalog:" so the lockfile records one exact version.
 catalog:
   '@eslint/js': 10.0.1
+  '@playwright/test': 1.63.0
+  '@types/hast': 3.0.5
   '@types/node': 24.13.3
   '@types/pg': 8.23.1
+  '@types/react': 19.2.18
+  '@types/react-dom': 19.2.7
+  argon2: 0.45.1
   csv-parse: 7.0.2
   eslint: 10.9.1
+  hast-util-sanitize: 5.0.2
+  hast-util-to-jsx-runtime: 2.3.6
   htmlparser2: 12.0.0
+  mdast-util-from-markdown: 2.0.3
+  mdast-util-to-hast: 13.2.1
+  next: 16.3.4
   pg: 8.23.0
   prettier: 3.9.6
+  react: 19.2.8
+  react-dom: 19.2.8
+  server-only: 0.0.1
   turbo: 2.10.12
   typescript: 6.0.3
   typescript-eslint: 8.69.0

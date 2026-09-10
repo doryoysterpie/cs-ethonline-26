@@ -4,6 +4,13 @@
   "private": true,
   "description": "Pipeline worker. Sprint 2: streaming CSV validation and manual on-demand editorial import into PostgreSQL through @cas/database, with a command-line interface. Later sprints add classification, queue routing, clustering and Graph correlation.",
   "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

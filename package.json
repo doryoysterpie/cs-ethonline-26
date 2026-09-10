@@ -28,7 +28,7 @@
     "classify:report": "pnpm -s --filter @cas/worker cli classification report",
     "classify:queue": "pnpm -s --filter @cas/worker cli classification queue",
     "classify:calibrate": "pnpm -s --filter @cas/worker cli classification calibrate",
-    "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db"
+    "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db && pnpm --filter @cas/dashboard test:db"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
