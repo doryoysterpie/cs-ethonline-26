@@ -8,7 +8,9 @@ import {
 import { ANOMALY_TARGETS_LIMIT, IDENTITY_MAX_CHARACTERS } from '../bounds.js';
 import type { AnomalyLabeller, ChainSeries } from '../engines/anomaly.js';
 import type { LiveSignalSource } from '../engines/live-graph.js';
+import { throwIfAborted } from '../safety/cancellation.js';
 import { ToolError } from '../safety/errors.js';
+import type { Redactor } from '../safety/redact.js';
 import { quoteEvidence, type QuotedEvidence } from '../safety/text.js';
 import { RESULT_NOTICE, TELEMETRY_SENTENCE } from '../schemas/common.js';
 import type { ChainAnomaliesArguments } from '../schemas/input.js';
@@ -31,6 +33,10 @@ export interface ChainAnomaliesDependencies {
   readonly live: LiveSignalSource | null;
   readonly labeller: AnomalyLabeller;
   readonly now: () => Date;
+  /** The call's abort signal: every store read and every live request observes it. */
+  readonly signal: AbortSignal;
+  /** The runtime redactor, applied to every quoted value before escaping. */
+  readonly redact: Redactor;
 }
 
 /** Fixed sentence per live failure kind. The provider's own text never leaves. */
@@ -80,15 +86,17 @@ async function storedAnomalies(
   asOf: Date,
 ): Promise<ChainAnomaliesOutput> {
   if (deps.store === null) throw new ToolError('database_not_configured');
-  const run = await deps.store.getSignalRun(signalRunId);
+  const run = await deps.store.getSignalRun(signalRunId, deps.signal);
   if (run === null) throw new ToolError('signal_run_not_found');
   if (run.status !== 'completed' || run.completedAt === null) {
     throw new ToolError('signal_run_not_completed');
   }
-  const targets = await deps.store.listSignalTargets(run.id, ANOMALY_TARGETS_LIMIT);
+  throwIfAborted(deps.signal);
+  const targets = await deps.store.listSignalTargets(run.id, ANOMALY_TARGETS_LIMIT, deps.signal);
   const series: ChainSeries[] = [];
   let observationsRead = 0;
   for (const target of targets) {
+    throwIfAborted(deps.signal);
     // The history query is scoped by the run's origin inside the store, so a
     // replayed series and a live series of the same target never mix.
     const history = await deps.store.listSignalHistory(
@@ -96,6 +104,7 @@ async function storedAnomalies(
       target.protocolSlug,
       target.dataOrigin,
       deps.labeller.maximumObservationsPerTarget,
+      deps.signal,
     );
     observationsRead += history.length;
     series.push({
@@ -155,13 +164,11 @@ function liveTargetDto(
   redact: (value: string) => string,
 ): LiveTargetDto {
   // Provider-controlled values pass through the Sprint 1 client's own
-  // redactor first, so the live path inherits that control whatever the
-  // runtime redactor knows.
+  // redactor and the runtime's credential-variant redactor before they are
+  // escaped or bounded, so an encoded key in a provider field is matched
+  // whole (Track D finding F3).
   const quoted = (value: string | null | undefined): QuotedEvidence | null =>
-    quoteEvidence(
-      value === null || value === undefined ? value : redact(value),
-      IDENTITY_MAX_CHARACTERS,
-    );
+    quoteEvidence(value, IDENTITY_MAX_CHARACTERS, redact);
   const requireQuoted = (value: string): QuotedEvidence =>
     quoted(value) ?? { text: '', truncated: false, trust: 'untrusted_quoted_evidence' };
   const target = {
@@ -264,12 +271,14 @@ async function liveAnomalies(
   chain: ChainId,
 ): Promise<ChainAnomaliesOutput> {
   if (deps.live === null) throw new ToolError('graph_credential_missing');
-  const observation = await deps.live.observe(chain);
+  const observation = await deps.live.observe(chain, deps.signal);
+  throwIfAborted(deps.signal);
   const configured =
     chain === 'ethereum' ? ETHEREUM_LENDING_TARGETS.length : BASE_LENDING_TARGETS.length;
   const nowSeconds = Math.floor(deps.now().getTime() / 1000);
+  const redactBoth = (value: string): string => deps.redact(observation.redact(value));
   const targets = observation.evaluations.map((evaluation) =>
-    liveTargetDto(evaluation, deps.labeller, nowSeconds, observation.redact),
+    liveTargetDto(evaluation, deps.labeller, nowSeconds, redactBoth),
   );
   return {
     notice: RESULT_NOTICE,

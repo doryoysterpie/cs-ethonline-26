@@ -11,12 +11,14 @@ import {
 } from '@cas/database';
 
 import {
+  CANCEL_POOL_CONNECTIONS,
   DATABASE_MAX_CONNECTIONS,
   HEADLINE_MAX_CHARACTERS,
   PUBLISHER_MAX_CHARACTERS,
   STATEMENT_TIMEOUT_MS,
   URL_MAX_CHARACTERS,
 } from '../bounds.js';
+import { throwIfAborted } from '../safety/cancellation.js';
 import type {
   DraftIncidentRow,
   EvidenceRunRow,
@@ -32,7 +34,7 @@ import type {
 /**
  * The PostgreSQL read store.
  *
- * It opens its own small pool through `@cas/database`, the only package that
+ * It opens its own small pools through `@cas/database`, the only package that
  * talks to PostgreSQL, and runs every operation inside one transaction that
  * begins `REPEATABLE READ`, is declared `READ ONLY` as its first statement,
  * and carries a `statement_timeout`. The read-only declaration is the
@@ -40,6 +42,15 @@ import type {
  * SQLSTATE 25006 by the server, not by a check this code could forget. The
  * integration tests prove that, and prove that every tool leaves the
  * application tables byte-identical.
+ *
+ * Cancellation (Track D finding F1) is the database's too. Each transaction
+ * records its backend process id; when the call's signal aborts, a separate
+ * one-connection pool issues `pg_cancel_backend` for that process, so a
+ * statement blocked on a lock is cancelled by the server with SQLSTATE 57014
+ * rather than left running until the lock clears. The cancelled transaction
+ * is rolled back by the audited `withTransaction` wrapper before its
+ * connection returns to the pool, and no further statement of that call is
+ * issued because every statement first checks the signal.
  *
  * Every statement is parameterized. The only literal interpolated into SQL
  * is the statement timeout, a fixed integer constant. Text columns are cut
@@ -51,15 +62,63 @@ if (!Number.isInteger(STATEMENT_TIMEOUT_MS) || STATEMENT_TIMEOUT_MS <= 0) {
   throw new TypeError('statement timeout must be a positive integer');
 }
 
-/** Runs `fn` inside a read-only, repeatable-read transaction with a statement timeout. */
-export async function readOnly<T>(db: Database, fn: (client: Queryable) => Promise<T>): Promise<T> {
+export interface ReadOnlyOptions {
+  /** The call's abort signal. Checked before every statement; aborts cancel the backend. */
+  readonly signal?: AbortSignal | undefined;
+  /** Where `pg_cancel_backend` is issued from. Must not share the reading pool when that pool can be exhausted. */
+  readonly canceller?: Database | undefined;
+}
+
+/**
+ * Runs `fn` inside a read-only, repeatable-read transaction with a statement
+ * timeout, cancelling the backend if the signal aborts while a statement is
+ * running and refusing any further statement once it has.
+ */
+export async function readOnly<T>(
+  db: Database,
+  fn: (client: Queryable) => Promise<T>,
+  options: ReadOnlyOptions = {},
+): Promise<T> {
+  const { signal, canceller } = options;
+  throwIfAborted(signal);
   return db.withTransaction(
     async (tx) => {
+      throwIfAborted(signal);
       // Both settings must precede any query in the transaction. The timeout
       // is `SET LOCAL`, so it ends with the transaction.
       await tx.query('SET TRANSACTION READ ONLY');
       await tx.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
-      return fn(tx);
+
+      let pid: number | null = null;
+      if (signal !== undefined && canceller !== undefined) {
+        const backend = await tx.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+        pid = backend.rows[0]?.pid ?? null;
+      }
+      const cancelBackend = (): void => {
+        if (pid === null || canceller === undefined) return;
+        // The cancel travels on its own connection: a cancel that had to wait
+        // behind the very statement it cancels would never arrive.
+        void canceller
+          .withClient((client) => client.query('SELECT pg_cancel_backend($1)', [pid]))
+          .catch(() => undefined);
+      };
+      if (signal !== undefined) {
+        if (signal.aborted) cancelBackend();
+        else signal.addEventListener('abort', cancelBackend, { once: true });
+      }
+
+      // Every statement of the call observes the signal before it is sent.
+      const guarded: Queryable = {
+        query(text, values) {
+          throwIfAborted(signal);
+          return tx.query(text, values);
+        },
+      };
+      try {
+        return await fn(guarded);
+      } finally {
+        signal?.removeEventListener('abort', cancelBackend);
+      }
     },
     { isolationLevel: 'repeatable read' },
   );
@@ -137,19 +196,36 @@ function toSummary(row: SummaryRow): IncidentSummaryRow {
 
 export class PostgresReadStore implements IncidentReadStore {
   readonly #db: Database;
+  readonly #canceller: Database;
+  readonly #ownsCanceller: boolean;
 
-  constructor(db: Database) {
+  /**
+   * `canceller` is where `pg_cancel_backend` is issued from. It defaults to the
+   * reading handle, which is only safe while that pool cannot be exhausted;
+   * `open()` always provides a separate one-connection pool.
+   */
+  constructor(db: Database, canceller?: Database) {
     this.#db = db;
+    this.#canceller = canceller ?? db;
+    this.#ownsCanceller = canceller !== undefined;
   }
 
   static open(config: DatabaseConfig): PostgresReadStore {
     return new PostgresReadStore(
       openDatabase(config, { maxConnections: DATABASE_MAX_CONNECTIONS }),
+      openDatabase(config, { maxConnections: CANCEL_POOL_CONNECTIONS }),
     );
   }
 
-  async getEvidenceRun(evidenceRunId: string): Promise<EvidenceRunRow | null> {
-    return readOnly(this.#db, async (client) => {
+  #read<T>(fn: (client: Queryable) => Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+    return readOnly(this.#db, fn, { signal, canceller: this.#canceller });
+  }
+
+  async getEvidenceRun(
+    evidenceRunId: string,
+    signal?: AbortSignal,
+  ): Promise<EvidenceRunRow | null> {
+    return this.#read(async (client) => {
       const run = await getEvidenceRun(client, evidenceRunId);
       return run === null
         ? null
@@ -170,15 +246,16 @@ export class PostgresReadStore implements IncidentReadStore {
             contradictedCount: run.contradictedCount,
             completedAt: run.completedAt,
           };
-    });
+    }, signal);
   }
 
   async listIncidentSummaries(
     evidenceRunId: string,
     afterIncidentId: string | null,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentSummaryRow[]> {
-    return readOnly(this.#db, async (client) => {
+    return this.#read(async (client) => {
       const result = await client.query<SummaryRow>(SUMMARY_SELECT, [
         evidenceRunId,
         afterIncidentId,
@@ -187,14 +264,15 @@ export class PostgresReadStore implements IncidentReadStore {
         null,
       ]);
       return result.rows.map(toSummary);
-    });
+    }, signal);
   }
 
   async getIncidentSummary(
     evidenceRunId: string,
     incidentId: string,
+    signal?: AbortSignal,
   ): Promise<IncidentSummaryRow | null> {
-    return readOnly(this.#db, async (client) => {
+    return this.#read(async (client) => {
       const result = await client.query<SummaryRow>(SUMMARY_SELECT, [
         evidenceRunId,
         null,
@@ -204,15 +282,16 @@ export class PostgresReadStore implements IncidentReadStore {
       ]);
       const row = result.rows[0];
       return row === undefined ? null : toSummary(row);
-    });
+    }, signal);
   }
 
   async listIncidentSources(
     clusteringRunId: string,
     incidentId: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentSourceRow[]> {
-    return readOnly(this.#db, async (client) => {
+    return this.#read(async (client) => {
       const result = await client.query<{
         source_row_id: string;
         title: string | null;
@@ -249,15 +328,16 @@ export class PostgresReadStore implements IncidentReadStore {
         postedAt: row.posted_at,
         decision: row.decision,
       }));
-    });
+    }, signal);
   }
 
   async listIncidentAssociations(
     evidenceRunId: string,
     incidentId: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentAssociationRow[]> {
-    return readOnly(this.#db, async (client) => {
+    return this.#read(async (client) => {
       const result = await client.query<{
         id: string;
         signal_id: string;
@@ -318,11 +398,11 @@ export class PostgresReadStore implements IncidentReadStore {
         decidedClaimId: row.decided_claim_id,
         reasonCodes: stringList(row.reason_codes),
       }));
-    });
+    }, signal);
   }
 
-  async getSignalRun(signalRunId: string): Promise<SignalRunRow | null> {
-    return readOnly(this.#db, async (client) => {
+  async getSignalRun(signalRunId: string, signal?: AbortSignal): Promise<SignalRunRow | null> {
+    return this.#read(async (client) => {
       const run = await getGraphSignalRun(client, signalRunId);
       return run === null
         ? null
@@ -340,11 +420,15 @@ export class PostgresReadStore implements IncidentReadStore {
             failedTargetCount: run.failedTargetCount,
             completedAt: run.completedAt,
           };
-    });
+    }, signal);
   }
 
-  async listSignalTargets(signalRunId: string, limit: number): Promise<SignalTargetRow[]> {
-    return readOnly(this.#db, async (client) => {
+  async listSignalTargets(
+    signalRunId: string,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<SignalTargetRow[]> {
+    return this.#read(async (client) => {
       const result = await client.query<{
         chain: ChainId;
         protocol_slug: string;
@@ -367,7 +451,7 @@ export class PostgresReadStore implements IncidentReadStore {
         protocolSlug: row.protocol_slug,
         dataOrigin: row.data_origin,
       }));
-    });
+    }, signal);
   }
 
   async listSignalHistory(
@@ -375,14 +459,20 @@ export class PostgresReadStore implements IncidentReadStore {
     protocolSlug: string,
     dataOrigin: DataOrigin,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<SignalObservationRow[]> {
-    return readOnly(this.#db, (client) =>
-      listSignalHistory(client, chain, protocolSlug, dataOrigin, limit),
+    return this.#read(
+      (client) => listSignalHistory(client, chain, protocolSlug, dataOrigin, limit),
+      signal,
     );
   }
 
-  async listDraftIncidents(evidenceRunId: string, limit: number): Promise<DraftIncidentRow[]> {
-    return readOnly(this.#db, async (client) => {
+  async listDraftIncidents(
+    evidenceRunId: string,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<DraftIncidentRow[]> {
+    return this.#read(async (client) => {
       const rows = await listDraftIncidents(client, evidenceRunId, limit);
       return rows.map((row) => ({
         incidentId: row.incidentId,
@@ -399,10 +489,11 @@ export class PostgresReadStore implements IncidentReadStore {
           postedAt: source.postedAt,
         })),
       }));
-    });
+    }, signal);
   }
 
   async close(): Promise<void> {
     await this.#db.end();
+    if (this.#ownsCanceller) await this.#canceller.end();
   }
 }

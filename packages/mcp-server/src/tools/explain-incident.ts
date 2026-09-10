@@ -5,6 +5,7 @@ import {
   PUBLISHER_MAX_CHARACTERS,
   URL_MAX_CHARACTERS,
 } from '../bounds.js';
+import { throwIfAborted } from '../safety/cancellation.js';
 import { ToolError } from '../safety/errors.js';
 import { quoteEvidence } from '../safety/text.js';
 import { RESULT_NOTICE, TELEMETRY_SENTENCE } from '../schemas/common.js';
@@ -16,6 +17,7 @@ import {
   incidentSummaryDto,
   requireCompletedEvidenceRun,
   runProvenance,
+  type ToolContext,
 } from './shared.js';
 
 /**
@@ -27,32 +29,39 @@ import {
 export async function explainIncident(
   store: IncidentReadStore,
   args: ExplainIncidentArguments,
+  context: ToolContext,
 ): Promise<ExplainIncidentOutput> {
+  const { signal, redact } = context;
   const evidenceRunId = canonicalUuid(args.evidenceRunId);
   const incidentId = canonicalUuid(args.incidentId);
-  const run = await requireCompletedEvidenceRun(store, evidenceRunId);
-  const summary = await store.getIncidentSummary(run.id, incidentId);
+  const run = await requireCompletedEvidenceRun(store, evidenceRunId, signal);
+  throwIfAborted(signal);
+  const summary = await store.getIncidentSummary(run.id, incidentId, signal);
   if (summary === null) throw new ToolError('incident_not_found');
+  throwIfAborted(signal);
   const sources = await store.listIncidentSources(
     run.clusteringRunId,
     incidentId,
     EXPLAIN_SOURCES_LIMIT,
+    signal,
   );
+  throwIfAborted(signal);
   const associations = await store.listIncidentAssociations(
     run.id,
     incidentId,
     EXPLAIN_ASSOCIATIONS_LIMIT,
+    signal,
   );
   return {
     notice: RESULT_NOTICE,
     tool: 'explain_incident',
     run: runProvenance(run),
-    incident: incidentSummaryDto(summary),
+    incident: incidentSummaryDto(summary, redact),
     sources: sources.map((source) => ({
       sourceRowId: source.sourceRowId,
-      title: quoteEvidence(source.title, HEADLINE_MAX_CHARACTERS),
-      publisher: quoteEvidence(source.publisher, PUBLISHER_MAX_CHARACTERS),
-      url: quoteEvidence(source.url, URL_MAX_CHARACTERS),
+      title: quoteEvidence(source.title, HEADLINE_MAX_CHARACTERS, redact),
+      publisher: quoteEvidence(source.publisher, PUBLISHER_MAX_CHARACTERS, redact),
+      url: quoteEvidence(source.url, URL_MAX_CHARACTERS, redact),
       postedAt: source.postedAt,
       classificationDecision: source.decision,
     })),

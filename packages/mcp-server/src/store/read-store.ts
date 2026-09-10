@@ -8,6 +8,11 @@ import type { AssociationRelation, ChainId, DataOrigin, EvidenceState } from '@c
  * store. Nothing here can write, and nothing here returns a raw cell, a
  * derived body text, a review note, a rationale, an actor or a credential:
  * the row types below are the whole surface.
+ *
+ * Every method takes the call's abort signal last (Track D finding F1). An
+ * implementation must refuse to start once the signal is aborted and must
+ * cancel work in progress when it aborts; the PostgreSQL store cancels the
+ * backend statement and unwinds its transaction.
  */
 
 export interface EvidenceRunRow {
@@ -115,31 +120,47 @@ export interface DraftIncidentRow {
 }
 
 export interface IncidentReadStore {
-  getEvidenceRun(evidenceRunId: string): Promise<EvidenceRunRow | null>;
+  getEvidenceRun(evidenceRunId: string, signal?: AbortSignal): Promise<EvidenceRunRow | null>;
   listIncidentSummaries(
     evidenceRunId: string,
     afterIncidentId: string | null,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentSummaryRow[]>;
-  getIncidentSummary(evidenceRunId: string, incidentId: string): Promise<IncidentSummaryRow | null>;
+  getIncidentSummary(
+    evidenceRunId: string,
+    incidentId: string,
+    signal?: AbortSignal,
+  ): Promise<IncidentSummaryRow | null>;
   listIncidentSources(
     clusteringRunId: string,
     incidentId: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentSourceRow[]>;
   listIncidentAssociations(
     evidenceRunId: string,
     incidentId: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentAssociationRow[]>;
-  getSignalRun(signalRunId: string): Promise<SignalRunRow | null>;
-  listSignalTargets(signalRunId: string, limit: number): Promise<SignalTargetRow[]>;
+  getSignalRun(signalRunId: string, signal?: AbortSignal): Promise<SignalRunRow | null>;
+  listSignalTargets(
+    signalRunId: string,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<SignalTargetRow[]>;
   listSignalHistory(
     chain: ChainId,
     protocolSlug: string,
     dataOrigin: DataOrigin,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<SignalObservationRow[]>;
-  listDraftIncidents(evidenceRunId: string, limit: number): Promise<DraftIncidentRow[]>;
+  listDraftIncidents(
+    evidenceRunId: string,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<DraftIncidentRow[]>;
   close(): Promise<void>;
 }

@@ -1,3 +1,5 @@
+import type { Redactor } from './redact.js';
+
 /**
  * Quoted evidence: how retrieved text leaves this server.
  *
@@ -6,6 +8,8 @@
  * protocol name, is evidence about the world and never an instruction. Before
  * any of it reaches a tool result it is rendered as a display copy:
  *
+ *   - it is redacted first (Track D finding F3), so a secret is matched whole
+ *     before any escape can alter it or any bound can split it;
  *   - C0 controls, DEL, C1 controls and the Unicode line and paragraph
  *     separators are shown as visible escapes (backslash-n, backslash-x1b,
  *     backslash-u2028), so a value cannot forge a line, a status field or a
@@ -17,7 +21,7 @@
  *   - the copy is bounded with a visible truncation marker.
  *
  * The stored evidence is never mutated; only the copy that leaves is
- * transformed. The character class is built from code points so this file
+ * transformed. The character classes are built from code points so this file
  * holds no control byte of its own.
  */
 
@@ -31,11 +35,18 @@ const CONTROL_CHARACTERS = new RegExp(CONTROL_CLASS, 'g');
 const CONTROL_CHARACTER = new RegExp(CONTROL_CLASS);
 const ANGLE_BRACKETS = /[<>]/g;
 
+// Directional formatting characters: the Arabic letter mark, the left-to-right
+// and right-to-left marks, the embedding, override and pop controls, and the
+// isolate controls. They reorder displayed text and are escaped at the error
+// boundary (Track D finding F4).
+const DIRECTIONAL_CLASS = `[${char(0x061c)}${char(0x200e)}${char(0x200f)}${char(0x202a)}-${char(0x202e)}${char(0x2066)}-${char(0x2069)}]`;
+const DIRECTIONAL_CHARACTERS = new RegExp(DIRECTIONAL_CLASS, 'g');
+
 /** Marker every quoted evidence value carries, so a consumer can tell it apart from server vocabulary. */
 export const EVIDENCE_TRUST = 'untrusted_quoted_evidence' as const;
 
 export interface QuotedEvidence {
-  /** The display copy: single-line, escaped, bounded. */
+  /** The display copy: redacted, single-line, escaped, bounded. */
   readonly text: string;
   /** True when the display copy was cut at the bound. */
   readonly truncated: boolean;
@@ -76,6 +87,11 @@ export function toSingleLine(value: unknown): string {
   return text.replace(CONTROL_CHARACTERS, escapeCharacter);
 }
 
+/** `toSingleLine`, then every directional formatting character shown as a visible escape. */
+export function toSingleLineWithoutDirection(value: unknown): string {
+  return toSingleLine(value).replace(DIRECTIONAL_CHARACTERS, escapeCharacter);
+}
+
 /** `toSingleLine`, then bounded to `maxLength` characters with a visible marker. */
 export function safeDisplay(value: unknown, maxLength: number): string {
   const escaped = toSingleLine(value);
@@ -84,15 +100,18 @@ export function safeDisplay(value: unknown, maxLength: number): string {
 }
 
 /**
- * Renders one retrieved value as quoted evidence. `null` stays `null`, so a
- * missing value is distinguishable from an empty one.
+ * Renders one retrieved value as quoted evidence: redacted, then escaped, then
+ * bounded, in that order. `null` stays `null`, so a missing value is
+ * distinguishable from an empty one.
  */
 export function quoteEvidence(
   value: string | null | undefined,
   maxLength: number,
+  redact?: Redactor,
 ): QuotedEvidence | null {
   if (value === null || value === undefined) return null;
-  const escaped = toSingleLine(value).replace(ANGLE_BRACKETS, escapeCharacter);
+  const redacted = redact === undefined ? value : redact(value);
+  const escaped = toSingleLine(redacted).replace(ANGLE_BRACKETS, escapeCharacter);
   const truncated = escaped.length > maxLength;
   return {
     text: truncated

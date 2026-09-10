@@ -1,3 +1,4 @@
+import { throwIfAborted } from '../safety/cancellation.js';
 import { RESULT_NOTICE } from '../schemas/common.js';
 import type { ListIncidentsArguments } from '../schemas/input.js';
 import type { ListIncidentsOutput } from '../schemas/output.js';
@@ -7,6 +8,7 @@ import {
   incidentSummaryDto,
   requireCompletedEvidenceRun,
   runProvenance,
+  type ToolContext,
 } from './shared.js';
 
 /**
@@ -17,13 +19,20 @@ import {
 export async function listIncidents(
   store: IncidentReadStore,
   args: ListIncidentsArguments,
+  context: ToolContext,
 ): Promise<ListIncidentsOutput> {
   const evidenceRunId = canonicalUuid(args.evidenceRunId);
   const afterIncidentId =
     args.afterIncidentId === undefined ? null : canonicalUuid(args.afterIncidentId);
-  const run = await requireCompletedEvidenceRun(store, evidenceRunId);
-  const rows = await store.listIncidentSummaries(run.id, afterIncidentId, args.limit);
-  const incidents = rows.map(incidentSummaryDto);
+  const run = await requireCompletedEvidenceRun(store, evidenceRunId, context.signal);
+  throwIfAborted(context.signal);
+  const rows = await store.listIncidentSummaries(
+    run.id,
+    afterIncidentId,
+    args.limit,
+    context.signal,
+  );
+  const incidents = rows.map((row) => incidentSummaryDto(row, context.redact));
   const last = incidents[incidents.length - 1];
   return {
     notice: RESULT_NOTICE,

@@ -1,10 +1,18 @@
 import type { EvidenceState } from '@cas/contracts';
 
 import { HEADLINE_MAX_CHARACTERS } from '../bounds.js';
+import { throwIfAborted } from '../safety/cancellation.js';
 import { ToolError } from '../safety/errors.js';
+import type { Redactor } from '../safety/redact.js';
 import { quoteEvidence } from '../safety/text.js';
 import type { EvidenceRunProvenanceDto, IncidentSummaryDto } from '../schemas/output.js';
 import type { EvidenceRunRow, IncidentReadStore, IncidentSummaryRow } from '../store/read-store.js';
+
+/** What every tool receives beside its store: the call's signal and the redactor. */
+export interface ToolContext {
+  readonly signal: AbortSignal;
+  readonly redact: Redactor;
+}
 
 /** Fixed sentence per evidence state. Never composed from input. */
 export const EVIDENCE_SENTENCES: Readonly<Record<EvidenceState, string>> = {
@@ -20,8 +28,10 @@ export const EVIDENCE_SENTENCES: Readonly<Record<EvidenceState, string>> = {
 export async function requireCompletedEvidenceRun(
   store: IncidentReadStore,
   evidenceRunId: string,
+  signal: AbortSignal,
 ): Promise<EvidenceRunRow & { readonly status: 'completed'; readonly completedAt: string }> {
-  const run = await store.getEvidenceRun(evidenceRunId);
+  throwIfAborted(signal);
+  const run = await store.getEvidenceRun(evidenceRunId, signal);
   if (run === null) throw new ToolError('evidence_run_not_found');
   if (run.status !== 'completed' || run.completedAt === null) {
     throw new ToolError('evidence_run_not_completed');
@@ -53,7 +63,7 @@ export function runProvenance(
   };
 }
 
-export function incidentSummaryDto(row: IncidentSummaryRow): IncidentSummaryDto {
+export function incidentSummaryDto(row: IncidentSummaryRow, redact: Redactor): IncidentSummaryDto {
   return {
     incidentId: row.incidentId,
     kind: row.kind,
@@ -72,7 +82,7 @@ export function incidentSummaryDto(row: IncidentSummaryRow): IncidentSummaryDto 
       chain: row.subjectChain,
       protocolSlug: row.subjectProtocolSlug,
     },
-    headline: quoteEvidence(row.headline, HEADLINE_MAX_CHARACTERS),
+    headline: quoteEvidence(row.headline, HEADLINE_MAX_CHARACTERS, redact),
     earliestReportedAt: row.earliestReportedAt,
     dataOrigin: row.dataOrigin,
   };

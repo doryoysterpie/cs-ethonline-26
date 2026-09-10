@@ -40,6 +40,18 @@ export {
   type PreviewSource,
 } from './engines/draft.js';
 export {
+  DESTINATION_CLASSES,
+  GatewayPolicyError,
+  assertGatewayTarget,
+  classifyDestination,
+  classifyRedirect,
+  createPolicyFetch,
+  isGatewayPolicyError,
+  type DestinationClass,
+  type GatewayPolicyOptions,
+  type GatewayRefusal,
+} from './engines/gateway-policy.js';
+export {
   GraphLiveSignalSource,
   type GraphLiveSignalSourceOptions,
   type LiveObservation,
@@ -50,10 +62,22 @@ export {
   ENVIRONMENT_NAMES,
   createRuntime,
   invokeTool,
+  type ActiveCall,
+  type InvokeOptions,
   type RuntimeOptions,
   type ToolInvocation,
   type ToolRuntime,
 } from './runtime.js';
+export {
+  ABORT_CAUSES,
+  CallScope,
+  abortCause,
+  combineSignals,
+  errorForCause,
+  throwIfAborted,
+  type AbortCause,
+  type CallScopeOptions,
+} from './safety/cancellation.js';
 export {
   TOOL_ERROR_CODES,
   ToolError,
@@ -64,10 +88,12 @@ export {
   type ToolErrorCode,
 } from './safety/errors.js';
 export {
+  MINIMUM_SECRET_LENGTH,
   REDACTED,
   connectionSecrets,
   createRedactor,
   redactDeep,
+  secretVariants,
   type Redactor,
 } from './safety/redact.js';
 export {
@@ -76,6 +102,7 @@ export {
   quoteEvidence,
   safeDisplay,
   toSingleLine,
+  toSingleLineWithoutDirection,
   type QuotedEvidence,
 } from './safety/text.js';
 export { RESULT_NOTICE, TELEMETRY_SENTENCE } from './schemas/common.js';
@@ -102,7 +129,8 @@ export {
   type ListIncidentsOutput,
 } from './schemas/output.js';
 export { SERVER_INSTRUCTIONS, SERVER_NAME, SERVER_VERSION, createCasMcpServer } from './server.js';
-export { PostgresReadStore, readOnly } from './store/postgres-store.js';
+export { PostgresReadStore, readOnly, type ReadOnlyOptions } from './store/postgres-store.js';
+export type { ToolContext } from './tools/shared.js';
 export type {
   DraftIncidentRow,
   EvidenceRunRow,
