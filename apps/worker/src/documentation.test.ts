@@ -176,16 +176,65 @@ describe('current documentation agrees with itself', () => {
     // only to the one the finding was raised against.
     const report = await read('docs/SPRINT-5-REPORT.md');
     expect(report).toContain('4a0a847748b1ff73c424934547c8e6ccd8a1cd6b');
-    expect(report).toMatch(/\*\*484 offline tests\*\*/u);
+    expect(report).toMatch(/\*\*532 offline tests\*\*/u);
     expect(report).toMatch(
-      /\*\*173 PostgreSQL integration tests\*\*: 81 in `@cas\/database`, 92 in `@cas\/worker`/u,
+      /\*\*186 PostgreSQL integration tests\*\*: 81 in `@cas\/database`, 105 in `@cas\/worker`/u,
     );
     // The per-package table must sum to the total it claims.
     const rows = [...report.matchAll(/^\| `@cas\/[a-z-]+`\s*\|\s*(\d+) \|$/gmu)];
     expect(rows).toHaveLength(9);
-    expect(rows.reduce((total, row) => total + Number(row[1]), 0)).toBe(484);
+    expect(rows.reduce((total, row) => total + Number(row[1]), 0)).toBe(532);
     // And it must not claim an audit it has not had.
     expect(report).toContain('**Sprint 5 remains pending until Codex Desktop issues PASS.**');
+  });
+
+  it('states the current migration count and the provenance rules consistently', async () => {
+    // Nine migrations, and the sentences a reader acts on, word for word in
+    // every document that states them (audit findings F1 and F2).
+    const report = await read('docs/SPRINT-5-REPORT.md');
+    const readme = await read('README.md');
+    const security = await read('docs/SECURITY.md');
+    const inputs = await read('docs/DATA_INPUTS.md');
+    const decisions = await read('docs/DECISIONS.md');
+    expect(readme).toContain('nine migrations');
+    expect(report).toContain('(nine migrations)');
+    expect(report).toContain('b553eac744dedfed97e5eb247d0f82781daeb03455fba7a34203caca1cdec13a');
+    expect(decisions).toContain('b553eac744dedfed97e5eb247d0f82781daeb03455fba7a34203caca1cdec13a');
+    // Sentence case varies with position; the words may not.
+    const flatten = (text: string): string => text.replace(/\s+/gu, ' ').toLowerCase();
+    for (const [name, text] of [
+      ['report', report],
+      ['README', readme],
+      ['SECURITY', security],
+      ['DATA_INPUTS', inputs],
+      ['DECISIONS', decisions],
+    ] as const) {
+      expect(flatten(text), name).toContain(
+        'a file can be ingested as fixture or replay only; live evidence comes from the graph client, never from a file',
+      );
+      expect(flatten(text), name).toContain('a claim is a record, not a uuid');
+    }
+    // And no current document may still describe the old, open surface.
+    for (const document of CURRENT_DOCUMENTS) {
+      const text = await read(document);
+      expect(text, document).not.toContain('--origin <live|fixture|replay>');
+      expect(text, document).not.toContain('[--out <directory>]');
+    }
+  });
+
+  it('states the draft-publication guarantees consistently', async () => {
+    const flatten = (text: string): string => text.replace(/\s+/gu, ' ').toLowerCase();
+    for (const document of ['docs/SPRINT-5-REPORT.md', 'docs/SECURITY.md', 'docs/DECISIONS.md']) {
+      const text = flatten(await read(document));
+      expect(text, document).toContain(
+        'published under one authorised root, never through a symbolic link, and never overwritten',
+      );
+    }
+    const architecture = flatten(await read('docs/ARCHITECTURE.md'));
+    expect(architecture).toContain('never through a symbolic link, and never overwritten');
+    // The publisher's root is documented as the one the code fixes.
+    const report = await read('docs/SPRINT-5-REPORT.md');
+    expect(report).toContain('output/drafts/cyberattack-sunday-<date>-<id>/draft.md');
   });
 
   it('states the hashes and the migration checksum consistently across documents', async () => {

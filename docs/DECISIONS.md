@@ -810,3 +810,52 @@ entries are unchanged except for status pointers.
 - **Decided by:** Sprint 5 implementation of 2026-09-09 and 2026-09-10, on the owner's brief.
 - **Supersedes:** nothing. It builds on D21 (classification), D22 and D24 (clustering) and D23
   (the seven retained live identities), and it does not revisit D9, D10, D3 or D4.
+
+## D26 Evidence provenance is bound in the schema, and a claim is a record
+
+- **Date:** 2026-09-10
+- **Status:** ACCEPTED
+- **Decision:** On the independent audit of Sprint 5 candidate `6fad82c3b03325101940d9ca25575d94550e7d25`
+  (CHANGES REQUIRED, findings F1 to F5), three properties D25 stated are made structural rather
+  than documentary.
+  - **File-backed ingestion is never live.** A signal run comes to exist in exactly two ways,
+    through two functions whose input types share no field but a discriminant: a file, whose
+    origin type admits `fixture` and `replay` only and refuses `live` before the path is opened;
+    and validated Graph-client evaluations, which take no path and no origin argument. The
+    command line follows the same rule: a file can be ingested as fixture or replay only; live
+    evidence comes from the Graph client, never from a file. No origin is inferred from a
+    filename, a label, a host or a caller's word.
+  - **Origin is bound by composite foreign key.** An evidence run's origin must equal the origin
+    of its signal run and of its clustering run and batch, and a live signal run may not name a
+    reserved-domain host (`.example`, `.invalid`, `.test`, `localhost`). Migration 0009,
+    checksum `b553eac744dedfed97e5eb247d0f82781daeb03455fba7a34203caca1cdec13a`.
+  - **A claim is a record, not a UUID.** `incident_claims` binds a claim to the source row it
+    rests on, that row's immutable hash, the incident, the clustering run, the batch and the
+    origin, and proves the row's membership by composite foreign key. A `supports` or
+    `conflicts` decision, an association and a resolved state may cite only a claim of the same
+    incident, run, batch and origin, by foreign key where the columns exist and by the
+    `evidence_claim_guard` trigger where they do not. Claims are recorded by a named person with
+    a bounded kind and statement, are append-only, and are never extracted from text.
+  - **A draft is published, not written.** A draft is published under one authorised root, never
+    through a symbolic link, and never overwritten: the root is fixed by the worker, every path
+    component is inspected and must be a real directory, the identifier and calendar date are
+    validated against strict allowlists, both files are staged exclusively with restrictive
+    permissions and published together by atomic rename or not at all.
+  - **Existing data is validated, never repaired.** Migration 0009 fails atomically on any
+    existing row that contradicts a new constraint and rewrites, deletes or reinterprets
+    nothing; a historical citation of a claim that has no record is reported as a count, not
+    given a fabricated record.
+- **Rationale:** Each property was already the design's intent under D25, and each was found to
+  be enforceable by a flag, a typed UUID or a caller's choice of directory. A provenance rule
+  that a caller can step around is a label. Binding origin and claim identity in the schema,
+  and confining publication to a root the code fixes, makes the failure modes the audit
+  demonstrated unwritable rather than merely unlikely.
+- **Consequences:** `evidence ingest` no longer accepts `live`; live ingestion is the worker
+  function `ingestLiveEvaluations` and has no command-line surface until the owner decides
+  whether `@cas/graph-evidence` becomes a workspace dependency of the worker, which this
+  correction was instructed not to add unasked. `evidence claim` is added. `drafting generate`
+  loses its `--out` flag. Migrations 0001 to 0008 are unchanged. Sprint 5 remains pending an
+  independent re-audit.
+- **Decided by:** Sprint 5 audit correction of 10 September 2026, on the auditor's required
+  corrections.
+- **Supersedes:** nothing. It strengthens D25 and leaves D3, D4, D9 and D10 exactly as they were.

@@ -437,6 +437,15 @@ confirmed on-chain fact.
 The recorded slug must be the provider-returned identity the Sprint 1 gate validated, and it is
 compared with a stored signal by equality. A near miss is a refusal, never a fuzzy match.
 
+A claim is recorded the same way, through `evidence claim`, and a claim is a record, not a
+UUID: it names the incident, the source row it rests on and that row's immutable hash, and it
+carries a kind from a closed set (`reported_headline`, `recorded_statement`), a statement under
+the note character policy, an actor and a reason code. The source row is read from the
+membership table, never from the request, and migration 0009 proves the membership by composite
+foreign key. Only such a claim may be cited by a `supports` or `conflicts` decision, and only
+when it belongs to the same incident, clustering run, batch and origin. Nothing extracts a claim
+from text.
+
 The evidence layer may never read a human `ReviewState`, a weekly spreadsheet label, a
 publication status, Publisher Category, the ledger's `ch` value, a raw cell or field, a batch
 label, an inferred editorial week or any connection value.
@@ -463,7 +472,11 @@ An unknown key at either level is refused, and a snapshot naming one target twic
 The host and digest patterns admit no credential, and there is no column anywhere for a
 provider payload, an Authorization header or an API key.
 
-The data origin is a required argument with no default and no inference. It is stored on the
-signal run and on every signal, printed on every anomaly line, and it scopes the history query,
-so a replayed series can never enter a live target's baseline and a fixture demonstration can
-never present itself as a live observation.
+A file can be ingested as fixture or replay only; live evidence comes from the Graph client,
+never from a file. The origin of a file is a required argument whose type admits `fixture` and
+`replay` and nothing else, refused for `live` before the file is opened; a `live` signal run is
+written only by `ingestLiveEvaluations`, from validated Graph-client evaluations, with no path
+and no origin argument. The origin is stored on the signal run and on every signal, printed on
+every anomaly line, bound to every evidence run by composite foreign key (migration 0009), and
+it scopes the history query, so a replayed series can never enter a live target's baseline and
+a fixture demonstration can never present itself as a live observation.

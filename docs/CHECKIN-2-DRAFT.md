@@ -88,8 +88,14 @@ weeks, each marked unpublished and requiring human review, each with a machine-r
 provenance record beside every claim, and neither committed. Because nothing extracts a victim
 name, every claim is marked as reported and every name is withheld.
 
-**Sprint 5 has not been audited.** Codex Desktop audits this project independently, and no
-result has been issued for Sprint 5.
+**Sprint 5 has not passed audit.** Codex Desktop audited the first Sprint 5 candidate on
+10 September and returned five findings — a replay file could be labelled live, a corroboration
+could name an unverified claim identifier, the draft writer followed a symbolic link, the
+snapshot validator invoked accessors, and the hygiene test never proved detection. All five are
+corrected on the branch and the correction is pending re-audit. The corrections are the kind
+this project exists to make: an evidence run's origin is now bound in the database to the runs
+it reads, a claim is a record proven to rest on a member source row rather than an identifier
+somebody typed, and a draft is published under one authorised root and never overwritten.
 
 **Graph scope decision, being recorded now.** Seven protocol identities are proven live on the
 standardized TVL lane, and that lane is the project's live Graph capability. The separately
@@ -109,8 +115,8 @@ post-event roadmap, to protect the 10 September Graph release gate.
 | Provisional incidents                   | 23,596                                    |
 | Live Graph protocol identities proven   | 7                                         |
 | Evidence states resolved on real data   | 23,596, all `reported_only`               |
-| Automated tests, no database or network | 484                                       |
-| PostgreSQL integration tests            | 173                                       |
+| Automated tests, no database or network | 532                                       |
+| PostgreSQL integration tests            | 186                                       |
 
 **What the evidence counts are and are not.** Every real incident resolves to
 `reported_only`, and zero associations were suggested, because no real incident has a recorded

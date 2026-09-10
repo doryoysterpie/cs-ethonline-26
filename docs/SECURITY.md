@@ -338,8 +338,9 @@ Rules the Sprint 4 clustering engine (`@cas/clustering`) implements (decision D2
 
 ## 14. Graph evidence, the anomaly feed and drafting
 
-Rules the Sprint 5 evidence and drafting layers implement (decision D25). Sprint 5 is
-**pending an independent audit**; nothing below is an audit result.
+Rules the Sprint 5 evidence and drafting layers implement (decisions D25 and D26). Sprint 5 was
+corrected after an independent audit and is **pending re-audit**; nothing below is an audit
+result.
 
 - `@cas/evidence` and `@cas/drafting` are pure: no database, no network, no environment
   variable, no model call, no clock and no randomness. Neither can reach a credential because
@@ -360,13 +361,30 @@ Rules the Sprint 5 evidence and drafting layers implement (decision D25). Sprint
   and an old reading are each reported as themselves and none of them is a spike. Every feed
   entry carries a fixed sentence stating what it does not establish, and that sentence is never
   composed from input.
-- **A snapshot is untrusted input.** It is validated against a closed set of fields before a
-  row is written. The gateway-host pattern admits no scheme, userinfo, path or query, and the
-  digest patterns admit only hexadecimal, so a credential cannot be smuggled through either.
-  No provider payload, Authorization header or API key is stored, and no column exists for one.
-- **Origins are never conflated.** The data origin is a required argument with no default, is
-  stored on the run and on every signal, is printed on every line, and scopes the history
-  query. The same bytes ingested under two origins are two runs and two series.
+- **A snapshot is untrusted input.** It is validated recursively against a closed shape before
+  a row is written: a plain object or plain array, no symbol keys, own property names equal to
+  the allowlist, every property an enumerable data descriptor inspected before any value is
+  read, and no proxy, so an accessor is refused without being invoked. The gateway-host pattern
+  admits no scheme, userinfo, path or query, and the digest patterns admit only hexadecimal, so
+  a credential cannot be smuggled through either. No provider payload, Authorization header or
+  API key is stored, and no column exists for one.
+- **A file is never live.** A file can be ingested as fixture or replay only; live evidence
+  comes from the Graph client, never from a file. The file path's origin type admits no `live`,
+  the refusal happens before the path is opened or a database handle is used, and the only
+  function that writes a live run takes validated Graph-client evaluations and no path. No
+  origin is inferred from a filename, a label, a host or a caller's word.
+- **Origins are bound, not labelled.** An evidence run's origin must equal the origin of its
+  signal run and of its clustering run and batch, by composite foreign key (migration 0009),
+  and a live signal run may not name a reserved-domain host. The origin is stored on the run
+  and on every signal, printed on every line, and scopes the history query. The same bytes
+  ingested under two origins are two runs and two series.
+- **A claim is a record, not a UUID.** A `supports` or `conflicts` decision, an association and
+  a resolved state may cite only a row of `incident_claims` that belongs to the same incident,
+  clustering run, batch and origin. The claim cites a source row the database proves is a
+  member of the incident under the run, with that row's immutable hash. The service refuses a
+  nonexistent or incompatible claim before hashing; foreign keys and the `evidence_claim_guard`
+  trigger refuse it again on write. Claims are recorded by a named person, never extracted from
+  text, and are append-only.
 - **Every migration 0008 function is written the way migration 0005 taught.** Created through
   `pg_catalog.format` with `%1$I` quoted identifiers, `SET search_path = pg_catalog, <schema>,
 pg_temp`, never `SECURITY DEFINER`, and every relation schema-qualified. A shadow table in a
@@ -381,9 +399,14 @@ pg_temp`, never `SECURITY DEFINER`, and every relation schema-qualified. A shado
 - **Nothing is model-generated.** Decision D9 is unresolved. There is no SDK, no model path and
   no credential read anywhere in the drafting pipeline, every draft states this in its own
   text, and no document may describe the output as AI-generated.
-- **Nothing is published.** Every draft is marked `unpublished_requires_human_review`, is
-  written under an ignored directory, and is never overwritten: the exclusive-flag write makes
-  the refusal the filesystem's rather than a check another writer could slip between.
+- **Nothing is published to anyone.** Every draft is marked `unpublished_requires_human_review`
+  and is a file for a person to read. It is published under one authorised root, never through
+  a symbolic link, and never overwritten: the root is `output/drafts/` at the repository root,
+  fixed by the worker and ignored by Git, with no flag that names another; every component of
+  its path is inspected and must be a real directory; the identifier and the calendar date are
+  validated against strict allowlists before they become a path component; both files are
+  staged with exclusive creation and mode 0600, flushed and closed, and published together by
+  atomic rename or not at all. A destination that is already occupied, by anything, is refused.
 - **No name is asserted.** The drafter extracts no victim name, so every claim is `reported`,
   every name is withheld under the provisional D4 policy, and the provenance sidecar has no
   field for a name at all.
