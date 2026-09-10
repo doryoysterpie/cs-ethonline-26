@@ -1,5 +1,20 @@
-# Sprint 0 continuous integration. Verification only: no deployment, publication,
-# release, secret-dependent test or sponsor call runs here.
+# Continuous integration. Verification only: no deployment, publication,
+# release, secret-dependent test or sponsor call runs here. Every action is
+# pinned to a full commit SHA and every service image to a digest
+# (docs/SECURITY.md section 8); tools/checks/workflows.ts enforces both.
+#
+# Jobs:
+#   verify        the frozen install, the toolchain assertion, formatting,
+#                 lint, type check, offline tests, tooling tests, repository
+#                 scans, build, and the offline suite rerun under enforced
+#                 network denial.
+#   database      a fresh PostgreSQL 17 service: every migration applied, a
+#                 no-op rerun, the drift check, and the complete test:db suite.
+#                 The service holds no credential: trust authentication on the
+#                 job's own loopback, a role name and a database name only.
+#   supply-chain  the dependency audit and the byte-for-byte reproduction of
+#                 the committed bill of materials and licence inventory,
+#                 cross-checked against pnpm's own generator.
 name: CI
 
 on:
@@ -7,9 +22,10 @@ on:
     branches:
       - main
       - 'sprint-*/**'
+      - 'parallel/**'
   pull_request:
 
-# Least privilege. The job only reads the repository.
+# Least privilege. Every job only reads the repository.
 permissions:
   contents: read
 
@@ -26,7 +42,7 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,15 +53,19 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
-      # Reads the Node major from .nvmrc.
+      # Reads the exact Node release from .nvmrc; never a newer one.
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
+          check-latest: false
           cache: pnpm
 
       - name: Install with frozen lockfile
         run: pnpm install --frozen-lockfile
+
+      - name: Assert the pinned toolchain is the one running
+        run: pnpm check:toolchain
 
       - name: Formatting check
         run: pnpm format:check
@@ -59,5 +79,115 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Tooling tests
+        run: pnpm test:tools
+
+      - name: Repository scans (hygiene, forbidden files, secrets, workflows)
+        run: pnpm check:repo
+
       - name: Build
         run: pnpm build
+
+      # The default suite must pass with no network at all. The script proves
+      # the denial with a loopback control before running the suite inside it.
+      - name: Offline suite under enforced network denial
+        run: pnpm test:offline-enforced
+
+  database:
+    name: PostgreSQL integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17.11@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+        env:
+          POSTGRES_USER: cas_ci
+          POSTGRES_DB: cas_ci
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cas_ci -d cas_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+    env:
+      # Synthetic, credential-free: a role and a database on the job's loopback.
+      DATABASE_URL: postgresql://cas_ci@127.0.0.1:5432/cas_ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          check-latest: false
+          cache: pnpm
+
+      - name: Install with frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Each step asserts the exact fixed line the command prints, with the
+      # expected count taken from the migrations directory, so a new migration
+      # changes the expectation and a missing one fails it.
+      - name: Apply every migration to the fresh database
+        run: |
+          expected="$(ls packages/database/migrations/*.sql | wc -l | tr -d ' ')"
+          output="$(pnpm db:migrate)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -qx "db:migrate: applied=${expected} alreadyApplied=0 total=${expected}"
+
+      - name: Rerun the migrations as a no-op
+        run: |
+          expected="$(ls packages/database/migrations/*.sql | wc -l | tr -d ' ')"
+          output="$(pnpm db:migrate)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -qx "db:migrate: applied=0 alreadyApplied=${expected} total=${expected} (no-op)"
+
+      - name: Drift check
+        run: |
+          expected="$(ls packages/database/migrations/*.sql | wc -l | tr -d ' ')"
+          output="$(pnpm db:check)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -qx "migrations: applied=${expected} pending=0 drift=0"
+
+      - name: PostgreSQL integration suite
+        run: pnpm test:db
+
+  supply-chain:
+    name: Supply chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          check-latest: false
+          cache: pnpm
+
+      - name: Install with frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Dependency audit
+        run: pnpm audit:deps
+
+      - name: Reproduce the bill of materials and licence inventory
+        run: pnpm supply-chain:check
