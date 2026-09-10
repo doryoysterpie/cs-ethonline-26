@@ -19,7 +19,7 @@ import { IngestionError, isIngestionError } from './errors.js';
  * whole file. The parser's own error text is never surfaced, because it can
  * quote the offending content; only its error code and line number are.
  *
- * Resource limits (`RESOURCE_LIMITS.import`, decision D26) are enforced here,
+ * Resource limits (`RESOURCE_LIMITS.import`, decision D27) are enforced here,
  * while the file is read, so both the validation pass and the import pass
  * inherit them and no caller can reach a row the limits exclude. File bytes
  * are counted chunk by chunk before decoding; the header's column count and

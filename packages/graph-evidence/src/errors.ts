@@ -3,7 +3,7 @@
  * client never returns an empty success (docs/SECURITY.md section 7). `limit`
  * is a resource limit crossed by the provider's response or by the caller:
  * an oversized body, a too-deep or too-large JSON document, or too many
- * requests in flight (`RESOURCE_LIMITS.graph`, decision D26).
+ * requests in flight (`RESOURCE_LIMITS.graph`, decision D27).
  */
 export const GRAPH_PROBE_FAILURE_KINDS = [
   'credential',

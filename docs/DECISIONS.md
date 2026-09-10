@@ -811,9 +811,10 @@ entries are unchanged except for status pointers.
 - **Supersedes:** nothing. It builds on D21 (classification), D22 and D24 (clustering) and D23
   (the seven retained live identities), and it does not revisit D9, D10, D3 or D4.
 
-## D26 Security-foundation track: versioned resource limits, CI database and toolchain pins
+## D27 Security-foundation track: versioned resource limits, CI database and toolchain pins
 
 - **Date:** 2026-09-10
+- **Numbering:** the track's brief reserved D26. The Sprint 5 correction (`313db359c72ea305c03c30cc764ea67e51cbcec8`) appended its own D26 while this track was being built, so this entry is D27, renumbered on 10 September 2026 before any rebase, to avoid a collision.
 - **Status:** PROPOSED. Speculative: the track was built on branch
   `parallel/s6-security-foundation` from Sprint 5 candidate
   `6fad82c3b03325101940d9ca25575d94550e7d25` while that candidate was under audit and then

@@ -419,7 +419,7 @@ editorial week boundary (D10 stays unresolved).
 
 Built on branch `parallel/s6-security-foundation` from the Sprint 5 candidate while that
 candidate was under audit; speculative until Sprint 5 is accepted and the track is audited on
-its own (decision D26). It touches no file the Sprint 5 correction owns: not the draft
+its own (decision D27). It touches no file the Sprint 5 correction owns: not the draft
 writer, not the drafting command's output handling, not the snapshot ingest, and no
 migration.
 

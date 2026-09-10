@@ -91,7 +91,7 @@ export function gatewayBaseContainsCredential(base: string, key: string): boolea
  * - Timeout and fetch implementation are injectable for tests.
  * - Every failure is a GraphProbeError with a distinct kind. Nothing returns
  *   an empty success, and nothing falls back to fixture or replay data.
- * - Resource limits (`RESOURCE_LIMITS.graph`, decision D26) hold at every
+ * - Resource limits (`RESOURCE_LIMITS.graph`, decision D27) hold at every
  *   step: at most a fixed number of requests in flight, a body read under a
  *   byte limit while it streams, and a JSON document bounded in depth and
  *   size before and after parsing. A crossed limit is a `limit` failure with

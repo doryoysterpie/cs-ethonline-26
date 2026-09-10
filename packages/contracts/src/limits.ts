@@ -1,5 +1,5 @@
 /**
- * Versioned resource limits (security-foundation track, decision D26).
+ * Versioned resource limits (security-foundation track, decision D27).
  *
  * Every value here is a hard ceiling on one measurable quantity at one
  * boundary the project already has: editorial CSV ingestion, the

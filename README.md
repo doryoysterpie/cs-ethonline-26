@@ -351,7 +351,7 @@ and automatic publication.
 - Every dependency version is pinned; versions younger than 24 hours are refused, with a
   narrow documented exception process (decision D13).
 - Every input boundary has a measured, versioned resource limit; oversized input is refused
-  whole with a fixed error and nothing is truncated to fit (decision D26, pending audit).
+  whole with a fixed error and nothing is truncated to fit (decision D27, pending audit).
 
 Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`. The threat model, risk register,
 data classification, incident-response preparation and disclosure policy are the
@@ -366,7 +366,7 @@ audit and nothing in it is accepted.
 | `docs/DATA_INPUTS.md`                   | editorial data, schemas, human versus machine labels, ingestion rules                                                                        |
 | `docs/PRIOR_INPUTS.md`                  | the pre-existing corpus, its permitted uses, and the submission disclosure                                                                   |
 | `docs/HACKATHON_REQUIREMENTS.md`        | requirement-to-evidence matrix per sponsor track and the official schedule                                                                   |
-| `docs/DECISIONS.md`                     | append-only decision log, D1 to D26 (D26 proposed, pending audit)                                                                            |
+| `docs/DECISIONS.md`                     | append-only decision log, D1 to D27 (D27 proposed, pending audit)                                                                            |
 | `docs/SPRINT-3-REPORT.md`               | Sprint 3 classification proof: classifier, migration, calibration, evidence                                                                  |
 | `docs/SPRINT-4-REPORT.md`               | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections                                           |
 | `docs/SPRINT-5-REPORT.md`               | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting; pending audit                                                 |

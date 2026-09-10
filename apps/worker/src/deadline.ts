@@ -3,7 +3,7 @@ import { RESOURCE_LIMITS } from '@cas/contracts';
 import { IngestionError } from './editorial/errors.js';
 
 /**
- * The command deadline (`RESOURCE_LIMITS.command`, decision D26).
+ * The command deadline (`RESOURCE_LIMITS.command`, decision D27).
  *
  * Every worker command runs under a deadline. When it expires the command's
  * abort signal fires, which the import and validation paths honour by

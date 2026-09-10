@@ -85,7 +85,7 @@ by exact package name, after a dated log entry records the package, version, off
 source, reason, publication age and verification performed, with the exact version pinned
 and the full suite rerun. No wildcard exclusion and no pre-approval.
 
-**Additions of the security-foundation track (decision D26, pending audit).**
+**Additions of the security-foundation track (decision D27, pending audit).**
 
 - The toolchain is pinned to exact releases: Node `24.21.0` in `.nvmrc` and pnpm `11.10.0`
   in `packageManager`, with `engines.node` naming that release line. Every CI job asserts,
@@ -137,7 +137,7 @@ integration inherits:
 - Every request carries an explicit timeout, and a failure while reading the response body
   is classified too: an abort is a `timeout`, any other read failure is `network`.
 - The response body is read under a byte limit while it streams (`RESOURCE_LIMITS.graph`,
-  decision D26, pending audit), never after an unbounded body is buffered. A declared
+  decision D27, pending audit), never after an unbounded body is buffered. A declared
   `Content-Length` above the limit is refused before a byte is read; one below the limit is
   not trusted, because the bytes actually received decide; an absent or malformed length is
   treated as absent, which is the live gateway's normal case. The JSON document is bounded in
@@ -271,7 +271,7 @@ consumer of the store inherits:
   pinned by digest inside the job, with trust authentication on the job's own loopback and a
   credential-free URL, applies every migration, reruns them as a no-op, checks drift and
   runs the complete `test:db` suite, then discards the database with the job.
-- A file that crosses an import limit (`RESOURCE_LIMITS.import`, decision D26, pending
+- A file that crosses an import limit (`RESOURCE_LIMITS.import`, decision D27, pending
   audit) is refused as a whole at the first chunk, header, cell or row that crosses it, with
   a fixed message and numeric details, before any write; see section 15.
 
@@ -433,7 +433,7 @@ pg_temp`, never `SECURITY DEFINER`, and every relation schema-qualified. A shado
 
 ## 15. Resource limits and the command deadline
 
-Rules the security-foundation track adds (decision D26). The track is **pending an
+Rules the security-foundation track adds (decision D27). The track is **pending an
 independent audit** and is built beside the Sprint 5 correction; nothing below is an audit
 result.
 
