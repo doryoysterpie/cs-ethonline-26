@@ -14,6 +14,13 @@ export const EXPLAIN_ASSOCIATIONS_LIMIT = 100;
 /** Incidents one `draft_section` preview may consider. */
 export const DRAFT_INCIDENTS_DEFAULT_LIMIT = 25;
 export const DRAFT_INCIDENTS_MAX_LIMIT = 100;
+/**
+ * Source rows the draft query fetches per incident. The drafter writes at most
+ * twenty claims per incident (its contract's `maximumClaimsPerIncident`) and
+ * this server derives one claim per titled source, so a twenty-first source
+ * could never reach the preview; it is not fetched.
+ */
+export const DRAFT_SOURCES_PER_INCIDENT_LIMIT = 20;
 /** Longest Markdown preview a result may carry, in characters. */
 export const DRAFT_MARKDOWN_MAX_CHARACTERS = 200_000;
 
@@ -25,6 +32,18 @@ export const HEADLINE_MAX_CHARACTERS = 300;
 export const PUBLISHER_MAX_CHARACTERS = 120;
 export const URL_MAX_CHARACTERS = 512;
 export const IDENTITY_MAX_CHARACTERS = 120;
+/**
+ * Sentinel margin the store fetches beyond each display bound, in characters.
+ * The display copy never shows more than the bound, so a secret that begins
+ * inside the displayed prefix must lie entirely inside the fetched fragment
+ * for the redactor to match it whole; the runtime sizes the margin from the
+ * longest secret it holds (three times its length, for a percent-encoded
+ * form, plus a little), within these two limits. The margin also serves as
+ * the truncation sentinel: a fragment shorter than the stored value proves
+ * the value was cut.
+ */
+export const TEXT_FETCH_MARGIN_MIN_CHARACTERS = 64;
+export const TEXT_FETCH_MARGIN_MAX_CHARACTERS = 512;
 
 /** Longest string a request may carry in any argument, in characters. */
 export const ARGUMENT_STRING_MAX_CHARACTERS = 64;
@@ -46,5 +65,9 @@ export const RATE_LIMIT_WINDOW_MS = 10_000;
 /** Tool calls that may be in flight at once. */
 export const MAX_CONCURRENT_CALLS = 4;
 
-/** Connections the read-only pool may open. */
-export const DATABASE_MAX_CONNECTIONS = 2;
+/**
+ * Connections one tool call may open: exactly one. Every call opens its own
+ * connection, runs its one transaction on it and destroys it, so no session
+ * setting, temporary object or advisory lock can survive into another call.
+ */
+export const DATABASE_MAX_CONNECTIONS = 1;

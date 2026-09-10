@@ -1,30 +1,30 @@
 import type { AssociationRelation, ChainId, DataOrigin, EvidenceState } from '@cas/contracts';
-import {
-  getEvidenceRun,
-  getGraphSignalRun,
-  listDraftIncidents,
-  listSignalHistory,
-  openDatabase,
-  type Database,
-  type DatabaseConfig,
-  type Queryable,
-} from '@cas/database';
+import { openDatabase, quoteIdentifier, type DatabaseConfig, type Queryable } from '@cas/database';
 
 import {
   DATABASE_MAX_CONNECTIONS,
   HEADLINE_MAX_CHARACTERS,
   PUBLISHER_MAX_CHARACTERS,
   STATEMENT_TIMEOUT_MS,
+  TEXT_FETCH_MARGIN_MAX_CHARACTERS,
+  TEXT_FETCH_MARGIN_MIN_CHARACTERS,
   URL_MAX_CHARACTERS,
 } from '../bounds.js';
+import { ToolError } from '../safety/errors.js';
+import { verifyDatabasePrivileges, type PrivilegeReport } from './privileges.js';
 import type {
+  BoundedText,
   DraftIncidentRow,
+  DraftSourceRow,
   EvidenceRunRow,
   IncidentAssociationRow,
   IncidentReadStore,
+  IncidentReadStoreProvider,
   IncidentSourceRow,
   IncidentSummaryRow,
+  ReadTransactionOptions,
   SignalObservationRow,
+  SignalRunBoundary,
   SignalRunRow,
   SignalTargetRow,
 } from './read-store.js';
@@ -32,70 +32,322 @@ import type {
 /**
  * The PostgreSQL read store.
  *
- * It opens its own small pool through `@cas/database`, the only package that
- * talks to PostgreSQL, and runs every operation inside one transaction that
- * begins `REPEATABLE READ`, is declared `READ ONLY` as its first statement,
- * and carries a `statement_timeout`. The read-only declaration is the
- * database's own guard: a write attempted on this connection is refused with
- * SQLSTATE 25006 by the server, not by a check this code could forget. The
- * integration tests prove that, and prove that every tool leaves the
- * application tables byte-identical.
+ * One tool call is one connection, one transaction and one snapshot:
  *
- * Every statement is parameterized. The only literal interpolated into SQL
- * is the statement timeout, a fixed integer constant. Text columns are cut
- * to their display bound inside the query, so a 48,000-character cell never
- * crosses the wire.
+ *   - `withReadOnlyConnection` opens a pool of exactly one connection through
+ *     `@cas/database`, the only package that talks to PostgreSQL, begins the
+ *     transaction `REPEATABLE READ` and `READ ONLY` on the `BEGIN` itself,
+ *     sets a `SET LOCAL statement_timeout`, runs the call, commits, and then
+ *     closes the pool. Closing the pool ends the connection, so no `SET`, no
+ *     search path, no temporary object, no prepared statement and no advisory
+ *     lock can survive into another call. The database refuses any write on
+ *     the connection with SQLSTATE 25006 before the role's own privileges are
+ *     even consulted.
+ *   - in production mode the provider runs the privilege matrix on that same
+ *     connection before the first application read, and refuses the call if
+ *     the effective role holds more than read access to the required tables.
+ *   - every read of one call goes through one `PostgresReadStore` bound to
+ *     that connection, so run metadata, incidents, sources, associations,
+ *     review state, targets, signal history and draft data come from one
+ *     snapshot. A review action or a signal run committed while the call is
+ *     in flight is seen by the next call, never by this one.
+ *
+ * Every statement is fixed text with parameters. Every relation is named by
+ * its schema and every built-in function, aggregate, operator and type by
+ * `pg_catalog`, so a function or relation of the same name in an application
+ * or temporary schema cannot answer in their place. Text columns are fetched
+ * as a bounded prefix plus the stored value's true size (`BoundedText`), so a
+ * 48,000-character cell never crosses the wire and the display layer can say
+ * when it cut something. The only literal interpolated into SQL is the
+ * statement timeout, a fixed integer constant, and the schema identifier,
+ * validated as a plain identifier and quoted.
  */
 
 if (!Number.isInteger(STATEMENT_TIMEOUT_MS) || STATEMENT_TIMEOUT_MS <= 0) {
   throw new TypeError('statement timeout must be a positive integer');
 }
 
-/** Runs `fn` inside a read-only, repeatable-read transaction with a statement timeout. */
-export async function readOnly<T>(db: Database, fn: (client: Queryable) => Promise<T>): Promise<T> {
-  return db.withTransaction(
-    async (tx) => {
-      // Both settings must precede any query in the transaction. The timeout
-      // is `SET LOCAL`, so it ends with the transaction.
-      await tx.query('SET TRANSACTION READ ONLY');
-      await tx.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
-      return fn(tx);
-    },
-    { isolationLevel: 'repeatable read' },
+export type StoreMode = 'production' | 'development';
+
+/**
+ * Sizes the sentinel margin from the lengths of the secrets the runtime holds:
+ * three times the longest, so a percent-encoded form of it also fits whole,
+ * plus a little, within the fixed limits.
+ */
+export function textFetchMargin(secretLengths: readonly number[]): number {
+  const longest = secretLengths.reduce((max, length) => Math.max(max, length), 0);
+  return Math.min(
+    TEXT_FETCH_MARGIN_MAX_CHARACTERS,
+    Math.max(TEXT_FETCH_MARGIN_MIN_CHARACTERS, 3 * longest + 16),
   );
 }
 
-const SUMMARY_SELECT = `
-  SELECT s.incident_cluster_id AS incident_id,
-         c.kind, c.member_count, c.reason_codes,
-         s.state, s.reason_code, s.claim_id, s.accepted_association_count,
-         sub.chain AS subject_chain, sub.protocol_slug AS subject_protocol_slug,
-         left(rep.normalized_title, $4) AS headline,
-         to_json(MIN(r.posted_at)) #>> '{}' AS earliest_reported_at,
-         count(DISTINCT m.source_row_id)::text AS source_count,
-         c.data_origin_from_run AS data_origin
-    FROM incident_evidence_states s
-    JOIN (SELECT ic.id, ic.clustering_run_id, ic.batch_id, ic.kind, ic.member_count, ic.reason_codes,
-                 ic.representative_source_row_id, cr.data_origin AS data_origin_from_run
-            FROM incident_clusters ic
-            JOIN clustering_runs cr ON cr.id = ic.clustering_run_id) c
-      ON c.id = s.incident_cluster_id AND c.clustering_run_id = s.clustering_run_id
-    LEFT JOIN incident_subjects sub
-      ON sub.incident_cluster_id = c.id AND sub.clustering_run_id = c.clustering_run_id
-    LEFT JOIN source_rows rep ON rep.id = c.representative_source_row_id
-    LEFT JOIN incident_memberships m
-      ON m.incident_cluster_id = c.id AND m.clustering_run_id = c.clustering_run_id
-    LEFT JOIN source_rows r ON r.id = m.source_row_id
-   WHERE s.evidence_run_id = $1
-     AND ($2::uuid IS NULL OR s.incident_cluster_id > $2::uuid)
-     AND ($5::uuid IS NULL OR s.incident_cluster_id = $5::uuid)
-   GROUP BY s.incident_cluster_id, c.kind, c.member_count, c.reason_codes, s.state, s.reason_code,
-            s.claim_id, s.accepted_association_count, sub.chain, sub.protocol_slug,
-            rep.normalized_title, c.data_origin_from_run
-   ORDER BY s.incident_cluster_id
-   LIMIT $3`;
+function abortable(client: Queryable, signal: AbortSignal | undefined): Queryable {
+  if (signal === undefined) return client;
+  return {
+    query: <R extends Record<string, unknown>>(text: string, values?: readonly unknown[]) => {
+      // Cooperative: an aborted call sends no further statement. Cancelling a
+      // statement already in flight is the runtime's business.
+      signal.throwIfAborted();
+      return client.query<R>(text, values);
+    },
+  };
+}
 
-interface SummaryRow {
+/**
+ * Opens one connection, runs `fn` inside one `REPEATABLE READ`, `READ ONLY`
+ * transaction with a statement timeout, commits, and destroys the connection
+ * whatever happened. The schema handed to `fn` is the one the handle
+ * addresses, validated as a plain identifier.
+ */
+export async function withReadOnlyConnection<T>(
+  config: DatabaseConfig,
+  fn: (client: Queryable, schema: string) => Promise<T>,
+  options: ReadTransactionOptions = {},
+): Promise<T> {
+  const signal = options.signal;
+  signal?.throwIfAborted();
+  const db = openDatabase(config, { maxConnections: DATABASE_MAX_CONNECTIONS });
+  try {
+    return await db.withClient(async (raw) => {
+      const client = abortable(raw, signal);
+      // Read-only on the BEGIN itself: no statement of this transaction ever
+      // runs before the declaration.
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      let committed = false;
+      try {
+        await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
+        const result = await fn(client, db.schema);
+        await client.query('COMMIT');
+        committed = true;
+        return result;
+      } finally {
+        if (!committed) {
+          try {
+            await raw.query('ROLLBACK');
+          } catch {
+            // The connection is destroyed below whatever state it is in.
+          }
+        }
+      }
+    });
+  } finally {
+    // Ends the pool's single connection. Nothing of this call's session
+    // survives: not a setting, not a temporary object, not a lock.
+    await db.end();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Statements. `schema` is the quoted application schema identifier.
+
+const BOUNDED = (column: string, parameter: string, alias: string): string =>
+  `pg_catalog.left(${column}, ${parameter}::pg_catalog.int4) AS ${alias}_fragment,
+       pg_catalog.char_length(${column}) AS ${alias}_characters,
+       pg_catalog.octet_length(${column}) AS ${alias}_bytes`;
+
+const INSTANT = (column: string): string =>
+  `pg_catalog.to_json(${column}) OPERATOR(pg_catalog.#>>) '{}'`;
+
+function statements(schema: string) {
+  return {
+    evidenceRun: `
+      SELECT id, clustering_run_id, batch_id, signal_run_id, data_origin, status,
+             resolver_version, contract_version, contract_hash, incident_count,
+             reported_only_count, onchain_observed_count, corroborated_count, contradicted_count,
+             ${INSTANT('completed_at')} AS completed_at
+        FROM ${schema}.evidence_runs
+       WHERE id = $1::pg_catalog.uuid`,
+    signalRun: `
+      SELECT id, data_origin, status, signal_version, contract_version, contract_hash,
+             query_sha256, gateway_host, target_count, signal_count, failed_target_count,
+             ${INSTANT('completed_at')} AS completed_at
+        FROM ${schema}.graph_signal_runs
+       WHERE id = $1::pg_catalog.uuid`,
+    // Grouped by the primary keys of every joined table, so each selected
+    // column is functionally dependent and the title is never a grouping key.
+    summaries: `
+      SELECT s.incident_cluster_id AS incident_id,
+             c.kind, c.member_count, c.reason_codes,
+             s.state, s.reason_code, s.claim_id, s.accepted_association_count,
+             sub.chain AS subject_chain, sub.protocol_slug AS subject_protocol_slug,
+             ${BOUNDED('rep.normalized_title', '$4', 'headline')},
+             ${INSTANT('pg_catalog.min(r.posted_at)')} AS earliest_reported_at,
+             pg_catalog.count(DISTINCT m.source_row_id)::pg_catalog.int4 AS source_count,
+             cr.data_origin
+        FROM ${schema}.incident_evidence_states s
+        JOIN ${schema}.incident_clusters c
+          ON c.id = s.incident_cluster_id AND c.clustering_run_id = s.clustering_run_id
+        JOIN ${schema}.clustering_runs cr ON cr.id = c.clustering_run_id
+        LEFT JOIN ${schema}.incident_subjects sub
+          ON sub.incident_cluster_id = c.id AND sub.clustering_run_id = c.clustering_run_id
+        LEFT JOIN ${schema}.source_rows rep ON rep.id = c.representative_source_row_id
+        LEFT JOIN ${schema}.incident_memberships m
+          ON m.incident_cluster_id = c.id AND m.clustering_run_id = c.clustering_run_id
+        LEFT JOIN ${schema}.source_rows r ON r.id = m.source_row_id
+       WHERE s.evidence_run_id = $1::pg_catalog.uuid
+         AND ($2::pg_catalog.uuid IS NULL OR s.incident_cluster_id > $2::pg_catalog.uuid)
+         AND ($5::pg_catalog.uuid IS NULL OR s.incident_cluster_id = $5::pg_catalog.uuid)
+       GROUP BY s.id, c.id, cr.id, sub.id, rep.id
+       ORDER BY s.incident_cluster_id
+       LIMIT $3::pg_catalog.int4`,
+    sources: `
+      SELECT r.id AS source_row_id,
+             ${BOUNDED('r.normalized_title', '$4', 'title')},
+             ${BOUNDED('r.raw_category', '$5', 'publisher')},
+             ${BOUNDED('r.canonical_url', '$6', 'url')},
+             ${INSTANT('r.posted_at')} AS posted_at,
+             m.decision
+        FROM ${schema}.incident_memberships m
+        JOIN ${schema}.source_rows r ON r.id = m.source_row_id
+       WHERE m.clustering_run_id = $1::pg_catalog.uuid
+         AND m.incident_cluster_id = $2::pg_catalog.uuid
+       ORDER BY r.id
+       LIMIT $3::pg_catalog.int4`,
+    // The latest decision on this incident-and-signal pair within the
+    // clustering run, exactly as the resolver reads it. The suggestion row is
+    // never edited, so the machine's proposal and the human's answer are
+    // returned side by side.
+    associations: `
+      SELECT a.id, a.signal_id, a.chain, g.protocol_slug,
+             ${INSTANT('g.observed_at')} AS observed_at,
+             g.delta_percent::pg_catalog.text AS delta_percent, g.data_origin AS signal_origin,
+             a.offset_seconds, a.relation, a.claim_id, a.reason_codes,
+             latest.status AS decided_status, latest.relation AS decided_relation,
+             latest.claim_id AS decided_claim_id
+        FROM ${schema}.incident_signal_associations a
+        JOIN ${schema}.graph_signals g ON g.id = a.signal_id
+        LEFT JOIN LATERAL (
+          SELECT CASE WHEN r.operation = 'accept' THEN 'accepted' ELSE 'rejected' END AS status,
+                 r.relation, r.claim_id
+            FROM ${schema}.evidence_review_actions r
+            JOIN ${schema}.incident_signal_associations d ON d.id = r.association_id
+           WHERE d.clustering_run_id = a.clustering_run_id
+             AND d.incident_cluster_id = a.incident_cluster_id
+             AND d.signal_id = a.signal_id
+           ORDER BY r.created_at DESC, r.resulting_revision DESC, r.id DESC
+           LIMIT 1
+        ) latest ON true
+       WHERE a.evidence_run_id = $1::pg_catalog.uuid
+         AND a.incident_cluster_id = $2::pg_catalog.uuid
+       ORDER BY a.signal_id
+       LIMIT $3::pg_catalog.int4`,
+    // The targets the boundary knows: observed by a completed, compatible run
+    // that completed at or before the named run. A target that stopped
+    // reporting before the named run is still evaluated, and reported stale
+    // or missing rather than dropped; a target first seen after it does not
+    // exist for this evaluation.
+    targets: `
+      SELECT DISTINCT g.chain, g.protocol_slug
+        FROM ${schema}.graph_signals g
+        JOIN ${schema}.graph_signal_runs r ON r.id = g.signal_run_id
+       WHERE r.status = 'completed'
+         AND r.completed_at <= $1::pg_catalog.timestamptz
+         AND r.data_origin = $2::pg_catalog.text
+         AND g.data_origin = $2::pg_catalog.text
+         AND r.signal_version = $3::pg_catalog.text
+       ORDER BY g.chain, g.protocol_slug
+       LIMIT $4::pg_catalog.int4`,
+    // The as-of cut is in the WHERE clause, before the LIMIT. Ordering is by
+    // observation instant, then the completion instant of the run that
+    // recorded it, then the signal identifier, so equal instants select the
+    // same rows in the same order every time.
+    history: `
+      SELECT ${INSTANT('g.observed_at')} AS observed_at,
+             g.delta_percent::pg_catalog.text AS delta_percent,
+             g.signal_run_id, g.id AS signal_id,
+             ${INSTANT('r.completed_at')} AS run_completed_at
+        FROM ${schema}.graph_signals g
+        JOIN ${schema}.graph_signal_runs r ON r.id = g.signal_run_id
+       WHERE g.chain = $1::pg_catalog.text
+         AND g.protocol_slug = $2::pg_catalog.text
+         AND g.data_origin = $3::pg_catalog.text
+         AND r.data_origin = $3::pg_catalog.text
+         AND r.status = 'completed'
+         AND r.completed_at <= $4::pg_catalog.timestamptz
+         AND r.signal_version = $5::pg_catalog.text
+         AND g.observed_at <= $6::pg_catalog.timestamptz
+       ORDER BY g.observed_at DESC, r.completed_at DESC, g.id DESC
+       LIMIT $7::pg_catalog.int4`,
+    // Bounded before anything is fetched: at most `$2` incidents, then at most
+    // `$3` memberships of each in source-row order, then the bounded columns
+    // of exactly those source rows. The membership total is counted, never
+    // fetched, so the omission can be reported without paying for the text.
+    draft: `
+      WITH incidents AS (
+        SELECT s.incident_cluster_id AS incident_id, s.clustering_run_id, s.batch_id,
+               r.data_origin, s.state, (sub.id IS NOT NULL) AS has_subject
+          FROM ${schema}.incident_evidence_states s
+          JOIN ${schema}.evidence_runs r ON r.id = s.evidence_run_id
+          LEFT JOIN ${schema}.incident_subjects sub
+            ON sub.incident_cluster_id = s.incident_cluster_id
+           AND sub.clustering_run_id = s.clustering_run_id
+         WHERE s.evidence_run_id = $1::pg_catalog.uuid
+         ORDER BY s.incident_cluster_id
+         LIMIT $2::pg_catalog.int4
+      ),
+      members AS (
+        SELECT i.incident_id, m.source_row_id,
+               pg_catalog.row_number() OVER (
+                 PARTITION BY i.incident_id ORDER BY m.source_row_id, m.id) AS position,
+               pg_catalog.count(*) OVER (PARTITION BY i.incident_id) AS member_total
+          FROM incidents i
+          JOIN ${schema}.incident_memberships m
+            ON m.incident_cluster_id = i.incident_id AND m.clustering_run_id = i.clustering_run_id
+      )
+      SELECT i.incident_id, i.clustering_run_id, i.batch_id, i.data_origin, i.state, i.has_subject,
+             mem.source_row_id,
+             mem.position::pg_catalog.int4 AS position,
+             mem.member_total::pg_catalog.int4 AS member_total,
+             ${BOUNDED('sr.normalized_title', '$4', 'title')},
+             ${BOUNDED('sr.raw_category', '$5', 'publisher')},
+             ${BOUNDED('sr.canonical_url', '$6', 'url')},
+             ${INSTANT('sr.posted_at')} AS posted_at
+        FROM incidents i
+        LEFT JOIN members mem
+          ON mem.incident_id = i.incident_id AND mem.position <= $3::pg_catalog.int4
+        LEFT JOIN ${schema}.source_rows sr ON sr.id = mem.source_row_id
+       ORDER BY i.incident_id, mem.position`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Row shapes.
+
+interface EvidenceRunRecord {
+  id: string;
+  clustering_run_id: string;
+  batch_id: string;
+  signal_run_id: string;
+  data_origin: DataOrigin;
+  status: 'running' | 'completed';
+  resolver_version: string;
+  contract_version: string;
+  contract_hash: string;
+  incident_count: number;
+  reported_only_count: number;
+  onchain_observed_count: number;
+  corroborated_count: number;
+  contradicted_count: number;
+  completed_at: string | null;
+}
+
+interface SignalRunRecord {
+  id: string;
+  data_origin: DataOrigin;
+  status: 'running' | 'completed';
+  signal_version: string;
+  contract_version: string;
+  contract_hash: string;
+  query_sha256: string;
+  gateway_host: string;
+  target_count: number;
+  signal_count: number;
+  failed_target_count: number;
+  completed_at: string | null;
+}
+
+interface SummaryRecord {
   incident_id: string;
   kind: string;
   member_count: number;
@@ -106,22 +358,100 @@ interface SummaryRow {
   accepted_association_count: number;
   subject_chain: ChainId | null;
   subject_protocol_slug: string | null;
-  headline: string | null;
+  headline_fragment: string | null;
+  headline_characters: number | null;
+  headline_bytes: number | null;
   earliest_reported_at: string | null;
-  source_count: string;
+  source_count: number;
   data_origin: DataOrigin;
+}
+
+interface SourceRecord {
+  source_row_id: string;
+  title_fragment: string | null;
+  title_characters: number | null;
+  title_bytes: number | null;
+  publisher_fragment: string | null;
+  publisher_characters: number | null;
+  publisher_bytes: number | null;
+  url_fragment: string | null;
+  url_characters: number | null;
+  url_bytes: number | null;
+  posted_at: string | null;
+  decision: 'include' | 'review';
+}
+
+interface AssociationRecord {
+  id: string;
+  signal_id: string;
+  chain: ChainId;
+  protocol_slug: string;
+  observed_at: string;
+  delta_percent: string;
+  signal_origin: DataOrigin;
+  offset_seconds: number;
+  relation: AssociationRelation;
+  claim_id: string | null;
+  reason_codes: unknown;
+  decided_status: 'accepted' | 'rejected' | null;
+  decided_relation: AssociationRelation | null;
+  decided_claim_id: string | null;
+}
+
+interface TargetRecord {
+  chain: ChainId;
+  protocol_slug: string;
+}
+
+interface HistoryRecord {
+  observed_at: string;
+  delta_percent: string;
+  signal_run_id: string;
+  signal_id: string;
+  run_completed_at: string;
+}
+
+interface DraftRecord {
+  incident_id: string;
+  clustering_run_id: string;
+  batch_id: string;
+  data_origin: DataOrigin;
+  state: EvidenceState;
+  has_subject: boolean;
+  source_row_id: string | null;
+  position: number | null;
+  member_total: number | null;
+  title_fragment: string | null;
+  title_characters: number | null;
+  title_bytes: number | null;
+  publisher_fragment: string | null;
+  publisher_characters: number | null;
+  publisher_bytes: number | null;
+  url_fragment: string | null;
+  url_characters: number | null;
+  url_bytes: number | null;
+  posted_at: string | null;
 }
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
-function toSummary(row: SummaryRow): IncidentSummaryRow {
+function bounded(
+  fragment: string | null,
+  characters: number | null,
+  bytes: number | null,
+): BoundedText | null {
+  if (fragment === null || characters === null || bytes === null) return null;
+  return { fragment, characters, bytes };
+}
+
+function toSummary(row: SummaryRecord): IncidentSummaryRow {
   return {
     incidentId: row.incident_id,
     kind: row.kind,
     memberCount: row.member_count,
-    sourceCount: Number(row.source_count),
+    sourceCount: row.source_count,
     reasonCodes: stringList(row.reason_codes),
     state: row.state,
     stateReasonCode: row.reason_code,
@@ -129,48 +459,70 @@ function toSummary(row: SummaryRow): IncidentSummaryRow {
     acceptedAssociationCount: row.accepted_association_count,
     subjectChain: row.subject_chain,
     subjectProtocolSlug: row.subject_protocol_slug,
-    headline: row.headline,
+    headline: bounded(row.headline_fragment, row.headline_characters, row.headline_bytes),
     earliestReportedAt: row.earliest_reported_at,
     dataOrigin: row.data_origin,
   };
 }
 
+function toDraftSource(row: DraftRecord | SourceRecord, sourceRowId: string): DraftSourceRow {
+  return {
+    sourceRowId,
+    title: bounded(row.title_fragment, row.title_characters, row.title_bytes),
+    publisher: bounded(row.publisher_fragment, row.publisher_characters, row.publisher_bytes),
+    url: bounded(row.url_fragment, row.url_characters, row.url_bytes),
+    postedAt: row.posted_at,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The transaction-bound store.
+
+/** Reads of one transaction. Construct one per call, over that call's connection. */
 export class PostgresReadStore implements IncidentReadStore {
-  readonly #db: Database;
+  readonly #client: Queryable;
+  readonly #sql: ReturnType<typeof statements>;
+  /** Characters fetched per bounded column: the display bound plus the sentinel margin. */
+  readonly #fetch: { readonly headline: number; readonly publisher: number; readonly url: number };
 
-  constructor(db: Database) {
-    this.#db = db;
-  }
-
-  static open(config: DatabaseConfig): PostgresReadStore {
-    return new PostgresReadStore(
-      openDatabase(config, { maxConnections: DATABASE_MAX_CONNECTIONS }),
-    );
+  constructor(client: Queryable, schema: string, textFetchMarginCharacters: number) {
+    this.#client = client;
+    this.#sql = statements(quoteIdentifier(schema));
+    const margin = Math.trunc(textFetchMarginCharacters);
+    if (margin < TEXT_FETCH_MARGIN_MIN_CHARACTERS || margin > TEXT_FETCH_MARGIN_MAX_CHARACTERS) {
+      throw new TypeError('text fetch margin outside its fixed limits');
+    }
+    this.#fetch = {
+      headline: HEADLINE_MAX_CHARACTERS + margin,
+      publisher: PUBLISHER_MAX_CHARACTERS + margin,
+      url: URL_MAX_CHARACTERS + margin,
+    };
   }
 
   async getEvidenceRun(evidenceRunId: string): Promise<EvidenceRunRow | null> {
-    return readOnly(this.#db, async (client) => {
-      const run = await getEvidenceRun(client, evidenceRunId);
-      return run === null
-        ? null
-        : {
-            id: run.id,
-            clusteringRunId: run.clusteringRunId,
-            batchId: run.batchId,
-            signalRunId: run.signalRunId,
-            dataOrigin: run.dataOrigin,
-            status: run.status,
-            resolverVersion: run.resolverVersion,
-            contractVersion: run.contractVersion,
-            contractHash: run.contractHash,
-            incidentCount: run.incidentCount,
-            reportedOnlyCount: run.reportedOnlyCount,
-            onchainObservedCount: run.onchainObservedCount,
-            corroboratedCount: run.corroboratedCount,
-            contradictedCount: run.contradictedCount,
-            completedAt: run.completedAt,
-          };
-    });
+    const result = await this.#client.query<EvidenceRunRecord>(this.#sql.evidenceRun, [
+      evidenceRunId,
+    ]);
+    const run = result.rows[0];
+    return run === undefined
+      ? null
+      : {
+          id: run.id,
+          clusteringRunId: run.clustering_run_id,
+          batchId: run.batch_id,
+          signalRunId: run.signal_run_id,
+          dataOrigin: run.data_origin,
+          status: run.status,
+          resolverVersion: run.resolver_version,
+          contractVersion: run.contract_version,
+          contractHash: run.contract_hash,
+          incidentCount: run.incident_count,
+          reportedOnlyCount: run.reported_only_count,
+          onchainObservedCount: run.onchain_observed_count,
+          corroboratedCount: run.corroborated_count,
+          contradictedCount: run.contradicted_count,
+          completedAt: run.completed_at,
+        };
   }
 
   async listIncidentSummaries(
@@ -178,33 +530,29 @@ export class PostgresReadStore implements IncidentReadStore {
     afterIncidentId: string | null,
     limit: number,
   ): Promise<IncidentSummaryRow[]> {
-    return readOnly(this.#db, async (client) => {
-      const result = await client.query<SummaryRow>(SUMMARY_SELECT, [
-        evidenceRunId,
-        afterIncidentId,
-        limit,
-        HEADLINE_MAX_CHARACTERS,
-        null,
-      ]);
-      return result.rows.map(toSummary);
-    });
+    const result = await this.#client.query<SummaryRecord>(this.#sql.summaries, [
+      evidenceRunId,
+      afterIncidentId,
+      limit,
+      this.#fetch.headline,
+      null,
+    ]);
+    return result.rows.map(toSummary);
   }
 
   async getIncidentSummary(
     evidenceRunId: string,
     incidentId: string,
   ): Promise<IncidentSummaryRow | null> {
-    return readOnly(this.#db, async (client) => {
-      const result = await client.query<SummaryRow>(SUMMARY_SELECT, [
-        evidenceRunId,
-        null,
-        1,
-        HEADLINE_MAX_CHARACTERS,
-        incidentId,
-      ]);
-      const row = result.rows[0];
-      return row === undefined ? null : toSummary(row);
-    });
+    const result = await this.#client.query<SummaryRecord>(this.#sql.summaries, [
+      evidenceRunId,
+      null,
+      1,
+      this.#fetch.headline,
+      incidentId,
+    ]);
+    const row = result.rows[0];
+    return row === undefined ? null : toSummary(row);
   }
 
   async listIncidentSources(
@@ -212,44 +560,18 @@ export class PostgresReadStore implements IncidentReadStore {
     incidentId: string,
     limit: number,
   ): Promise<IncidentSourceRow[]> {
-    return readOnly(this.#db, async (client) => {
-      const result = await client.query<{
-        source_row_id: string;
-        title: string | null;
-        publisher: string | null;
-        url: string | null;
-        posted_at: string | null;
-        decision: 'include' | 'review';
-      }>(
-        `SELECT r.id AS source_row_id,
-                left(r.normalized_title, $4) AS title,
-                left(r.raw_category, $5) AS publisher,
-                left(r.canonical_url, $6) AS url,
-                to_json(r.posted_at) #>> '{}' AS posted_at,
-                m.decision
-           FROM incident_memberships m
-           JOIN source_rows r ON r.id = m.source_row_id
-          WHERE m.clustering_run_id = $1 AND m.incident_cluster_id = $2
-          ORDER BY r.id
-          LIMIT $3`,
-        [
-          clusteringRunId,
-          incidentId,
-          limit,
-          HEADLINE_MAX_CHARACTERS,
-          PUBLISHER_MAX_CHARACTERS,
-          URL_MAX_CHARACTERS,
-        ],
-      );
-      return result.rows.map((row) => ({
-        sourceRowId: row.source_row_id,
-        title: row.title,
-        publisher: row.publisher,
-        url: row.url,
-        postedAt: row.posted_at,
-        decision: row.decision,
-      }));
-    });
+    const result = await this.#client.query<SourceRecord>(this.#sql.sources, [
+      clusteringRunId,
+      incidentId,
+      limit,
+      this.#fetch.headline,
+      this.#fetch.publisher,
+      this.#fetch.url,
+    ]);
+    return result.rows.map((row) => ({
+      ...toDraftSource(row, row.source_row_id),
+      decision: row.decision,
+    }));
   }
 
   async listIncidentAssociations(
@@ -257,152 +579,194 @@ export class PostgresReadStore implements IncidentReadStore {
     incidentId: string,
     limit: number,
   ): Promise<IncidentAssociationRow[]> {
-    return readOnly(this.#db, async (client) => {
-      const result = await client.query<{
-        id: string;
-        signal_id: string;
-        chain: ChainId;
-        protocol_slug: string;
-        observed_at: string;
-        delta_percent: string;
-        signal_origin: DataOrigin;
-        offset_seconds: number;
-        relation: AssociationRelation;
-        claim_id: string | null;
-        reason_codes: unknown;
-        decided_status: 'accepted' | 'rejected' | null;
-        decided_relation: AssociationRelation | null;
-        decided_claim_id: string | null;
-      }>(
-        // The latest decision on this incident-and-signal pair within the
-        // clustering run, exactly as the resolver reads it. The suggestion row
-        // is never edited, so both the machine's proposal and the human's
-        // answer are returned side by side.
-        `SELECT a.id, a.signal_id, a.chain, g.protocol_slug,
-                to_json(g.observed_at) #>> '{}' AS observed_at,
-                g.delta_percent::text AS delta_percent, g.data_origin AS signal_origin,
-                a.offset_seconds, a.relation, a.claim_id, a.reason_codes,
-                latest.status AS decided_status, latest.relation AS decided_relation,
-                latest.claim_id AS decided_claim_id
-           FROM incident_signal_associations a
-           JOIN graph_signals g ON g.id = a.signal_id
-           LEFT JOIN LATERAL (
-             SELECT CASE WHEN r.operation = 'accept' THEN 'accepted' ELSE 'rejected' END AS status,
-                    r.relation, r.claim_id
-               FROM evidence_review_actions r
-               JOIN incident_signal_associations d ON d.id = r.association_id
-              WHERE d.clustering_run_id = a.clustering_run_id
-                AND d.incident_cluster_id = a.incident_cluster_id
-                AND d.signal_id = a.signal_id
-              ORDER BY r.created_at DESC, r.resulting_revision DESC, r.id DESC
-              LIMIT 1
-           ) latest ON true
-          WHERE a.evidence_run_id = $1 AND a.incident_cluster_id = $2
-          ORDER BY a.signal_id
-          LIMIT $3`,
-        [evidenceRunId, incidentId, limit],
-      );
-      return result.rows.map((row) => ({
-        associationId: row.id,
-        signalId: row.signal_id,
-        chain: row.chain,
-        protocolSlug: row.protocol_slug,
-        signalObservedAt: row.observed_at,
-        signalDeltaPercent: row.delta_percent,
-        signalDataOrigin: row.signal_origin,
-        offsetSeconds: row.offset_seconds,
-        suggestedRelation: row.relation,
-        suggestedClaimId: row.claim_id,
-        decidedStatus: row.decided_status,
-        decidedRelation: row.decided_relation,
-        decidedClaimId: row.decided_claim_id,
-        reasonCodes: stringList(row.reason_codes),
-      }));
-    });
+    const result = await this.#client.query<AssociationRecord>(this.#sql.associations, [
+      evidenceRunId,
+      incidentId,
+      limit,
+    ]);
+    return result.rows.map((row) => ({
+      associationId: row.id,
+      signalId: row.signal_id,
+      chain: row.chain,
+      protocolSlug: row.protocol_slug,
+      signalObservedAt: row.observed_at,
+      signalDeltaPercent: row.delta_percent,
+      signalDataOrigin: row.signal_origin,
+      offsetSeconds: row.offset_seconds,
+      suggestedRelation: row.relation,
+      suggestedClaimId: row.claim_id,
+      decidedStatus: row.decided_status,
+      decidedRelation: row.decided_relation,
+      decidedClaimId: row.decided_claim_id,
+      reasonCodes: stringList(row.reason_codes),
+    }));
   }
 
   async getSignalRun(signalRunId: string): Promise<SignalRunRow | null> {
-    return readOnly(this.#db, async (client) => {
-      const run = await getGraphSignalRun(client, signalRunId);
-      return run === null
-        ? null
-        : {
-            id: run.id,
-            dataOrigin: run.dataOrigin,
-            status: run.status,
-            signalVersion: run.signalVersion,
-            contractVersion: run.contractVersion,
-            contractHash: run.contractHash,
-            querySha256: run.querySha256,
-            gatewayHost: run.gatewayHost,
-            targetCount: run.targetCount,
-            signalCount: run.signalCount,
-            failedTargetCount: run.failedTargetCount,
-            completedAt: run.completedAt,
-          };
-    });
+    const result = await this.#client.query<SignalRunRecord>(this.#sql.signalRun, [signalRunId]);
+    const run = result.rows[0];
+    return run === undefined
+      ? null
+      : {
+          id: run.id,
+          dataOrigin: run.data_origin,
+          status: run.status,
+          signalVersion: run.signal_version,
+          contractVersion: run.contract_version,
+          contractHash: run.contract_hash,
+          querySha256: run.query_sha256,
+          gatewayHost: run.gateway_host,
+          targetCount: run.target_count,
+          signalCount: run.signal_count,
+          failedTargetCount: run.failed_target_count,
+          completedAt: run.completed_at,
+        };
   }
 
-  async listSignalTargets(signalRunId: string, limit: number): Promise<SignalTargetRow[]> {
-    return readOnly(this.#db, async (client) => {
-      const result = await client.query<{
-        chain: ChainId;
-        protocol_slug: string;
-        data_origin: DataOrigin;
-      }>(
-        // Every target of the named run's origin, as the worker's feed reads
-        // them, so a target that stopped reporting is still evaluated and
-        // reported stale rather than dropped.
-        `SELECT DISTINCT s.chain, s.protocol_slug, s.data_origin
-           FROM graph_signals s
-           JOIN graph_signal_runs r ON r.id = s.signal_run_id
-          WHERE r.status = 'completed'
-            AND s.data_origin = (SELECT data_origin FROM graph_signal_runs WHERE id = $1)
-          ORDER BY s.chain, s.protocol_slug
-          LIMIT $2`,
-        [signalRunId, limit],
-      );
-      return result.rows.map((row) => ({
-        chain: row.chain,
-        protocolSlug: row.protocol_slug,
-        dataOrigin: row.data_origin,
-      }));
-    });
+  async listSignalTargets(boundary: SignalRunBoundary, limit: number): Promise<SignalTargetRow[]> {
+    const result = await this.#client.query<TargetRecord>(this.#sql.targets, [
+      boundary.completedAt,
+      boundary.dataOrigin,
+      boundary.signalVersion,
+      limit,
+    ]);
+    return result.rows.map((row) => ({
+      chain: row.chain,
+      protocolSlug: row.protocol_slug,
+      dataOrigin: boundary.dataOrigin,
+    }));
   }
 
   async listSignalHistory(
+    boundary: SignalRunBoundary,
     chain: ChainId,
     protocolSlug: string,
-    dataOrigin: DataOrigin,
     limit: number,
   ): Promise<SignalObservationRow[]> {
-    return readOnly(this.#db, (client) =>
-      listSignalHistory(client, chain, protocolSlug, dataOrigin, limit),
+    const result = await this.#client.query<HistoryRecord>(this.#sql.history, [
+      chain,
+      protocolSlug,
+      boundary.dataOrigin,
+      boundary.completedAt,
+      boundary.signalVersion,
+      boundary.asOf,
+      limit,
+    ]);
+    return result.rows
+      .map((row) => ({
+        observedAt: row.observed_at,
+        deltaPercent: row.delta_percent,
+        signalRunId: row.signal_run_id,
+        signalId: row.signal_id,
+        runCompletedAt: row.run_completed_at,
+      }))
+      .reverse();
+  }
+
+  async listDraftIncidents(
+    evidenceRunId: string,
+    incidentLimit: number,
+    sourcesPerIncidentLimit: number,
+  ): Promise<DraftIncidentRow[]> {
+    const result = await this.#client.query<DraftRecord>(this.#sql.draft, [
+      evidenceRunId,
+      incidentLimit,
+      sourcesPerIncidentLimit,
+      this.#fetch.headline,
+      this.#fetch.publisher,
+      this.#fetch.url,
+    ]);
+    const incidents: DraftIncidentRow[] = [];
+    let current: { row: DraftIncidentRow; sources: DraftSourceRow[] } | null = null;
+    for (const row of result.rows) {
+      if (current === null || current.row.incidentId !== row.incident_id) {
+        const sources: DraftSourceRow[] = [];
+        current = {
+          sources,
+          row: {
+            incidentId: row.incident_id,
+            clusteringRunId: row.clustering_run_id,
+            batchId: row.batch_id,
+            dataOrigin: row.data_origin,
+            state: row.state,
+            hasSubject: row.has_subject,
+            sourceTotal: row.member_total ?? 0,
+            sources,
+          },
+        };
+        incidents.push(current.row);
+      }
+      if (row.source_row_id !== null) current.sources.push(toDraftSource(row, row.source_row_id));
+    }
+    return incidents;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The provider: one transaction per tool call.
+
+export interface PostgresReadStoreOptions {
+  readonly mode: StoreMode;
+  /** From `textFetchMargin`, sized for the secrets the runtime holds. */
+  readonly textFetchMargin: number;
+}
+
+export class PostgresReadStoreProvider implements IncidentReadStoreProvider {
+  readonly #config: DatabaseConfig;
+  readonly #mode: StoreMode;
+  readonly #margin: number;
+  readonly #inFlight = new Set<Promise<unknown>>();
+
+  constructor(config: DatabaseConfig, options: PostgresReadStoreOptions) {
+    this.#config = config;
+    this.#mode = options.mode;
+    this.#margin = options.textFetchMargin;
+  }
+
+  get mode(): StoreMode {
+    return this.#mode;
+  }
+
+  /**
+   * One connection, one snapshot, one verified role. In production mode the
+   * privilege matrix runs on the call's own connection before any application
+   * read; an overprivileged credential fails the call with a fixed code and
+   * reads nothing.
+   */
+  async withReadTransaction<T>(
+    fn: (store: IncidentReadStore) => Promise<T>,
+    options: ReadTransactionOptions = {},
+  ): Promise<T> {
+    const call = withReadOnlyConnection(
+      this.#config,
+      async (client, schema) => {
+        if (this.#mode === 'production') {
+          const report = await verifyDatabasePrivileges(client, schema);
+          if (!report.ok) throw new ToolError('database_role_overprivileged');
+        }
+        return fn(new PostgresReadStore(client, schema, this.#margin));
+      },
+      options,
+    );
+    this.#inFlight.add(call);
+    try {
+      return await call;
+    } finally {
+      this.#inFlight.delete(call);
+    }
+  }
+
+  /** The privilege matrix on a fresh connection, for start-up and the verification command. */
+  async verifyPrivileges(options: ReadTransactionOptions = {}): Promise<PrivilegeReport> {
+    return withReadOnlyConnection(
+      this.#config,
+      (client, schema) => verifyDatabasePrivileges(client, schema),
+      options,
     );
   }
 
-  async listDraftIncidents(evidenceRunId: string, limit: number): Promise<DraftIncidentRow[]> {
-    return readOnly(this.#db, async (client) => {
-      const rows = await listDraftIncidents(client, evidenceRunId, limit);
-      return rows.map((row) => ({
-        incidentId: row.incidentId,
-        clusteringRunId: row.clusteringRunId,
-        batchId: row.batchId,
-        dataOrigin: row.dataOrigin,
-        state: row.state as EvidenceState,
-        hasSubject: row.hasSubject,
-        sources: row.sources.map((source) => ({
-          sourceRowId: source.sourceRowId,
-          title: source.title,
-          publisher: source.publisher,
-          url: source.url,
-          postedAt: source.postedAt,
-        })),
-      }));
-    });
-  }
-
+  /** Waits for in-flight calls to unwind; each destroys its own connection. */
   async close(): Promise<void> {
-    await this.#db.end();
+    await Promise.allSettled([...this.#inFlight]);
   }
 }

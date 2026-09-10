@@ -16,6 +16,7 @@ export const TOOL_ERROR_CODES = [
   'result_too_large',
   'database_not_configured',
   'database_configuration_invalid',
+  'database_role_overprivileged',
   'database_unavailable',
   'database_query_failed',
   'evidence_run_not_found',
@@ -39,6 +40,8 @@ const MESSAGES: Readonly<Record<ToolErrorCode, string>> = {
   result_too_large: 'the result exceeds the size bound; narrow the request',
   database_not_configured: 'no database is configured for this server',
   database_configuration_invalid: 'the database configuration was rejected',
+  database_role_overprivileged:
+    'the database credential holds more than the read-only privileges the server requires; nothing was read',
   database_unavailable: 'the database is unavailable',
   database_query_failed: 'the database query failed',
   evidence_run_not_found: 'no evidence run with that id',

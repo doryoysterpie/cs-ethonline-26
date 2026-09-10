@@ -12,15 +12,21 @@ import { TOOL_DEFINITIONS, isToolName, type ToolName } from './definitions.js';
 import { evidenceContractLabeller, type AnomalyLabeller } from './engines/anomaly.js';
 import { deterministicPreviewer, type DraftPreviewer } from './engines/draft.js';
 import { GraphLiveSignalSource, type LiveSignalSource } from './engines/live-graph.js';
-import { ToolError, toToolError, type SafeDetail } from './safety/errors.js';
+import { ToolError, toToolError, type SafeDetail, type ToolErrorCode } from './safety/errors.js';
 import { connectionSecrets, createRedactor, redactDeep, type Redactor } from './safety/redact.js';
 import { toSingleLine } from './safety/text.js';
-import { PostgresReadStore } from './store/postgres-store.js';
-import type { IncidentReadStore } from './store/read-store.js';
+import {
+  PostgresReadStoreProvider,
+  textFetchMargin,
+  type StoreMode,
+} from './store/postgres-store.js';
+import type { PrivilegeCheck } from './store/privileges.js';
+import type { IncidentReadStoreProvider } from './store/read-store.js';
 import { chainAnomalies } from './tools/chain-anomalies.js';
 import { draftSection } from './tools/draft-section.js';
 import { explainIncident } from './tools/explain-incident.js';
 import { listIncidents } from './tools/list-incidents.js';
+import type { ToolContext } from './tools/shared.js';
 import { validateArguments } from './validation.js';
 
 /**
@@ -31,18 +37,44 @@ import { validateArguments } from './validation.js';
  * step is a fixed-vocabulary error; nothing else leaves.
  */
 
+/**
+ * `CAS_MCP_MODE` selects the store's mode. `production`, the default when the
+ * variable is absent, requires the database credential to be a dedicated
+ * reader role: the privilege matrix runs at start-up and again on every
+ * stored call's own connection before any application read, and an
+ * overprivileged credential fails closed. `development` still runs and logs
+ * the start-up check but does not refuse an overprivileged local credential.
+ * Any other value is rejected at start-up.
+ */
+export const MODE_VARIABLE = 'CAS_MCP_MODE';
+export const STORE_MODES = ['production', 'development'] as const;
+
 /** The only environment names this server reads. Values are never emitted. */
 export const ENVIRONMENT_NAMES = [
   DATABASE_URL_VARIABLE,
   'GRAPH_API_KEY',
   'GRAPH_GATEWAY_URL',
+  MODE_VARIABLE,
 ] as const;
+
+/** The outcome of asking the database who the configured credential is. */
+export interface DatabaseRoleVerification {
+  /**
+   * `absent`: no database is configured. `verified`: every check passed.
+   * `overprivileged`: at least one check failed. `unverified`: the database
+   * could not be asked; every stored call verifies again before it reads.
+   */
+  readonly status: 'absent' | 'verified' | 'overprivileged' | 'unverified';
+  readonly failed: readonly PrivilegeCheck[];
+  readonly errorCode: ToolErrorCode | null;
+}
 
 export interface ToolRuntime {
   /** Null when `DATABASE_URL` is absent; stored tools then fail with a fixed code. */
-  readonly store: IncidentReadStore | null;
+  readonly store: IncidentReadStoreProvider | null;
   /** Null when `GRAPH_API_KEY` is absent; live mode then fails with a fixed code and no fallback. */
   readonly live: LiveSignalSource | null;
+  readonly mode: StoreMode;
   readonly labeller: AnomalyLabeller;
   readonly previewer: DraftPreviewer;
   readonly redact: Redactor;
@@ -51,6 +83,7 @@ export interface ToolRuntime {
   readonly log: (line: string) => void;
   readonly deadlines: { readonly stored: number; readonly live: number };
   readonly limiter: CallLimiter;
+  verifyDatabaseRole(): Promise<DatabaseRoleVerification>;
   close(): Promise<void>;
 }
 
@@ -96,8 +129,10 @@ export interface RuntimeOptions {
   readonly log?: ((line: string) => void) | undefined;
   readonly now?: (() => Date) | undefined;
   readonly fetchImpl?: ConstructorParameters<typeof GraphLiveSignalSource>[0]['fetchImpl'];
-  readonly store?: IncidentReadStore | null | undefined;
+  readonly store?: IncidentReadStoreProvider | null | undefined;
   readonly live?: LiveSignalSource | null | undefined;
+  /** Overrides `CAS_MCP_MODE`. */
+  readonly mode?: StoreMode | undefined;
   readonly labeller?: AnomalyLabeller | undefined;
   readonly previewer?: DraftPreviewer | undefined;
   readonly deadlines?: { readonly stored: number; readonly live: number } | undefined;
@@ -108,28 +143,45 @@ function present(value: string | undefined): string | undefined {
   return value === undefined || value.trim().length === 0 ? undefined : value;
 }
 
+/** Parses the mode variable. The rejected value is never echoed. */
+export function parseStoreMode(value: string | undefined): StoreMode {
+  const trimmed = present(value);
+  if (trimmed === undefined) return 'production';
+  if ((STORE_MODES as readonly string[]).includes(trimmed)) return trimmed as StoreMode;
+  throw new Error(`${MODE_VARIABLE} rejected: must be one of ${STORE_MODES.join(', ')}`);
+}
+
 /**
  * Builds a runtime from the allowlisted environment names. A configured
  * `DATABASE_URL` is validated in full before anything else, so a rejected
  * value stops the server rather than reaching a redactor-less path; an absent
  * one leaves the store null. `GRAPH_API_KEY` constructs the live client, whose
- * own validation rejects a bad gateway URL before any request.
+ * own validation rejects a bad gateway URL before any request. The store's
+ * sentinel margin is sized from the secrets the redactor holds, so a secret
+ * that begins inside a displayed prefix is always fetched whole.
  */
 export function createRuntime(options: RuntimeOptions): ToolRuntime {
   const databaseUrl = present(options.env[DATABASE_URL_VARIABLE]);
   const apiKey = present(options.env['GRAPH_API_KEY']);
   const gatewayBaseUrl = present(options.env['GRAPH_GATEWAY_URL']);
-  const redact = createRedactor([...connectionSecrets(databaseUrl), apiKey]);
+  const mode = options.mode ?? parseStoreMode(options.env[MODE_VARIABLE]);
+  const secrets = [...connectionSecrets(databaseUrl), apiKey].filter(
+    (secret): secret is string => typeof secret === 'string',
+  );
+  const redact = createRedactor(secrets);
   const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
   const safeLog = (line: string): void => log(toSingleLine(redact(line)));
 
-  let store: IncidentReadStore | null;
+  let store: IncidentReadStoreProvider | null;
   if (options.store !== undefined) {
     store = options.store;
   } else if (databaseUrl === undefined) {
     store = null;
   } else {
-    store = PostgresReadStore.open(parseDatabaseConfig(options.env));
+    store = new PostgresReadStoreProvider(parseDatabaseConfig(options.env), {
+      mode,
+      textFetchMargin: textFetchMargin(secrets.map((secret) => secret.length)),
+    });
   }
 
   let live: LiveSignalSource | null;
@@ -149,6 +201,7 @@ export function createRuntime(options: RuntimeOptions): ToolRuntime {
   return {
     store,
     live,
+    mode,
     labeller: options.labeller ?? evidenceContractLabeller,
     previewer: options.previewer ?? deterministicPreviewer,
     redact,
@@ -159,6 +212,17 @@ export function createRuntime(options: RuntimeOptions): ToolRuntime {
       live: LIVE_TOOL_DEADLINE_MS,
     },
     limiter: options.limiter ?? new CallLimiter(),
+    async verifyDatabaseRole() {
+      if (store === null) return { status: 'absent', failed: [], errorCode: null };
+      try {
+        const report = await store.verifyPrivileges();
+        return report.ok
+          ? { status: 'verified', failed: [], errorCode: null }
+          : { status: 'overprivileged', failed: report.failed, errorCode: null };
+      } catch (error) {
+        return { status: 'unverified', failed: [], errorCode: toToolError(error).code };
+      }
+    },
     async close() {
       if (store !== null) await store.close();
     },
@@ -183,6 +247,16 @@ export type ToolInvocation =
       readonly text: string;
     };
 
+export interface InvokeOptions {
+  /**
+   * The call's abort signal, handed through the tools to the store so an
+   * aborted call sends no further statement. The runtime that owns the MCP
+   * request's cancellation and the deadline supplies it; this module does not
+   * derive one of its own.
+   */
+  readonly signal?: AbortSignal | undefined;
+}
+
 function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const expiry = new Promise<never>((_, rejectWith) => {
@@ -193,7 +267,7 @@ function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-function requireStore(runtime: ToolRuntime): IncidentReadStore {
+function requireStore(runtime: ToolRuntime): IncidentReadStoreProvider {
   if (runtime.store === null) throw new ToolError('database_not_configured');
   return runtime.store;
 }
@@ -202,15 +276,23 @@ async function dispatch(
   runtime: ToolRuntime,
   name: ToolName,
   raw: unknown,
+  signal: AbortSignal | undefined,
 ): Promise<Record<string, unknown>> {
+  const context: ToolContext = { redact: runtime.redact, signal };
   switch (name) {
     case 'list_incidents': {
       const args = validateArguments(TOOL_DEFINITIONS[0].inputSchema, raw);
-      return withDeadline(listIncidents(requireStore(runtime), args), runtime.deadlines.stored);
+      return withDeadline(
+        listIncidents(requireStore(runtime), args, context),
+        runtime.deadlines.stored,
+      );
     }
     case 'explain_incident': {
       const args = validateArguments(TOOL_DEFINITIONS[1].inputSchema, raw);
-      return withDeadline(explainIncident(requireStore(runtime), args), runtime.deadlines.stored);
+      return withDeadline(
+        explainIncident(requireStore(runtime), args, context),
+        runtime.deadlines.stored,
+      );
     }
     case 'chain_anomalies': {
       const args = validateArguments(TOOL_DEFINITIONS[2].inputSchema, raw);
@@ -224,6 +306,7 @@ async function dispatch(
             now: runtime.now,
           },
           args,
+          context,
         ),
         deadline,
       );
@@ -231,7 +314,7 @@ async function dispatch(
     case 'draft_section': {
       const args = validateArguments(TOOL_DEFINITIONS[3].inputSchema, raw);
       return withDeadline(
-        draftSection(requireStore(runtime), runtime.previewer, args),
+        draftSection(requireStore(runtime), runtime.previewer, args, context),
         runtime.deadlines.stored,
       );
     }
@@ -258,6 +341,7 @@ export async function invokeTool(
   runtime: ToolRuntime,
   name: unknown,
   raw: unknown,
+  options: InvokeOptions = {},
 ): Promise<ToolInvocation> {
   const started = Date.now();
   const tool = isToolName(name) ? name : null;
@@ -267,7 +351,7 @@ export async function invokeTool(
     release = runtime.limiter.admit();
     const definition = TOOL_DEFINITIONS.find((entry) => entry.name === tool);
     if (definition === undefined) throw new ToolError('unknown_tool');
-    const produced = await dispatch(runtime, tool, raw);
+    const produced = await dispatch(runtime, tool, raw, options.signal);
     // The output contract is enforced here as well as by the SDK, so the
     // programmatic path cannot emit a shape the wire would refuse.
     const checked = definition.outputSchema.safeParse(produced);

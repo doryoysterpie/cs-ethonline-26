@@ -102,3 +102,61 @@ export function quoteEvidence(
     trust: EVIDENCE_TRUST,
   };
 }
+
+/** A text column as the store fetched it: a bounded prefix and the stored value's true size. */
+export interface BoundedTextField {
+  readonly fragment: string;
+  /** Characters (code points) of the whole stored value. */
+  readonly characters: number;
+}
+
+function escapeForDisplay(character: string): string {
+  return CONTROL_CHARACTER.test(character) || character === '<' || character === '>'
+    ? escapeCharacter(character)
+    : character;
+}
+
+/**
+ * Renders a SQL-bounded column as quoted evidence, truthfully.
+ *
+ * The store fetches a prefix of the stored value (the display bound plus a
+ * sentinel margin) together with the stored value's character count. In that
+ * order:
+ *
+ *   1. the fragment is redacted, before anything is cut, so a secret that
+ *      begins inside the displayed prefix is matched whole (the margin is
+ *      sized for that) rather than split by the display cut;
+ *   2. the display copy is built one code point at a time, each escaped as
+ *      `quoteEvidence` escapes it, and stops before the first code point
+ *      whose escape would not fit; an escape is never cut in half;
+ *   3. `truncated` is true when the display copy omits anything the store
+ *      holds: characters the fragment did not carry, or characters that did
+ *      not fit; the marker counts both.
+ *
+ * The stored value is never touched; only the copy that leaves is bounded.
+ */
+export function quoteBoundedEvidence(
+  field: BoundedTextField | null | undefined,
+  maxLength: number,
+  redact: (value: string) => string = (value) => value,
+): QuotedEvidence | null {
+  if (field === null || field === undefined) return null;
+  const fetchedCharacters = [...field.fragment].length;
+  const unfetched = Math.max(0, field.characters - fetchedCharacters);
+  const points = [...redact(field.fragment)];
+  let text = '';
+  let shown = 0;
+  for (const point of points) {
+    const escaped = escapeForDisplay(point);
+    if (text.length + escaped.length > maxLength) break;
+    text += escaped;
+    shown += 1;
+  }
+  const omitted = points.length - shown + unfetched;
+  const truncated = omitted > 0;
+  return {
+    text: truncated ? `${text}…[+${omitted} chars]` : text,
+    truncated,
+    trust: EVIDENCE_TRUST,
+  };
+}

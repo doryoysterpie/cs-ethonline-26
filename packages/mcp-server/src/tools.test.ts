@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { RESULT_NOTICE, TELEMETRY_SENTENCE } from './schemas/common.js';
+import { ANOMALY_BOUNDARY_SENTENCE, RESULT_NOTICE, TELEMETRY_SENTENCE } from './schemas/common.js';
 import {
   AS_OF,
   connectInMemory,
   FakeStore,
+  FIXTURE_RUN_COMPLETED_AT,
   hasRawControl,
   HOSTILE,
   SECRET_API_KEY,
@@ -339,11 +340,50 @@ describe('chain_anomalies in stored mode', () => {
         expect(entry['dataOrigin']).toBe('replay');
         expect(entry['provenanceId']).toBe(SIGNAL_RUN);
         expect(typeof entry['evidenceLimitation']).toBe('string');
+        const provenance = entry['provenance'] as Record<string, unknown>;
+        expect(provenance['latestSignalRunId']).toBe(SIGNAL_RUN);
+        expect(typeof provenance['latestSignalId']).toBe('string');
+        expect(provenance['observationsUsed']).toBeGreaterThan(0);
+        expect(provenance['contributingRunCount']).toBe(1);
       }
+      // The boundary is the named run's own completion instant and the as-of instant.
+      const boundary = stored['boundary'] as Record<string, unknown>;
+      expect(boundary['requestedSignalRunId']).toBe(SIGNAL_RUN);
+      expect(boundary['completedAt']).toBe(FIXTURE_RUN_COMPLETED_AT);
+      expect(boundary['asOf']).toBe(new Date(AS_OF).toISOString());
+      expect(boundary['rule']).toBe(ANOMALY_BOUNDARY_SENTENCE);
+      expect(boundary['contributingRunCount']).toBe(1);
+      expect(boundary['latestContributingRunCompletedAt']).toBe(FIXTURE_RUN_COMPLETED_AT);
       // The live series of aave-v3 (a 99.9% move) was never read.
       expect(store.calls.filter((c) => c.startsWith('listSignalHistory:'))).toEqual(
         Array(6).fill('listSignalHistory:replay'),
       );
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('evaluates nothing observed after the as-of instant', async () => {
+    const store = new FakeStore();
+    const harness = await connectInMemory({ store });
+    try {
+      // Two days before the fixture's as-of instant: the newest observation of
+      // every target lies in the future of this request and must not be read.
+      const earlier = new Date(Date.parse(AS_OF) - 2 * 86_400_000).toISOString();
+      const result = await harness.client.callTool({
+        name: 'chain_anomalies',
+        arguments: { mode: 'stored', signalRunId: SIGNAL_RUN, asOf: earlier },
+      });
+      expect(result.isError).not.toBe(true);
+      const stored = structured(result)['stored'] as Record<string, unknown>;
+      const entries = stored['entries'] as Record<string, unknown>[];
+      const spark = entries.find((e) => e['protocolSlug'] === 'spark-lend');
+      // The 31.5% move happened after the as-of instant, so it is not a spike here.
+      expect(spark?.['label']).toBe('normal');
+      expect((spark?.['provenance'] as Record<string, unknown>)['observationsUsed']).toBe(10);
+      expect(
+        Date.parse((spark?.['provenance'] as Record<string, string>)['latestObservedAt'] ?? ''),
+      ).toBeLessThanOrEqual(Date.parse(earlier));
     } finally {
       await harness.close();
     }
@@ -425,6 +465,14 @@ describe('draft_section', () => {
         expect(preview['persisted']).toBe(false);
         expect(preview['modelInvoked']).toBe(false);
         expect(output['dataOrigin']).toBe('replay');
+        // Nothing the fixture holds was left out, and the result says so.
+        expect(output['bounds']).toEqual({
+          sourcesPerIncidentLimit: 20,
+          sourcesConsidered: 6,
+          sourcesOmitted: 0,
+          incidentsWithOmittedSources: 0,
+          text: expect.objectContaining({ fieldsTruncated: 0 }) as unknown,
+        });
         const markdown = preview['markdown'] as string;
         expect(hasRawControl(markdown.replace(/\n/g, ''))).toBe(false);
         expect(markdown).not.toContain('<system>');

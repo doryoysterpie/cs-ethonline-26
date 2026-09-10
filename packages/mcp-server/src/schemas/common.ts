@@ -69,3 +69,7 @@ export const RESULT_NOTICE =
 /** Fixed sentence for every chain-value entry. */
 export const TELEMETRY_SENTENCE =
   'A total-value-locked movement is circumstantial telemetry about a protocol. It does not establish that a cyberattack occurred.';
+
+/** Fixed sentence stating the evaluation boundary of a stored anomaly result. */
+export const ANOMALY_BOUNDARY_SENTENCE =
+  "Only completed runs of the named run's data origin and signal version that completed at or before the named run contribute, and only their observations at or before asOf, the most recent per target within the observation bound; nothing recorded later can change this result.";

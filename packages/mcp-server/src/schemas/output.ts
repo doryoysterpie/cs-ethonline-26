@@ -8,6 +8,7 @@ import {
   URL_MAX_CHARACTERS,
 } from '../bounds.js';
 import {
+  ANOMALY_BOUNDARY_SENTENCE,
   anomalyLabelSchema,
   chainSchema,
   dataOriginSchema,
@@ -171,6 +172,18 @@ export const explainIncidentOutput = z
 
 const timeWindow = z.object({ startsAt: z.number().int(), endsAt: z.number().int() }).strict();
 
+/** The run and signal that actually produced the observation an entry labels. */
+export const anomalyEntryProvenance = z
+  .object({
+    latestSignalRunId: uuidOutput.nullable(),
+    latestSignalId: uuidOutput.nullable(),
+    latestObservedAt: instantOutput.nullable(),
+    observationsUsed: z.number().int().nonnegative(),
+    /** Distinct completed runs whose observations of this target were used. */
+    contributingRunCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const anomalyEntry = z
   .object({
     label: anomalyLabelSchema,
@@ -181,10 +194,29 @@ export const anomalyEntry = z
     value: decimalSchema,
     threshold: decimalSchema,
     dataOrigin: dataOriginSchema,
+    /** The run of the labelled observation; the named run only when the boundary holds none. */
     provenanceId: z.string().max(128),
+    provenance: anomalyEntryProvenance,
     reasonCodes: vocabularyList,
     /** The engine's own fixed limitation sentence. */
     evidenceLimitation: z.string().max(200),
+  })
+  .strict();
+
+/** The reproducible boundary a stored evaluation was read at. */
+export const anomalyBoundary = z
+  .object({
+    requestedSignalRunId: uuidOutput,
+    /** Completion instant of the named run: no run completed after it contributes. */
+    completedAt: instantOutput,
+    asOf: instantOutput,
+    dataOrigin: dataOriginSchema,
+    signalVersion: z.string().max(64),
+    rule: z.literal(ANOMALY_BOUNDARY_SENTENCE),
+    /** Distinct completed runs that contributed at least one used observation. */
+    contributingRunCount: z.number().int().nonnegative(),
+    earliestContributingRunCompletedAt: instantOutput.nullable(),
+    latestContributingRunCompletedAt: instantOutput.nullable(),
   })
   .strict();
 
@@ -205,7 +237,8 @@ export const storedAnomalies = z
         completedAt: instantOutput,
       })
       .strict(),
-    /** Distinct targets of the run's origin that were evaluated, and the observations read. */
+    boundary: anomalyBoundary,
+    /** Distinct targets inside the boundary that were evaluated, and the observations read. */
     targetsEvaluated: z.number().int().nonnegative(),
     observationsRead: z.number().int().nonnegative(),
     entries: z.array(anomalyEntry).max(500),
@@ -380,6 +413,28 @@ export const draftSectionOutput = z
       .strict(),
     incidentsConsidered: z.number().int().nonnegative(),
     incidentsLimit: z.number().int().positive(),
+    /** What the bounded draft query left out, so a preview cannot pass for the whole record. */
+    bounds: z
+      .object({
+        sourcesPerIncidentLimit: z.number().int().positive(),
+        /** Source rows fetched across the considered incidents. */
+        sourcesConsidered: z.number().int().nonnegative(),
+        /** Source rows the considered incidents have beyond the per-incident bound. */
+        sourcesOmitted: z.number().int().nonnegative(),
+        incidentsWithOmittedSources: z.number().int().nonnegative(),
+        text: z
+          .object({
+            /** Title, publisher and URL fields whose display copy omits stored characters. */
+            fieldsTruncated: z.number().int().nonnegative(),
+            /** Size of the stored values behind the fetched fields, before any bound. */
+            storedCharacters: z.number().int().nonnegative(),
+            storedBytes: z.number().int().nonnegative(),
+            /** Characters actually transferred from the database for those fields. */
+            fetchedCharacters: z.number().int().nonnegative(),
+          })
+          .strict(),
+      })
+      .strict(),
     dataOrigin: dataOriginSchema,
   })
   .strict();
@@ -391,4 +446,5 @@ export type DraftSectionOutput = z.output<typeof draftSectionOutput>;
 export type IncidentSummaryDto = z.output<typeof incidentSummary>;
 export type EvidenceRunProvenanceDto = z.output<typeof evidenceRunProvenance>;
 export type AnomalyEntryDto = z.output<typeof anomalyEntry>;
+export type AnomalyEntryProvenanceDto = z.output<typeof anomalyEntryProvenance>;
 export type LiveTargetDto = z.output<typeof liveTarget>;

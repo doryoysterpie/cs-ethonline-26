@@ -2,9 +2,21 @@ import type { EvidenceState } from '@cas/contracts';
 
 import { HEADLINE_MAX_CHARACTERS } from '../bounds.js';
 import { ToolError } from '../safety/errors.js';
-import { quoteEvidence } from '../safety/text.js';
+import type { Redactor } from '../safety/redact.js';
+import { quoteBoundedEvidence } from '../safety/text.js';
 import type { EvidenceRunProvenanceDto, IncidentSummaryDto } from '../schemas/output.js';
 import type { EvidenceRunRow, IncidentReadStore, IncidentSummaryRow } from '../store/read-store.js';
+
+/**
+ * What every tool receives beside its validated arguments: the runtime's
+ * redactor, applied to retrieved text before it is bounded for display, and
+ * the call's abort signal, handed to the store so an aborted call sends no
+ * further statement.
+ */
+export interface ToolContext {
+  readonly redact: Redactor;
+  readonly signal?: AbortSignal | undefined;
+}
 
 /** Fixed sentence per evidence state. Never composed from input. */
 export const EVIDENCE_SENTENCES: Readonly<Record<EvidenceState, string>> = {
@@ -53,7 +65,7 @@ export function runProvenance(
   };
 }
 
-export function incidentSummaryDto(row: IncidentSummaryRow): IncidentSummaryDto {
+export function incidentSummaryDto(row: IncidentSummaryRow, redact: Redactor): IncidentSummaryDto {
   return {
     incidentId: row.incidentId,
     kind: row.kind,
@@ -72,7 +84,7 @@ export function incidentSummaryDto(row: IncidentSummaryRow): IncidentSummaryDto 
       chain: row.subjectChain,
       protocolSlug: row.subjectProtocolSlug,
     },
-    headline: quoteEvidence(row.headline, HEADLINE_MAX_CHARACTERS),
+    headline: quoteBoundedEvidence(row.headline, HEADLINE_MAX_CHARACTERS, redact),
     earliestReportedAt: row.earliestReportedAt,
     dataOrigin: row.dataOrigin,
   };
