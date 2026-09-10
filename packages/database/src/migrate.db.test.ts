@@ -16,9 +16,16 @@ const EXPECTED_TABLES = [
   'clustering_ambiguous_links',
   'clustering_review_actions',
   'clustering_runs',
+  'evidence_review_actions',
+  'evidence_runs',
+  'graph_signal_runs',
+  'graph_signals',
   'import_batches',
   'incident_clusters',
+  'incident_evidence_states',
   'incident_memberships',
+  'incident_signal_associations',
+  'incident_subjects',
   'review_entries',
   'review_snapshots',
   'row_issues',
@@ -118,20 +125,21 @@ describe('migration runner against a fresh schema', () => {
       '0005_classification_schema_security.sql',
       '0006_incident_clustering.sql',
       '0007_clustering_integrity.sql',
+      '0008_graph_evidence.sql',
     ]);
     expect(first.alreadyApplied).toBe(0);
-    expect(first.total).toBe(7);
+    expect(first.total).toBe(8);
     const tables = await isolated.base.withClient((c) => listTables(c, isolated.name));
     expect(tables).toEqual(EXPECTED_TABLES);
 
     const second = await runMigrations(isolated.db);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied).toBe(7);
+    expect(second.alreadyApplied).toBe(8);
 
     const status = await migrationStatus(isolated.db);
     expect(status.pending).toEqual([]);
     expect(status.drift).toEqual([]);
-    expect(status.applied.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(status.applied.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(status.applied[0]?.appliedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -159,6 +167,7 @@ describe('migration runner against a fresh schema', () => {
         '0005_classification_schema_security.sql',
         '0006_incident_clustering.sql',
         '0007_clustering_integrity.sql',
+        '0008_graph_evidence.sql',
       ]);
       expect(upgrade.alreadyApplied).toBe(1);
       expect(await isolated.db.withClient(countAllRows)).toEqual(counts);
@@ -262,12 +271,12 @@ describe('migration runner against a fresh schema', () => {
       const [a, b] = await Promise.all([runMigrations(isolated.db), runMigrations(other)]);
       // Every migration is applied exactly once in total, whichever runner
       // won the lock; the loser finds nothing pending.
-      expect(a.applied.length + b.applied.length).toBe(7);
+      expect(a.applied.length + b.applied.length).toBe(8);
       expect(Math.min(a.applied.length, b.applied.length)).toBe(0);
       const rows = await isolated.db.withClient((c) =>
         c.query<{ count: string }>('SELECT count(*)::text AS count FROM schema_migrations'),
       );
-      expect(rows.rows[0]?.count).toBe('7');
+      expect(rows.rows[0]?.count).toBe('8');
     } finally {
       await other.end();
     }

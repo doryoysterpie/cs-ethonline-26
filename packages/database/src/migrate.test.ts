@@ -24,6 +24,7 @@ describe('loadMigrations', () => {
       '0005_classification_schema_security.sql',
       '0006_incident_clustering.sql',
       '0007_clustering_integrity.sql',
+      '0008_graph_evidence.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));
@@ -43,6 +44,8 @@ describe('loadMigrations', () => {
     expect(files[5]?.name).toBe('incident_clustering');
     expect(files[6]?.version).toBe(7);
     expect(files[6]?.name).toBe('clustering_integrity');
+    expect(files[7]?.version).toBe(8);
+    expect(files[7]?.name).toBe('graph_evidence');
   });
 
   it('pins the checksums of the applied migrations, which must never change', async () => {
