@@ -58,5 +58,13 @@ case "$inside" in
     ;;
 esac
 
-echo "network-denial: proven ($mode); outside='$outside' inside='$inside'; running: $*"
-exec "${deny[@]}" "$@"
+# sudo resolves commands through its own secure path, not the caller's PATH,
+# so the command is resolved here and the PATH is carried in explicitly.
+resolved="$(command -v "$1")" || {
+  echo "network-denial: command not found: $1" >&2
+  exit 127
+}
+shift
+
+echo "network-denial: proven ($mode); outside='$outside' inside='$inside'; running: $resolved $*"
+exec "${deny[@]}" env "PATH=$PATH" "$resolved" "$@"
