@@ -104,6 +104,7 @@ export {
   insertIncidentSubject,
   insertRunningEvidenceRun,
   insertRunningGraphSignalRun,
+  listClusteringDecisions,
   listDraftIncidents,
   listEffectiveAssociations,
   listEvidenceActions,

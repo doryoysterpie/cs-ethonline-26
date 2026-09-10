@@ -1271,7 +1271,11 @@ describe('migration 0007 refuses to apply over data that violates it', () => {
   async function assertNothingApplied(isolated: IsolatedSchema): Promise<void> {
     const status = await migrationStatus(isolated.db);
     expect(status.applied.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(status.pending).toEqual(['0007_clustering_integrity.sql']);
+    // 0007 is refused, so it and everything after it stay pending. Asserting
+    // the head rather than the whole list keeps this about 0007 as later
+    // migrations are added behind it.
+    expect(status.pending[0]).toBe('0007_clustering_integrity.sql');
+    expect(status.pending).toContain('0008_graph_evidence.sql');
     expect(status.drift).toEqual([]);
     const artifacts = await isolated.db.withClient((c) =>
       c.query<{ constraints: string; columns: string; functions: string }>(

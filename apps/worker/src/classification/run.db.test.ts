@@ -520,21 +520,24 @@ describe('classifyBatch against a migrated schema', () => {
                 // Started, not awaited: the mutation blocks on the batch row
                 // the classifier locked when it froze the source set, and
                 // awaiting it here would stall the transaction that must
-                // commit before that lock is released.
-                rival = connection.withTransaction(async (tx) => {
-                  for (const [sql, values] of entry.statements(fresh, destination)) {
-                    await tx.query(sql, values);
-                  }
-                });
+                // commit before that lock is released. The refusal is caught
+                // where the promise is made, because it can arrive long before
+                // the classifier returns and an unhandled rejection would fail
+                // the whole run rather than this assertion.
+                rival = connection
+                  .withTransaction(async (tx) => {
+                    for (const [sql, values] of entry.statements(fresh, destination)) {
+                      await tx.query(sql, values);
+                    }
+                  })
+                  .then(
+                    () => null,
+                    (error: unknown) => error,
+                  );
               },
             },
           );
-          let rivalError: unknown;
-          try {
-            await rival;
-          } catch (error) {
-            rivalError = error;
-          }
+          const rivalError = await rival;
           expect(isDatabaseError(rivalError), `${entry.name} must be refused`).toBe(true);
           // The freeze refuses it, or the immediate foreign key that binds a
           // stored result to its source row gets there first. Both are

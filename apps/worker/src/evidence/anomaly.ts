@@ -63,6 +63,7 @@ export async function buildAnomalyFeed(
         client,
         target.chain,
         target.protocolSlug,
+        target.dataOrigin,
         EVIDENCE_CONTRACT.anomaly.maximumObservationsPerTarget,
       ),
     );

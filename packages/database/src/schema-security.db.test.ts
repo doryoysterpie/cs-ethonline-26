@@ -49,7 +49,11 @@ const SHADOW_TABLES = `
     id uuid PRIMARY KEY, status text);
   CREATE TABLE IF NOT EXISTS %S.schema_migrations (
     version integer PRIMARY KEY, name text, checksum text,
-    applied_at timestamptz DEFAULT now());`;
+    applied_at timestamptz DEFAULT now());
+  CREATE TABLE IF NOT EXISTS %S.graph_signals (
+    id uuid PRIMARY KEY, signal_run_id uuid);
+  CREATE TABLE IF NOT EXISTS %S.graph_signal_runs (
+    id uuid PRIMARY KEY, status text);`;
 
 const hash = (seed: string): string => seed.repeat(64).slice(0, 64);
 
@@ -256,6 +260,48 @@ describe('search-path capture (migration 0005)', () => {
     expect(isDatabaseError(caught)).toBe(true);
     const stored = await isolated.db.withClient((client) =>
       client.query<{ status: string }>('SELECT status FROM classification_runs WHERE id = $1', [
+        runId,
+      ]),
+    );
+    expect(stored.rows).toEqual([]);
+  });
+
+  it('re-derives a signal run’s counters from the real signals, not a shadow table', async () => {
+    // Migration 0008's guards are written the same way 0005 taught, so the
+    // same capture is attempted against them: a run claiming signals it does
+    // not have, with an empty shadow `graph_signals` first in the path.
+    const runId = randomUUID();
+    let caught: unknown;
+    try {
+      await isolated.db.withTransaction(async (tx) => {
+        await tx.query(
+          `CREATE TEMPORARY TABLE graph_signals (id uuid, signal_run_id uuid) ON COMMIT DROP`,
+        );
+        await tx.query(`SET LOCAL search_path = pg_temp, ${quoteIdentifier(isolated.name)}`);
+        await tx.query(
+          `INSERT INTO ${quoteIdentifier(isolated.name)}.graph_signal_runs (
+             id, data_origin, signal_version, contract_version, contract_hash, query_sha256,
+             gateway_host, idempotency_key, status, target_count, signal_count,
+             failed_target_count, started_at
+           ) VALUES ($1, 'replay', 'standardized-tvl-signal@1', 'evidence-behavior-contract@1',
+                     $2, $2, 'gateway.fixture.example', $2, 'running', 1, 0, 0, now())`,
+          [runId, hash('9')],
+        );
+        // Nothing is written to the real `graph_signals`, and the shadow is
+        // empty too, but the run claims one signal.
+        await tx.query(
+          `UPDATE ${quoteIdentifier(isolated.name)}.graph_signal_runs
+              SET status = 'completed', signal_count = 1, completed_at = now()
+            WHERE id = $1`,
+          [runId],
+        );
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isDatabaseError(caught)).toBe(true);
+    const stored = await isolated.db.withClient((client) =>
+      client.query<{ status: string }>('SELECT status FROM graph_signal_runs WHERE id = $1', [
         runId,
       ]),
     );

@@ -410,16 +410,21 @@ export async function listSignalHistory(
   client: Queryable,
   chain: ChainId,
   protocolSlug: string,
+  dataOrigin: DataOrigin,
   limit: number,
 ): Promise<{ readonly observedAt: string; readonly deltaPercent: string }[]> {
   if (limit < 1 || limit > 10000) {
     throw new DatabaseError('query', 'history page size outside the permitted range');
   }
+  // The origin is part of the query, not a label applied to the answer. A
+  // replayed series and a live series are different histories of the same
+  // target, and a baseline computed across both would describe neither.
   const result = await client.query<{ observed_at: string; delta_percent: string }>(
     `SELECT to_json(observed_at) #>> '{}' AS observed_at, delta_percent::text AS delta_percent
-       FROM graph_signals WHERE chain = $1 AND protocol_slug = $2
-      ORDER BY observed_at DESC LIMIT $3`,
-    [chain, protocolSlug, limit],
+       FROM graph_signals
+      WHERE chain = $1 AND protocol_slug = $2 AND data_origin = $3
+      ORDER BY observed_at DESC LIMIT $4`,
+    [chain, protocolSlug, dataOrigin, limit],
   );
   return result.rows
     .map((row) => ({ observedAt: row.observed_at, deltaPercent: row.delta_percent }))
@@ -828,6 +833,11 @@ export async function listEffectiveAssociations(
     relation: AssociationRelation;
     status: AssociationStatus;
   }>(
+    // A decision is about an incident and a signal, not about a row. It is
+    // matched on that identity within the clustering run, so a judgement a
+    // person made survives a later evidence run that re-derives the same
+    // pair. Nothing is copied or rewritten: the decision rows stay where they
+    // were recorded and are read from there.
     `SELECT a.id, a.incident_cluster_id, a.signal_id,
             coalesce(latest.claim_id, a.claim_id) AS claim_id,
             coalesce(latest.relation, a.relation) AS relation,
@@ -837,8 +847,12 @@ export async function listEffectiveAssociations(
          SELECT CASE WHEN r.operation = 'accept' THEN 'accepted' ELSE 'rejected' END AS status,
                 r.relation, r.claim_id
            FROM evidence_review_actions r
-          WHERE r.association_id = a.id
-          ORDER BY r.resulting_revision DESC LIMIT 1
+           JOIN incident_signal_associations d ON d.id = r.association_id
+          WHERE d.clustering_run_id = a.clustering_run_id
+            AND d.incident_cluster_id = a.incident_cluster_id
+            AND d.signal_id = a.signal_id
+          ORDER BY r.created_at DESC, r.resulting_revision DESC, r.id DESC
+          LIMIT 1
        ) latest ON true
       WHERE a.evidence_run_id = $1
       ORDER BY a.incident_cluster_id, a.signal_id
@@ -852,6 +866,62 @@ export async function listEffectiveAssociations(
     claimId: row.claim_id,
     relation: row.relation,
     status: row.status,
+  }));
+}
+
+/**
+ * Every decision bearing on one clustering run, in a fixed order.
+ *
+ * This is what a resolution's identity has to include. Two resolutions of the
+ * same clustering run against the same signal run are the same computation
+ * only while the human judgement behind them is the same; once somebody has
+ * accepted or rejected something, re-resolving is a different computation and
+ * has to be allowed to produce a new run rather than returning the old one.
+ */
+export async function listClusteringDecisions(
+  client: Queryable,
+  clusteringRunId: string,
+  limit: number,
+): Promise<
+  {
+    readonly actionId: string;
+    readonly incidentId: string;
+    readonly signalId: string;
+    readonly operation: string;
+    readonly relation: AssociationRelation;
+    readonly claimId: string | null;
+    readonly createdAt: string;
+  }[]
+> {
+  if (limit < 1 || limit > 100000) {
+    throw new DatabaseError('query', 'decision page size outside the permitted range');
+  }
+  const result = await client.query<{
+    action_id: string;
+    incident_cluster_id: string;
+    signal_id: string;
+    operation: string;
+    relation: AssociationRelation;
+    claim_id: string | null;
+    created_at: string;
+  }>(
+    `SELECT r.id AS action_id, a.incident_cluster_id, a.signal_id, r.operation, r.relation,
+            r.claim_id, to_json(r.created_at) #>> '{}' AS created_at
+       FROM evidence_review_actions r
+       JOIN incident_signal_associations a ON a.id = r.association_id
+      WHERE a.clustering_run_id = $1
+      ORDER BY a.incident_cluster_id, a.signal_id, r.created_at, r.id
+      LIMIT $2`,
+    [clusteringRunId, limit],
+  );
+  return result.rows.map((row) => ({
+    actionId: row.action_id,
+    incidentId: row.incident_cluster_id,
+    signalId: row.signal_id,
+    operation: row.operation,
+    relation: row.relation,
+    claimId: row.claim_id,
+    createdAt: row.created_at,
   }));
 }
 
@@ -1016,8 +1086,16 @@ export async function listSignalTargets(
     protocol_slug: string;
     data_origin: DataOrigin;
   }>(
-    `SELECT DISTINCT chain, protocol_slug, data_origin FROM graph_signals
-      WHERE signal_run_id = $1 ORDER BY chain, protocol_slug`,
+    // Every target of the named run's origin, not only the targets that run
+    // happened to carry. A target that has stopped reporting is exactly the
+    // case the `stale_observation` label exists for, and scoping this to one
+    // run would drop it from the feed instead of flagging it.
+    `SELECT DISTINCT s.chain, s.protocol_slug, s.data_origin
+       FROM graph_signals s
+       JOIN graph_signal_runs r ON r.id = s.signal_run_id
+      WHERE r.status = 'completed'
+        AND s.data_origin = (SELECT data_origin FROM graph_signal_runs WHERE id = $1)
+      ORDER BY s.chain, s.protocol_slug`,
     [signalRunId],
   );
   return result.rows.map((row) => ({
