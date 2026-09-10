@@ -85,6 +85,34 @@ by exact package name, after a dated log entry records the package, version, off
 source, reason, publication age and verification performed, with the exact version pinned
 and the full suite rerun. No wildcard exclusion and no pre-approval.
 
+**Additions of the security-foundation track (decision D26, pending audit).**
+
+- The toolchain is pinned to exact releases: Node `24.21.0` in `.nvmrc` and pnpm `11.10.0`
+  in `packageManager`, with `engines.node` naming that release line. Every CI job asserts,
+  before anything else runs, that the Node and pnpm executing it are those releases
+  (`tools/checks/toolchain.ts`). pnpm 11.10.0 refuses the corepack `+sha512` integrity suffix
+  on `packageManager`, so the pnpm pin is the exact version alone; the blocker is recorded in
+  `SECURITY-FOUNDATION-REPORT.md`.
+- Every GitHub Action is pinned to a full commit SHA with its version beside it, every
+  service image to a digest, every workflow declares least-privilege permissions, no workflow
+  runs on `pull_request_target` or `workflow_run`, and every checkout discards its
+  credentials. `tools/checks/workflows.ts` enforces all of it on every push.
+- Every push runs `pnpm audit` and reproduces the committed CycloneDX 1.6 bill of materials
+  and licence inventory (`supply-chain/`) byte for byte from the lockfile and the frozen
+  install, cross-checked against pnpm's own generator (`tools/supply-chain/sbom.ts`).
+- Every push scans every tracked file for token shapes and credential URLs
+  (`tools/checks/secrets.ts`), for files the repository must never track
+  (`tools/checks/forbidden-files.ts`), and for invalid UTF-8 and invisible or
+  direction-changing characters (`tools/checks/hygiene.ts`). A finding names the file, the
+  line and the rule and never the content.
+- CodeQL runs over the TypeScript sources on every push, pull request and weekly
+  (`.github/workflows/codeql.yml`).
+- GitHub secret scanning, push protection, Dependabot alerts, private vulnerability
+  reporting, branch protection on `main` and required SHA pinning are repository settings.
+  They cannot be enabled from code; the owner-facing list is in
+  `SECURITY-FOUNDATION-REPORT.md` section 7, and the first-party scans above are the
+  readiness step that runs whether or not they are on.
+
 ## 9. Chain posture
 
 Any chain interaction is testnet-only until the project owner explicitly approves otherwise.
@@ -103,11 +131,20 @@ integration inherits:
   any bearer token, and the legacy key-in-path gateway URL form. Provider error bodies are
   redacted and truncated before they are stored on an error.
 - A live query fails explicitly with one of these kinds: `credential`, `http`, `graphql`,
-  `schema`, `validation`, `indexing`, `timeout`, `network`. A response with GraphQL errors,
-  a non-2xx status, a non-JSON body, a missing entity, an empty snapshot list, a malformed
-  decimal, or `hasIndexingErrors=true` is a failure, never an empty success.
+  `schema`, `validation`, `indexing`, `timeout`, `network`, `limit`. A response with GraphQL
+  errors, a non-2xx status, a non-JSON body, a missing entity, an empty snapshot list, a
+  malformed decimal, or `hasIndexingErrors=true` is a failure, never an empty success.
 - Every request carries an explicit timeout, and a failure while reading the response body
   is classified too: an abort is a `timeout`, any other read failure is `network`.
+- The response body is read under a byte limit while it streams (`RESOURCE_LIMITS.graph`,
+  decision D26, pending audit), never after an unbounded body is buffered. A declared
+  `Content-Length` above the limit is refused before a byte is read; one below the limit is
+  not trusted, because the bytes actually received decide; an absent or malformed length is
+  treated as absent, which is the live gateway's normal case. The JSON document is bounded in
+  nesting depth before it is parsed and in collection size and count after. At most a fixed
+  number of requests are in flight per client. A crossed limit is a `limit` failure with a
+  fixed message and numeric details; nothing is truncated to fit, and a non-2xx body is cut
+  only for its redacted snippet.
 - The gateway base URL is validated structurally with `new URL()` before any request: it
   must be `https:` with a hostname, and it must contain no username, no password, no query
   string and no fragment. A rejected URL is never echoed, because it may contain a
@@ -229,8 +266,14 @@ consumer of the store inherits:
   source content and from any future machine classification. The master sheet's `ch` value
   is stored raw and never becomes review state.
 - The default `test` and `verify` commands never open a database. PostgreSQL integration
-  tests run only through `test:db` with `DATABASE_URL`; CI runs no database and holds no
-  database secret.
+  tests run only through `test:db` with `DATABASE_URL`. CI holds no database secret: its
+  `database` job (security-foundation track, pending audit) starts a PostgreSQL 17 service
+  pinned by digest inside the job, with trust authentication on the job's own loopback and a
+  credential-free URL, applies every migration, reruns them as a no-op, checks drift and
+  runs the complete `test:db` suite, then discards the database with the job.
+- A file that crosses an import limit (`RESOURCE_LIMITS.import`, decision D26, pending
+  audit) is refused as a whole at the first chunk, header, cell or row that crosses it, with
+  a fixed message and numeric details, before any write; see section 15.
 
 ## 12. Machine classification
 
@@ -388,7 +431,38 @@ pg_temp`, never `SECURITY DEFINER`, and every relation schema-qualified. A shado
   every name is withheld under the provisional D4 policy, and the provenance sidecar has no
   field for a name at all.
 
+## 15. Resource limits and the command deadline
+
+Rules the security-foundation track adds (decision D26). The track is **pending an
+independent audit** and is built beside the Sprint 5 correction; nothing below is an audit
+result.
+
+- Every limit is a versioned constant in `@cas/contracts` (`resource-limits@1`), sized from a
+  recorded measurement of the largest input the project has accepted or observed and at
+  least four times that measurement, except where the structure fixes an exact bound. A
+  limit changes only with a new version and a new measurement; a test pins every value.
+- Import limits hold while the file streams: file bytes per chunk, column count and cell
+  bytes (UTF-8) before a record reaches a handler, row count and retained bytes as rows
+  arrive, and the parser's record buffer. A crossed limit rejects the whole file with a fixed
+  message and numeric details and writes nothing. Nothing is truncated to fit: a record that
+  does not fit is refused, never shortened.
+- Graph responses hold to a streaming byte limit, JSON depth and collection limits and an
+  in-flight cap, as section 10 describes.
+- Draft limits (sections, claims, output and sidecar bytes) are declared in the same
+  contract; their enforcement belongs to the draft writer, which the Sprint 5 correction
+  owns, and is not claimed here.
+- Every worker command runs under a deadline. At expiry the command's abort signal fires,
+  the import and validation paths stop and roll back, and after a grace period the process
+  exits with code `124` whether or not the command has returned; the database rolls back the
+  transaction its dropped connection was inside. `CAS_COMMAND_DEADLINE_MS` may lower the
+  deadline and never raise it; a malformed or oversized value is a configuration error.
+- Every refusal is non-reflecting: no cell, body, path or header value reaches an error
+  message, its details or a printed line, and the tests plant a marker in every hostile input
+  to prove it.
+
 ## Reporting a vulnerability
 
-Report privately to the repository owner. Do not open a public issue describing an
-unpatched vulnerability.
+Report privately; never open a public issue describing an unpatched weakness. The policy,
+scope, timelines and safe harbour are in `VULNERABILITY_DISCLOSURE.md`; what happens after a
+report is in `INCIDENT_RESPONSE.md`. The threat model is `THREAT_MODEL.md`, the risk register
+`RISK_REGISTER.md`, and the data handling rules `DATA_CLASSIFICATION_RETENTION.md`.
