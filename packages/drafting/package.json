@@ -2,7 +2,7 @@
   "name": "@cas/drafting",
   "version": "0.0.0",
   "private": true,
-  "description": "Editable Cyberattack Sunday draft generation. Placeholder after Sprint 0.",
+  "description": "Deterministic Cyberattack Sunday drafting: reviewed incidents to an editable draft with a provenance sidecar. Pure, model-free. Sprint 5, decision D25.",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,15 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*"
   }
 }
