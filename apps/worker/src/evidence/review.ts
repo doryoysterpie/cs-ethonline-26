@@ -4,7 +4,9 @@ import type { AssociationRelation } from '@cas/contracts';
 import {
   currentEvidenceRevision,
   findEvidenceActionByIdempotencyKey,
+  getAssociation,
   getEvidenceRun,
+  getIncidentClaim,
   insertEvidenceAction,
   isDatabaseError,
   listEvidenceActions,
@@ -33,6 +35,14 @@ import { IngestionError } from '../editorial/errors.js';
  *   - **The rationale is validated before it is hashed or written**, by the
  *     same policy the clustering note uses, and again by a CHECK constraint in
  *     migration 0008.
+ *
+ * And one from the Sprint 5 audit (finding F2): **a claim is a record, not a
+ * UUID.** A `supports` or `conflicts` decision names a claim, and the claim
+ * has to exist, belong to the association's incident under the same clustering
+ * run and batch, and share the evidence run's origin. That is checked here
+ * before anything is hashed, and again by migration 0009's guard and foreign
+ * keys on write, so neither a caller-supplied object nor a direct statement
+ * can cite a claim that is not the incident's own.
  */
 
 export interface EvidenceDecisionRequest {
@@ -58,13 +68,19 @@ function configuration(code: string, message: string): IngestionError {
   return new IngestionError('configuration', code, message);
 }
 
-/** The identity of what was asked for. Revision is excluded: a replay lands later. */
+/**
+ * The identity of what was asked for, claim identity included: a decision
+ * about a different claim is a different decision, never a replay of this one.
+ * Revision is excluded, because a replay lands later.
+ */
 function actionKey(input: {
   readonly runId: string;
   readonly associationId: string;
   readonly operation: string;
   readonly relation: string;
   readonly reasonCode: string;
+  readonly claimId: string | null;
+  readonly claimFingerprint: string | null;
 }): string {
   return createHash('sha256').update(JSON.stringify(input)).digest('hex');
 }
@@ -76,6 +92,7 @@ function canonicalPayload(input: {
   readonly operation: string;
   readonly relation: string;
   readonly claimId: string | null;
+  readonly claimFingerprint: string | null;
   readonly reasonCode: string;
   readonly actor: string;
   readonly rationale: string | null;
@@ -86,7 +103,7 @@ function canonicalPayload(input: {
     `association:${input.associationId.toLowerCase()}`,
     `operation:${input.operation}`,
     `relation:${input.relation}`,
-    `claim:${input.claimId === null ? 'absent' : input.claimId.toLowerCase()}`,
+    `claim:${input.claimId === null ? 'absent' : `${input.claimId.toLowerCase()}:${input.claimFingerprint ?? ''}`}`,
     `reason:${input.reasonCode}`,
     `actor:${input.actor}`,
     input.rationale === null
@@ -96,13 +113,14 @@ function canonicalPayload(input: {
   ].join('\n');
 }
 
-function payloadOf(action: EvidenceActionRecord): string {
+function payloadOf(action: EvidenceActionRecord, claimFingerprint: string | null): string {
   return canonicalPayload({
     runId: action.evidenceRunId,
     associationId: action.associationId,
     operation: action.operation,
     relation: action.relation,
     claimId: action.claimId,
+    claimFingerprint,
     reasonCode: action.reasonCode,
     actor: action.actor,
     rationale: action.rationale,
@@ -112,10 +130,19 @@ function payloadOf(action: EvidenceActionRecord): string {
 /**
  * Refuses a request that reuses an existing decision's identity while
  * differing anywhere in its payload. The message names the condition alone and
- * echoes neither actor nor rationale.
+ * echoes neither actor nor rationale. A stored claim's fingerprint is read
+ * back from its record, which is append-only, so the comparison is stable.
  */
-function assertSamePayload(stored: EvidenceActionRecord, submitted: string): void {
-  if (payloadOf(stored) === submitted) return;
+async function assertSamePayload(
+  db: Database,
+  stored: EvidenceActionRecord,
+  submitted: string,
+): Promise<void> {
+  const storedClaim =
+    stored.claimId === null
+      ? null
+      : await db.withClient((client) => getIncidentClaim(client, stored.claimId ?? ''));
+  if (payloadOf(stored, storedClaim?.fingerprint ?? null) === submitted) return;
   throw configuration(
     'evidence_action_conflict',
     'an evidence decision with this identity was already recorded with a different payload',
@@ -150,20 +177,55 @@ export async function decideAssociation(
   if (run === null || run.status !== 'completed') {
     throw configuration('evidence_run_not_completed', 'no completed evidence run with that id');
   }
+  const association = await db.withClient((client) =>
+    getAssociation(client, run.id, request.associationId),
+  );
+  if (association === null) {
+    throw configuration(
+      'association_not_found',
+      'no association with that id in this evidence run',
+    );
+  }
+
+  // A claim must be a recorded claim of this association's incident, under
+  // the same clustering run and batch, sharing the run's origin. Read from
+  // the claim table; nothing about the claim is taken from the request.
+  let claimFingerprint: string | null = null;
+  if (claimId !== null) {
+    const claim = await db.withClient((client) => getIncidentClaim(client, claimId));
+    if (claim === null) {
+      throw configuration('claim_not_found', 'no recorded claim with that id');
+    }
+    if (
+      claim.clusteringRunId !== association.clusteringRunId ||
+      claim.incidentClusterId !== association.incidentClusterId ||
+      claim.batchId !== association.batchId ||
+      claim.dataOrigin !== run.dataOrigin
+    ) {
+      throw configuration(
+        'claim_incompatible',
+        'the claim is not a claim of this incident under this run, batch and origin',
+      );
+    }
+    claimFingerprint = claim.fingerprint;
+  }
 
   const key = actionKey({
     runId: run.id,
-    associationId: request.associationId,
+    associationId: association.id,
     operation: request.operation,
     relation: request.relation,
     reasonCode: request.reasonCode,
+    claimId,
+    claimFingerprint,
   });
   const submitted = canonicalPayload({
     runId: run.id,
-    associationId: request.associationId,
+    associationId: association.id,
     operation: request.operation,
     relation: request.relation,
     claimId,
+    claimFingerprint,
     reasonCode: request.reasonCode,
     actor: request.actor,
     rationale,
@@ -173,7 +235,7 @@ export async function decideAssociation(
     findEvidenceActionByIdempotencyKey(client, run.id, key),
   );
   if (existing !== null) {
-    assertSamePayload(existing, submitted);
+    await assertSamePayload(db, existing, submitted);
     return { outcome: 'already_recorded', action: existing, revision: existing.resultingRevision };
   }
 
@@ -185,7 +247,7 @@ export async function decideAssociation(
       await insertEvidenceAction(tx, {
         id: makeId(),
         evidenceRunId: run.id,
-        associationId: request.associationId,
+        associationId: association.id,
         operation: request.operation,
         relation: request.relation,
         claimId,
@@ -203,7 +265,7 @@ export async function decideAssociation(
         findEvidenceActionByIdempotencyKey(client, run.id, key),
       );
       if (winner !== null) {
-        assertSamePayload(winner, submitted);
+        await assertSamePayload(db, winner, submitted);
         return { outcome: 'already_recorded', action: winner, revision: winner.resultingRevision };
       }
       throw configuration(

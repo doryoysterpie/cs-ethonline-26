@@ -51,10 +51,11 @@ import {
 } from './evidence/output.js';
 import { decideAssociation, evidenceReviewCounts } from './evidence/review.js';
 import { reportEvidenceRun, resolveEvidence } from './evidence/run.js';
-import { ingestSnapshot } from './evidence/signals.js';
+import { ingestSnapshotFile, type FileOrigin } from './evidence/signals.js';
+import { assertClaimStatement, parseClaimKind, recordIncidentClaim } from './evidence/claim.js';
 import { recordIncidentSubject } from './evidence/subject.js';
 import { buildDraftRequest } from './drafting/build.js';
-import { writeDraft } from './drafting/generate.js';
+import { publishDraft } from './drafting/generate.js';
 import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
 import { assertImportRequest, importCsvFile } from './editorial/import.js';
@@ -137,7 +138,8 @@ const USAGE = [
   '  clustering effective --run <uuid>',
   '  clustering merge --run <uuid> --incidents <uuid,uuid> --reason <code> [--note <text>]',
   '  clustering split --run <uuid> --incident <uuid> --members <uuid,...> --reason <code> [--note <text>]',
-  '  evidence ingest --file <path> --origin <live|fixture|replay>',
+  '  evidence ingest --file <path> --origin <fixture|replay>',
+  '  evidence claim --run <uuid> --incident <uuid> --source-row <uuid> --kind <reported_headline|recorded_statement> --statement <text> --reason <code> [--actor <name>]',
   '  evidence subject --run <uuid> --incident <uuid> --chain <ethereum|base> --protocol <slug> --reason <code> [--actor <name>]',
   '  evidence resolve --clustering-run <uuid> --signal-run <uuid>',
   '  evidence report --run <uuid>',
@@ -145,7 +147,7 @@ const USAGE = [
   '  evidence review-count --run <uuid>',
   '  evidence decide --run <uuid> --association <uuid> --operation <accept|reject> --relation <supports|conflicts|context> --reason <code> --actor <name> [--claim <uuid>] [--note <text>]',
   '  evidence anomaly --signal-run <uuid> [--as-of <iso>] [--clustering-run <uuid> --window <isoStart..isoEnd> ...]',
-  '  drafting generate --evidence-run <uuid> --window <isoStart..isoEnd> [--out <directory>]',
+  '  drafting generate --evidence-run <uuid> --window <isoStart..isoEnd>',
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -167,6 +169,25 @@ function parseOrigin(value: string | undefined): DataOrigin {
   );
 }
 
+/**
+ * The origin a file may carry. `live` is refused here, before a path is
+ * opened or a database handle exists, with a fixed message: live evidence
+ * comes from the Graph client and never from a file (audit finding F1).
+ */
+function parseFileOrigin(value: string | undefined): FileOrigin {
+  if (value === 'fixture' || value === 'replay') return value;
+  if (value === 'live') {
+    throw configurationError(
+      'origin_not_file_backed',
+      'a file can be ingested as fixture or replay only; live evidence comes from the Graph client, never from a file',
+    );
+  }
+  throw configurationError(
+    'origin_required',
+    '--origin must be given explicitly as fixture or replay; there is no default',
+  );
+}
+
 function requireFile(value: string | undefined): string {
   if (value === undefined || value.length === 0) {
     throw configurationError('file_required', '--file is required');
@@ -183,7 +204,7 @@ function parseBatchId(value: string | undefined): string | null {
 /** A classification or clustering command names its subject explicitly; there is no "latest" default. */
 function requireUuid(
   value: string | undefined,
-  flag: 'batch' | 'run' | 'classification-run' | 'incident',
+  flag: 'batch' | 'run' | 'classification-run' | 'incident' | 'source-row',
 ): string {
   if (value === undefined || value.length === 0) {
     throw configurationError(`${flag}_id_required`, `--${flag} is required`);
@@ -384,12 +405,41 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       return EXIT_CODES.ok;
     }
     if (group === 'evidence' && command === 'ingest') {
+      // Origin first: a `live` request is refused before the file is named,
+      // before it is opened and before a database handle is opened.
+      const origin = parseFileOrigin(values.origin);
       const file = requireFile(values.file);
-      const origin = parseOrigin(values.origin);
       const outcome = await withDatabase(options, (db) =>
-        ingestSnapshot(db, { snapshotPath: file, dataOrigin: origin }),
+        ingestSnapshotFile(db, { kind: 'file', snapshotPath: file, dataOrigin: origin }),
       );
       for (const line of formatSnapshotIngest(outcome, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'evidence' && command === 'claim') {
+      const clusteringRunId = requireUuid(values.run, 'run');
+      const incidentId = requireUuid(values.incident, 'incident');
+      const sourceRowId = requireUuid(values['source-row'], 'source-row');
+      const claimKind = parseClaimKind(values.kind);
+      const statement = assertClaimStatement(values.statement);
+      const reasonCode = parseReasonCode(values.reason);
+      const actor = parseActor(values.actor);
+      const outcome = await withDatabase(options, (db) =>
+        recordIncidentClaim(db, {
+          clusteringRunId,
+          incidentId,
+          sourceRowId,
+          claimKind,
+          statement,
+          actor,
+          reasonCode,
+        }),
+      );
+      // Identifier, kind and fingerprint only. The statement is never printed.
+      emit(
+        `evidence:claim: ${outcome.outcome === 'recorded' ? 'recorded' : 'already recorded'}` +
+          ` claim=${outcome.claim.id} incident=${outcome.claim.incidentClusterId}` +
+          ` kind=${outcome.claim.claimKind} fingerprint=${outcome.claim.fingerprint}`,
+      );
       return EXIT_CODES.ok;
     }
     if (group === 'evidence' && command === 'subject') {
@@ -511,7 +561,6 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
           '--window is required as <isoStart>..<isoEnd>; no editorial week is inferred',
         );
       }
-      const directory = values.out ?? 'output/drafts';
       const request = await withDatabase(options, (db) =>
         buildDraftRequest(db, {
           evidenceRunId,
@@ -519,14 +568,18 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
           periodEnd: first.endsAt,
         }),
       );
-      const written = await writeDraft(request, directory);
+      // The destination is the one authorised root, fixed by the worker. No
+      // flag names another directory (audit finding F3).
+      const written = await publishDraft(request);
       emit(
         `drafting:generate: draft=${request.draftId} evidenceRun=${evidenceRunId} origin=${request.dataOrigin} status=unpublished_requires_human_review`,
       );
       emit(
         `counts: incidents=${written.draft.provenance.counts.incidents} claimsWritten=${written.claimsWritten} claimsOmitted=${written.claimsOmitted} namesWithheld=${written.namesWithheld} crypto=${written.draft.provenance.counts.cryptoIncidents}`,
       );
-      emit(`files: draft=${basename(written.draftPath)} sidecar=${basename(written.sidecarPath)}`);
+      emit(
+        `files: directory=${basename(written.directory)} draft=${basename(written.draftPath)} sidecar=${basename(written.sidecarPath)}`,
+      );
       return EXIT_CODES.ok;
     }
     if (group === 'clustering' && command === 'split') {
@@ -683,10 +736,11 @@ const PARSE_OPTIONS = {
   actor: { type: 'string' },
   'signal-run': { type: 'string' },
   'as-of': { type: 'string' },
+  'source-row': { type: 'string' },
+  statement: { type: 'string' },
   chain: { type: 'string' },
   protocol: { type: 'string' },
   'evidence-run': { type: 'string' },
-  out: { type: 'string' },
   association: { type: 'string' },
   operation: { type: 'string' },
   relation: { type: 'string' },
@@ -702,10 +756,11 @@ interface ParsedValues {
   readonly 'review-label'?: string | undefined;
   readonly 'signal-run'?: string | undefined;
   readonly 'as-of'?: string | undefined;
+  readonly 'source-row'?: string | undefined;
+  readonly statement?: string | undefined;
   readonly chain?: string | undefined;
   readonly protocol?: string | undefined;
   readonly 'evidence-run'?: string | undefined;
-  readonly out?: string | undefined;
   readonly association?: string | undefined;
   readonly operation?: string | undefined;
   readonly relation?: string | undefined;

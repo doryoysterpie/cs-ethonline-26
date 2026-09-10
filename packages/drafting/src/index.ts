@@ -28,10 +28,16 @@ export {
   type VictimSupport,
 } from './contract.js';
 export {
+  DRAFT_ID_PATTERN,
+  DRAFT_MARKDOWN_NAME,
+  DRAFT_SIDECAR_NAME,
   GRAPH_EVIDENCE_STATES,
+  assertDraftId,
+  draftDirectoryName,
   draftFileName,
   generateDraft,
   generateSection,
+  publicationDate,
   serializeProvenance,
   sidecarFileName,
   type ClaimProvenance,

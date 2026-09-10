@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,11 +12,12 @@ import { classifyBatch } from '../classification/run.js';
 import { clusterClassificationRun } from '../clustering/run.js';
 import { decideAssociation } from '../evidence/review.js';
 import { resolveEvidence } from '../evidence/run.js';
-import { ingestSnapshot } from '../evidence/signals.js';
+import { ingestSnapshotFile } from '../evidence/signals.js';
+import { recordIncidentClaim } from '../evidence/claim.js';
 import { recordIncidentSubject } from '../evidence/subject.js';
 import { openMigratedSchema, type IsolatedSchema } from '../test-support.js';
 import { buildDraftRequest } from './build.js';
-import { writeDraft } from './generate.js';
+import { publishDraft } from './generate.js';
 
 /**
  * Drafting from a real evidence run.
@@ -136,7 +137,8 @@ describe('drafting from a real evidence run', () => {
     const clustered = await clusterClassificationRun(isolated.db, {
       classificationRunId: classified.run.id,
     });
-    const signals = await ingestSnapshot(isolated.db, {
+    const signals = await ingestSnapshotFile(isolated.db, {
+      kind: 'file',
       snapshotPath: path.join(FIXTURES, 'snapshots', 'replay-12.json'),
       dataOrigin: 'replay',
     });
@@ -176,12 +178,33 @@ describe('drafting from a real evidence run', () => {
     const idFor = (incidentId: string): string =>
       associations.rows.find((row) => row.incident_cluster_id === incidentId)?.id ?? '';
 
+    // A decision names a recorded claim, never an invented identifier: each
+    // claim rests on a source row that is a member of its incident.
+    const claimFor = async (incidentId: string, statement: string): Promise<string> => {
+      const member = await isolated.db.withClient((client) =>
+        client.query<{ source_row_id: string }>(
+          `SELECT source_row_id FROM incident_memberships
+            WHERE clustering_run_id = $1 AND incident_cluster_id = $2 ORDER BY source_row_id LIMIT 1`,
+          [clustered.run.id, incidentId],
+        ),
+      );
+      const claim = await recordIncidentClaim(isolated.db, {
+        clusteringRunId: clustered.run.id,
+        incidentId,
+        sourceRowId: member.rows[0]?.source_row_id ?? '',
+        claimKind: 'recorded_statement',
+        statement,
+        actor: 'owner',
+        reasonCode: 'stated_in_disclosure',
+      });
+      return claim.claim.id;
+    };
     await decideAssociation(isolated.db, {
       runId: first.run.id,
       associationId: idFor(cryptoIncidentId),
       operation: 'accept',
       relation: 'supports',
-      claimId: randomUUID(),
+      claimId: await claimFor(cryptoIncidentId, 'The disclosure describes a drain on the fourth.'),
       reasonCode: 'movement_matches_disclosure',
       actor: 'owner',
     });
@@ -190,7 +213,7 @@ describe('drafting from a real evidence run', () => {
       associationId: idFor(contradictedIncidentId),
       operation: 'accept',
       relation: 'conflicts',
-      claimId: randomUUID(),
+      claimId: await claimFor(contradictedIncidentId, 'The notice says no funds moved.'),
       reasonCode: 'movement_contradicts_claim',
       actor: 'owner',
     });
@@ -200,7 +223,9 @@ describe('drafting from a real evidence run', () => {
       signalRunId: signals.run.id,
     });
     evidenceRunId = second.run.id;
-    directory = await mkdtemp(path.join(os.tmpdir(), 'cas-drafts-'));
+    // Resolved once: the publisher refuses any symbolic link in the root's
+    // path, and the platform's temporary directory is reached through one.
+    directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'cas-drafts-')));
   });
 
   afterAll(async () => {
@@ -216,13 +241,15 @@ describe('drafting from a real evidence run', () => {
   }
 
   it('writes a draft and its provenance sidecar', async () => {
-    const written = await writeDraft(await request(), directory);
-    const files = await readdir(directory);
-    expect(files).toHaveLength(2);
-    expect(path.basename(written.draftPath)).toMatch(
-      /^cyberattack-sunday-2026-08-30-[0-9a-f]{8}\.md$/u,
+    const written = await publishDraft(await request(), { root: directory });
+    const entries = await readdir(directory);
+    expect(entries).toHaveLength(1);
+    expect(path.basename(written.directory)).toMatch(
+      /^cyberattack-sunday-2026-08-30-[0-9a-f]{8}$/u,
     );
-    expect(path.basename(written.sidecarPath)).toMatch(/\.provenance\.json$/u);
+    expect(path.basename(written.draftPath)).toBe('draft.md');
+    expect(path.basename(written.sidecarPath)).toBe('provenance.json');
+    expect(await readdir(written.directory)).toEqual(['draft.md', 'provenance.json']);
 
     const markdown = await readFile(written.draftPath, 'utf8');
     expect(markdown).toContain('This draft requires human review before anything is published');
@@ -232,12 +259,14 @@ describe('drafting from a real evidence run', () => {
 
   it('refuses to overwrite a draft that already exists', async () => {
     const built = await request();
-    await writeDraft(built, directory);
-    await expect(writeDraft(built, directory)).rejects.toMatchObject({ code: 'draft_exists' });
+    await publishDraft(built, { root: directory });
+    await expect(publishDraft(built, { root: directory })).rejects.toMatchObject({
+      code: 'draft_exists',
+    });
   });
 
   it('withholds every name, because nothing here extracts one', async () => {
-    const written = await writeDraft(await request(), directory);
+    const written = await publishDraft(await request(), { root: directory });
     const sidecar = JSON.parse(await readFile(written.sidecarPath, 'utf8')) as {
       claims: Record<string, unknown>[];
       counts: Record<string, number>;
@@ -306,7 +335,7 @@ describe('drafting from a real evidence run', () => {
       (incident) => incident.incidentId === contradictedIncidentId,
     );
     expect(contradicted?.evidenceState).toBe('contradicted');
-    const written = await writeDraft(built, directory);
+    const written = await publishDraft(built, { root: directory });
     const markdown = await readFile(written.draftPath, 'utf8');
     // Present, and labelled. A contradicted incident that vanished from the
     // draft would look like an incident nobody ever reported.
@@ -322,8 +351,8 @@ describe('drafting from a real evidence run', () => {
   it('produces the same bytes twice for the same evidence run', async () => {
     const first = await request();
     const second = { ...(await request()), draftId: first.draftId };
-    const { draft: a } = await writeDraft(first, path.join(directory, 'a'));
-    const { draft: b } = await writeDraft(second, path.join(directory, 'b'));
+    const { draft: a } = await publishDraft(first, { root: path.join(directory, 'a') });
+    const { draft: b } = await publishDraft(second, { root: path.join(directory, 'b') });
     expect(b.markdown).toBe(a.markdown);
     expect(b.provenance).toEqual(a.provenance);
   });

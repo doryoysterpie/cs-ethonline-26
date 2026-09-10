@@ -386,18 +386,78 @@ export function generateDraft(
 }
 
 /**
- * The file name a draft is written under: dated, identified, and never
- * overwriting an earlier one because the identifier is part of the name
- * (decision D3, provisional).
+ * A draft identifier: lower-case letters, digits and hyphens, four to
+ * sixty-four characters, starting with a letter or digit. Nothing in it can
+ * name a directory, a parent, a separator or an encoded one, so it is safe to
+ * become part of a path only because this allowlist says so, not because a
+ * writer later tries to strip things out of it.
  */
-export function draftFileName(request: DraftRequest): string {
-  const safeStart = request.periodStart.slice(0, 10);
-  return `cyberattack-sunday-${safeStart}-${request.draftId}.md`;
+export const DRAFT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{3,63}$/u;
+
+/** Refuses anything outside `DRAFT_ID_PATTERN` with a fixed message. */
+export function assertDraftId(value: unknown): string {
+  if (typeof value !== 'string' || !DRAFT_ID_PATTERN.test(value)) {
+    throw new RangeError('draft identifier rejected: not a short lower-case identifier');
+  }
+  return value;
 }
 
-/** The sidecar name beside it. */
+const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
+
+/**
+ * The exact calendar date a period starts on, as `YYYY-MM-DD`. The period
+ * start must be an ISO instant, and its date part must be a real date: the
+ * thirtieth of February and the first of the thirteenth month are refused,
+ * not normalized.
+ */
+export function publicationDate(periodStart: unknown): string {
+  if (typeof periodStart !== 'string' || Number.isNaN(Date.parse(periodStart))) {
+    throw new RangeError('draft period rejected: the start is not an ISO instant');
+  }
+  const date = periodStart.slice(0, 10);
+  const match = DATE_PATTERN.exec(date);
+  if (match === null || periodStart.charAt(10) !== 'T') {
+    throw new RangeError('draft period rejected: the start is not an ISO calendar date and time');
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day ||
+    year < 2000 ||
+    year > 2100
+  ) {
+    throw new RangeError('draft period rejected: the start is not a real calendar date');
+  }
+  return date;
+}
+
+/**
+ * The directory a published draft lives in: dated, identified, and never
+ * overwriting an earlier one because the identifier is part of the name
+ * (decision D3, provisional). Both parts are validated here, so the name is
+ * a single path component by construction.
+ */
+export function draftDirectoryName(request: DraftRequest): string {
+  return `cyberattack-sunday-${publicationDate(request.periodStart)}-${assertDraftId(request.draftId)}`;
+}
+
+/** The Markdown file name inside a published draft directory. */
+export const DRAFT_MARKDOWN_NAME = 'draft.md';
+/** The provenance sidecar name beside it. */
+export const DRAFT_SIDECAR_NAME = 'provenance.json';
+
+/** The flat file name a draft carries, for callers that present one file. Validated the same way. */
+export function draftFileName(request: DraftRequest): string {
+  return `${draftDirectoryName(request)}.md`;
+}
+
+/** The flat sidecar name beside it. */
 export function sidecarFileName(request: DraftRequest): string {
-  return draftFileName(request).replace(/\.md$/u, '.provenance.json');
+  return `${draftDirectoryName(request)}.provenance.json`;
 }
 
 /** Canonical JSON of the sidecar, stable across runs. */
