@@ -388,6 +388,55 @@ pg_temp`, never `SECURITY DEFINER`, and every relation schema-qualified. A shado
   every name is withheld under the provisional D4 policy, and the provenance sidecar has no
   field for a name at all.
 
+## 15. MCP tooling
+
+Rules the parallel MCP tooling track (`@cas/mcp-server`, decision D28) implements. The track is
+**pending an independent audit**; nothing below is an audit result.
+
+- **Local stdio only.** No HTTP, SSE or WebSocket transport is enabled, no socket is opened and
+  no session exists. Remote hosting is not designed and not enabled.
+- **Read-only, enforced by the database.** Every tool read runs inside one transaction opened
+  `REPEATABLE READ`, declared `READ ONLY` as its first statement and bounded by a statement
+  timeout, so a write on that connection is refused with SQLSTATE 25006. The server runs no
+  migration, classification, clustering, evidence resolution, ingestion or review action. The
+  integration suite digests every table before and after every tool and requires them equal.
+- **A static catalogue with a pinned digest.** The four tool definitions are frozen application
+  code; the SHA-256 of their names, titles, descriptions, annotations and schemas is pinned and
+  checked at start-up and reproduced from the wire by a test. Untrusted data cannot modify a
+  tool name, description or schema.
+- **Closed inputs.** Arguments are UUIDs, enumerations, bounded integers and explicit UTC
+  instants only. Unexpected keys, symbol keys, accessors, foreign prototypes, nested values,
+  oversized strings, control characters and Unicode separators are refused before any value is
+  read, and a rejection never echoes a value. Every tool names its subject; nothing selects a
+  latest run.
+- **Quoted evidence, redacted and bounded.** Retrieved text is returned only as quoted evidence
+  with visible escapes for control characters, ANSI sequences, Unicode separators and angle
+  brackets, bounded with a visible marker, and marked `untrusted_quoted_evidence`. Every
+  emitted string, in results and on stderr, passes one redactor covering `DATABASE_URL`, its
+  password in raw and decoded form, `GRAPH_API_KEY`, bearer tokens and PostgreSQL URL shapes.
+  Fields the server controls are never composed from retrieved text.
+- **Nothing private leaves.** No review note, rationale, actor, raw cell, derived body text,
+  environment value, driver message, provider response body or stack trace appears in any
+  result or log line. Failures are a closed vocabulary of codes with fixed messages.
+- **No instruction in any result.** Descriptions describe and results report. No result tells
+  the consuming model to invoke a tool, ignore a policy or take an action, and a test forbids
+  instruction-like phrasing in the catalogue.
+- **Origins never mixed.** Every result labels `live`, `replay` or `fixture`. Stored anomaly
+  evaluation reads only the history of the named run's origin. Live mode requires
+  `GRAPH_API_KEY`, is explicitly selected, uses the Sprint 1 client with its URL validation and
+  redaction, retains provider and block provenance, and never falls back to stored, replay or
+  fixture data. No other tool makes a network call.
+- **Telemetry, not proof.** Every chain entry carries a fixed limitation sentence; nothing in
+  the server establishes that a cyberattack occurred.
+- **No model, no write, no publication.** `draft_section` assembles a preview in memory and
+  marks it unpublished. No tool invokes a model or reads a model credential.
+- **Bounded.** Page sizes, list lengths, string lengths, result bytes, wall-clock deadlines,
+  the database statement timeout, a per-process rate limit and a concurrency cap are fixed
+  constants in one file.
+- **Three environment names.** The server reads `DATABASE_URL`, `GRAPH_API_KEY` and
+  `GRAPH_GATEWAY_URL` and no other; a test proves it enumerates nothing. stdout carries protocol
+  messages only.
+
 ## Reporting a vulnerability
 
 Report privately to the repository owner. Do not open a public issue describing an

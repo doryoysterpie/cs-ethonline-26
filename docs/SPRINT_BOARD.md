@@ -68,3 +68,7 @@ the Graph submission.
   dependencies when appropriate, and reruns verification. Neither agent merges to `main`
   without the project owner's instruction. Each sprint begins only after the Codex audit of
   the previous sprint is answered.
+- The MCP server of Sprint 6 was built ahead of the dashboard on the speculative parallel
+  branch `parallel/s6-mcp-tooling` (decision D28) while Sprint 5 is under correction. It is
+  pending its own Codex Desktop audit, is not merged, and is integrated only from the
+  Codex-accepted Sprint 5 revision. The Sprint 6 row is not otherwise started.

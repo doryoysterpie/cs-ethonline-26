@@ -147,7 +147,7 @@ allows; otherwise they are dropped. Requirement status per track is in
 | `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 50 unit tests                                               |
 | `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25); 69 unit tests                                              |
 | `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests                                                 |
-| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                                                                |
+| `packages/mcp-server`     | `@cas/mcp-server`     | built on the parallel MCP tooling track (D28), pending audit: four read-only tools over local stdio; 70 offline tests, 11 PostgreSQL       |
 | `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25); 19 unit tests. No model is called                                  |
 | `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                |
 | `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                           |
@@ -296,6 +296,39 @@ run only through `corepack pnpm test:db`, need `DATABASE_URL`, and create and dr
 schemas named `cas_test_<random>` in that database. Rules are in `docs/SECURITY.md`
 section 11 and `docs/DATA_INPUTS.md` section 14.
 
+## MCP tooling track (parallel, pending audit)
+
+The Sprint 6 MCP server was built ahead of the dashboard on the speculative branch
+`parallel/s6-mcp-tooling`, from the Sprint 5 candidate, while Sprint 5 is under correction
+(decision D28). It is not merged and not deployed, and it is pending its own Codex Desktop
+audit; final integration begins from the Codex-accepted Sprint 5 revision.
+
+`@cas/mcp-server` exposes four read-only tools over local stdio and nothing else:
+`list_incidents`, `explain_incident`, `chain_anomalies` and `draft_section`. Every read runs in
+a transaction the server declares `READ ONLY`; the tool catalogue is frozen application code
+with a pinned SHA-256; every argument is an identifier, an enumeration, a bounded integer or an
+explicit instant; every text field a tool returns is quoted evidence, escaped, redacted,
+bounded and labelled with its data origin; no tool invokes a model, writes, edits or
+publishes. The contract is `packages/mcp-server/SKILL.md`; the evidence, including the
+before-and-after database digest, is `docs/MCP-TOOLING-TRACK-REPORT.md`.
+
+One command installs from a fresh clone with the frozen lockfile and builds the server:
+
+```bash
+corepack pnpm mcp:setup
+```
+
+```bash
+corepack pnpm mcp:test
+```
+
+```bash
+corepack pnpm mcp:start
+```
+
+The server reads `DATABASE_URL`, `GRAPH_API_KEY` and `GRAPH_GATEWAY_URL` from its environment
+and never emits their values. No remote MCP service has been enabled or deployed.
+
 ## Audit policy
 
 Claude implements on sprint branches. Codex independently reviews diffs, installs locked
@@ -336,22 +369,23 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 
 ## Documentation
 
-| Document                         | Content                                                                                            |
-| -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `docs/ARCHITECTURE.md`           | components, runtime data flow, contract boundary, dependency rules                                 |
-| `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules                              |
-| `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure                         |
-| `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule                         |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D25                                                                |
-| `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence                        |
-| `docs/SPRINT-4-REPORT.md`        | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections |
-| `docs/SPRINT-5-REPORT.md`        | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting; pending audit       |
-| `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                   |
-| `docs/CHECKIN-2-DRAFT.md`        | Project Check-in #2 draft, due Thursday 10 September; not submitted                                |
-| `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                                               |
-| `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                        |
-| `docs/SECURITY.md`               | security policy                                                                                    |
-| `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                                            |
-| `docs/SPRINT-1-REPORT.md`        | Sprint 1 live Graph proof: discovery, selection, results, evidence                                 |
-| `docs/SPRINT-2-REPORT.md`        | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                         |
-| `LICENSE`                        | Apache License 2.0                                                                                 |
+| Document                           | Content                                                                                            |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `docs/ARCHITECTURE.md`             | components, runtime data flow, contract boundary, dependency rules                                 |
+| `docs/DATA_INPUTS.md`              | editorial data, schemas, human versus machine labels, ingestion rules                              |
+| `docs/PRIOR_INPUTS.md`             | the pre-existing corpus, its permitted uses, and the submission disclosure                         |
+| `docs/HACKATHON_REQUIREMENTS.md`   | requirement-to-evidence matrix per sponsor track and the official schedule                         |
+| `docs/DECISIONS.md`                | append-only decision log, D1 to D25 and D28                                                        |
+| `docs/MCP-TOOLING-TRACK-REPORT.md` | MCP tooling track: server, tests, read-only proof, clean-install evidence; pending audit           |
+| `docs/SPRINT-3-REPORT.md`          | Sprint 3 classification proof: classifier, migration, calibration, evidence                        |
+| `docs/SPRINT-4-REPORT.md`          | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections |
+| `docs/SPRINT-5-REPORT.md`          | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting; pending audit       |
+| `docs/CHECKIN-1-DRAFT.md`          | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                   |
+| `docs/CHECKIN-2-DRAFT.md`          | Project Check-in #2 draft, due Thursday 10 September; not submitted                                |
+| `docs/ACCOUNT_READINESS.md`        | secret-free account readiness matrix                                                               |
+| `docs/SPRINT_BOARD.md`             | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                        |
+| `docs/SECURITY.md`                 | security policy                                                                                    |
+| `docs/SPRINT-0-REPORT.md`          | Sprint 0 report, audit remediation and final correction                                            |
+| `docs/SPRINT-1-REPORT.md`          | Sprint 1 live Graph proof: discovery, selection, results, evidence                                 |
+| `docs/SPRINT-2-REPORT.md`          | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                         |
+| `LICENSE`                          | Apache License 2.0                                                                                 |

@@ -810,3 +810,89 @@ entries are unchanged except for status pointers.
 - **Decided by:** Sprint 5 implementation of 2026-09-09 and 2026-09-10, on the owner's brief.
 - **Supersedes:** nothing. It builds on D21 (classification), D22 and D24 (clustering) and D23
   (the seven retained live identities), and it does not revisit D9, D10, D3 or D4.
+
+---
+
+Decisions D26 and D27 are reserved for other tracks in flight and are not recorded on the
+parallel MCP tooling branch.
+
+## D28 MCP tooling track: a read-only stdio server with a static, pinned tool catalogue
+
+- **Date:** 2026-09-10
+- **Status:** PROVISIONAL. Built on the speculative parallel branch `parallel/s6-mcp-tooling`
+  from the Sprint 5 candidate `6fad82c3b03325101940d9ca25575d94550e7d25` while Sprint 5 is
+  under correction. Pending its own independent Codex Desktop audit; not merged, not
+  deployed. Final integration begins from the Codex-accepted Sprint 5 revision, not from
+  this base.
+- **Decision:** `@cas/mcp-server` is built on nine commitments.
+  - **Local stdio is the only transport.** The server reads its client's stdin and writes its
+    stdout, and nothing else. No HTTP, SSE or WebSocket transport is enabled or reachable, no
+    socket is opened, and no session exists beyond the process pair. A remote MCP service is
+    a separate decision that this track does not take.
+  - **The official SDK, pinned through the catalog.** `@modelcontextprotocol/server` 2.0.0,
+    which implements the 2026-07-28 protocol revision, with `zod` 4.5.4 for the schemas;
+    `@modelcontextprotocol/client` 2.0.0 as a development dependency for the tests only. Every
+    version was published more than 24 hours before it landed, so the release-age gate stands
+    unchanged and no D13 exception was needed.
+  - **Read-only by the database, not by convention.** Every read runs inside one transaction
+    the server opens `REPEATABLE READ`, declares `READ ONLY` as its first statement and bounds
+    with an eight-second statement timeout, so a write attempted on that connection is refused
+    by PostgreSQL with SQLSTATE 25006. The server adds no migration and reaches no
+    classification, clustering, resolution, ingestion or review path. An integration test
+    digests every table before and after every tool and requires them identical.
+  - **A static catalogue with a pinned digest.** Exactly four tools, `list_incidents`,
+    `explain_incident`, `chain_anomalies` and `draft_section`, are declared as frozen
+    application code with strict input and output schemas (`additionalProperties: false`
+    throughout) and read-only, non-destructive, idempotent annotations. The canonical
+    SHA-256 of names, titles, descriptions, annotations and both schemas is pinned in the
+    source and checked before the server accepts a connection; the tests reproduce it from
+    the wire. No stored row, provider response or request can add, rename or redefine a tool.
+  - **A closed input boundary.** Every argument is a UUID, an enumeration, a bounded integer or
+    an explicit UTC instant; there is no free-text argument, search, path, URL or query. Before
+    any value is read, an argument object must be a plain object with no symbol key, no
+    accessor, no nested value, no key outside the allowlist and no control or separator
+    character in any string. Every tool names its subject explicitly; there is no implicit
+    latest run.
+  - **Outputs are quoted evidence under strict public-safe contracts.** Retrieved text leaves
+    only as `{ text, truncated, trust: "untrusted_quoted_evidence" }` with control characters,
+    ANSI sequences, Unicode separators and angle brackets rendered as visible escapes and the
+    length bounded; every string is redacted for the connection string, its password, the
+    Graph key, bearer tokens and PostgreSQL URL shapes; every record carries its `DataOrigin`;
+    evidence states carry a fixed sentence and chain entries a fixed telemetry limitation. No
+    review note, rationale, actor, raw cell, derived body text, environment value, driver
+    message, provider body or stack trace is ever returned, and no result instructs the
+    consuming model.
+  - **Two anomaly modes that share nothing.** Stored mode evaluates one named completed signal
+    run against the stored history of that run's own origin with the Sprint 5 contract. Live
+    mode is explicitly selected, requires `GRAPH_API_KEY`, queries only the registry targets
+    of one chain through the existing Sprint 1 client, inherits its URL validation and
+    redaction, retains provider and block provenance, and never substitutes stored, replay or
+    fixture data when the provider fails. No other tool makes a network call.
+  - **Draft preview only.** `draft_section` assembles one section in memory with the Sprint 5
+    deterministic drafter from quoted evidence and fixed sentences. It writes nothing, reads
+    no draft, invokes no model and publishes nothing; the preview is marked unpublished.
+  - **Sprint 5 consumed behind interfaces.** The proposed dependency rule in
+    `ARCHITECTURE.md` section 5 kept read-side surfaces off pipeline packages. This track
+    records one deliberate deviation: the server depends on `@cas/graph-evidence` for live mode
+    and consumes `@cas/evidence` and `@cas/drafting` through two adapter files behind
+    `AnomalyLabeller` and `DraftPreviewer` interfaces, so re-pointing to the corrected Sprint 5
+    packages touches those two files and nothing else.
+- **Rationale:** The Graph release gate requires reusable MCP tooling with a `SKILL.md` and a
+  clean installation, and the OWASP MCP guidance names the failures such tooling invites:
+  poisoned or drifting tool definitions, injection through tool results, over-broad inputs,
+  confused-deputy writes and credential leakage. Each commitment above closes one of them
+  structurally rather than by review: a pinned digest against drift, quoted evidence against
+  injection, a closed allowlist against over-broad inputs, a database-declared read-only
+  transaction against writes, and one redactor over every emitted string against leakage.
+  Stdio is chosen because a local process pair needs no authentication, session or replay
+  control to be safe, whereas a remote transport would need all three and none is designed.
+- **Consequences:** Root scripts `mcp:setup`, `mcp:build`, `mcp:start`, `mcp:test` and
+  `mcp:test:db`; continuous integration also runs on `parallel/**` branches; the PostgreSQL
+  suite gains the MCP integration file. `SECURITY.md` section 15, `ARCHITECTURE.md` section 14
+  and `docs/MCP-TOOLING-TRACK-REPORT.md` record the rules and the evidence. Dashboard
+  authentication, Google Sheets, Hedera, Bazantic and remote MCP hosting are not in scope.
+  D3, D4, D9 and D10 are untouched.
+- **Decided by:** MCP tooling track implementation of 2026-09-10, on the owner's brief.
+  Becomes `ACCEPTED` only on the owner's instruction after Codex Desktop issues PASS.
+- **Supersedes:** nothing. Records a deviation from the proposed dependency rule of
+  `ARCHITECTURE.md` section 5, which remains the rule for `@cas/feed-api`.
