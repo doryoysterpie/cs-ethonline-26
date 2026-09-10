@@ -38,10 +38,21 @@ function clientWith(
   });
 }
 
+/**
+ * A response whose body stream fails on the first read. The client reads the
+ * body as a stream under the byte limit (`bounded-body.ts`), so the failure
+ * is injected where the bytes would arrive rather than through `text()`.
+ */
 function responseWithFailingBody(error: unknown): Response {
-  const response = new Response('{}', { status: 200 });
-  Object.defineProperty(response, 'text', { value: () => Promise.reject(error) });
-  return response;
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull() {
+        throw error;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  return new Response(stream, { status: 200 });
 }
 
 describe('GraphGatewayClient', () => {

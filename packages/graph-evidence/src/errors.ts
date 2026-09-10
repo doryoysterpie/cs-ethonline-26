@@ -1,6 +1,9 @@
 /**
  * Failure kinds the live client distinguishes. Every failure is explicit; the
- * client never returns an empty success (docs/SECURITY.md section 7).
+ * client never returns an empty success (docs/SECURITY.md section 7). `limit`
+ * is a resource limit crossed by the provider's response or by the caller:
+ * an oversized body, a too-deep or too-large JSON document, or too many
+ * requests in flight (`RESOURCE_LIMITS.graph`, decision D26).
  */
 export const GRAPH_PROBE_FAILURE_KINDS = [
   'credential',
@@ -11,6 +14,7 @@ export const GRAPH_PROBE_FAILURE_KINDS = [
   'indexing',
   'timeout',
   'network',
+  'limit',
 ] as const;
 export type GraphProbeFailureKind = (typeof GRAPH_PROBE_FAILURE_KINDS)[number];
 
