@@ -99,6 +99,43 @@ export interface NewIncidentSubject {
   readonly createdAt: string;
 }
 
+export const CLAIM_KINDS = ['reported_headline', 'recorded_statement'] as const;
+export type ClaimKind = (typeof CLAIM_KINDS)[number];
+
+/**
+ * A claim with its complete provenance (migration 0009). It cites a source row
+ * as a member of an incident under a clustering run, carries that row's
+ * immutable hash and origin, and is the only thing a `supports` or `conflicts`
+ * decision may name.
+ */
+export interface NewIncidentClaim {
+  readonly id: string;
+  readonly clusteringRunId: string;
+  readonly batchId: string;
+  readonly incidentClusterId: string;
+  readonly dataOrigin: DataOrigin;
+  readonly sourceRowId: string;
+  readonly rowHash: string;
+  readonly claimKind: ClaimKind;
+  readonly statement: string;
+  readonly fingerprint: string;
+  readonly actor: string;
+  readonly reasonCode: string;
+  readonly createdAt: string;
+}
+
+export type IncidentClaimRecord = NewIncidentClaim;
+
+/** One membership as a claim cites it: the row, its hash, and where it sits. */
+export interface IncidentMembershipRecord {
+  readonly clusteringRunId: string;
+  readonly incidentClusterId: string;
+  readonly batchId: string;
+  readonly dataOrigin: DataOrigin;
+  readonly sourceRowId: string;
+  readonly rowHash: string;
+}
+
 export interface NewAssociation {
   readonly id: string;
   readonly evidenceRunId: string;
@@ -689,7 +726,208 @@ export async function listIncidentSubjects(
   }));
 }
 
+// -------------------------------------------------------------------- claims
+
+const CLAIM_COLUMNS = `id, clustering_run_id, batch_id, incident_cluster_id, data_origin,
+  source_row_id, row_hash, claim_kind, statement, fingerprint, actor, reason_code,
+  to_json(created_at) #>> '{}' AS created_at`;
+
+interface ClaimRow {
+  id: string;
+  clustering_run_id: string;
+  batch_id: string;
+  incident_cluster_id: string;
+  data_origin: DataOrigin;
+  source_row_id: string;
+  row_hash: string;
+  claim_kind: ClaimKind;
+  statement: string;
+  fingerprint: string;
+  actor: string;
+  reason_code: string;
+  created_at: string;
+}
+
+function toClaim(row: ClaimRow): IncidentClaimRecord {
+  return {
+    id: row.id,
+    clusteringRunId: row.clustering_run_id,
+    batchId: row.batch_id,
+    incidentClusterId: row.incident_cluster_id,
+    dataOrigin: row.data_origin,
+    sourceRowId: row.source_row_id,
+    rowHash: row.row_hash,
+    claimKind: row.claim_kind,
+    statement: row.statement,
+    fingerprint: row.fingerprint,
+    actor: row.actor,
+    reasonCode: row.reason_code,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * The membership a claim would cite, or null when the row is not a member of
+ * that incident under that run. Read from the membership table alone: the
+ * caller's assertion about the row is never trusted.
+ */
+export async function getIncidentMembership(
+  client: Queryable,
+  clusteringRunId: string,
+  incidentClusterId: string,
+  sourceRowId: string,
+): Promise<IncidentMembershipRecord | null> {
+  const result = await client.query<{
+    clustering_run_id: string;
+    incident_cluster_id: string;
+    batch_id: string;
+    data_origin: DataOrigin;
+    source_row_id: string;
+    row_hash: string;
+  }>(
+    `SELECT clustering_run_id, incident_cluster_id, batch_id, data_origin, source_row_id, row_hash
+       FROM incident_memberships
+      WHERE clustering_run_id = $1 AND incident_cluster_id = $2 AND source_row_id = $3`,
+    [clusteringRunId, incidentClusterId, sourceRowId],
+  );
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : {
+        clusteringRunId: row.clustering_run_id,
+        incidentClusterId: row.incident_cluster_id,
+        batchId: row.batch_id,
+        dataOrigin: row.data_origin,
+        sourceRowId: row.source_row_id,
+        rowHash: row.row_hash,
+      };
+}
+
+export async function insertIncidentClaim(
+  client: Queryable,
+  claim: NewIncidentClaim,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO incident_claims (
+       id, clustering_run_id, batch_id, incident_cluster_id, data_origin, source_row_id,
+       row_hash, claim_kind, statement, fingerprint, actor, reason_code, created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::timestamptz)`,
+    [
+      claim.id,
+      claim.clusteringRunId,
+      claim.batchId,
+      claim.incidentClusterId,
+      claim.dataOrigin,
+      claim.sourceRowId,
+      claim.rowHash,
+      claim.claimKind,
+      claim.statement,
+      claim.fingerprint,
+      claim.actor,
+      claim.reasonCode,
+      claim.createdAt,
+    ],
+  );
+}
+
+export async function getIncidentClaim(
+  client: Queryable,
+  claimId: string,
+): Promise<IncidentClaimRecord | null> {
+  const result = await client.query<ClaimRow>(
+    `SELECT ${CLAIM_COLUMNS} FROM incident_claims WHERE id = $1`,
+    [claimId],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : toClaim(row);
+}
+
+export async function findIncidentClaimByFingerprint(
+  client: Queryable,
+  clusteringRunId: string,
+  incidentClusterId: string,
+  fingerprint: string,
+): Promise<IncidentClaimRecord | null> {
+  const result = await client.query<ClaimRow>(
+    `SELECT ${CLAIM_COLUMNS} FROM incident_claims
+      WHERE clustering_run_id = $1 AND incident_cluster_id = $2 AND fingerprint = $3`,
+    [clusteringRunId, incidentClusterId, fingerprint],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : toClaim(row);
+}
+
+/** Every recorded claim of one incident under one clustering run, oldest first. */
+export async function listIncidentClaims(
+  client: Queryable,
+  clusteringRunId: string,
+  incidentClusterId: string,
+  limit: number,
+): Promise<IncidentClaimRecord[]> {
+  if (limit < 1 || limit > 1000) {
+    throw new DatabaseError('query', 'claim page size outside the permitted range');
+  }
+  const result = await client.query<ClaimRow>(
+    `SELECT ${CLAIM_COLUMNS} FROM incident_claims
+      WHERE clustering_run_id = $1 AND incident_cluster_id = $2
+      ORDER BY created_at, id
+      LIMIT $3`,
+    [clusteringRunId, incidentClusterId, limit],
+  );
+  return result.rows.map(toClaim);
+}
+
 // --------------------------------------------------------------- associations
+
+/** One suggestion by identifier, within one evidence run. */
+export async function getAssociation(
+  client: Queryable,
+  evidenceRunId: string,
+  associationId: string,
+): Promise<AssociationRecord | null> {
+  const result = await client.query<{
+    id: string;
+    evidence_run_id: string;
+    clustering_run_id: string;
+    batch_id: string;
+    signal_run_id: string;
+    incident_cluster_id: string;
+    signal_id: string;
+    chain: ChainId;
+    claim_id: string | null;
+    relation: AssociationRelation;
+    status: AssociationStatus;
+    reason_codes: string[];
+    offset_seconds: number;
+    created_at: string;
+  }>(
+    `SELECT id, evidence_run_id, clustering_run_id, batch_id, signal_run_id, incident_cluster_id,
+            signal_id, chain, claim_id, relation, status, reason_codes, offset_seconds,
+            to_json(created_at) #>> '{}' AS created_at
+       FROM incident_signal_associations
+      WHERE evidence_run_id = $1 AND id = $2`,
+    [evidenceRunId, associationId],
+  );
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : {
+        id: row.id,
+        evidenceRunId: row.evidence_run_id,
+        clusteringRunId: row.clustering_run_id,
+        batchId: row.batch_id,
+        signalRunId: row.signal_run_id,
+        incidentClusterId: row.incident_cluster_id,
+        signalId: row.signal_id,
+        chain: row.chain,
+        claimId: row.claim_id,
+        relation: row.relation,
+        status: row.status,
+        reasonCodes: row.reason_codes,
+        offsetSeconds: row.offset_seconds,
+        createdAt: row.created_at,
+      };
+}
 
 export async function insertAssociations(
   client: Queryable,
@@ -1135,6 +1373,13 @@ export async function listDraftIncidents(
       readonly url: string | null;
       readonly postedAt: string | null;
     }[];
+    /** Claims a person recorded for the incident (migration 0009), oldest first. */
+    readonly claims: readonly {
+      readonly claimId: string;
+      readonly claimKind: ClaimKind;
+      readonly statement: string;
+      readonly sourceRowId: string;
+    }[];
   }[]
 > {
   if (limit < 1 || limit > 5000) {
@@ -1156,6 +1401,12 @@ export async function listDraftIncidents(
       url: string | null;
       postedAt: string | null;
     }[];
+    claims: {
+      claimId: string;
+      claimKind: ClaimKind;
+      statement: string;
+      sourceRowId: string;
+    }[];
   }>(
     `SELECT s.incident_cluster_id AS incident_id, s.clustering_run_id, s.batch_id,
             r.data_origin, s.state, s.claim_id, s.accepted_association_count,
@@ -1172,7 +1423,18 @@ export async function listDraftIncidents(
                  JOIN source_rows sr ON sr.id = m.source_row_id
                 WHERE m.incident_cluster_id = s.incident_cluster_id
                   AND m.clustering_run_id = s.clustering_run_id),
-              '[]'::jsonb) AS sources
+              '[]'::jsonb) AS sources,
+            coalesce(
+              (SELECT jsonb_agg(jsonb_build_object(
+                        'claimId', c.id,
+                        'claimKind', c.claim_kind,
+                        'statement', c.statement,
+                        'sourceRowId', c.source_row_id)
+                       ORDER BY c.created_at, c.id)
+                 FROM incident_claims c
+                WHERE c.incident_cluster_id = s.incident_cluster_id
+                  AND c.clustering_run_id = s.clustering_run_id),
+              '[]'::jsonb) AS claims
        FROM incident_evidence_states s
        JOIN evidence_runs r ON r.id = s.evidence_run_id
        LEFT JOIN incident_subjects sub
@@ -1193,5 +1455,6 @@ export async function listDraftIncidents(
     acceptedAssociationCount: row.accepted_association_count,
     hasSubject: row.has_subject,
     sources: row.sources,
+    claims: row.claims,
   }));
 }
