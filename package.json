@@ -7,16 +7,23 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.10.0",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=24.21.0 <25"
   },
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc -p tools/tsconfig.json",
     "test": "turbo run test",
+    "test:tools": "vitest run --config tools/vitest.config.ts",
     "build": "turbo run build",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check:repo": "node tools/checks/hygiene.ts && node tools/checks/forbidden-files.ts && node tools/checks/secrets.ts && node tools/checks/workflows.ts",
+    "check:toolchain": "node tools/checks/toolchain.ts",
+    "test:offline-enforced": "bash tools/checks/network-denial.sh pnpm test --force",
+    "audit:deps": "pnpm audit --audit-level=low",
+    "supply-chain:generate": "node tools/supply-chain/sbom.ts",
+    "supply-chain:check": "node tools/supply-chain/sbom.ts --check --cross-check",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:tools && pnpm check:repo && pnpm build",
     "graph:probe": "pnpm --filter @cas/graph-evidence probe:live",
     "graph:test:live": "pnpm --filter @cas/graph-evidence test:live",
     "db:migrate": "pnpm -s --filter @cas/worker cli db migrate",
@@ -32,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
     "eslint": "catalog:",
     "prettier": "catalog:",
     "turbo": "catalog:",
