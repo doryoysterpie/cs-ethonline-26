@@ -296,6 +296,44 @@ run only through `corepack pnpm test:db`, need `DATABASE_URL`, and create and dr
 schemas named `cas_test_<random>` in that database. Rules are in `docs/SECURITY.md`
 section 11 and `docs/DATA_INPUTS.md` section 14.
 
+## Dashboard (parallel Sprint 6 track, speculative)
+
+The Next.js dashboard and its authentication live on `parallel/s6-dashboard-auth` (decision
+D27) and are **pending an independent audit**. Account persistence is paused until the next
+migration number is allocated after the Sprint 5 correction, so the track runs only with the
+in-memory store in the `local` environment. No account is provisioned. Set the four
+`DASHBOARD_*` variables from `.env.example`, then:
+
+```bash
+corepack pnpm --filter @cas/dashboard build
+```
+
+```bash
+corepack pnpm --filter @cas/dashboard start
+```
+
+```bash
+corepack pnpm --filter @cas/dashboard provision --username <name> --role <judge|editor|admin> --expires-at <instant>
+```
+
+The provisioning command reads the password on the terminal without echo, validates it,
+stores an Argon2id hash under a fresh salt and nothing else. `--rotate` replaces an existing
+account's hash and revokes every session of that account. A judge requires `--expires-at`.
+
+```bash
+set -a && . ./.env && set +a && corepack pnpm --filter @cas/dashboard test:db
+```
+
+```bash
+set -a && . ./.env && set +a && corepack pnpm --filter @cas/dashboard test:browser
+```
+
+The browser suite builds the production bundle, migrates and seeds an isolated schema through
+the real pipeline, provisions synthetic accounts with random passwords into a temporary seed
+file, runs Playwright against `next start`, then drops the schema and deletes the files. Rules
+are in `docs/SECURITY.md` section 15; the handoff for the audit is
+`docs/SPRINT-6-DASHBOARD-AUTH-HANDOFF.md`.
+
 ## Audit policy
 
 Claude implements on sprint branches. Codex independently reviews diffs, installs locked

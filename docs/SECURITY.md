@@ -388,6 +388,50 @@ pg_temp`, never `SECURITY DEFINER`, and every relation schema-qualified. A shado
   every name is withheld under the provisional D4 policy, and the provenance sidecar has no
   field for a name at all.
 
+## 15. Dashboard and authentication (parallel Sprint 6 track)
+
+Rules the parallel track on `parallel/s6-dashboard-auth` implements (decision D27). The
+track is **speculative and pending an independent audit**; nothing below is an audit result,
+and nothing is merged or deployed.
+
+- **Authorization is enforced in one server-only data-access layer**, called by every page,
+  server component, server action, route handler and account operation. Each function begins
+  with a capability check against the written-out role table, validates its identifiers,
+  reads an object only under the run that owns it, and returns an explicit DTO. The request
+  proxy redirects a cookieless browser and validates nothing. Deny by default.
+- **A judge receives no source text, note or rationale.** The database selects `NULL` in
+  those positions for a principal without `view:source_text` or `view:notes`; the text never
+  leaves PostgreSQL.
+- **Session tokens are 32 CSPRNG bytes and only their SHA-256 is stored.** Sign-in issues a
+  fresh token and closes any live session it was presented with. Absolute and idle expiry,
+  sign-out revocation, account-wide revocation, rotation on a privilege change, and
+  disable-or-expiry checks on every request. The cookie is host-only, `HttpOnly`,
+  `SameSite=Strict`, and `Secure` with the `__Host-` prefix outside `local`.
+- **Passwords are Argon2id** at 19 MiB, 2 iterations, 1 lane, through the maintained `argon2`
+  binding with a fresh 16-byte salt per hash and NFKC normalisation. A stored hash is verified
+  only within a parameter ceiling and behind a concurrency gate; an unknown username costs a
+  dummy verification. Sign-in failures are generic; throttling is keyed on the submitted
+  username and the network source. No password appears in a migration, fixture, environment
+  example, argument, URL, log or Git history, and no account is provisioned in this track.
+- **Every mutation is append-only.** Merge, split and evidence decisions go through the
+  audited `@cas/worker` APIs; queue decisions and draft revisions go to the dashboard's own
+  append-only stores, drafts under optimistic concurrency. A test fingerprints every machine
+  table before and after every mutation and requires equality.
+- **Stored text is hostile.** No HTML string is ever set into the document; Markdown is parsed
+  and sanitized against an allowlist before becoming React elements; only `http` and `https`
+  links survive; no image is rendered or proxied; controls and bidirectional overrides are
+  shown as visible escapes. A nonce-based content security policy with `default-src 'none'`,
+  `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+  a restrictive permissions policy and, in `production`, HSTS is set on every response; every
+  protected response is `private, no-store`; no production browser source map is emitted.
+- **Mutations require same-origin proof and a session-bound CSRF token**, compared in
+  constant time. Every action and route input is read as a closed object: unknown, repeated,
+  symbol and accessor keys and foreign prototypes are refused, and no refusal echoes a key or
+  a value.
+- **Account persistence is paused.** The store interfaces exist with an in-memory
+  implementation permitted only in `local`; the `postgres` store fails with a fixed message
+  until the next migration number is allocated after the Sprint 5 correction.
+
 ## Reporting a vulnerability
 
 Report privately to the repository owner. Do not open a public issue describing an
