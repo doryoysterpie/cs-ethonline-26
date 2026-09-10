@@ -537,3 +537,79 @@ describe('cli configuration handling (no database)', () => {
     expect(all).not.toContain('p@ss-marker');
   });
 });
+
+describe('evidence ingestion origin boundary (no database)', () => {
+  it('refuses a file as live before the file or a database is touched, and prints nothing ordinary', async () => {
+    let opened = 0;
+    const r = await exec(
+      ['evidence', 'ingest', '--file', '/nowhere/does-not-exist.json', '--origin', 'live'],
+      { DATABASE_URL: 'postgresql://cas@127.0.0.1:5432/cas' },
+      () => {
+        opened += 1;
+        throw new Error('a database handle was opened');
+      },
+    );
+    expect(r.code).toBe(EXIT_CODES.configuration);
+    expect(r.out).toEqual([]);
+    expect(r.err).toHaveLength(1);
+    expect(r.err[0]).toContain('origin_not_file_backed');
+    // A missing file would have been reported as unreadable; it was never
+    // opened.
+    expect(r.err[0]).not.toContain('snapshot_unreadable');
+    expect(opened).toBe(0);
+  });
+
+  it('reaches the database only for a file origin', async () => {
+    for (const origin of ['fixture', 'replay']) {
+      let opened = 0;
+      const r = await exec(
+        ['evidence', 'ingest', '--file', '/nowhere/does-not-exist.json', '--origin', origin],
+        { DATABASE_URL: 'postgresql://cas@127.0.0.1:5432/cas' },
+        () => {
+          opened += 1;
+          throw new Error('a database handle was opened');
+        },
+      );
+      expect(opened, origin).toBe(1);
+      expect(r.code, origin).not.toBe(EXIT_CODES.ok);
+      expect(r.out, origin).toEqual([]);
+    }
+  });
+
+  it('refuses a missing or unknown origin without touching anything', async () => {
+    for (const argv of [
+      ['evidence', 'ingest', '--file', '/nowhere/x.json'],
+      ['evidence', 'ingest', '--file', '/nowhere/x.json', '--origin', 'production'],
+    ]) {
+      let opened = 0;
+      const r = await exec(argv, { DATABASE_URL: 'postgresql://cas@127.0.0.1:5432/cas' }, () => {
+        opened += 1;
+        throw new Error('a database handle was opened');
+      });
+      expect(r.code).toBe(EXIT_CODES.configuration);
+      expect(r.err[0]).toContain('origin_required');
+      expect(opened).toBe(0);
+    }
+  });
+
+  it('has no --out flag on drafting, so no caller can name a destination', async () => {
+    const r = await exec(
+      [
+        'drafting',
+        'generate',
+        '--evidence-run',
+        '0d8e9efe-72a7-4bef-a922-9045b23a1a37',
+        '--window',
+        '2026-08-09T00:00:00Z..2026-08-16T00:00:00Z',
+        '--out',
+        '/tmp/elsewhere',
+      ],
+      { DATABASE_URL: 'postgresql://cas@127.0.0.1:5432/cas' },
+      () => {
+        throw new Error('a database handle was opened');
+      },
+    );
+    expect(r.code).toBe(EXIT_CODES.configuration);
+    expect(r.out).toEqual([]);
+  });
+});
