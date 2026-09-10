@@ -611,3 +611,74 @@ export async function schemaDigest(db: Database, schema: string): Promise<Map<st
     return digest;
   });
 }
+
+/**
+ * A dedicated database for compiled stdio tests, because the entry point
+ * addresses the `public` schema of the database `DATABASE_URL` names and
+ * carries no schema option. The database is created under a generated
+ * `cas_test_<random>` name on the same server, migrated into its public
+ * schema, seeded, and dropped with force afterwards. Nothing else on the
+ * server is touched.
+ */
+export interface DedicatedDatabase {
+  readonly name: string;
+  /** `DATABASE_URL` for the child process: the same server, the dedicated database. */
+  readonly url: string;
+  readonly db: Database;
+  readonly seeded: SeededPipeline;
+  drop(): Promise<void>;
+}
+
+export async function createDedicatedDatabase(): Promise<DedicatedDatabase> {
+  const config = parseDatabaseConfig(process.env);
+  const admin = openDatabase(config, { maxConnections: 1 });
+  const name = `cas_test_${randomBytes(6).toString('hex')}`;
+  await admin.withClient((client) => client.query(`CREATE DATABASE ${quoteIdentifier(name)}`));
+  const url = new URL(config.connectionString);
+  url.pathname = `/${name}`;
+  const db = openDatabase(
+    { connectionString: url.toString(), schema: null },
+    { maxConnections: 4 },
+  );
+  await runMigrations(db);
+  const seeded = await seedPipeline(db);
+  return {
+    name,
+    url: url.toString(),
+    db,
+    seeded,
+    async drop() {
+      await db.end();
+      await admin.withClient((client) =>
+        client.query(`DROP DATABASE ${quoteIdentifier(name)} WITH (FORCE)`),
+      );
+      await admin.end();
+    },
+  };
+}
+
+/** Non-idle backends of one database other than the caller's own and the excluded pids. */
+export async function activeBackends(
+  db: Database,
+  database: string,
+  excluded: readonly number[],
+): Promise<
+  { readonly pid: number; readonly state: string; readonly waitEventType: string | null }[]
+> {
+  return db.withClient(async (client) => {
+    const result = await client.query<{
+      pid: number;
+      state: string;
+      wait_event_type: string | null;
+    }>(
+      `SELECT pid, state, wait_event_type
+         FROM pg_stat_activity
+        WHERE datname = $1 AND pid <> pg_backend_pid() AND state <> 'idle'
+          AND backend_type = 'client backend'`,
+      [database],
+    );
+    return result.rows
+      .filter((row) => !excluded.includes(row.pid))
+      .map((row) => ({ pid: row.pid, state: row.state, waitEventType: row.wait_event_type }));
+  });
+}
