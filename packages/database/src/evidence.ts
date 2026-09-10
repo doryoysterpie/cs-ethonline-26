@@ -59,7 +59,8 @@ export interface NewGraphSignal {
   readonly createdAt: string;
 }
 
-export interface GraphSignalRecord extends NewGraphSignal {}
+/** A stored signal reads back exactly as it was written; nothing is derived. */
+export type GraphSignalRecord = NewGraphSignal;
 
 export interface NewEvidenceRun {
   readonly id: string;
