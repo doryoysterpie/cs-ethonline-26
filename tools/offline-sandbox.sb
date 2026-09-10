@@ -1,0 +1,18 @@
+;; A macOS sandbox profile that denies every network operation and nothing
+;; else. Used to demonstrate that the default test suite is genuinely offline
+;; rather than merely believed to be:
+;;
+;;   sandbox-exec -f tools/offline-sandbox.sb corepack pnpm test --force
+;;
+;; The denial is demonstrated to be active in the same session by attempting a
+;; connection under the same profile and requiring it to fail:
+;;
+;;   sandbox-exec -f tools/offline-sandbox.sb node -e \
+;;     "require('node:net').connect(443,'1.1.1.1').on('error',e=>console.log(e.code))"
+;;
+;; It denies UNIX-domain sockets too, so the PostgreSQL integration suite
+;; cannot run under it. That is the point: `pnpm test` must pass here and
+;; `pnpm test:db` must not be able to.
+(version 1)
+(allow default)
+(deny network*)
