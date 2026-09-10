@@ -230,8 +230,10 @@ async function dispatch(
     }
     case 'draft_section': {
       const args = validateArguments(TOOL_DEFINITIONS[3].inputSchema, raw);
+      // The redactor is handed in so stored text is redacted before it is
+      // escaped for Markdown; the final redaction pass below still runs.
       return withDeadline(
-        draftSection(requireStore(runtime), runtime.previewer, args),
+        draftSection(requireStore(runtime), runtime.previewer, args, runtime.redact),
         runtime.deadlines.stored,
       );
     }

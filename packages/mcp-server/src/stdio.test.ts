@@ -85,6 +85,38 @@ describe('the built stdio entry point', () => {
       });
       expect(live.isError).toBe(true);
       expect((live.content[0] as { text?: string }).text).toContain('graph_credential_missing');
+
+      // The compiled boundary refuses an impossible instant, a stored request
+      // without its instant, and a field of the other mode; a well-formed
+      // stored request passes validation and reaches the missing-database code.
+      const refused = async (args: Record<string, unknown>): Promise<boolean> => {
+        try {
+          const outcome = await client.callTool({ name: 'chain_anomalies', arguments: args });
+          return outcome.isError === true;
+        } catch {
+          return true;
+        }
+      };
+      for (const args of [
+        { mode: 'stored', signalRunId: RUN, asOf: '2026-02-30T00:00:00Z' },
+        { mode: 'stored', signalRunId: RUN, asOf: '2026-04-31T00:00:00Z' },
+        { mode: 'stored', signalRunId: RUN, asOf: '2026-09-04T24:00:00Z' },
+        { mode: 'stored', signalRunId: RUN, asOf: '2026-09-04T09:11:23' },
+        { mode: 'stored', signalRunId: RUN },
+        { mode: 'stored', signalRunId: RUN, asOf: '2024-02-29T00:00:00Z', chain: 'base' },
+        { mode: 'live' },
+        { mode: 'live', chain: 'base', asOf: '2024-02-29T00:00:00Z' },
+        { mode: 'replay', chain: 'base' },
+      ]) {
+        expect(await refused(args), JSON.stringify(args)).toBe(true);
+      }
+      const wellFormed = await client.callTool({
+        name: 'chain_anomalies',
+        arguments: { mode: 'stored', signalRunId: RUN, asOf: '2024-02-29T00:00:00.5Z' },
+      });
+      expect((wellFormed.content[0] as { text?: string }).text).toContain(
+        'database_not_configured',
+      );
     } finally {
       await client.close();
     }

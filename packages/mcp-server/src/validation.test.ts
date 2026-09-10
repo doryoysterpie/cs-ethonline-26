@@ -8,7 +8,7 @@ import {
   explainIncidentInput,
   listIncidentsInput,
 } from './schemas/input.js';
-import { HOSTILE, uuidFrom } from './test-support.js';
+import { AS_OF, HOSTILE, uuidFrom } from './test-support.js';
 import { ARGUMENT_REJECTIONS, allowedArgumentNames, validateArguments } from './validation.js';
 
 /**
@@ -34,7 +34,7 @@ function serialized(error: ToolError): string {
 }
 
 describe('the argument allowlists', () => {
-  it('are read from the schemas, including the refined ones', () => {
+  it('are read from the schemas, including the refined ones and the union of both anomaly modes', () => {
     expect([...allowedArgumentNames(listIncidentsInput)]).toEqual([
       'evidenceRunId',
       'afterIncidentId',
@@ -146,19 +146,26 @@ describe('the hardened boundary', () => {
     }
   });
 
-  it('refuses oversized strings and control characters before the schema sees them', () => {
+  it('refuses oversized strings and control, separator and bidirectional characters before the schema sees them', () => {
     const long = rejection(() =>
       validateArguments(listIncidentsInput, {
         evidenceRunId: 'a'.repeat(ARGUMENT_STRING_MAX_CHARACTERS + 1),
       }),
     );
     expect(long.details['reason']).toBe(ARGUMENT_REJECTIONS.stringTooLong);
-    for (const hostile of [HOSTILE.ansi, HOSTILE.newline, HOSTILE.separator, HOSTILE.nul]) {
+    for (const hostile of [
+      HOSTILE.ansi,
+      HOSTILE.newline,
+      HOSTILE.separator,
+      HOSTILE.nul,
+      HOSTILE.bidi,
+    ]) {
       const error = rejection(() =>
         validateArguments(listIncidentsInput, { evidenceRunId: hostile }),
       );
       expect(error.details['reason']).toBe(ARGUMENT_REJECTIONS.controlCharacter);
       expect(serialized(error)).not.toContain('FAKE');
+      expect(serialized(error)).not.toContain('evil');
     }
   });
 
@@ -203,31 +210,46 @@ describe('the hardened boundary', () => {
     expect(validateArguments(listIncidentsInput, { evidenceRunId: RUN, limit: 50 }).limit).toBe(50);
   });
 
-  it('enforces the mode cross-field rules of chain_anomalies', () => {
-    const stored = validateArguments(chainAnomaliesInput, { mode: 'stored', signalRunId: RUN });
-    expect(stored).toEqual({ mode: 'stored', signalRunId: RUN });
+  it('enforces the mode alternatives of chain_anomalies, naming the argument at fault', () => {
+    const stored = validateArguments(chainAnomaliesInput, {
+      mode: 'stored',
+      signalRunId: RUN,
+      asOf: AS_OF,
+    });
+    expect(stored).toEqual({ mode: 'stored', signalRunId: RUN, asOf: AS_OF });
     const live = validateArguments(chainAnomaliesInput, { mode: 'live', chain: 'base' });
     expect(live).toEqual({ mode: 'live', chain: 'base' });
 
     const cases: [Record<string, unknown>, string][] = [
+      [{ mode: 'stored', signalRunId: RUN }, 'asOf'],
+      [{ mode: 'stored', asOf: AS_OF }, 'signalRunId'],
       [{ mode: 'stored' }, 'signalRunId'],
-      [{ mode: 'stored', signalRunId: RUN, chain: 'base' }, 'chain'],
+      [{ mode: 'stored', signalRunId: RUN, asOf: AS_OF, chain: 'base' }, 'chain'],
       [{ mode: 'live' }, 'chain'],
       [{ mode: 'live', chain: 'base', signalRunId: RUN }, 'signalRunId'],
-      [{ mode: 'live', chain: 'base', asOf: '2026-09-04T09:11:23Z' }, 'asOf'],
-      [{ mode: 'replay', signalRunId: RUN }, 'mode'],
+      [{ mode: 'live', chain: 'base', asOf: AS_OF }, 'asOf'],
+      [{ mode: 'replay', signalRunId: RUN, asOf: AS_OF }, 'mode'],
+      [{ signalRunId: RUN, asOf: AS_OF }, 'mode'],
       [{ mode: 'live', chain: 'solana' }, 'chain'],
       [{ mode: 'stored', signalRunId: RUN, asOf: '2026-09-04 09:11:23' }, 'asOf'],
       [{ mode: 'stored', signalRunId: RUN, asOf: '2026-13-40T09:11:23Z' }, 'asOf'],
+      [{ mode: 'stored', signalRunId: RUN, asOf: '2026-02-30T00:00:00Z' }, 'asOf'],
+      [{ mode: 'stored', signalRunId: RUN, asOf: '2026-04-31T00:00:00Z' }, 'asOf'],
+      [{ mode: 'stored', signalRunId: RUN, asOf: '2026-09-04T09:11:23' }, 'asOf'],
+      [{ mode: 'stored', signalRunId: RUN, asOf: '2026-09-04T09:11:23.1234Z' }, 'asOf'],
     ];
     for (const [args, argument] of cases) {
       const error = rejection(() => validateArguments(chainAnomaliesInput, args));
-      expect(error.details['reason']).toBe(ARGUMENT_REJECTIONS.schemaViolation);
+      expect(error.details['reason'], JSON.stringify(args)).toBe(
+        ARGUMENT_REJECTIONS.schemaViolation,
+      );
       expect(error.details['argument'], JSON.stringify(args)).toBe(argument);
+      expect(serialized(error)).not.toContain('solana');
+      expect(serialized(error)).not.toContain('2026-');
     }
   });
 
-  it('enforces an explicit, ordered period and a bounded incident count for draft_section', () => {
+  it('enforces an explicit, ordered, exact period and a bounded incident count for draft_section', () => {
     const good = validateArguments(draftSectionInput, {
       evidenceRunId: RUN,
       section: 'crypto',
@@ -244,6 +266,16 @@ describe('the hardened boundary', () => {
       }),
     );
     expect(reversed.details['argument']).toBe('periodEnd');
+    expect(reversed.details['rule']).toBe('must be after periodStart');
+    const impossible = rejection(() =>
+      validateArguments(draftSectionInput, {
+        evidenceRunId: RUN,
+        section: 'crypto',
+        periodStart: '2026-02-30T00:00:00Z',
+        periodEnd: '2026-03-16T00:00:00Z',
+      }),
+    );
+    expect(impossible.details['argument']).toBe('periodStart');
     const section = rejection(() =>
       validateArguments(draftSectionInput, {
         evidenceRunId: RUN,

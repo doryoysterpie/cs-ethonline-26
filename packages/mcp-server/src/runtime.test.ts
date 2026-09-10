@@ -44,10 +44,11 @@ describe('deadlines and bounds', () => {
           incidents: 0,
           claimsWritten: 0,
           claimsOmitted: 0,
-          namesWithheld: 0,
           contradicted: 0,
           cryptoIncidents: 0,
         },
+        claimsWithoutStructuredVictimName: 0,
+        claims: [],
       }),
     };
     const { runtime } = testRuntime({ store: new FakeStore(), previewer });
@@ -72,10 +73,11 @@ describe('deadlines and bounds', () => {
           incidents: 0,
           claimsWritten: 0,
           claimsOmitted: 0,
-          namesWithheld: 0,
           contradicted: 0,
           cryptoIncidents: 0,
         },
+        claimsWithoutStructuredVictimName: 0,
+        claims: [],
       }),
     };
     const { runtime } = testRuntime({ store: new FakeStore(), previewer });

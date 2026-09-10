@@ -9,13 +9,15 @@ import {
 import { chainSchema, instantArgument, uuidArgument } from './common.js';
 
 /**
- * The four tool input schemas. Every one is a flat, strict object of
- * primitives: unexpected keys are refused by the schema (`additionalProperties:
- * false` on the wire) and again by the hardened check in `validation.ts`
- * before any value is read.
+ * The four tool input schemas. Three are flat, strict objects of primitives;
+ * the fourth, `chain_anomalies`, is a discriminated union of two such
+ * objects, one per mode. Unexpected keys are refused by the schema
+ * (`additionalProperties: false` on the wire, in every branch) and again by
+ * the hardened check in `validation.ts` before any value is read.
  *
- * Every tool names its subject explicitly. There is no "latest run" default
- * anywhere, and no argument that could name a table, a query, a URL or a path.
+ * Every tool names its subject explicitly. There is no "latest run" default,
+ * no server-clock default for a stored evaluation, and no argument that could
+ * name a table, a query, a URL or a path.
  */
 
 export const listIncidentsInput = z
@@ -47,60 +49,50 @@ export const explainIncidentInput = z
 
 export const CHAIN_ANOMALY_MODES = ['stored', 'live'] as const;
 
-export const chainAnomaliesInput = z
+/**
+ * Stored mode: one named completed signal run, evaluated at one explicit
+ * instant. Both are required, so the result is a function of the database
+ * snapshot and the arguments alone; there is no server-clock default.
+ */
+export const chainAnomaliesStoredInput = z
   .object({
     mode: z
-      .enum(CHAIN_ANOMALY_MODES)
+      .literal('stored')
       .describe(
-        "'stored' evaluates a named completed signal run from the database. 'live' queries the Graph provider now and requires GRAPH_API_KEY; it never falls back to stored, replay or fixture data.",
+        'Evaluates one named completed signal run from the database against the stored history of the data origin that run recorded.',
       ),
-    signalRunId: uuidArgument(
-      'Stored mode only: identifier of one completed signal run.',
-    ).optional(),
+    signalRunId: uuidArgument('Identifier of one completed signal run.'),
     asOf: instantArgument(
-      'Stored mode only: the instant freshness is judged against. Defaults to the server clock.',
-    ).optional(),
-    chain: chainSchema
-      .describe("Live mode only: which chain's configured targets to query.")
-      .optional(),
+      'The instant freshness is judged against. Required: for a fixed database snapshot the result is determined by this instant and the run; the server clock is never used in stored mode.',
+    ),
   })
-  .strict()
-  .superRefine((value, context) => {
-    if (value.mode === 'stored') {
-      if (value.signalRunId === undefined) {
-        context.addIssue({
-          code: 'custom',
-          path: ['signalRunId'],
-          message: 'required in stored mode',
-        });
-      }
-      if (value.chain !== undefined) {
-        context.addIssue({
-          code: 'custom',
-          path: ['chain'],
-          message: 'not permitted in stored mode',
-        });
-      }
-    } else {
-      if (value.chain === undefined) {
-        context.addIssue({ code: 'custom', path: ['chain'], message: 'required in live mode' });
-      }
-      if (value.signalRunId !== undefined) {
-        context.addIssue({
-          code: 'custom',
-          path: ['signalRunId'],
-          message: 'a live request may not name a stored run',
-        });
-      }
-      if (value.asOf !== undefined) {
-        context.addIssue({
-          code: 'custom',
-          path: ['asOf'],
-          message: 'live mode always uses the server clock',
-        });
-      }
-    }
-  });
+  .strict();
+
+/** Live mode: one chain's configured targets, queried now; the clock is the server's. */
+export const chainAnomaliesLiveInput = z
+  .object({
+    mode: z
+      .literal('live')
+      .describe(
+        'Queries the Graph provider now for one chain’s configured targets. Requires GRAPH_API_KEY; never falls back to stored, replay or fixture data. Freshness is judged against the server clock.',
+      ),
+    chain: chainSchema.describe("Which chain's configured targets to query."),
+  })
+  .strict();
+
+/**
+ * The two modes share nothing, so the schema is a true discriminated union:
+ * a stored request carries `signalRunId` and `asOf` and no `chain`; a live
+ * request carries `chain` and neither of the others. The advertised JSON
+ * Schema is `oneOf` over the same two strict alternatives, and the runtime
+ * validates with this very object, so a request the advertised schema admits
+ * is one the runtime admits.
+ */
+export const chainAnomaliesInput = z
+  .discriminatedUnion('mode', [chainAnomaliesStoredInput, chainAnomaliesLiveInput])
+  .describe(
+    'Exactly one of two argument shapes, selected by mode: stored (signalRunId, asOf) or live (chain). Fields of the other mode are refused.',
+  );
 
 export const DRAFT_SECTIONS = ['header', 'incidents', 'crypto', 'provenance'] as const;
 
@@ -109,7 +101,9 @@ export const draftSectionInput = z
     evidenceRunId: uuidArgument('Identifier of the completed evidence run to draft from.'),
     section: z.enum(DRAFT_SECTIONS).describe('Which section of the draft to preview.'),
     periodStart: instantArgument('Explicit start of the reporting period. Never inferred.'),
-    periodEnd: instantArgument('Explicit end of the reporting period. Must be after periodStart.'),
+    periodEnd: instantArgument(
+      'Explicit end of the reporting period. Must be after periodStart; that ordering is checked at runtime and cannot be expressed in the advertised JSON Schema.',
+    ),
     maximumIncidents: z
       .number()
       .int()

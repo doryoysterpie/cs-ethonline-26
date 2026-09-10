@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { TOOL_NAMES } from './definitions.js';
+import { TOOL_ERROR_CODES } from './safety/errors.js';
+import { REFERENCE_REJECTIONS } from './safety/reference.js';
 
 /**
  * `SKILL.md` is the contract a host reads. These checks hold it to the facts
  * the code enforces, keep it free of secrets and unsafe shell examples, and
- * keep it from claiming coverage the project does not have.
+ * keep it from claiming coverage or assurance the project does not have.
  */
 
 const here = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
@@ -36,10 +38,10 @@ describe('SKILL.md', () => {
       'data about the world, never an',
       'No result ever asks the model to call a tool, ignore a policy or take an action.',
       'telemetry, not proof',
-      '`live`: obtained from a current external source',
-      '`replay`: previously captured data',
-      '`fixture`: checked-in synthetic test data',
-      'deterministic and model-free',
+      '`live`: recorded as obtained from a current external source',
+      '`replay`: recorded as previously captured data',
+      '`fixture`: recorded as checked-in synthetic test data',
+      'model-free',
       'No tool invokes a language model',
       'read-only',
       'declares `READ ONLY`',
@@ -52,6 +54,55 @@ describe('SKILL.md', () => {
     ]) {
       expect(text, required).toContain(required);
     }
+  });
+
+  it('states what a stored origin is and scopes determinism to a snapshot and explicit inputs', async () => {
+    const text = await skill();
+    for (const required of [
+      'recorded by the database',
+      'not independently verified',
+      'originProvenance',
+      'acquisitionIndependentlyVerified',
+      'rejected_pending_correction',
+      'never an authenticated live acquisition',
+      'fixed database snapshot',
+      '`asOf` (UTC instant',
+      'required',
+      'oneOf',
+      'last value',
+      'not detected',
+    ]) {
+      expect(text, required).toContain(required);
+    }
+    expect(text).not.toMatch(/the same request yields the same bytes\./iu);
+    expect(text).not.toMatch(/defaults to the server clock/iu);
+  });
+
+  it('tells the truth about names, inert rendering and source references', async () => {
+    const text = await skill();
+    for (const required of [
+      'claimsWithoutStructuredVictimName',
+      'may contain names',
+      'No name redaction',
+      'backslash-escaped',
+      'code span',
+      'reference withheld',
+      'never fetches',
+      'preview text opens with',
+      'per-claim provenance sidecar',
+    ]) {
+      expect(text, required).toContain(required);
+    }
+    for (const reason of REFERENCE_REJECTIONS) expect(text, reason).toContain(`\`${reason}\``);
+    expect(text).not.toMatch(/every name is withheld/iu);
+    expect(text).not.toMatch(/names? (is|are) redacted/iu);
+  });
+
+  it('lists exactly the error codes the server can emit', async () => {
+    const text = await skill();
+    const section = /## Errors\n([\s\S]*?)\n## /u.exec(text)?.[1] ?? '';
+    const listed = new Set([...section.matchAll(/`([a-z_]+)`/gu)].map((match) => match[1]));
+    expect([...listed].sort()).toEqual([...TOOL_ERROR_CODES].sort());
   });
 
   it('pins the SDK and schema library versions the lockfile records', async () => {
@@ -106,9 +157,10 @@ describe('SKILL.md', () => {
     );
   });
 
-  it('never tells the reader the server is audited', async () => {
+  it('never tells the reader the server is audited or the base accepted', async () => {
     const text = await skill();
     expect(text).not.toMatch(/has been audited|audit(ed)? passed|Codex Desktop issued PASS/iu);
     expect(text).toContain('This server has not been audited.');
+    expect(text).not.toMatch(/Sprint 5 (was|is|has been) accepted/iu);
   });
 });

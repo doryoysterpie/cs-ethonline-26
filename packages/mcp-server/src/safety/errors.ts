@@ -23,6 +23,7 @@ export const TOOL_ERROR_CODES = [
   'incident_not_found',
   'signal_run_not_found',
   'signal_run_not_completed',
+  'stored_metadata_invalid',
   'graph_credential_missing',
   'graph_gateway_invalid',
   'graph_provider_failed',
@@ -46,6 +47,8 @@ const MESSAGES: Readonly<Record<ToolErrorCode, string>> = {
   incident_not_found: 'no incident with that id in that evidence run',
   signal_run_not_found: 'no signal run with that id',
   signal_run_not_completed: 'the signal run is not completed',
+  stored_metadata_invalid:
+    'a controlled metadata field of the stored run does not match its grammar; the run cannot be described',
   graph_credential_missing:
     'live mode requires GRAPH_API_KEY in the server environment; no replay or fixture data is substituted',
   graph_gateway_invalid: 'the configured Graph gateway URL was rejected',

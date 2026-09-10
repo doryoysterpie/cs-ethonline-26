@@ -10,26 +10,34 @@ import type { AnomalyLabeller, ChainSeries } from '../engines/anomaly.js';
 import type { LiveSignalSource } from '../engines/live-graph.js';
 import { ToolError } from '../safety/errors.js';
 import { quoteEvidence, type QuotedEvidence } from '../safety/text.js';
-import { RESULT_NOTICE, TELEMETRY_SENTENCE } from '../schemas/common.js';
+import {
+  RECORDED_ORIGIN_PROVENANCE,
+  RESULT_NOTICE,
+  TELEMETRY_SENTENCE,
+} from '../schemas/common.js';
 import type { ChainAnomaliesArguments } from '../schemas/input.js';
 import type { AnomalyEntryDto, ChainAnomaliesOutput, LiveTargetDto } from '../schemas/output.js';
 import type { IncidentReadStore } from '../store/read-store.js';
-import { canonicalUuid } from './shared.js';
+import { canonicalUuid, requireCompletedSignalRun } from './shared.js';
 
 /**
  * `chain_anomalies`, in two explicitly selected modes that share nothing.
  *
  * Stored mode reads one named completed signal run and the stored history of
- * that run's origin, and labels it with the same engine the worker uses. Live
- * mode queries the provider now through the Sprint 1 client for one chain's
- * configured targets. A live failure is a failure in the result; nothing in
- * live mode reads the store, and nothing in stored mode reaches a provider.
+ * that run's recorded origin, and labels it with the same engine the worker
+ * uses, at the explicit instant the caller supplied: for a fixed database
+ * snapshot the result is a function of the two arguments and nothing else,
+ * because the server clock is never consulted. Live mode queries the
+ * provider now through the Sprint 1 client for one chain's configured
+ * targets. A live failure is a failure in the result; nothing in live mode
+ * reads the store, and nothing in stored mode reaches a provider.
  */
 
 export interface ChainAnomaliesDependencies {
   readonly store: IncidentReadStore | null;
   readonly live: LiveSignalSource | null;
   readonly labeller: AnomalyLabeller;
+  /** The server clock. Read by live mode only. */
   readonly now: () => Date;
 }
 
@@ -80,11 +88,7 @@ async function storedAnomalies(
   asOf: Date,
 ): Promise<ChainAnomaliesOutput> {
   if (deps.store === null) throw new ToolError('database_not_configured');
-  const run = await deps.store.getSignalRun(signalRunId);
-  if (run === null) throw new ToolError('signal_run_not_found');
-  if (run.status !== 'completed' || run.completedAt === null) {
-    throw new ToolError('signal_run_not_completed');
-  }
+  const run = await requireCompletedSignalRun(deps.store, signalRunId);
   const targets = await deps.store.listSignalTargets(run.id, ANOMALY_TARGETS_LIMIT);
   const series: ChainSeries[] = [];
   let observationsRead = 0;
@@ -131,6 +135,7 @@ async function storedAnomalies(
         targetCount: run.targetCount,
         signalCount: run.signalCount,
         completedAt: run.completedAt,
+        originProvenance: RECORDED_ORIGIN_PROVENANCE,
       },
       targetsEvaluated: series.length,
       observationsRead,
@@ -295,12 +300,7 @@ export async function chainAnomalies(
   deps: ChainAnomaliesDependencies,
   args: ChainAnomaliesArguments,
 ): Promise<ChainAnomaliesOutput> {
-  if (args.mode === 'live') {
-    if (args.chain === undefined) throw new ToolError('invalid_arguments', { argument: 'chain' });
-    return liveAnomalies(deps, args.chain);
-  }
-  if (args.signalRunId === undefined)
-    throw new ToolError('invalid_arguments', { argument: 'signalRunId' });
-  const asOf = args.asOf === undefined ? deps.now() : new Date(args.asOf);
-  return storedAnomalies(deps, canonicalUuid(args.signalRunId), asOf);
+  if (args.mode === 'live') return liveAnomalies(deps, args.chain);
+  // The validated union guarantees both stored arguments; no clock is read.
+  return storedAnomalies(deps, canonicalUuid(args.signalRunId), new Date(args.asOf));
 }

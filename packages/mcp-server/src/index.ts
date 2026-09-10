@@ -13,10 +13,13 @@ export {
   DRAFT_SECTION,
   EXPLAIN_INCIDENT,
   EXPECTED_CATALOGUE_SHA256,
+  JSON_SCHEMA_TARGET,
   LIST_INCIDENTS,
   TOOL_DEFINITIONS,
   TOOL_NAMES,
   CatalogueIntegrityError,
+  advertisedInputSchema,
+  advertisedOutputSchema,
   assertCatalogueIntegrity,
   catalogueSha256,
   isToolName,
@@ -32,8 +35,12 @@ export {
   type ChainSeries,
 } from './engines/anomaly.js';
 export {
+  CLAIM_CONFIDENCES,
+  GRAPH_EVIDENCE_STATES,
+  PREVIEW_CLAIM_RECORDS_LIMIT,
   deterministicPreviewer,
   type DraftPreviewer,
+  type PreviewClaimRecord,
   type PreviewIncident,
   type PreviewRequest,
   type PreviewResult,
@@ -70,6 +77,13 @@ export {
   redactDeep,
   type Redactor,
 } from './safety/redact.js';
+export { codeSpan, escapeMarkdown, inertInline } from './safety/markdown.js';
+export {
+  REFERENCE_REJECTIONS,
+  classifySourceReference,
+  type ReferenceRejection,
+  type ReferenceVerdict,
+} from './safety/reference.js';
 export {
   EVIDENCE_TRUST,
   hasControlCharacter,
@@ -78,11 +92,32 @@ export {
   toSingleLine,
   type QuotedEvidence,
 } from './safety/text.js';
-export { RESULT_NOTICE, TELEMETRY_SENTENCE } from './schemas/common.js';
+export {
+  EVIDENCE_LIMITATIONS,
+  HISTORICAL_BASE_STATUS,
+  HOSTNAME_PATTERN,
+  ISO_INSTANT_PATTERN,
+  ORIGIN_ACQUISITION_CLAIM,
+  PROTOCOL_SLUG_PATTERN,
+  RECORDED_ORIGIN_PROVENANCE,
+  RESULT_NOTICE,
+  TELEMETRY_SENTENCE,
+  VERSION_IDENTIFIER_PATTERN,
+  exactUtcInstant,
+  hostnameSchema,
+  instantArgument,
+  protocolSlugSchema,
+  recordedOriginProvenance,
+  referenceVerdictSchema,
+  versionIdentifierSchema,
+  type RecordedOriginProvenance,
+} from './schemas/common.js';
 export {
   CHAIN_ANOMALY_MODES,
   DRAFT_SECTIONS,
   chainAnomaliesInput,
+  chainAnomaliesLiveInput,
+  chainAnomaliesStoredInput,
   draftSectionInput,
   explainIncidentInput,
   listIncidentsInput,
@@ -92,16 +127,29 @@ export {
   type ListIncidentsArguments,
 } from './schemas/input.js';
 export {
+  NAMING_NOTE,
   chainAnomaliesOutput,
+  claimProvenance,
   draftSectionOutput,
   explainIncidentOutput,
   listIncidentsOutput,
   type ChainAnomaliesOutput,
+  type ClaimProvenanceDto,
   type DraftSectionOutput,
   type ExplainIncidentOutput,
   type ListIncidentsOutput,
 } from './schemas/output.js';
 export { SERVER_INSTRUCTIONS, SERVER_NAME, SERVER_VERSION, createCasMcpServer } from './server.js';
+export {
+  NO_REFERENCE,
+  PREVIEW_EVIDENCE_NOTICE,
+  PREVIEW_NAMING_NOTICE,
+  PREVIEW_STATUS_NOTICE,
+  REFERENCE_WITHHELD_PREFIX,
+  previewOriginNotice,
+  renderSourceReference,
+  withPreviewNotice,
+} from './tools/draft-section.js';
 export { PostgresReadStore, readOnly } from './store/postgres-store.js';
 export type {
   DraftIncidentRow,
