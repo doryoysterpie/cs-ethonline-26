@@ -248,7 +248,7 @@ store one in.
 
 ## 9. Tests (tests)
 
-**482 offline tests**, no database, no secret, no network:
+**484 offline tests**, no database, no secret, no network:
 
 | Package               | Tests |
 | --------------------- | ----: |
@@ -260,10 +260,15 @@ store one in.
 | `@cas/evidence`       |    69 |
 | `@cas/drafting`       |    19 |
 | `@cas/graph-evidence` |   102 |
-| `@cas/worker`         |   146 |
+| `@cas/worker`         |   148 |
 
 **173 PostgreSQL integration tests**: 81 in `@cas/database`, 92 in `@cas/worker`. Every test
 creates a schema whose exact name it generated and drops only that schema.
+
+`apps/worker/src/repository-hygiene.test.ts` refuses an invisible character in any TypeScript
+or SQL source: every C0 control except tab and newline, DEL, every C1 control and the two
+Unicode line separators — the same set migration 0007 refuses in a stored note. Section 12
+records the defect that prompted it.
 
 The offline suite is demonstrated to be offline rather than believed to be.
 `tools/offline-sandbox.sb` is a macOS sandbox profile that denies every network operation and
@@ -278,7 +283,7 @@ $ sandbox-exec -f tools/offline-sandbox.sb corepack pnpm test --force
 Tasks:    16 successful, 16 total
 ```
 
-All 482 pass under it. The profile denies UNIX-domain sockets too, so `pnpm test:db` cannot run
+All 484 pass under it. The profile denies UNIX-domain sockets too, so `pnpm test:db` cannot run
 beneath it, which is the intended asymmetry.
 
 ## 10. Replay fixtures (tests)
@@ -385,7 +390,17 @@ subject. That is the honest output of an empty input, not a missing feature.
    race probes attached their rejection handler after the classifier returned, leaving a window
    in which Node saw an unhandled rejection and failed the whole run; the refusal is now caught
    where the promise is made and asserted exactly as before. Neither edit weakens an assertion.
-8. **The clustering test timeout was raised to 120 seconds.** Three Sprint 4 tests cluster
+8. **Five raw NUL bytes were written into a TypeScript source file**, where they framed the
+   fields of the decision digest, and nothing caught them. They are legal inside a JavaScript
+   string, Prettier reformatted around them, ESLint passed, and every test went green because
+   the digest was self-consistent; a reviewer reading the diff would have seen ordinary spaces.
+   The separator is now an explicit `\u0000` escape, which keeps the framing property and
+   leaves the source readable, and a new test refuses the whole prohibited set in every
+   TypeScript and SQL file. The guard was checked by injecting a NUL and confirming it fails.
+   The digest itself is unchanged for every run recorded in section 11, because with no
+   decisions the loop body never executes and the digest is that of the empty string; all three
+   real resolutions returned `already resolved` with their original identifiers after the fix.
+9. **The clustering test timeout was raised to 120 seconds.** Three Sprint 4 tests cluster
    large synthetic corpora and take seven to twenty-two seconds while the rest of the workspace
    builds beside them, against a five-second default. They failed about one full run in three
    on machine load alone. The budget is raised; the corpora are unchanged, because a mutation

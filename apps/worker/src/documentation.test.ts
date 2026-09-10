@@ -176,14 +176,14 @@ describe('current documentation agrees with itself', () => {
     // only to the one the finding was raised against.
     const report = await read('docs/SPRINT-5-REPORT.md');
     expect(report).toContain('4a0a847748b1ff73c424934547c8e6ccd8a1cd6b');
-    expect(report).toMatch(/\*\*482 offline tests\*\*/u);
+    expect(report).toMatch(/\*\*484 offline tests\*\*/u);
     expect(report).toMatch(
       /\*\*173 PostgreSQL integration tests\*\*: 81 in `@cas\/database`, 92 in `@cas\/worker`/u,
     );
     // The per-package table must sum to the total it claims.
     const rows = [...report.matchAll(/^\| `@cas\/[a-z-]+`\s*\|\s*(\d+) \|$/gmu)];
     expect(rows).toHaveLength(9);
-    expect(rows.reduce((total, row) => total + Number(row[1]), 0)).toBe(482);
+    expect(rows.reduce((total, row) => total + Number(row[1]), 0)).toBe(484);
     // And it must not claim an audit it has not had.
     expect(report).toContain('**Sprint 5 remains pending until Codex Desktop issues PASS.**');
   });

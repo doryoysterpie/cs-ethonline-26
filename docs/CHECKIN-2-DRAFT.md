@@ -109,7 +109,7 @@ post-event roadmap, to protect the 10 September Graph release gate.
 | Provisional incidents                   | 23,596                                    |
 | Live Graph protocol identities proven   | 7                                         |
 | Evidence states resolved on real data   | 23,596, all `reported_only`               |
-| Automated tests, no database or network | 482                                       |
+| Automated tests, no database or network | 484                                       |
 | PostgreSQL integration tests            | 173                                       |
 
 **What the evidence counts are and are not.** Every real incident resolves to
