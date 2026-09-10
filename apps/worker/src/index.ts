@@ -19,12 +19,24 @@ export {
   type KnownHeader,
 } from './editorial/constants.js';
 export {
+  IMPORT_LIMIT_CODES,
   readCsv,
+  resolveImportLimits,
   translateStreamError,
   type CsvHandlers,
   type CsvReadOptions,
   type CsvStreamStats,
+  type ImportLimitCode,
 } from './editorial/csv-stream.js';
+export {
+  armCommandDeadline,
+  COMMAND_DEADLINE_VARIABLE,
+  resolveCommandDeadline,
+  type ArmedDeadline,
+  type CommandDeadline,
+  type DeadlineHooks,
+  type DeadlineTimers,
+} from './deadline.js';
 export {
   EXIT_CODES,
   exitCodeFor,
