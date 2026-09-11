@@ -28,8 +28,9 @@ import {
  * in `bounds`, so a preview cannot pass for the whole record. Every headline,
  * publisher and URL is redacted and rendered as quoted evidence before the
  * drafter sees it, so the only line breaks in the preview are the drafter's
- * own and no retrieved text can carry a tag or a control character into it.
- * Nothing is written anywhere.
+ * own and no retrieved text can carry a tag, a control character or a
+ * credential into it. The run and its draft data are read in one transaction,
+ * under the call's abort signal. Nothing is written anywhere.
  */
 export async function draftSection(
   provider: IncidentReadStoreProvider,

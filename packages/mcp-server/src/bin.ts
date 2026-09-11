@@ -1,18 +1,24 @@
 #!/usr/bin/env node
-import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { serveStdio, StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 
+import { SHUTDOWN_DEADLINE_MS } from './bounds.js';
 import { assertCatalogueIntegrity } from './definitions.js';
 import { createRuntime, ENVIRONMENT_NAMES } from './runtime.js';
+import { sleep } from './safety/cancellation.js';
 import { createCasMcpServer } from './server.js';
+import { PolicyTransport } from './transport/policy.js';
 
 /**
  * The stdio entry point, and the only transport this package enables.
  *
  * stdout is the protocol channel: nothing in this process writes to it except
- * the transport. Every diagnostic goes to stderr through the runtime's
- * redacting logger. The process reads four environment names and no file,
- * opens no listening socket, and exits when the client closes stdin, on
- * SIGINT or on SIGTERM, after closing the transport and the store.
+ * the transport, and every message the transport writes has passed the
+ * outbound error policy. Every diagnostic goes to stderr through the
+ * runtime's redacting logger. The process reads four environment names and
+ * no file, opens no listening socket, and exits when the client closes stdin,
+ * on SIGINT or on SIGTERM: shutdown aborts every active call, waits a bounded
+ * time for the work to unwind, closes the transport and the store, and exits
+ * with the documented code whether or not something is still stuck.
  *
  * Before serving, the process asks the database who the configured credential
  * is. In production mode (the default) an overprivileged credential stops the
@@ -55,12 +61,17 @@ async function main(): Promise<void> {
     if (closing) return;
     closing = true;
     runtime.log(`cas-mcp-server shutdown reason=${reason}`);
-    void Promise.allSettled([handle.close(), runtime.close()]).then(() => {
-      process.exitCode = code;
+    const finished = Promise.allSettled([runtime.close(), handle.close()]).then(() => true);
+    const expired = sleep(SHUTDOWN_DEADLINE_MS + 1_000).then(() => false);
+    void Promise.race([finished, expired]).then((clean) => {
+      runtime.log(`cas-mcp-server exit code=${code} clean=${clean}`);
+      process.exit(code);
     });
   };
 
+  const transport = new PolicyTransport(new StdioServerTransport(), { redact: runtime.redact });
   const handle = serveStdio(() => createCasMcpServer(runtime), {
+    transport,
     onerror: () => runtime.log('cas-mcp-server transport_error'),
   });
   process.stdin.on('end', () => shutdown('stdin_closed', 0));

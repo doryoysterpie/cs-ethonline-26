@@ -13,6 +13,7 @@ export const TOOL_ERROR_CODES = [
   'rate_limited',
   'too_many_concurrent_calls',
   'tool_timeout',
+  'call_cancelled',
   'result_too_large',
   'database_not_configured',
   'database_configuration_invalid',
@@ -37,6 +38,7 @@ const MESSAGES: Readonly<Record<ToolErrorCode, string>> = {
   rate_limited: 'too many tool calls in the current window; retry later',
   too_many_concurrent_calls: 'too many tool calls are in flight; retry later',
   tool_timeout: 'the tool did not finish within its time budget',
+  call_cancelled: 'the call was cancelled before it finished',
   result_too_large: 'the result exceeds the size bound; narrow the request',
   database_not_configured: 'no database is configured for this server',
   database_configuration_invalid: 'the database configuration was rejected',
@@ -80,17 +82,23 @@ export function toolErrorMessage(code: ToolErrorCode): string {
 }
 
 const SQLSTATE = /^[0-9A-Z]{5}$/;
+/** PostgreSQL SQLSTATE for a statement stopped by `statement_timeout` or `pg_cancel_backend`. */
+const QUERY_CANCELED = '57014';
 
 /**
  * Maps any thrown value to a `ToolError`. Nothing about the original error
  * survives except its classification and, for a database failure, its
  * SQLSTATE; for a provider failure, its kind. `AbortError` and
- * `TimeoutError` names are the deadline's own signal.
+ * `TimeoutError` names are an aborted request's own signal.
  */
 export function toToolError(error: unknown): ToolError {
   if (isToolError(error)) return error;
   if (isDatabaseError(error)) {
     const code = error.code !== null && SQLSTATE.test(error.code) ? { sqlstate: error.code } : {};
+    // `query_canceled`: the statement timeout or a cancel stopped the work.
+    // Either is a bound this server set, so the outcome is the timeout, not
+    // an unavailable database (Track D finding F1).
+    if (error.code === QUERY_CANCELED) return new ToolError('tool_timeout', code);
     switch (error.kind) {
       case 'configuration':
         return new ToolError('database_configuration_invalid');

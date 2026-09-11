@@ -1,6 +1,12 @@
+import { types } from 'node:util';
+
 import * as z from 'zod/v4';
 
-import { ARGUMENT_STRING_MAX_CHARACTERS } from './bounds.js';
+import {
+  ARGUMENT_KEY_MAX_CHARACTERS,
+  ARGUMENT_KEYS_MAX,
+  ARGUMENT_STRING_MAX_CHARACTERS,
+} from './bounds.js';
 import { ToolError, type SafeDetail } from './safety/errors.js';
 import { hasControlCharacter } from './safety/text.js';
 
@@ -13,6 +19,9 @@ import { hasControlCharacter } from './safety/text.js';
  * can be handed any JavaScript value, and the audited packages in this
  * repository were each asked to close that door. So, in order:
  *
+ *   0. a Proxy is refused before anything else, using the runtime's own
+ *      `isProxy` check, which fires no trap; nothing below therefore ever
+ *      runs a trap on a hostile object (Track D finding F11);
  *   1. the value must be a plain object whose prototype is `Object.prototype`
  *      or null; arrays, functions and class instances are refused;
  *   2. it may carry no symbol key;
@@ -32,6 +41,9 @@ import { hasControlCharacter } from './safety/text.js';
  */
 
 export const ARGUMENT_REJECTIONS = {
+  proxy: 'proxy',
+  tooManyKeys: 'too_many_keys',
+  keyTooLong: 'key_too_long',
   notPlainObject: 'not_plain_object',
   prototypeNotPlain: 'prototype_not_plain',
   symbolKey: 'symbol_key',
@@ -86,6 +98,7 @@ function unwrapShape(schema: z.ZodType): Record<string, unknown> | undefined {
  * with defaults applied.
  */
 export function validateArguments<S extends z.ZodType>(schema: S, raw: unknown): z.output<S> {
+  if (types.isProxy(raw)) reject(ARGUMENT_REJECTIONS.proxy);
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || typeof raw === 'function') {
     reject(ARGUMENT_REJECTIONS.notPlainObject);
   }
@@ -98,7 +111,9 @@ export function validateArguments<S extends z.ZodType>(schema: S, raw: unknown):
   const allowed = allowedArgumentNames(schema);
   const record = raw as Record<string, unknown>;
   const names = Object.getOwnPropertyNames(record);
+  if (names.length > ARGUMENT_KEYS_MAX) reject(ARGUMENT_REJECTIONS.tooManyKeys);
   for (const name of names) {
+    if (name.length > ARGUMENT_KEY_MAX_CHARACTERS) reject(ARGUMENT_REJECTIONS.keyTooLong);
     if (!allowed.has(name)) reject(ARGUMENT_REJECTIONS.unexpectedKey);
   }
   // Descriptors are inspected before any value is read, so an accessor is

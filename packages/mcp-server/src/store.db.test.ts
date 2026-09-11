@@ -22,6 +22,7 @@ import {
   type TestDatabase,
 } from './db-support.js';
 import { invokeTool } from './runtime.js';
+import { isToolError } from './safety/errors.js';
 import {
   PostgresReadStore,
   PostgresReadStoreProvider,
@@ -565,7 +566,9 @@ describe('F8: one tool call reads one snapshot', () => {
     } catch (error) {
       aborted = error;
     }
-    expect(aborted instanceof Error && aborted.name).toBe('AbortError');
+    // The store speaks the runtime's fixed cancellation vocabulary, not the
+    // platform's DOMException: an abort with no cause is a client cancellation.
+    expect(isToolError(aborted) && aborted.code).toBe('call_cancelled');
     expect(statementsAfterAbort).toBe(1);
     expect(await eventually(async () => (await readerBackends(database)) === 0)).toBe(true);
 
@@ -581,7 +584,7 @@ describe('F8: one tool call reads one snapshot', () => {
       { signal: AbortSignal.abort() },
     );
     expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error.code).toBe('tool_timeout');
+    if (!outcome.ok) expect(outcome.error.code).toBe('call_cancelled');
     await runtime.close();
     expect(await readerBackends(database)).toBe(0);
   });

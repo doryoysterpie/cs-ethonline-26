@@ -9,8 +9,10 @@ import type { PrivilegeReport } from './privileges.js';
  * hands the call an `IncidentReadStore` bound to that transaction's
  * connection, so every constituent read of one call (run metadata, incidents,
  * sources, associations, review state, targets, signal history, draft data)
- * comes from one snapshot. It takes the call's abort signal, so the runtime
- * that owns cancellation can stop follow-on reads without a second deadline.
+ * comes from one snapshot. It takes the call's one abort signal, owned by the
+ * runtime (Track D finding F1): once the signal aborts no further statement
+ * is sent, and a statement in flight is cancelled at the server, so the
+ * runtime that owns cancellation needs no second deadline of its own.
  *
  * The PostgreSQL implementation runs the transaction `REPEATABLE READ` and
  * `READ ONLY` with a statement timeout, verifies the role's privileges before
@@ -175,7 +177,11 @@ export interface DraftIncidentRow {
 }
 
 export interface ReadTransactionOptions {
-  /** The call's abort signal. Once aborted, no further statement is sent. */
+  /**
+   * The call's abort signal. Once aborted, no further statement is sent and a
+   * statement in flight is cancelled at the server; the transaction unwinds
+   * and its connection is destroyed before the call reports.
+   */
   readonly signal?: AbortSignal | undefined;
 }
 

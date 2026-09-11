@@ -25,8 +25,8 @@ import {
  * latest human decision on it. The machine's proposal and the person's answer
  * are separate fields, so neither can be mistaken for the other. The run, the
  * incident, its sources and its associations are read in one transaction,
- * from one snapshot: a decision recorded while this call is in flight is
- * seen by the next call, never half by this one.
+ * from one snapshot, under the call's abort signal: a decision recorded while
+ * this call is in flight is seen by the next call, never half by this one.
  */
 export async function explainIncident(
   provider: IncidentReadStoreProvider,

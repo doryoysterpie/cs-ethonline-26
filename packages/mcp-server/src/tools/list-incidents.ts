@@ -14,7 +14,8 @@ import {
  * `list_incidents`: one bounded keyset page of the incidents one completed
  * evidence run resolved. The cursor is an incident identifier, so the page
  * boundary is a value the caller already holds and nothing is inferred. The
- * run and its page are read in one transaction, from one snapshot.
+ * run and its page are read in one transaction, from one snapshot, under the
+ * call's abort signal.
  */
 export async function listIncidents(
   provider: IncidentReadStoreProvider,

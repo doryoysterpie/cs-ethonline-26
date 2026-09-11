@@ -2,6 +2,7 @@ import type { AssociationRelation, ChainId, DataOrigin, EvidenceState } from '@c
 import { openDatabase, quoteIdentifier, type DatabaseConfig, type Queryable } from '@cas/database';
 
 import {
+  CANCEL_POOL_CONNECTIONS,
   DATABASE_MAX_CONNECTIONS,
   HEADLINE_MAX_CHARACTERS,
   PUBLISHER_MAX_CHARACTERS,
@@ -10,6 +11,7 @@ import {
   TEXT_FETCH_MARGIN_MIN_CHARACTERS,
   URL_MAX_CHARACTERS,
 } from '../bounds.js';
+import { throwIfAborted } from '../safety/cancellation.js';
 import { ToolError } from '../safety/errors.js';
 import { verifyDatabasePrivileges, type PrivilegeReport } from './privileges.js';
 import type {
@@ -52,6 +54,16 @@ import type {
  *     snapshot. A review action or a signal run committed while the call is
  *     in flight is seen by the next call, never by this one.
  *
+ * Cancellation (Track D finding F1) is the database's too. The call's one
+ * abort signal, owned by the runtime, reaches this transaction: every
+ * statement checks it first, so an aborted call sends nothing further; and
+ * the transaction records its backend process id when it opens, so that when
+ * the signal fires while a statement is in flight, a separate one-connection
+ * pool issues `pg_cancel_backend` for that process and the server stops the
+ * statement with SQLSTATE 57014 rather than leaving it to run until a lock
+ * clears or the statement timeout fires. The cancelled transaction is rolled
+ * back and its connection destroyed before the call reports.
+ *
  * Every statement is fixed text with parameters. Every relation is named by
  * its schema and every built-in function, aggregate, operator and type by
  * `pg_catalog`, so a function or relation of the same name in an application
@@ -86,19 +98,62 @@ function abortable(client: Queryable, signal: AbortSignal | undefined): Queryabl
   if (signal === undefined) return client;
   return {
     query: <R extends Record<string, unknown>>(text: string, values?: readonly unknown[]) => {
-      // Cooperative: an aborted call sends no further statement. Cancelling a
-      // statement already in flight is the runtime's business.
-      signal.throwIfAborted();
+      // Every statement of the call observes the signal before it is sent, so
+      // an aborted call sends nothing further. The fixed error carries the
+      // cause (deadline, client cancellation or shutdown) the runtime set.
+      throwIfAborted(signal);
       return client.query<R>(text, values);
     },
   };
 }
 
 /**
+ * Arms server-side cancellation for one open transaction: records the backend
+ * process id on the transaction's own connection, and when the signal fires
+ * issues `pg_cancel_backend` for it from a separate one-connection pool, so
+ * the cancel never waits behind the very statement it cancels. That pool is
+ * destroyed as soon as the cancel is sent. Returns the function that detaches
+ * the listener once the call has ended on its own.
+ */
+async function armCancellation(
+  config: DatabaseConfig,
+  transaction: Queryable,
+  signal: AbortSignal,
+): Promise<() => void> {
+  const backend = await transaction.query<{ pid: number }>(
+    'SELECT pg_catalog.pg_backend_pid() AS pid',
+  );
+  const pid = backend.rows[0]?.pid ?? null;
+  const cancelBackend = (): void => {
+    if (pid === null) return;
+    void (async () => {
+      const canceller = openDatabase(config, { maxConnections: CANCEL_POOL_CONNECTIONS });
+      try {
+        await canceller.withClient((client) =>
+          client.query('SELECT pg_catalog.pg_cancel_backend($1::pg_catalog.int4)', [pid]),
+        );
+      } catch {
+        // The statement timeout remains the bound when the cancel cannot be sent.
+      } finally {
+        await canceller.end().catch(() => undefined);
+      }
+    })();
+  };
+  if (signal.aborted) {
+    cancelBackend();
+    return () => undefined;
+  }
+  signal.addEventListener('abort', cancelBackend, { once: true });
+  return () => signal.removeEventListener('abort', cancelBackend);
+}
+
+/**
  * Opens one connection, runs `fn` inside one `REPEATABLE READ`, `READ ONLY`
  * transaction with a statement timeout, commits, and destroys the connection
  * whatever happened. The schema handed to `fn` is the one the handle
- * addresses, validated as a plain identifier.
+ * addresses, validated as a plain identifier. When a signal is supplied, no
+ * statement is sent once it has aborted and a statement already in flight is
+ * cancelled at the server.
  */
 export async function withReadOnlyConnection<T>(
   config: DatabaseConfig,
@@ -106,7 +161,7 @@ export async function withReadOnlyConnection<T>(
   options: ReadTransactionOptions = {},
 ): Promise<T> {
   const signal = options.signal;
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const db = openDatabase(config, { maxConnections: DATABASE_MAX_CONNECTIONS });
   try {
     return await db.withClient(async (raw) => {
@@ -115,13 +170,16 @@ export async function withReadOnlyConnection<T>(
       // runs before the declaration.
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       let committed = false;
+      let disarm: () => void = () => undefined;
       try {
+        if (signal !== undefined) disarm = await armCancellation(config, client, signal);
         await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
         const result = await fn(client, db.schema);
         await client.query('COMMIT');
         committed = true;
         return result;
       } finally {
+        disarm();
         if (!committed) {
           try {
             await raw.query('ROLLBACK');

@@ -1,11 +1,14 @@
 import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 
+import { TOOL_NAME_MAX_CHARACTERS } from './bounds.js';
 import {
   CHAIN_ANOMALIES,
   DRAFT_SECTION,
   EXPLAIN_INCIDENT,
   LIST_INCIDENTS,
   assertCatalogueIntegrity,
+  isToolName,
+  toolCatalogue,
   type ToolName,
 } from './definitions.js';
 import { invokeTool, type ToolRuntime } from './runtime.js';
@@ -16,8 +19,18 @@ import { invokeTool, type ToolRuntime } from './runtime.js';
  * capability is declared, no tool is ever enabled, disabled, renamed or
  * removed after registration, and the registered handles are not exported.
  *
- * Every handler returns through `invokeTool`, so a failure is an `isError`
- * result carrying a fixed code and never a thrown message.
+ * The SDK's own `tools/call` dispatch is replaced (Track D finding F4). The
+ * SDK answered an unknown tool name or an unexpected argument key with its
+ * own text, which reflected the caller's input without this server's
+ * redaction or bounds. The handler installed here hands every call, whatever
+ * its name or arguments, to `invokeTool`, which admits only the four known
+ * names and the hardened argument boundary and answers every failure with a
+ * fixed code. The SDK's registration of the tools is kept for `tools/list`, so
+ * the advertised catalogue and its pinned digest are unchanged.
+ *
+ * The protocol's per-request cancellation signal is passed into the call
+ * (Track D finding F1), so a client's `notifications/cancelled` or a closed
+ * transport aborts the work rather than only discarding the answer.
  */
 
 export const SERVER_NAME = 'cas-chainwatch-mcp';
@@ -31,6 +44,14 @@ export const SERVER_INSTRUCTIONS = [
   'A total-value-locked movement is telemetry and does not establish that a cyberattack occurred.',
   'Nothing here invokes a model, writes a draft, edits a record or publishes anything.',
 ].join(' ');
+
+/** Admits a name only when it is a bounded string naming one of the four tools. Never echoed. */
+function preflightName(name: unknown): ToolName | null {
+  if (typeof name !== 'string' || name.length === 0 || name.length > TOOL_NAME_MAX_CHARACTERS) {
+    return null;
+  }
+  return isToolName(name) ? name : null;
+}
 
 function handler(runtime: ToolRuntime, name: ToolName): (args: unknown) => Promise<CallToolResult> {
   return async (args: unknown): Promise<CallToolResult> => {
@@ -52,49 +73,37 @@ export function createCasMcpServer(runtime: ToolRuntime): McpServer {
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 
-  server.registerTool(
-    LIST_INCIDENTS.name,
-    {
-      title: LIST_INCIDENTS.title,
-      description: LIST_INCIDENTS.description,
-      inputSchema: LIST_INCIDENTS.inputSchema,
-      outputSchema: LIST_INCIDENTS.outputSchema,
-      annotations: { ...LIST_INCIDENTS.annotations },
-    },
-    handler(runtime, LIST_INCIDENTS.name),
-  );
-  server.registerTool(
-    EXPLAIN_INCIDENT.name,
-    {
-      title: EXPLAIN_INCIDENT.title,
-      description: EXPLAIN_INCIDENT.description,
-      inputSchema: EXPLAIN_INCIDENT.inputSchema,
-      outputSchema: EXPLAIN_INCIDENT.outputSchema,
-      annotations: { ...EXPLAIN_INCIDENT.annotations },
-    },
-    handler(runtime, EXPLAIN_INCIDENT.name),
-  );
-  server.registerTool(
-    CHAIN_ANOMALIES.name,
-    {
-      title: CHAIN_ANOMALIES.title,
-      description: CHAIN_ANOMALIES.description,
-      inputSchema: CHAIN_ANOMALIES.inputSchema,
-      outputSchema: CHAIN_ANOMALIES.outputSchema,
-      annotations: { ...CHAIN_ANOMALIES.annotations },
-    },
-    handler(runtime, CHAIN_ANOMALIES.name),
-  );
-  server.registerTool(
-    DRAFT_SECTION.name,
-    {
-      title: DRAFT_SECTION.title,
-      description: DRAFT_SECTION.description,
-      inputSchema: DRAFT_SECTION.inputSchema,
-      outputSchema: DRAFT_SECTION.outputSchema,
-      annotations: { ...DRAFT_SECTION.annotations },
-    },
-    handler(runtime, DRAFT_SECTION.name),
-  );
+  for (const definition of [LIST_INCIDENTS, EXPLAIN_INCIDENT, CHAIN_ANOMALIES, DRAFT_SECTION]) {
+    server.registerTool(
+      definition.name,
+      {
+        title: definition.title,
+        description: definition.description,
+        inputSchema: definition.inputSchema,
+        outputSchema: definition.outputSchema,
+        annotations: { ...definition.annotations },
+      },
+      handler(runtime, definition.name),
+    );
+  }
+
+  // The SDK installed its own tools/call handler when the first tool was
+  // registered. It is replaced, not wrapped: a call must never reach the
+  // SDK's validation text, whatever its name or arguments.
+  const outputSchemas = new Map(toolCatalogue().map((entry) => [entry.name, entry.outputSchema]));
+  server.server.removeRequestHandler('tools/call');
+  server.server.setRequestHandler('tools/call', async (request, ctx) => {
+    const name = preflightName(request.params.name);
+    const outcome = await invokeTool(runtime, name, request.params.arguments ?? {}, {
+      signal: ctx.mcpReq.signal,
+    });
+    const result: CallToolResult = outcome.ok
+      ? { content: [{ type: 'text', text: outcome.text }], structuredContent: outcome.structured }
+      : { content: [{ type: 'text', text: outcome.text }], isError: true };
+    return server.server.projectCallToolResult(
+      result,
+      outcome.ok ? outputSchemas.get(outcome.tool) : undefined,
+    );
+  });
   return server;
 }

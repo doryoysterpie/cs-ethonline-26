@@ -9,6 +9,7 @@ import {
 } from '@cas/graph-evidence';
 
 import { createRuntime, type RuntimeOptions, type ToolRuntime } from './runtime.js';
+import { throwIfAborted } from './safety/cancellation.js';
 import { createCasMcpServer } from './server.js';
 import { PRIVILEGE_CHECKS, type PrivilegeReport } from './store/privileges.js';
 import type {
@@ -26,6 +27,7 @@ import type {
   SignalRunRow,
   SignalTargetRow,
 } from './store/read-store.js';
+import { PolicyTransport } from './transport/policy.js';
 
 /**
  * Test-only helpers, excluded from the build. Every value here is invented;
@@ -297,42 +299,102 @@ export function buildFixture(): Fixture {
 }
 
 /**
- * An in-memory read store over the fixture, and its own provider. It records
- * every call, counts its transactions, honours the abort signal exactly as
- * the PostgreSQL provider does, and has no write method.
+ * An in-memory read store over the fixture, and its own provider.
+ *
+ * It records every call, counts its transactions, honours the call's abort
+ * signal exactly as the PostgreSQL provider does, and has no write method.
+ * `withReadTransaction` hands the call a store bound to that call's signal,
+ * so a read that starts inside an aborted transaction observes the abort the
+ * way a statement on a cancelled backend does.
+ *
+ * `hang` makes every method wait: an abort-aware hang rejects when the call's
+ * signal aborts, as the PostgreSQL store does when it cancels a backend;
+ * `ignoreAbort` models work that cannot be interrupted and only ends when
+ * `release()` is called.
  */
 export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
   readonly calls: string[] = [];
+  /** Methods that observed an abort while hanging. */
+  readonly aborts: string[] = [];
   readonly fixture: Fixture;
-  /** When set, every method waits forever: the deadline test. */
   hang = false;
+  ignoreAbort = false;
   closed = false;
   transactions = 0;
+  #releasers: (() => void)[] = [];
 
   constructor(fixture: Fixture = buildFixture()) {
     this.fixture = fixture;
   }
 
+  /** One transaction per tool call; every read of the call carries its signal. */
   async withReadTransaction<T>(
     fn: (store: IncidentReadStore) => Promise<T>,
     options: ReadTransactionOptions = {},
   ): Promise<T> {
-    options.signal?.throwIfAborted();
+    throwIfAborted(options.signal);
     this.transactions += 1;
-    return fn(this);
+    const signal = options.signal;
+    // Exactly what the PostgreSQL store's `abortable` wrapper does: the signal
+    // is observed before every read of the call, so an aborted call issues no
+    // further read even when the read in flight cannot itself be interrupted.
+    const guarded = async <T>(read: () => Promise<T>): Promise<T> => {
+      throwIfAborted(signal);
+      return read();
+    };
+    const bound: IncidentReadStore = {
+      getEvidenceRun: (evidenceRunId) => guarded(() => this.getEvidenceRun(evidenceRunId, signal)),
+      listIncidentSummaries: (evidenceRunId, afterIncidentId, limit) =>
+        guarded(() => this.listIncidentSummaries(evidenceRunId, afterIncidentId, limit, signal)),
+      getIncidentSummary: (evidenceRunId, incidentId) =>
+        guarded(() => this.getIncidentSummary(evidenceRunId, incidentId, signal)),
+      listIncidentSources: (clusteringRunId, incidentId, limit) =>
+        guarded(() => this.listIncidentSources(clusteringRunId, incidentId, limit, signal)),
+      listIncidentAssociations: (evidenceRunId, incidentId, limit) =>
+        guarded(() => this.listIncidentAssociations(evidenceRunId, incidentId, limit, signal)),
+      getSignalRun: (signalRunId) => guarded(() => this.getSignalRun(signalRunId, signal)),
+      listSignalTargets: (boundary, limit) =>
+        guarded(() => this.listSignalTargets(boundary, limit, signal)),
+      listSignalHistory: (boundary, chain, protocolSlug, limit) =>
+        guarded(() => this.listSignalHistory(boundary, chain, protocolSlug, limit, signal)),
+      listDraftIncidents: (evidenceRunId, incidentLimit, sourcesPerIncidentLimit) =>
+        guarded(() =>
+          this.listDraftIncidents(evidenceRunId, incidentLimit, sourcesPerIncidentLimit, signal),
+        ),
+    };
+    return fn(bound);
   }
 
+  /** The in-memory store has no role to widen: the matrix always passes. */
   async verifyPrivileges(): Promise<PrivilegeReport> {
     return { ok: true, checks: PRIVILEGE_CHECKS.map((code) => ({ code, ok: true })), failed: [] };
   }
 
-  private async record(method: string): Promise<void> {
-    this.calls.push(method);
-    if (this.hang) await new Promise<never>(() => undefined);
+  /** Ends every hanging method. */
+  release(): void {
+    for (const release of this.#releasers.splice(0)) release();
   }
 
-  async getEvidenceRun(evidenceRunId: string): Promise<EvidenceRunRow | null> {
-    await this.record('getEvidenceRun');
+  private async record(method: string, signal: AbortSignal | undefined): Promise<void> {
+    this.calls.push(method);
+    if (!this.hang) return;
+    await new Promise<void>((resolve, reject) => {
+      this.#releasers.push(resolve);
+      if (signal === undefined) return;
+      const onAbort = (): void => {
+        this.aborts.push(method);
+        if (!this.ignoreAbort) reject(new Error('the fake store observed the abort'));
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  async getEvidenceRun(
+    evidenceRunId: string,
+    signal?: AbortSignal,
+  ): Promise<EvidenceRunRow | null> {
+    await this.record('getEvidenceRun', signal);
     const f = this.fixture;
     return (
       [f.evidenceRun, f.incompleteEvidenceRun, f.foreignEvidenceRun].find(
@@ -351,8 +413,9 @@ export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
     evidenceRunId: string,
     afterIncidentId: string | null,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentSummaryRow[]> {
-    await this.record('listIncidentSummaries');
+    await this.record('listIncidentSummaries', signal);
     return this.incidentsOf(evidenceRunId)
       .map((incident) => incident.summary)
       .filter((summary) => afterIncidentId === null || summary.incidentId > afterIncidentId)
@@ -363,8 +426,9 @@ export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
   async getIncidentSummary(
     evidenceRunId: string,
     incidentId: string,
+    signal?: AbortSignal,
   ): Promise<IncidentSummaryRow | null> {
-    await this.record('getIncidentSummary');
+    await this.record('getIncidentSummary', signal);
     return (
       this.incidentsOf(evidenceRunId).find((i) => i.summary.incidentId === incidentId)?.summary ??
       null
@@ -375,8 +439,9 @@ export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
     clusteringRunId: string,
     incidentId: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentSourceRow[]> {
-    await this.record('listIncidentSources');
+    await this.record('listIncidentSources', signal);
     const all = [...this.fixture.incidents, this.fixture.foreignIncident];
     const found = all.find((i) => i.summary.incidentId === incidentId);
     if (found === undefined || clusteringRunId.length === 0) return [];
@@ -387,8 +452,9 @@ export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
     evidenceRunId: string,
     incidentId: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<IncidentAssociationRow[]> {
-    await this.record('listIncidentAssociations');
+    await this.record('listIncidentAssociations', signal);
     return (
       this.incidentsOf(evidenceRunId)
         .find((i) => i.summary.incidentId === incidentId)
@@ -396,8 +462,8 @@ export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
     );
   }
 
-  async getSignalRun(signalRunId: string): Promise<SignalRunRow | null> {
-    await this.record('getSignalRun');
+  async getSignalRun(signalRunId: string, signal?: AbortSignal): Promise<SignalRunRow | null> {
+    await this.record('getSignalRun', signal);
     return (
       [this.fixture.signalRun, this.fixture.incompleteSignalRun].find(
         (run) => run.id === signalRunId,
@@ -405,20 +471,29 @@ export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
     );
   }
 
-  async listSignalTargets(boundary: SignalRunBoundary, limit: number): Promise<SignalTargetRow[]> {
-    await this.record('listSignalTargets');
+  async listSignalTargets(
+    boundary: SignalRunBoundary,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<SignalTargetRow[]> {
+    await this.record('listSignalTargets', signal);
     if (boundary.signalRunId !== this.fixture.signalRun.id) return [];
     return this.fixture.targets.slice(0, limit);
   }
 
-  /** The fixture's boundary semantics: same origin, run completed at or before, observed at or before as-of. */
+  /**
+   * The fixture's boundary semantics: the same recorded origin, a run
+   * completed at or before the named run, and an observation at or before the
+   * as-of instant.
+   */
   async listSignalHistory(
     boundary: SignalRunBoundary,
     chain: ChainId,
     protocolSlug: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<SignalObservationRow[]> {
-    await this.record(`listSignalHistory:${boundary.dataOrigin}`);
+    await this.record(`listSignalHistory:${boundary.dataOrigin}`, signal);
     const rows = this.fixture.history.get(`${chain}:${protocolSlug}:${boundary.dataOrigin}`) ?? [];
     return rows
       .filter(
@@ -434,8 +509,9 @@ export class FakeStore implements IncidentReadStore, IncidentReadStoreProvider {
     evidenceRunId: string,
     incidentLimit: number,
     sourcesPerIncidentLimit: number,
+    signal?: AbortSignal,
   ): Promise<DraftIncidentRow[]> {
-    await this.record('listDraftIncidents');
+    await this.record('listDraftIncidents', signal);
     return this.incidentsOf(evidenceRunId)
       .slice(0, incidentLimit)
       .map((incident) => ({
@@ -563,6 +639,8 @@ export interface Harness {
   readonly server: McpServer;
   readonly runtime: ToolRuntime;
   readonly logs: string[];
+  /** The client's own end of the linked pair, for raw protocol probes. */
+  readonly clientTransport: InMemoryTransport;
   close(): Promise<void>;
 }
 
@@ -587,7 +665,8 @@ export async function connectInMemory(overrides: Partial<RuntimeOptions> = {}): 
   const { runtime, logs } = testRuntime(overrides);
   const server = createCasMcpServer(runtime);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await server.connect(serverTransport);
+  // The same outbound policy the stdio entry point applies.
+  await server.connect(new PolicyTransport(serverTransport, { redact: runtime.redact }));
   const client = new Client(
     { name: 'cas-mcp-test-harness', version: '0.0.0' },
     { versionNegotiation: { mode: 'auto' } },
@@ -598,6 +677,7 @@ export async function connectInMemory(overrides: Partial<RuntimeOptions> = {}): 
     server,
     runtime,
     logs,
+    clientTransport,
     async close() {
       await client.close();
       await server.close();

@@ -78,7 +78,9 @@ describe('deadlines and bounds', () => {
       { signal: AbortSignal.abort() },
     );
     expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error.code).toBe('tool_timeout');
+    // A signal the client supplied is a cancellation, not the tool's own
+    // deadline: the call scope names the cause and the code follows it.
+    if (!outcome.ok) expect(outcome.error.code).toBe('call_cancelled');
     expect(store.calls).toEqual([]);
     expect(store.transactions).toBe(0);
   });

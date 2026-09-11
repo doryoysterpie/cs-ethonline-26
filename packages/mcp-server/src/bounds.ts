@@ -47,10 +47,20 @@ export const TEXT_FETCH_MARGIN_MAX_CHARACTERS = 512;
 
 /** Longest string a request may carry in any argument, in characters. */
 export const ARGUMENT_STRING_MAX_CHARACTERS = 64;
+/** Most own keys an argument object may carry before it is refused unread. */
+export const ARGUMENT_KEYS_MAX = 32;
+/** Longest argument key, in characters, before the object is refused unread. */
+export const ARGUMENT_KEY_MAX_CHARACTERS = 64;
+/** Longest tool name a request may carry before it is refused as unknown. */
+export const TOOL_NAME_MAX_CHARACTERS = 128;
 
 /** Wall-clock budget per tool call, in milliseconds. */
 export const STORED_TOOL_DEADLINE_MS = 10_000;
 export const LIVE_TOOL_DEADLINE_MS = 30_000;
+/** How long a cancelled call may take to unwind before its result is reported anyway. */
+export const UNWIND_GRACE_MS = 5_000;
+/** How long shutdown waits for aborted calls to unwind before the process exits anyway. */
+export const SHUTDOWN_DEADLINE_MS = 8_000;
 /** Server-side statement timeout inside every read-only transaction, in milliseconds. */
 export const STATEMENT_TIMEOUT_MS = 8_000;
 /** Per-request timeout of the live Graph client, in milliseconds. */
@@ -58,6 +68,8 @@ export const LIVE_REQUEST_TIMEOUT_MS = 15_000;
 
 /** Largest serialized structured result, in UTF-8 bytes. */
 export const RESULT_MAX_BYTES = 262_144;
+/** Largest text an error result or a protocol error message may carry, in UTF-8 bytes. */
+export const ERROR_TEXT_MAX_BYTES = 4_096;
 
 /** Rate limit: at most this many tool calls in any window of this length. */
 export const RATE_LIMIT_CALLS = 60;
@@ -71,3 +83,15 @@ export const MAX_CONCURRENT_CALLS = 4;
  * setting, temporary object or advisory lock can survive into another call.
  */
 export const DATABASE_MAX_CONNECTIONS = 1;
+/**
+ * Connections the cancellation of one call may open: exactly one, opened only
+ * when the call's signal fires while a statement is in flight. The cancel
+ * travels on its own connection, so it never waits behind the very statement
+ * it cancels, and that connection is destroyed as soon as the cancel is sent.
+ */
+export const CANCEL_POOL_CONNECTIONS = 1;
+
+/** Bounds on the live gateway request target, checked before any socket is opened. */
+export const GATEWAY_HOST_MAX_CHARACTERS = 253;
+export const GATEWAY_PATH_MAX_CHARACTERS = 512;
+export const GATEWAY_URL_MAX_CHARACTERS = 1_024;

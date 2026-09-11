@@ -8,6 +8,7 @@ import {
 import { ANOMALY_TARGETS_LIMIT, IDENTITY_MAX_CHARACTERS } from '../bounds.js';
 import type { AnomalyLabeller, ChainSeries } from '../engines/anomaly.js';
 import type { LiveSignalSource } from '../engines/live-graph.js';
+import { throwIfAborted } from '../safety/cancellation.js';
 import { ToolError } from '../safety/errors.js';
 import { quoteEvidence, type QuotedEvidence } from '../safety/text.js';
 import { ANOMALY_BOUNDARY_SENTENCE, RESULT_NOTICE, TELEMETRY_SENTENCE } from '../schemas/common.js';
@@ -32,16 +33,17 @@ import { canonicalUuid, type ToolContext } from './shared.js';
  * their observations at or before `asOf` contribute, the as-of cut precedes
  * the per-target limit, and ties are broken by run completion and signal
  * identifier. A run completed later, a run still running, or an observation
- * after `asOf` cannot change the result, so the same request against the
- * same stored history yields the same bytes. Each entry names the run and
- * signal that actually produced the observation it labels, and the result
- * names the boundary and the runs that contributed. All of it is read in one
- * transaction, from one snapshot.
+ * after `asOf` cannot change the result, so the same request against the same
+ * stored history yields the same bytes. Each entry names the run and signal
+ * that actually produced the observation it labels, and the result names the
+ * boundary and the runs that contributed. All of it is read in one
+ * transaction, from one snapshot, under the call's abort signal.
  *
  * Live mode queries the provider now through the Sprint 1 client for one
- * chain's configured targets. A live failure is a failure in the result;
- * nothing in live mode reads the store, and nothing in stored mode reaches a
- * provider.
+ * chain's configured targets, with the call's abort signal on every request
+ * socket, so cancelling the call aborts the sockets. A live failure is a
+ * failure in the result; nothing in live mode reads the store, and nothing in
+ * stored mode reaches a provider.
  */
 
 export interface ChainAnomaliesDependencies {
@@ -234,13 +236,11 @@ function liveTargetDto(
   redact: (value: string) => string,
 ): LiveTargetDto {
   // Provider-controlled values pass through the Sprint 1 client's own
-  // redactor first, so the live path inherits that control whatever the
-  // runtime redactor knows.
+  // redactor and the runtime's credential-variant redactor before they are
+  // escaped or bounded, so an encoded key in a provider field is matched
+  // whole (Track D finding F3).
   const quoted = (value: string | null | undefined): QuotedEvidence | null =>
-    quoteEvidence(
-      value === null || value === undefined ? value : redact(value),
-      IDENTITY_MAX_CHARACTERS,
-    );
+    quoteEvidence(value, IDENTITY_MAX_CHARACTERS, redact);
   const requireQuoted = (value: string): QuotedEvidence =>
     quoted(value) ?? { text: '', truncated: false, trust: 'untrusted_quoted_evidence' };
   const target = {
@@ -341,14 +341,17 @@ function liveTargetDto(
 async function liveAnomalies(
   deps: ChainAnomaliesDependencies,
   chain: ChainId,
+  context: ToolContext,
 ): Promise<ChainAnomaliesOutput> {
   if (deps.live === null) throw new ToolError('graph_credential_missing');
-  const observation = await deps.live.observe(chain);
+  const observation = await deps.live.observe(chain, context.signal);
+  throwIfAborted(context.signal);
   const configured =
     chain === 'ethereum' ? ETHEREUM_LENDING_TARGETS.length : BASE_LENDING_TARGETS.length;
   const nowSeconds = Math.floor(deps.now().getTime() / 1000);
+  const redactBoth = (value: string): string => context.redact(observation.redact(value));
   const targets = observation.evaluations.map((evaluation) =>
-    liveTargetDto(evaluation, deps.labeller, nowSeconds, observation.redact),
+    liveTargetDto(evaluation, deps.labeller, nowSeconds, redactBoth),
   );
   return {
     notice: RESULT_NOTICE,
@@ -377,7 +380,7 @@ export async function chainAnomalies(
 ): Promise<ChainAnomaliesOutput> {
   if (args.mode === 'live') {
     if (args.chain === undefined) throw new ToolError('invalid_arguments', { argument: 'chain' });
-    return liveAnomalies(deps, args.chain);
+    return liveAnomalies(deps, args.chain, context);
   }
   if (args.signalRunId === undefined)
     throw new ToolError('invalid_arguments', { argument: 'signalRunId' });

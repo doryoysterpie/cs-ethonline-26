@@ -8,14 +8,16 @@ import type { EvidenceRunProvenanceDto, IncidentSummaryDto } from '../schemas/ou
 import type { EvidenceRunRow, IncidentReadStore, IncidentSummaryRow } from '../store/read-store.js';
 
 /**
- * What every tool receives beside its validated arguments: the runtime's
- * redactor, applied to retrieved text before it is bounded for display, and
- * the call's abort signal, handed to the store so an aborted call sends no
- * further statement.
+ * What every tool receives beside its validated arguments: the call's one
+ * abort signal, handed to the store provider so the call's transaction checks
+ * it before every statement and cancels a statement in flight when it fires,
+ * and to the live source so a request socket aborts with the call; and the
+ * runtime's redactor, applied to retrieved text before it is escaped or
+ * bounded for display.
  */
 export interface ToolContext {
+  readonly signal: AbortSignal;
   readonly redact: Redactor;
-  readonly signal?: AbortSignal | undefined;
 }
 
 /** Fixed sentence per evidence state. Never composed from input. */

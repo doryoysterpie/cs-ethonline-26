@@ -40,6 +40,18 @@ export {
   type PreviewSource,
 } from './engines/draft.js';
 export {
+  DESTINATION_CLASSES,
+  GatewayPolicyError,
+  assertGatewayTarget,
+  classifyDestination,
+  classifyRedirect,
+  createPolicyFetch,
+  isGatewayPolicyError,
+  type DestinationClass,
+  type GatewayPolicyOptions,
+  type GatewayRefusal,
+} from './engines/gateway-policy.js';
+export {
   GraphLiveSignalSource,
   type GraphLiveSignalSourceOptions,
   type LiveObservation,
@@ -53,12 +65,23 @@ export {
   createRuntime,
   invokeTool,
   parseStoreMode,
+  type ActiveCall,
   type DatabaseRoleVerification,
   type InvokeOptions,
   type RuntimeOptions,
   type ToolInvocation,
   type ToolRuntime,
 } from './runtime.js';
+export {
+  ABORT_CAUSES,
+  CallScope,
+  abortCause,
+  combineSignals,
+  errorForCause,
+  throwIfAborted,
+  type AbortCause,
+  type CallScopeOptions,
+} from './safety/cancellation.js';
 export {
   TOOL_ERROR_CODES,
   ToolError,
@@ -69,10 +92,12 @@ export {
   type ToolErrorCode,
 } from './safety/errors.js';
 export {
+  MINIMUM_SECRET_LENGTH,
   REDACTED,
   connectionSecrets,
   createRedactor,
   redactDeep,
+  secretVariants,
   type Redactor,
 } from './safety/redact.js';
 export {
@@ -82,6 +107,7 @@ export {
   quoteEvidence,
   safeDisplay,
   toSingleLine,
+  toSingleLineWithoutDirection,
   type BoundedTextField,
   type QuotedEvidence,
 } from './safety/text.js';
@@ -140,6 +166,7 @@ export type {
   SignalRunRow,
   SignalTargetRow,
 } from './store/read-store.js';
+export type { ToolContext } from './tools/shared.js';
 export {
   ARGUMENT_REJECTIONS,
   allowedArgumentNames,
