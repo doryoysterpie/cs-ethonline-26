@@ -22,20 +22,41 @@ import { connectInMemory, FakeStore } from './test-support.js';
 function assertNoAdditionalProperties(schema: unknown, path: string): void {
   if (typeof schema !== 'object' || schema === null) return;
   const record = schema as Record<string, unknown>;
+  const branches = Array.isArray(record['oneOf']) ? (record['oneOf'] as unknown[]) : null;
   if (record['type'] === 'object') {
-    expect(record['additionalProperties'], `${path} must refuse additional properties`).toBe(false);
+    if (branches !== null && record['properties'] === undefined) {
+      // A dispatcher root: every alternative must itself be strict.
+      expect(branches.length, `${path} must offer at least two alternatives`).toBeGreaterThan(1);
+    } else {
+      expect(record['additionalProperties'], `${path} must refuse additional properties`).toBe(
+        false,
+      );
+    }
   }
   for (const [key, value] of Object.entries(record)) {
     if (key === 'properties' && typeof value === 'object' && value !== null) {
       for (const [name, child] of Object.entries(value as Record<string, unknown>)) {
         assertNoAdditionalProperties(child, `${path}.${name}`);
       }
-    } else if (key === 'items') {
-      assertNoAdditionalProperties(value, `${path}[]`);
-    } else if (key === 'anyOf' && Array.isArray(value)) {
+    } else if (key === 'items' || key === 'prefixItems') {
+      if (Array.isArray(value)) {
+        value.forEach((child, index) => assertNoAdditionalProperties(child, `${path}[${index}]`));
+      } else {
+        assertNoAdditionalProperties(value, `${path}[]`);
+      }
+    } else if ((key === 'anyOf' || key === 'oneOf') && Array.isArray(value)) {
       value.forEach((child, index) => assertNoAdditionalProperties(child, `${path}|${index}`));
     }
   }
+}
+
+/** Every input property of a schema, from its root or from each of its alternatives. */
+function inputProperties(schema: Record<string, unknown>): [string, Record<string, unknown>][] {
+  const own = Object.entries(
+    (schema['properties'] as Record<string, Record<string, unknown>> | undefined) ?? {},
+  );
+  const branches = (schema['oneOf'] as Record<string, unknown>[] | undefined) ?? [];
+  return [...own, ...branches.flatMap((branch) => inputProperties(branch))];
 }
 
 describe('the static tool catalogue', () => {
@@ -114,13 +135,33 @@ describe('the static tool catalogue', () => {
     }
   });
 
-  it('takes no free-text argument: every input property is a pattern, an enumeration or a bounded integer', () => {
+  it('expresses the two anomaly modes as oneOf over strict alternatives, and nothing else as a union', () => {
     for (const entry of toolCatalogue()) {
-      const properties = entry.inputSchema['properties'] as Record<string, Record<string, unknown>>;
-      for (const [name, property] of Object.entries(properties)) {
+      if (entry.name === 'chain_anomalies') {
+        const branches = entry.inputSchema['oneOf'] as Record<string, unknown>[];
+        expect(branches).toHaveLength(2);
+        expect(entry.inputSchema['properties']).toBeUndefined();
+        expect(branches.map((b) => (b['required'] as string[]).join(','))).toEqual([
+          'mode,signalRunId,asOf',
+          'mode,chain',
+        ]);
+      } else {
+        expect(entry.inputSchema['oneOf']).toBeUndefined();
+        expect(entry.inputSchema['anyOf']).toBeUndefined();
+        expect(entry.inputSchema['additionalProperties']).toBe(false);
+      }
+    }
+  });
+
+  it('takes no free-text argument: every input property is a pattern, an enumeration, a constant or a bounded integer', () => {
+    for (const entry of toolCatalogue()) {
+      const properties = inputProperties(entry.inputSchema);
+      expect(properties.length).toBeGreaterThan(0);
+      for (const [name, property] of properties) {
         const constrained =
           property['pattern'] !== undefined ||
           property['enum'] !== undefined ||
+          property['const'] !== undefined ||
           (property['type'] === 'integer' &&
             property['minimum'] !== undefined &&
             property['maximum'] !== undefined);
@@ -150,6 +191,16 @@ describe('the static tool catalogue', () => {
         );
       }
     }
+  });
+
+  it('labels stored origins as recorded, not verified, in every description that names an origin', () => {
+    for (const tool of TOOL_DEFINITIONS) {
+      if (/origin/i.test(tool.description)) {
+        expect(tool.description, tool.name).toMatch(/recorded/);
+        expect(tool.description, tool.name).toMatch(/not verified/);
+      }
+    }
+    expect(SERVER_INSTRUCTIONS).toContain('does not verify it');
   });
 });
 

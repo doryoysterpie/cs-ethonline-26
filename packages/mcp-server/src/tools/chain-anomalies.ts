@@ -11,7 +11,12 @@ import type { LiveSignalSource } from '../engines/live-graph.js';
 import { throwIfAborted } from '../safety/cancellation.js';
 import { ToolError } from '../safety/errors.js';
 import { quoteEvidence, type QuotedEvidence } from '../safety/text.js';
-import { ANOMALY_BOUNDARY_SENTENCE, RESULT_NOTICE, TELEMETRY_SENTENCE } from '../schemas/common.js';
+import {
+  ANOMALY_BOUNDARY_SENTENCE,
+  RECORDED_ORIGIN_PROVENANCE,
+  RESULT_NOTICE,
+  TELEMETRY_SENTENCE,
+} from '../schemas/common.js';
 import type { ChainAnomaliesArguments } from '../schemas/input.js';
 import type {
   AnomalyEntryDto,
@@ -20,7 +25,7 @@ import type {
   LiveTargetDto,
 } from '../schemas/output.js';
 import type { IncidentReadStoreProvider, SignalRunBoundary } from '../store/read-store.js';
-import { canonicalUuid, type ToolContext } from './shared.js';
+import { canonicalUuid, requireCompletedSignalRun, type ToolContext } from './shared.js';
 
 /**
  * `chain_anomalies`, in two explicitly selected modes that share nothing.
@@ -28,16 +33,18 @@ import { canonicalUuid, type ToolContext } from './shared.js';
  * Stored mode evaluates one named completed signal run at one reproducible
  * historical boundary, and labels it with the same engine the worker uses.
  * The boundary (`SignalRunBoundary`) is the named run's own completion instant
- * and the caller's as-of instant: only completed runs of the same origin and
- * signal version that completed at or before the named run contribute, only
- * their observations at or before `asOf` contribute, the as-of cut precedes
- * the per-target limit, and ties are broken by run completion and signal
- * identifier. A run completed later, a run still running, or an observation
- * after `asOf` cannot change the result, so the same request against the same
- * stored history yields the same bytes. Each entry names the run and signal
- * that actually produced the observation it labels, and the result names the
- * boundary and the runs that contributed. All of it is read in one
- * transaction, from one snapshot, under the call's abort signal.
+ * and the caller's required as-of instant: only completed runs of the same
+ * recorded origin and signal version that completed at or before the named run
+ * contribute, only their observations at or before `asOf` contribute, the
+ * as-of cut precedes the per-target limit, and ties are broken by run
+ * completion and signal identifier. A run completed later, a run still
+ * running, or an observation after `asOf` cannot change the result, and the
+ * server clock is never consulted, so for a fixed database snapshot the result
+ * is a function of the two arguments and nothing else. Each entry names the
+ * run and signal that actually produced the observation it labels, and the
+ * result names the boundary and the runs that contributed. All of it is read
+ * in one transaction, from one snapshot, under the call's abort signal, and
+ * the recorded origin is labelled with its provenance block, never verified.
  *
  * Live mode queries the provider now through the Sprint 1 client for one
  * chain's configured targets, with the call's abort signal on every request
@@ -50,6 +57,7 @@ export interface ChainAnomaliesDependencies {
   readonly store: IncidentReadStoreProvider | null;
   readonly live: LiveSignalSource | null;
   readonly labeller: AnomalyLabeller;
+  /** The server clock. Read by live mode only. */
   readonly now: () => Date;
 }
 
@@ -115,11 +123,9 @@ async function storedAnomalies(
   if (deps.store === null) throw new ToolError('database_not_configured');
   return deps.store.withReadTransaction(
     async (store) => {
-      const run = await store.getSignalRun(signalRunId);
-      if (run === null) throw new ToolError('signal_run_not_found');
-      if (run.status !== 'completed' || run.completedAt === null) {
-        throw new ToolError('signal_run_not_completed');
-      }
+      // Completed, and every controlled metadata field within its grammar,
+      // before anything else of the run is read.
+      const run = await requireCompletedSignalRun(store, signalRunId);
       const boundary: SignalRunBoundary = {
         signalRunId: run.id,
         dataOrigin: run.dataOrigin,
@@ -198,6 +204,7 @@ async function storedAnomalies(
             targetCount: run.targetCount,
             signalCount: run.signalCount,
             completedAt: run.completedAt,
+            originProvenance: RECORDED_ORIGIN_PROVENANCE,
           },
           boundary: {
             requestedSignalRunId: run.id,
@@ -378,12 +385,7 @@ export async function chainAnomalies(
   args: ChainAnomaliesArguments,
   context: ToolContext,
 ): Promise<ChainAnomaliesOutput> {
-  if (args.mode === 'live') {
-    if (args.chain === undefined) throw new ToolError('invalid_arguments', { argument: 'chain' });
-    return liveAnomalies(deps, args.chain, context);
-  }
-  if (args.signalRunId === undefined)
-    throw new ToolError('invalid_arguments', { argument: 'signalRunId' });
-  const asOf = args.asOf === undefined ? deps.now() : new Date(args.asOf);
-  return storedAnomalies(deps, canonicalUuid(args.signalRunId), asOf, context);
+  if (args.mode === 'live') return liveAnomalies(deps, args.chain, context);
+  // The validated union guarantees both stored arguments; no clock is read.
+  return storedAnomalies(deps, canonicalUuid(args.signalRunId), new Date(args.asOf), context);
 }

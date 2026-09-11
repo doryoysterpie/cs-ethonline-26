@@ -6,6 +6,7 @@ import {
   URL_MAX_CHARACTERS,
 } from '../bounds.js';
 import { ToolError } from '../safety/errors.js';
+import { classifySourceReference } from '../safety/reference.js';
 import { quoteBoundedEvidence } from '../safety/text.js';
 import { RESULT_NOTICE, TELEMETRY_SENTENCE } from '../schemas/common.js';
 import type { ExplainIncidentArguments } from '../schemas/input.js';
@@ -23,8 +24,10 @@ import {
  * `explain_incident`: one incident of one completed evidence run, with the
  * bounded source list behind it and every machine suggestion beside the
  * latest human decision on it. The machine's proposal and the person's answer
- * are separate fields, so neither can be mistaken for the other. The run, the
- * incident, its sources and its associations are read in one transaction,
+ * are separate fields, so neither can be mistaken for the other. Every source
+ * URL is quoted evidence and carries the reference policy's verdict beside
+ * it, so a rejected reference is never presented as a usable source. The run,
+ * the incident, its sources and its associations are read in one transaction,
  * from one snapshot, under the call's abort signal: a decision recorded while
  * this call is in flight is seen by the next call, never half by this one.
  */
@@ -55,18 +58,30 @@ export async function explainIncident(
         tool: 'explain_incident',
         run: runProvenance(run),
         incident: incidentSummaryDto(summary, context.redact),
-        sources: sources.map((source) => ({
-          sourceRowId: source.sourceRowId,
-          title: quoteBoundedEvidence(source.title, HEADLINE_MAX_CHARACTERS, context.redact),
-          publisher: quoteBoundedEvidence(
-            source.publisher,
-            PUBLISHER_MAX_CHARACTERS,
-            context.redact,
-          ),
-          url: quoteBoundedEvidence(source.url, URL_MAX_CHARACTERS, context.redact),
-          postedAt: source.postedAt,
-          classificationDecision: source.decision,
-        })),
+        sources: sources.map((source) => {
+          // The policy classifies the prefix the store fetched: a URL's
+          // scheme, credentials and host lie at its front, well inside that
+          // prefix, so a bound applied to the tail cannot change the verdict.
+          const verdict = source.url === null ? null : classifySourceReference(source.url.fragment);
+          return {
+            sourceRowId: source.sourceRowId,
+            title: quoteBoundedEvidence(source.title, HEADLINE_MAX_CHARACTERS, context.redact),
+            publisher: quoteBoundedEvidence(
+              source.publisher,
+              PUBLISHER_MAX_CHARACTERS,
+              context.redact,
+            ),
+            url: quoteBoundedEvidence(source.url, URL_MAX_CHARACTERS, context.redact),
+            reference:
+              verdict === null
+                ? null
+                : verdict.status === 'accepted'
+                  ? { status: 'accepted' as const, reason: null }
+                  : { status: 'rejected' as const, reason: verdict.reason },
+            postedAt: source.postedAt,
+            classificationDecision: source.decision,
+          };
+        }),
         associations: associations.map((association) => ({
           associationId: association.associationId,
           signalId: association.signalId,

@@ -114,11 +114,20 @@ function abortable(client: Queryable, signal: AbortSignal | undefined): Queryabl
  * the cancel never waits behind the very statement it cancels. That pool is
  * destroyed as soon as the cancel is sent. Returns the function that detaches
  * the listener once the call has ended on its own.
+ *
+ * The cancel is deliberately off the call's critical path, so the call can
+ * report while the cancelling connection is still open. Its closing promise is
+ * handed to `registerCancellation`, which is how shutdown waits for that
+ * connection too (Track D finding F1). The cancel runs on the call's own
+ * credential, which is allowed to signal its own sessions; no
+ * `pg_signal_backend` membership or other elevated privilege is required, and
+ * the reader role is never granted one.
  */
 async function armCancellation(
   config: DatabaseConfig,
   transaction: Queryable,
   signal: AbortSignal,
+  registerCancellation: ((closed: Promise<void>) => void) | undefined,
 ): Promise<() => void> {
   const backend = await transaction.query<{ pid: number }>(
     'SELECT pg_catalog.pg_backend_pid() AS pid',
@@ -126,7 +135,7 @@ async function armCancellation(
   const pid = backend.rows[0]?.pid ?? null;
   const cancelBackend = (): void => {
     if (pid === null) return;
-    void (async () => {
+    const closed = (async () => {
       const canceller = openDatabase(config, { maxConnections: CANCEL_POOL_CONNECTIONS });
       try {
         await canceller.withClient((client) =>
@@ -138,6 +147,7 @@ async function armCancellation(
         await canceller.end().catch(() => undefined);
       }
     })();
+    registerCancellation?.(closed);
   };
   if (signal.aborted) {
     cancelBackend();
@@ -172,7 +182,9 @@ export async function withReadOnlyConnection<T>(
       let committed = false;
       let disarm: () => void = () => undefined;
       try {
-        if (signal !== undefined) disarm = await armCancellation(config, client, signal);
+        if (signal !== undefined) {
+          disarm = await armCancellation(config, client, signal, options.registerCancellation);
+        }
         await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
         const result = await fn(client, db.schema);
         await client.query('COMMIT');
@@ -774,6 +786,7 @@ export class PostgresReadStoreProvider implements IncidentReadStoreProvider {
   readonly #mode: StoreMode;
   readonly #margin: number;
   readonly #inFlight = new Set<Promise<unknown>>();
+  readonly #cancellations = new Set<Promise<void>>();
 
   constructor(config: DatabaseConfig, options: PostgresReadStoreOptions) {
     this.#config = config;
@@ -795,6 +808,18 @@ export class PostgresReadStoreProvider implements IncidentReadStoreProvider {
     fn: (store: IncidentReadStore) => Promise<T>,
     options: ReadTransactionOptions = {},
   ): Promise<T> {
+    // A cancel runs on a pool of its own, so it can still be closing after the
+    // call it cancelled has reported. The provider holds each closing promise
+    // so `close` can wait for it; a caller that asked for the same promise
+    // still receives it.
+    const register = (closed: Promise<void>): void => {
+      this.#cancellations.add(closed);
+      void closed.then(
+        () => this.#cancellations.delete(closed),
+        () => this.#cancellations.delete(closed),
+      );
+      options.registerCancellation?.(closed);
+    };
     const call = withReadOnlyConnection(
       this.#config,
       async (client, schema) => {
@@ -804,7 +829,7 @@ export class PostgresReadStoreProvider implements IncidentReadStoreProvider {
         }
         return fn(new PostgresReadStore(client, schema, this.#margin));
       },
-      options,
+      { ...options, registerCancellation: register },
     );
     this.#inFlight.add(call);
     try {
@@ -823,8 +848,13 @@ export class PostgresReadStoreProvider implements IncidentReadStoreProvider {
     );
   }
 
-  /** Waits for in-flight calls to unwind; each destroys its own connection. */
+  /**
+   * Waits for in-flight calls to unwind; each destroys its own connection.
+   * Then waits for every cancelling connection still closing, so no connection
+   * this provider opened outlives the server that closed it.
+   */
   async close(): Promise<void> {
     await Promise.allSettled([...this.#inFlight]);
+    await Promise.allSettled([...this.#cancellations]);
   }
 }

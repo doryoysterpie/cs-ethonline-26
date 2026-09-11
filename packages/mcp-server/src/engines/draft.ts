@@ -1,5 +1,15 @@
 import type { DataOrigin, EvidenceState } from '@cas/contracts';
-import { generateDraft, type DraftIncident, type DraftSection } from '@cas/drafting';
+import {
+  CLAIM_CONFIDENCES,
+  DRAFTING_CONTRACT,
+  GRAPH_EVIDENCE_STATES,
+  generateDraft,
+  type ClaimProvenance,
+  type DraftIncident,
+  type DraftSection,
+} from '@cas/drafting';
+
+import { DRAFT_INCIDENTS_MAX_LIMIT } from '../bounds.js';
 
 /**
  * The draft previewer, behind an interface.
@@ -9,12 +19,21 @@ import { generateDraft, type DraftIncident, type DraftSection } from '@cas/draft
  * draft in memory. Nothing here writes a file, reads a file, calls a model or
  * touches an existing draft; the Sprint 5 writer with its output directory is
  * never imported, so the path-handling findings of that audit have no reach
- * into this server.
+ * into this server. The drafter's vocabularies are re-exported from here so
+ * the output contract can name them without importing the package itself.
  */
+
+export { CLAIM_CONFIDENCES, GRAPH_EVIDENCE_STATES };
+
+/** Most sidecar records one preview can carry: every incident times the drafter's claims-per-incident bound. */
+export const PREVIEW_CLAIM_RECORDS_LIMIT =
+  DRAFT_INCIDENTS_MAX_LIMIT * DRAFTING_CONTRACT.bounds.maximumClaimsPerIncident;
 
 export interface PreviewSource {
   readonly sourceRowId: string;
+  /** Already rendered as inert Markdown by the caller. */
   readonly publisher: string;
+  /** Already rendered by the caller: a code span, or a fixed withheld sentence. */
   readonly url: string;
   readonly publishedAt: string | null;
 }
@@ -27,10 +46,10 @@ export interface PreviewIncident {
   readonly dataOrigin: DataOrigin;
   readonly evidenceState: EvidenceState;
   readonly onChainSubject: boolean;
-  /** Already rendered as quoted evidence by the caller. */
+  /** Already rendered as inert Markdown quoted evidence by the caller. */
   readonly headline: string;
   readonly sources: readonly PreviewSource[];
-  /** One claim per source that carried a title: the reported headline, verbatim. */
+  /** One claim per source that carried a title: the reported headline, rendered inert. */
   readonly claims: readonly {
     readonly claimId: string;
     readonly text: string;
@@ -46,6 +65,9 @@ export interface PreviewRequest {
   readonly incidents: readonly PreviewIncident[];
 }
 
+/** One sidecar record per claim, exactly as the drafter records it. */
+export type PreviewClaimRecord = ClaimProvenance;
+
 export interface PreviewResult {
   readonly markdown: string;
   readonly draftingVersion: string;
@@ -55,10 +77,17 @@ export interface PreviewResult {
     readonly incidents: number;
     readonly claimsWritten: number;
     readonly claimsOmitted: number;
-    readonly namesWithheld: number;
     readonly contradicted: number;
     readonly cryptoIncidents: number;
   };
+  /**
+   * The drafter's "names withheld" count, named for what it is: every claim
+   * is handed to the drafter with no structured victim name, so the drafter
+   * records every claim as withheld. Nothing is redacted from quoted text.
+   */
+  readonly claimsWithoutStructuredVictimName: number;
+  /** The drafter's per-claim provenance sidecar for the whole draft. */
+  readonly claims: readonly PreviewClaimRecord[];
 }
 
 export interface DraftPreviewer {
@@ -95,7 +124,9 @@ export const deterministicPreviewer: DraftPreviewer = Object.freeze({
         claimId: claim.claimId,
         text: claim.text,
         // Everything here is a report of a report; a stronger confidence is a
-        // human's judgement. No name is proposed, so every name is withheld.
+        // human's judgement. No structured victim name is proposed, so the
+        // drafter records every claim as name-withheld; the quoted text is
+        // untouched and may still contain a name.
         confidence: 'reported' as const,
         sourceRowIds: [claim.sourceRowId],
         victimName: null,
@@ -109,12 +140,18 @@ export const deterministicPreviewer: DraftPreviewer = Object.freeze({
       dataOrigin: request.dataOrigin,
       incidents,
     });
+    const { namesWithheld, ...counts } = draft.provenance.counts;
     return {
       markdown: draft.sections[request.section],
       draftingVersion: draft.provenance.draftingVersion,
       contractVersion: draft.provenance.contractVersion,
       contractHash: draft.provenance.contractHash,
-      counts: { ...draft.provenance.counts },
+      counts: { ...counts },
+      claimsWithoutStructuredVictimName: namesWithheld,
+      claims: draft.provenance.claims.map((claim) => ({
+        ...claim,
+        sourceRowIds: [...claim.sourceRowIds],
+      })),
     };
   },
 });

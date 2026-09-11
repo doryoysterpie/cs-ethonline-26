@@ -26,14 +26,17 @@ import { hasControlCharacter } from './safety/text.js';
  *      or null; arrays, functions and class instances are refused;
  *   2. it may carry no symbol key;
  *   3. every own property name must be in the tool's allowlist, read with
- *      `getOwnPropertyNames` so a non-enumerable key cannot hide;
+ *      `getOwnPropertyNames` so a non-enumerable key cannot hide; for a
+ *      discriminated union the allowlist is the union of its alternatives,
+ *      and the schema then refuses a key that belongs to the other mode;
  *   4. every property must be a data descriptor: an accessor is refused
  *      before it can run;
  *   5. every value must be a primitive; a nested object or array is refused,
  *      because no tool takes one;
- *   6. every string is bounded and may carry no C0, DEL, C1, U+2028 or
- *      U+2029 character, so a traversal string, an ANSI sequence or a line
- *      separator never reaches a schema message;
+ *   6. every string is bounded and may carry no C0, DEL, C1, U+2028, U+2029,
+ *      bidirectional-control or invisible-formatting character, so a
+ *      traversal string, an ANSI sequence or a line separator never reaches
+ *      a schema message;
  *   7. only then does the schema run.
  *
  * A rejection names the rule and, for a schema failure, the argument name
@@ -66,31 +69,40 @@ const ISSUE_PHRASES: Readonly<Record<string, string>> = {
   too_small: 'out of bounds',
   too_big: 'out of bounds',
   invalid_value: 'not an allowed value',
+  invalid_union: 'not an allowed value',
   unrecognized_keys: 'unexpected key',
   custom: 'rejected by a cross-field rule',
 };
 
-/** The own property names a strict object schema admits. */
-export function allowedArgumentNames(schema: z.ZodType): ReadonlySet<string> {
-  const inner = schema as unknown as {
-    shape?: Record<string, unknown>;
-    def?: { shape?: Record<string, unknown> };
-  };
-  const shape = inner.shape ?? inner.def?.shape ?? unwrapShape(schema);
-  return new Set(Object.keys(shape ?? {}));
+interface ZodDefinition {
+  readonly type?: unknown;
+  readonly shape?: unknown;
+  readonly options?: unknown;
+  readonly innerType?: unknown;
 }
 
-function unwrapShape(schema: z.ZodType): Record<string, unknown> | undefined {
-  // A schema wrapped by a pipe or a transform exposes its object through the
-  // inner definition; a plain object exposes its shape directly.
-  const def = (schema as unknown as { _zod?: { def?: Record<string, unknown> } })._zod?.def;
-  const inner = def?.['innerType'] as { shape?: Record<string, unknown> } | undefined;
-  if (inner?.shape !== undefined) return inner.shape;
-  const type = def?.['type'];
-  if (type === 'object' && typeof def?.['shape'] === 'object' && def['shape'] !== null) {
-    return def['shape'] as Record<string, unknown>;
+/**
+ * The object shapes a schema is built from: the object itself, every
+ * alternative of a union, or the object inside a wrapper.
+ */
+function objectShapes(schema: unknown): Record<string, unknown>[] {
+  const def = (schema as { _zod?: { def?: ZodDefinition } })._zod?.def;
+  if (def === undefined) return [];
+  if (def.type === 'object' && typeof def.shape === 'object' && def.shape !== null) {
+    return [def.shape as Record<string, unknown>];
   }
-  return undefined;
+  if (def.type === 'union' && Array.isArray(def.options)) {
+    return (def.options as unknown[]).flatMap(objectShapes);
+  }
+  if (def.innerType !== undefined) return objectShapes(def.innerType);
+  return [];
+}
+
+/** The own property names a strict object schema, or a union of them, admits. */
+export function allowedArgumentNames(schema: z.ZodType): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const shape of objectShapes(schema)) for (const name of Object.keys(shape)) names.add(name);
+  return names;
 }
 
 /**
@@ -149,7 +161,14 @@ export function validateArguments<S extends z.ZodType>(schema: S, raw: unknown):
   const parsed = schema.safeParse({ ...plain });
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    const argument = first?.path[0];
+    // A key that belongs to the other mode of a union is reported by name:
+    // it passed the allowlist, so naming it echoes no caller value.
+    const argument =
+      first?.code === 'unrecognized_keys'
+        ? (first as { keys?: unknown }).keys instanceof Array
+          ? ((first as { keys: unknown[] }).keys[0] ?? null)
+          : null
+        : first?.path[0];
     const name = typeof argument === 'string' && allowed.has(argument) ? argument : null;
     reject(ARGUMENT_REJECTIONS.schemaViolation, {
       argument: name,

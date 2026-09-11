@@ -183,6 +183,16 @@ export interface ReadTransactionOptions {
    * and its connection is destroyed before the call reports.
    */
   readonly signal?: AbortSignal | undefined;
+  /**
+   * Receives the promise of each server-side cancellation the transaction
+   * issues, settled once that cancellation's connection has been closed.
+   *
+   * A cancel runs on a pool of its own so it never waits behind the statement
+   * it cancels, which also means the call can report before that pool has
+   * closed. Shutdown holds these promises so the connection cannot outlive the
+   * server.
+   */
+  readonly registerCancellation?: ((closed: Promise<void>) => void) | undefined;
 }
 
 /** The read surface of one transaction. Every method reads the same snapshot. */

@@ -14,6 +14,12 @@ import type { Redactor } from './redact.js';
  *     separators are shown as visible escapes (backslash-n, backslash-x1b,
  *     backslash-u2028), so a value cannot forge a line, a status field or a
  *     terminal sequence;
+ *   - the bidirectional controls (U+061C, U+200E, U+200F, U+202A to U+202E,
+ *     U+2066 to U+2069) and the invisible formatting characters (U+200B,
+ *     U+2060 to U+2064, U+FEFF) are shown as visible escapes too, so a value
+ *     cannot reverse, hide or reorder what a reader sees (the Trojan Source
+ *     class of attack). Joiners used by ordinary text, U+200C and U+200D, are
+ *     left alone;
  *   - the two angle brackets are shown as backslash-u003c and backslash-u003e,
  *     so an HTML-like tag such as IMPORTANT or system in a headline cannot read
  *     as markup or as a directive to the consuming model (OWASP MCP guidance,
@@ -22,7 +28,8 @@ import type { Redactor } from './redact.js';
  *
  * The stored evidence is never mutated; only the copy that leaves is
  * transformed. The character classes are built from code points so this file
- * holds no control byte of its own.
+ * holds no control byte of its own. A display copy that is placed inside
+ * Markdown is escaped once more by `markdown.ts`.
  */
 
 const char = (code: number): string => String.fromCharCode(code);
@@ -30,7 +37,7 @@ const char = (code: number): string => String.fromCharCode(code);
 /** ASCII escape, the introducer of ANSI sequences. */
 export const ESCAPE_CHARACTER = char(0x1b);
 
-const CONTROL_CLASS = `[${char(0x00)}-${char(0x1f)}${char(0x7f)}-${char(0x9f)}${char(0x2028)}${char(0x2029)}]`;
+const CONTROL_CLASS = `[${char(0x00)}-${char(0x1f)}${char(0x7f)}-${char(0x9f)}${char(0x2028)}${char(0x2029)}${char(0x061c)}${char(0x200b)}${char(0x200e)}${char(0x200f)}${char(0x202a)}-${char(0x202e)}${char(0x2060)}-${char(0x2064)}${char(0x2066)}-${char(0x2069)}${char(0xfeff)}]`;
 const CONTROL_CHARACTERS = new RegExp(CONTROL_CLASS, 'g');
 const CONTROL_CHARACTER = new RegExp(CONTROL_CLASS);
 const ANGLE_BRACKETS = /[<>]/g;
@@ -76,7 +83,10 @@ function escapeCharacter(character: string): string {
   }
 }
 
-/** True when the value carries any C0, DEL, C1 or Unicode line/paragraph separator character. */
+/**
+ * True when the value carries any C0, DEL, C1, Unicode line/paragraph
+ * separator, bidirectional control or invisible formatting character.
+ */
 export function hasControlCharacter(value: string): boolean {
   return CONTROL_CHARACTER.test(value);
 }
