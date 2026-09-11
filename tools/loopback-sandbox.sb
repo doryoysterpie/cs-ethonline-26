@@ -1,0 +1,39 @@
+;; A macOS sandbox profile that denies every network operation except a
+;; loopback socket:
+;;
+;;   sandbox-exec -f tools/loopback-sandbox.sb corepack pnpm test --force
+;;
+;; `tools/offline-sandbox.sb` denies everything and is the stronger statement.
+;; Two files of the default suite need a loopback socket and so cannot run
+;; under it: `packages/mcp-server/src/redirect.stdio.test.ts` serves real
+;; synthetic HTTP and HTTPS redirects from 127.0.0.1 to prove the gateway
+;; refuses every one of them, and `packages/mcp-server/src/stdio.test.ts`
+;; asserts the fixed start-up line for an unreachable database, whose reason
+;; is derived from the refusal the operating system returns. This profile
+;; exists so the whole default suite can still be shown to reach no host off
+;; this machine.
+;;
+;; What it proves, demonstrated in the same session by two probes that must
+;; each produce the outcome named beside them:
+;;
+;;   ;; no host outside loopback
+;;   sandbox-exec -f tools/loopback-sandbox.sb node -e \
+;;     "require('node:net').connect(443,'1.1.1.1').on('error',e=>console.log(e.code))"   ;; EPERM
+;;
+;;   ;; no name resolution
+;;   sandbox-exec -f tools/loopback-sandbox.sb node -e \
+;;     "require('node:dns').lookup('example.com',e=>console.log(e.code))"                ;; ENOTFOUND
+;;
+;; What it does not prove: this dialect accepts only `*` or `localhost` as a
+;; network address host and does not enforce the port, so a loopback
+;; allowance cannot exclude the local PostgreSQL port. That the default suite
+;; needs no database is carried by `tools/offline-sandbox.sb`, under which
+;; every package except `@cas/mcp-server` passes with all network denied, and
+;; by the database suite being a separate command over separate files.
+;; UNIX-domain sockets stay denied here, as in the deny-all profile.
+(version 1)
+(allow default)
+(deny network*)
+(allow network-bind (local ip "localhost:*"))
+(allow network-inbound (local ip "localhost:*"))
+(allow network-outbound (remote ip "localhost:*"))

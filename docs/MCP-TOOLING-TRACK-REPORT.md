@@ -524,7 +524,38 @@ The PostgreSQL suite now creates a database and a login role of its own per file
 database as the provisioned reader role and is no longer opt-in behind an environment
 variable.
 
-### 16.4 What has not changed
+### 16.4 Offline proof under enforced network denial
+
+Section 6's line, `sandbox-exec -f tools/offline-sandbox.sb corepack pnpm mcp:test`, no longer
+holds at this revision and is the rejected candidate's. Two files the content correction brings
+in need a loopback socket, which `tools/offline-sandbox.sb` denies along with every other
+network operation: `src/redirect.stdio.test.ts` serves real synthetic HTTP and HTTPS redirects
+from 127.0.0.1 to prove the gateway refuses every one of them, and `src/stdio.test.ts` asserts
+the fixed start-up line for an unreachable database, whose reason is derived from the refusal
+the operating system returns. Run under the deny-all profile the two fail with `EPERM` on
+`listen` and on `connect`. That is the profile working, not the suite reaching the network.
+
+`tools/loopback-sandbox.sb` is added for this: it denies every network operation except a
+loopback socket, so the whole default suite can still be shown to reach no host off this
+machine. Both profiles were exercised at the integrated revision.
+
+| Check                                                        | Result                                         |
+| ------------------------------------------------------------ | ---------------------------------------------- |
+| `offline-sandbox.sb`, every package except `@cas/mcp-server` | 16 of 16 tasks pass under `deny network*`      |
+| `offline-sandbox.sb`, whole suite                            | fails: 2 files, `EPERM` on a loopback socket   |
+| `loopback-sandbox.sb`, whole suite                           | 18 of 18 tasks, 668 tests, 0 failed, 0 skipped |
+| `loopback-sandbox.sb` probe, `net.connect(443, '1.1.1.1')`   | `EPERM`                                        |
+| `loopback-sandbox.sb` probe, `dns.lookup('example.com')`     | `ENOTFOUND`, so no name resolution             |
+| `loopback-sandbox.sb` probe, UNIX-domain socket              | `EPERM`                                        |
+| `offline-sandbox.sb` probe, `net.connect(443, '1.1.1.1')`    | `EPERM`                                        |
+
+The loopback allowance cannot exclude the local PostgreSQL port: this sandbox dialect accepts
+only `*` or `localhost` as a network address host and does not enforce the port. That the
+default suite needs no database is carried by the deny-all profile, under which every package
+except `@cas/mcp-server` passes with all network denied, and by the database suite being a
+separate command over separate files.
+
+### 16.5 What has not changed
 
 The track is still isolated, still unmerged and still unaudited. It must not merge until
 Sprint 5 passes its own audit and the combined result passes a further independent audit.

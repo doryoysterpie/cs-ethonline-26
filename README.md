@@ -152,7 +152,7 @@ allows; otherwise they are dropped. Requirement status per track is in
 | `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                                                      |
 | `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                                                                 |
 | `data/fixtures`           |                       | synthetic editorial CSV fixtures and synthetic evidence replay fixtures (`data/fixtures/README.md`)                                                                              |
-| `tools`                   |                       | `offline-sandbox.sb`, a sandbox profile that denies all network access, for proving the default suite is offline                                                                 |
+| `tools`                   |                       | two sandbox profiles for proving the default suite is offline: `offline-sandbox.sb` denies all network access, `loopback-sandbox.sb` allows a loopback socket and nothing else   |
 | `docs`                    |                       | charter documents and sprint reports, listed below                                                                                                                               |
 
 A placeholder package contains one source file that exports nothing. The intended
