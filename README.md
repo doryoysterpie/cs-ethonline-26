@@ -134,26 +134,26 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 5                                                                                                                       |
-| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                                                                     |
-| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering, evidence, anomaly and drafting commands; 148 offline tests, 92 PostgreSQL |
-| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                                |
-| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                              |
-| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests                                                    |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, eight migrations, ingestion, classification, clustering and evidence ops; 24 offline tests, 81 PostgreSQL   |
-| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work                                                       |
-| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 56 unit tests                                                 |
-| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 50 unit tests                                               |
-| `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25); 69 unit tests                                              |
-| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests                                                 |
-| `packages/mcp-server`     | `@cas/mcp-server`     | built on the parallel MCP tooling track (D28), pending audit: four read-only tools over local stdio; 70 offline tests, 11 PostgreSQL       |
-| `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25); 19 unit tests. No model is called                                  |
-| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                |
-| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                           |
-| `data/fixtures`           |                       | synthetic editorial CSV fixtures and synthetic evidence replay fixtures (`data/fixtures/README.md`)                                        |
-| `tools`                   |                       | `offline-sandbox.sb`, a sandbox profile that denies all network access, for proving the default suite is offline                           |
-| `docs`                    |                       | charter documents and sprint reports, listed below                                                                                         |
+| Path                      | Package               | State after Sprint 5                                                                                                                                                             |
+| ------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                                                                                                           |
+| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering, evidence, anomaly and drafting commands; 148 offline tests, 92 PostgreSQL                                       |
+| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                                                                      |
+| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                                                                    |
+| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests                                                                                          |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, eight migrations, ingestion, classification, clustering and evidence ops; 24 offline tests, 81 PostgreSQL                                         |
+| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work                                                                                             |
+| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 56 unit tests                                                                                       |
+| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 50 unit tests                                                                                     |
+| `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25); 69 unit tests                                                                                    |
+| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests                                                                                       |
+| `packages/mcp-server`     | `@cas/mcp-server`     | parallel MCP tooling track (D28): four read-only tools over local stdio; candidate rejected by audit, corrections integrated, pending re-audit; 184 offline tests, 48 PostgreSQL |
+| `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25); 19 unit tests. No model is called                                                                        |
+| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                                                      |
+| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                                                                 |
+| `data/fixtures`           |                       | synthetic editorial CSV fixtures and synthetic evidence replay fixtures (`data/fixtures/README.md`)                                                                              |
+| `tools`                   |                       | `offline-sandbox.sb`, a sandbox profile that denies all network access, for proving the default suite is offline                                                                 |
+| `docs`                    |                       | charter documents and sprint reports, listed below                                                                                                                               |
 
 A placeholder package contains one source file that exports nothing. The intended
 responsibility of each package is in `docs/ARCHITECTURE.md`. Next.js is fixed by the plan for
@@ -296,21 +296,32 @@ run only through `corepack pnpm test:db`, need `DATABASE_URL`, and create and dr
 schemas named `cas_test_<random>` in that database. Rules are in `docs/SECURITY.md`
 section 11 and `docs/DATA_INPUTS.md` section 14.
 
-## MCP tooling track (parallel, pending audit)
+## MCP tooling track (parallel, rejected candidate, corrections pending re-audit)
 
 The Sprint 6 MCP server was built ahead of the dashboard on the speculative branch
 `parallel/s6-mcp-tooling`, from the Sprint 5 candidate, while Sprint 5 is under correction
-(decision D28). It is not merged and not deployed, and it is pending its own Codex Desktop
-audit; final integration begins from the Codex-accepted Sprint 5 revision.
+(decision D28). **Its candidate `7f03a34f` was rejected by its independent Codex Desktop audit
+of 10 September 2026 with findings F1 to F16.** Three correction branches have been integrated
+additively onto that candidate; the combined revision is **pending a re-audit and is not
+accepted**. It is not merged and not deployed, and final integration begins from the
+Codex-accepted Sprint 5 revision, which does not yet exist: **Sprint 5 has not passed its own
+audit.**
 
 `@cas/mcp-server` exposes four read-only tools over local stdio and nothing else:
-`list_incidents`, `explain_incident`, `chain_anomalies` and `draft_section`. Every read runs in
-a transaction the server declares `READ ONLY`; the tool catalogue is frozen application code
-with a pinned SHA-256; every argument is an identifier, an enumeration, a bounded integer or an
-explicit instant; every text field a tool returns is quoted evidence, escaped, redacted,
-bounded and labelled with its data origin; no tool invokes a model, writes, edits or
-publishes. The contract is `packages/mcp-server/SKILL.md`; the evidence, including the
-before-and-after database digest, is `docs/MCP-TOOLING-TRACK-REPORT.md`.
+`list_incidents`, `explain_incident`, `chain_anomalies` and `draft_section`. One tool call is
+one connection and one `REPEATABLE READ`, `READ ONLY` transaction, destroyed when the call
+ends, and a production start requires a dedicated least-privilege reader role that an
+eighteen-check matrix verifies before anything is read. The tool catalogue is frozen
+application code with a pinned SHA-256; every argument is an identifier, an enumeration, a
+bounded integer or an exact UTC instant, advertised exactly as it is validated; a cancelled or
+timed-out call has its statement cancelled at the server and its connection destroyed before
+it reports; a live Graph request follows no redirect; every text field a tool returns is
+quoted evidence, redacted before it is escaped, bounded with a marker that tells the truth
+about what was cut, rendered inert where it enters Markdown, and labelled with the data origin
+**the database recorded**, which this server does not verify. No tool invokes a model, writes,
+edits or publishes. The contract is `packages/mcp-server/SKILL.md`; the evidence, including
+the before-and-after database digest and the correction section, is
+`docs/MCP-TOOLING-TRACK-REPORT.md`.
 
 One command installs from a fresh clone with the frozen lockfile and builds the server:
 
@@ -326,8 +337,9 @@ corepack pnpm mcp:test
 corepack pnpm mcp:start
 ```
 
-The server reads `DATABASE_URL`, `GRAPH_API_KEY` and `GRAPH_GATEWAY_URL` from its environment
-and never emits their values. No remote MCP service has been enabled or deployed.
+The server reads `DATABASE_URL`, `GRAPH_API_KEY`, `GRAPH_GATEWAY_URL` and `CAS_MCP_MODE` from
+its environment and never emits their values. **No remote MCP service has been enabled or
+deployed**, and none is designed: the only transport is local stdio.
 
 ## Audit policy
 

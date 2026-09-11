@@ -1,11 +1,22 @@
 # MCP tooling track report: `@cas/mcp-server`
 
-**Status: implementation complete on a speculative parallel branch, pending its own Codex
-Desktop audit. Not merged, not deployed. No remote MCP service has been enabled or deployed.**
+**Status: the candidate `7f03a34f` was REJECTED by its independent Codex Desktop audit of
+10 September 2026 (CHANGES REQUIRED, findings F1 to F16). Three correction branches have been
+integrated additively onto that candidate; the combined revision is PENDING a re-audit and is
+NOT accepted. Not merged, not deployed. No remote MCP service has been enabled or deployed.
+The Sprint 5 evidence layer this server reads is itself under correction and has not passed
+its own audit.**
 
 This track built the Sprint 6 MCP server (charter item 6, requirement A9) ahead of the
-dashboard, in isolation, while Sprint 5 is under correction. Decision D28 records the design.
-Nothing in this report is an audit result.
+dashboard, in isolation, while Sprint 5 is under correction. Decision D28 and its amendment of
+10 September 2026 record the design and the corrections. Nothing in this report is an audit
+result.
+
+> **Sections 1 to 15 below are HISTORICAL EVIDENCE recorded at the rejected candidate
+> `7f03a34f3d4816ba72d041f1541818cae990eaf8`.** They are kept verbatim so the audit's findings
+> can be read against what they were written about. Every figure, hash, count and behavioural
+> claim in them describes that rejected revision and is superseded where section 16 says so.
+> **Section 16 carries the current state.**
 
 ## 1. Provenance of the track
 
@@ -439,3 +450,83 @@ in its environment and call `list_incidents` with a completed evidence run ident
 **MCP tooling track remains pending until Codex Desktop issues PASS.**
 
 **No remote MCP service has been enabled or deployed.**
+
+## 16. Audit correction (current state)
+
+This section supersedes sections 1 to 15 wherever they disagree. It describes the integrated
+revision on `parallel/s6-mcp-tooling`, not the rejected candidate.
+
+### 16.1 What was integrated
+
+Three correction branches, each cut from the rejected candidate `7f03a34f`, imported
+additively in the order store, runtime, content. No commit was amended, rebased or squashed,
+no migration was added, and no Sprint 5 correction commit was incorporated.
+
+| Branch                        | Final SHA                                  | Findings it owned          |
+| ----------------------------- | ------------------------------------------ | -------------------------- |
+| `parallel/s6-mcp-fix-store`   | `022aab55cfd154f8a04b8bd7e89e29ff19b0951e` | F7, F8, F9, F10, F13       |
+| `parallel/s6-mcp-fix-runtime` | `bae8add8821fbcd2c3b829e9cc309d5e9a5a5744` | F1, F2, F3, F4, F11        |
+| `parallel/s6-mcp-fix-content` | `1960a961ee0d15dd8c56e90a3949ad1ab74819bd` | F5, F6, F12, F14, F15, F16 |
+
+### 16.2 Behaviour that differs from sections 1 to 15
+
+- **The error vocabulary is twenty-two codes**, not nineteen. The three branches each added
+  one: `call_cancelled`, `database_role_overprivileged` and `stored_metadata_invalid`. Section
+  2 and section 5 say nineteen; they describe the rejected candidate.
+- **The pinned catalogue digest is**
+  `676c0cf8ae08fa7c78a33c108c3a0b1072fe179822e74a62ad99478b2682f625`. The value
+  `edb68f5268e419e1b4294f4a4290c31e2d8ea9f06e3db872bc180ee299ae9b3a` in section 2 and section
+  10 is the rejected candidate's.
+- **The server reads four environment names**, not three: `DATABASE_URL`, `GRAPH_API_KEY`,
+  `GRAPH_GATEWAY_URL` and `CAS_MCP_MODE`.
+- **`readOnly()` no longer exists.** A tool call now opens one connection through
+  `withReadOnlyConnection`, runs one `REPEATABLE READ`, `READ ONLY` transaction on it, and
+  destroys the connection when the call ends. Section 7's description of a per-method
+  transaction describes the rejected candidate.
+- **A production start requires a dedicated reader role.** `CAS_MCP_MODE` unset or
+  `production` runs an eighteen-check privilege matrix at start-up (fail closed, exit code 2)
+  and again on every stored call's own connection before any application read. The template is
+  `packages/mcp-server/sql/mcp-reader-role.sql`; `corepack pnpm mcp:verify-role` reports the
+  matrix. Section 13's description of a separate role as optional future work is superseded:
+  it is a required production control.
+- **A stored anomaly evaluation requires `asOf`** and is bounded by the named run's completion
+  instant. The server clock is never read on that path.
+- **Redirects are never followed.** Live Graph requests run with `redirect: "manual"`; every
+  3xx is a fixed failure with zero requests to the destination.
+- **Cancellation stops work.** One call-scoped signal, aborted by the deadline, the client's
+  protocol cancellation or shutdown, reaches the transaction and the live request; a statement
+  in flight is cancelled at the server; the permit is released only once the work has unwound.
+- **A draft preview is inert Markdown** with a fixed opening notice, classified source
+  references, truthful truncation markers and a per-claim provenance sidecar, and it proposes
+  no structured victim name and redacts no name from quoted text.
+- **A duplicate JSON key is not detected.** The parser keeps the last value and the request is
+  validated as if only that value had been sent. Section 12's statement that duplicate keys
+  are refused is wrong and is withdrawn.
+
+### 16.3 Test totals at the integrated revision
+
+Derived from Vitest's own collection (`vitest list --json`), not estimated, and held to these
+figures by `src/documentation.test.ts`.
+
+| Suite                         | Tests | Files |
+| ----------------------------- | ----: | ----: |
+| `@cas/mcp-server`, offline    |   184 |    19 |
+| `@cas/mcp-server`, PostgreSQL |    48 |     4 |
+
+Workspace totals: **668 offline tests** across ten packages (contracts 9, taxonomy 7,
+drafting 19, evidence 69, database 24, graph-evidence 102, clustering 50, classification 56,
+worker 148, mcp-server 184) and **221 PostgreSQL tests** (database 81, worker 92,
+mcp-server 48). Section 5's figure of seventy offline tests in seven files is the rejected
+candidate's.
+
+The PostgreSQL suite now creates a database and a login role of its own per file, named
+`cas_mcp_test_<random>`, and drops both on close; the compiled stdio group runs against that
+database as the provisioned reader role and is no longer opt-in behind an environment
+variable.
+
+### 16.4 What has not changed
+
+The track is still isolated, still unmerged and still unaudited. It must not merge until
+Sprint 5 passes its own audit and the combined result passes a further independent audit.
+Even a `PASS - ISOLATED TRACK ONLY` on this historical base would authorize no merge, no
+deployment, no remote access and no trust in rejected-base evidence.

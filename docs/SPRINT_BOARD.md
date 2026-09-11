@@ -69,6 +69,10 @@ the Graph submission.
   without the project owner's instruction. Each sprint begins only after the Codex audit of
   the previous sprint is answered.
 - The MCP server of Sprint 6 was built ahead of the dashboard on the speculative parallel
-  branch `parallel/s6-mcp-tooling` (decision D28) while Sprint 5 is under correction. It is
-  pending its own Codex Desktop audit, is not merged, and is integrated only from the
-  Codex-accepted Sprint 5 revision. The Sprint 6 row is not otherwise started.
+  branch `parallel/s6-mcp-tooling` (decision D28) while Sprint 5 is under correction. Its
+  candidate `7f03a34f` was **REJECTED** by its independent Codex Desktop audit of 10 September
+  2026 (CHANGES REQUIRED, F1 to F16). Three correction branches have been integrated additively
+  onto that candidate; the combined revision is **PENDING a re-audit and is not accepted**. It
+  is not merged and nothing is deployed. **Sprint 5 has not passed its own audit either**, so
+  the Codex-accepted Sprint 5 revision that final integration must begin from does not yet
+  exist. The Sprint 6 row is not otherwise started.

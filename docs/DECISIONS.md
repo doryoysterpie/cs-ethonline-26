@@ -896,3 +896,66 @@ parallel MCP tooling branch.
   Becomes `ACCEPTED` only on the owner's instruction after Codex Desktop issues PASS.
 - **Supersedes:** nothing. Records a deviation from the proposed dependency rule of
   `ARCHITECTURE.md` section 5, which remains the rule for `@cas/feed-api`.
+
+### D28 amendment, 2026-09-10: audit correction of the MCP tooling track
+
+Not a new decision. This amendment records what the independent audit of the D28 candidate
+required and what the correction changed, so the nine commitments above are read as the
+rejected candidate implemented them and this amendment as the current contract.
+
+- **Audit outcome.** Codex Desktop reviewed `7f03a34f3d4816ba72d041f1541818cae990eaf8` on
+  10 September 2026 and returned **CHANGES REQUIRED** with sixteen findings, F1 to F16: seven
+  Medium and nine Low, no independently reproduced High. The candidate is **rejected**. The
+  audit record is the reviewer's own; this repository records only the disposition.
+- **Correction shape.** Three branches were cut from that exact candidate and integrated
+  additively onto it in the order store, runtime, content: `parallel/s6-mcp-fix-store`
+  (`022aab55cfd154f8a04b8bd7e89e29ff19b0951e`, F7, F8, F9, F10, F13),
+  `parallel/s6-mcp-fix-runtime` (`bae8add8821fbcd2c3b829e9cc309d5e9a5a5744`, F1, F2, F3, F4,
+  F11) and `parallel/s6-mcp-fix-content` (`1960a961ee0d15dd8c56e90a3949ad1ab74819bd`, F5, F6,
+  F12, F14, F15, F16). No commit was amended, rebased, squashed or force-pushed; no migration
+  was added; no Sprint 5 correction commit was incorporated.
+- **What the commitments now mean.** Commitment by commitment, where the correction changed
+  the mechanism rather than the intent:
+  - _Read-only_ is now enforced twice: by the transaction, as before, and by the credential. A
+    production start (the default; `CAS_MCP_MODE` is the fourth environment name) requires a
+    dedicated reader role that an eighteen-check privilege matrix verifies at start-up, fail
+    closed, and again on every stored call's own connection before any application read. The
+    administrator template is `packages/mcp-server/sql/mcp-reader-role.sql`.
+  - _One call, one snapshot._ A call opens one connection and one `REPEATABLE READ`,
+    `READ ONLY` transaction, reads everything it reports from that snapshot, and destroys the
+    connection when it ends. A per-method transaction, which could combine states never read
+    together, is gone.
+  - _Cancellation is real._ One call-scoped signal, aborted by the deadline, the client's
+    protocol cancellation or shutdown, reaches the transaction and the live request. A
+    statement in flight is cancelled at the server; the concurrency permit is released only
+    once the work has unwound; shutdown waits, bounded, for that and for every cancelling
+    connection to close. `call_cancelled` joins the vocabulary.
+  - _The provider boundary holds._ Live requests run with `redirect: "manual"` and every 3xx
+    is a fixed failure with zero requests to the destination, so provenance always names the
+    endpoint contacted.
+  - _Redaction precedes display._ Each configured secret is redacted in a bounded set of
+    transit forms, before escaping and before any bound, on every output path including the
+    SDK's own protocol errors, which now carry fixed messages with their data dropped.
+  - _Quotation tells the truth._ A SQL-bounded column arrives as a prefix plus the stored
+    value's true size, so a shortened quotation is flagged and marked rather than passed off as
+    complete; a draft preview is inert Markdown with classified source references; controlled
+    metadata is held to strict grammars and refused with `stored_metadata_invalid` rather than
+    quoted.
+  - _A named run bounds its own evaluation._ A stored anomaly result is fixed by that run's
+    completion instant and a required `asOf`, so later or incomplete data cannot change it, and
+    the server clock is never read on that path.
+  - _Origins are labelled, not verified._ Every stored result carries a structured
+    `originProvenance` block stating that the origin is what the database recorded, that the
+    acquisition is not independently verified, and that the historical base is rejected and
+    under correction.
+  - _Naming claims only what is true._ No structured victim name is proposed and no name is
+    redacted from quoted text; the counts say exactly that.
+- **Vocabulary and digest.** The closed error vocabulary is now twenty-two codes. The pinned
+  catalogue digest is `676c0cf8ae08fa7c78a33c108c3a0b1072fe179822e74a62ad99478b2682f625`.
+- **Status.** D28 remains **PROVISIONAL**. The corrected revision is **pending an independent
+  re-audit and is not accepted**. It must not merge until Sprint 5 passes its own audit and the
+  combined result passes a further independent audit, and no remote MCP service has been
+  enabled or deployed. A future `PASS - ISOLATED TRACK ONLY` on this historical base would
+  authorize no merge, no deployment, no remote access and no trust in rejected-base evidence.
+- **Decided by:** the integration of 2026-09-10, on the owner's brief. No decision number is
+  allocated; this amends D28.
