@@ -49,6 +49,17 @@ import {
  * loads is the one under test, under the same restricted role.
  */
 
+/** Waits for a line on the child's stderr; the ready line may precede the listener. */
+async function waitForLog(chunks: Buffer[], needle: string, timeoutMs = 20_000): Promise<string> {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    const text = Buffer.concat(chunks).toString('utf8');
+    if (text.includes(needle)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 const PERIOD = { periodStart: '2026-08-30T00:00:00Z', periodEnd: '2026-09-06T00:00:00Z' };
 const DIST_INDEX = fileURLToPath(new URL('../dist/index.js', import.meta.url));
 const DIST_BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
@@ -694,8 +705,8 @@ describe('the compiled stdio entry point against a database of its own', () => {
     await database?.close();
   });
 
-  it('started in production mode with a verified reader role', () => {
-    const log = Buffer.concat(stderr).toString('utf8');
+  it('started in production mode with a verified reader role', async () => {
+    const log = await waitForLog(stderr, 'database_role=');
     expect(log).toContain('mode=production database_role=verified');
   });
 

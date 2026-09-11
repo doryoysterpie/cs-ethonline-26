@@ -883,7 +883,9 @@ describe('F10 and F13: bounded draft data and truthful truncation', () => {
     const markdown = (output['preview'] as Record<string, unknown>)['markdown'] as string;
     expect(markdown).not.toContain(DB_SECRET_API_KEY);
     expect(markdown).toContain('[REDACTED]');
-    expect(markdown).toContain('…[+47700 chars]');
+    // Inert Markdown escapes the marker's brackets; the count still reads, and
+    // the marker is still the only thing standing for the 47,700 cut characters.
+    expect(markdown).toContain('…\\[+47700 chars\\]');
     expect(hasRawControl(markdown.replace(/\n/g, ''))).toBe(false);
     expect(Buffer.byteLength(textOf(result), 'utf8')).toBeLessThan(256 * 1024);
   });

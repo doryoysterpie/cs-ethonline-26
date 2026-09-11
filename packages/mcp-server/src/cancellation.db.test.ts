@@ -82,6 +82,17 @@ async function waitUntil(condition: () => Promise<boolean>, timeoutMs: number): 
   return condition();
 }
 
+/** Waits for a line on the child's stderr; the ready line may precede the listener. */
+async function waitForLog(chunks: Buffer[], needle: string, timeoutMs = 20_000): Promise<string> {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    const text = Buffer.concat(chunks).toString('utf8');
+    if (text.includes(needle)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50));
 
 describe('the deadline cancels a blocked backend in process, as the reader role', () => {
@@ -220,8 +231,8 @@ describe('cancellation through the built entry point, as the reader role', () =>
     await database?.close();
   });
 
-  it('started in production mode with a verified reader role', () => {
-    const log = Buffer.concat(stderr).toString('utf8');
+  it('started in production mode with a verified reader role', async () => {
+    const log = await waitForLog(stderr, 'database_role=');
     expect(log).toContain('mode=production database_role=verified');
   });
 
