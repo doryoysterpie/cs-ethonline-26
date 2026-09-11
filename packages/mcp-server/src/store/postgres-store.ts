@@ -107,32 +107,42 @@ function abortable(client: Queryable, signal: AbortSignal | undefined): Queryabl
   };
 }
 
+interface ArmedCancellation {
+  /** Detaches the listener once the call has ended on its own. */
+  readonly disarm: () => void;
+  /** Resolves when the cancelling connection is closed; never rejects. */
+  readonly closing: () => Promise<void>;
+}
+
 /**
  * Arms server-side cancellation for one open transaction: records the backend
  * process id on the transaction's own connection, and when the signal fires
  * issues `pg_cancel_backend` for it from a separate one-connection pool, so
  * the cancel never waits behind the very statement it cancels. That pool is
- * destroyed as soon as the cancel is sent. Returns the function that detaches
- * the listener once the call has ended on its own.
+ * destroyed as soon as the cancel is sent.
  *
  * The cancel is deliberately off the call's critical path, so the call can
  * report while the cancelling connection is still open. Its closing promise is
  * handed to `registerCancellation`, which is how shutdown waits for that
- * connection too (Track D finding F1). The cancel runs on the call's own
- * credential, which is allowed to signal its own sessions; no
- * `pg_signal_backend` membership or other elevated privilege is required, and
- * the reader role is never granted one.
+ * connection too (Track D finding F1), and `closing` exposes the same promise
+ * so a caller that registers nothing can wait for it itself rather than leave
+ * the connection unowned.
+ *
+ * The cancel runs on the call's own credential, which is allowed to signal its
+ * own sessions; no `pg_signal_backend` membership or other elevated privilege
+ * is required, and the reader role is never granted one.
  */
 async function armCancellation(
   config: DatabaseConfig,
   transaction: Queryable,
   signal: AbortSignal,
   registerCancellation: ((closed: Promise<void>) => void) | undefined,
-): Promise<() => void> {
+): Promise<ArmedCancellation> {
   const backend = await transaction.query<{ pid: number }>(
     'SELECT pg_catalog.pg_backend_pid() AS pid',
   );
   const pid = backend.rows[0]?.pid ?? null;
+  let opened: Promise<void> | null = null;
   const cancelBackend = (): void => {
     if (pid === null) return;
     const closed = (async () => {
@@ -147,14 +157,18 @@ async function armCancellation(
         await canceller.end().catch(() => undefined);
       }
     })();
+    opened = closed;
     registerCancellation?.(closed);
+  };
+  const closing = async (): Promise<void> => {
+    await opened;
   };
   if (signal.aborted) {
     cancelBackend();
-    return () => undefined;
+    return { disarm: () => undefined, closing };
   }
   signal.addEventListener('abort', cancelBackend, { once: true });
-  return () => signal.removeEventListener('abort', cancelBackend);
+  return { disarm: () => signal.removeEventListener('abort', cancelBackend), closing };
 }
 
 /**
@@ -173,6 +187,10 @@ export async function withReadOnlyConnection<T>(
   const signal = options.signal;
   throwIfAborted(signal);
   const db = openDatabase(config, { maxConnections: DATABASE_MAX_CONNECTIONS });
+  // A cancel opens a connection of its own. Whoever registered it waits for it
+  // at shutdown; when nobody registered, this call waits for it itself, so no
+  // connection it opened is left unowned once it has returned.
+  const armed: { current: ArmedCancellation | null } = { current: null };
   try {
     return await db.withClient(async (raw) => {
       const client = abortable(raw, signal);
@@ -180,10 +198,14 @@ export async function withReadOnlyConnection<T>(
       // runs before the declaration.
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       let committed = false;
-      let disarm: () => void = () => undefined;
       try {
         if (signal !== undefined) {
-          disarm = await armCancellation(config, client, signal, options.registerCancellation);
+          armed.current = await armCancellation(
+            config,
+            client,
+            signal,
+            options.registerCancellation,
+          );
         }
         await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
         const result = await fn(client, db.schema);
@@ -191,7 +213,7 @@ export async function withReadOnlyConnection<T>(
         committed = true;
         return result;
       } finally {
-        disarm();
+        armed.current?.disarm();
         if (!committed) {
           try {
             await raw.query('ROLLBACK');
@@ -205,6 +227,7 @@ export async function withReadOnlyConnection<T>(
     // Ends the pool's single connection. Nothing of this call's session
     // survives: not a setting, not a temporary object, not a lock.
     await db.end();
+    if (options.registerCancellation === undefined) await armed.current?.closing();
   }
 }
 
@@ -804,15 +827,15 @@ export class PostgresReadStoreProvider implements IncidentReadStoreProvider {
    * read; an overprivileged credential fails the call with a fixed code and
    * reads nothing.
    */
-  async withReadTransaction<T>(
-    fn: (store: IncidentReadStore) => Promise<T>,
-    options: ReadTransactionOptions = {},
-  ): Promise<T> {
-    // A cancel runs on a pool of its own, so it can still be closing after the
-    // call it cancelled has reported. The provider holds each closing promise
-    // so `close` can wait for it; a caller that asked for the same promise
-    // still receives it.
-    const register = (closed: Promise<void>): void => {
+  /**
+   * A cancel runs on a pool of its own, so it can still be closing after the
+   * call it cancelled has reported. The provider holds each closing promise so
+   * `close` can wait for it; a caller that asked for the same promise still
+   * receives it. Every method that opens a connection registers through this,
+   * so no cancelling connection is left unowned.
+   */
+  #register(options: ReadTransactionOptions): (closed: Promise<void>) => void {
+    return (closed: Promise<void>): void => {
       this.#cancellations.add(closed);
       void closed.then(
         () => this.#cancellations.delete(closed),
@@ -820,6 +843,13 @@ export class PostgresReadStoreProvider implements IncidentReadStoreProvider {
       );
       options.registerCancellation?.(closed);
     };
+  }
+
+  async withReadTransaction<T>(
+    fn: (store: IncidentReadStore) => Promise<T>,
+    options: ReadTransactionOptions = {},
+  ): Promise<T> {
+    const register = this.#register(options);
     const call = withReadOnlyConnection(
       this.#config,
       async (client, schema) => {
@@ -839,13 +869,25 @@ export class PostgresReadStoreProvider implements IncidentReadStoreProvider {
     }
   }
 
-  /** The privilege matrix on a fresh connection, for start-up and the verification command. */
+  /**
+   * The privilege matrix on a fresh connection, for start-up and the
+   * verification command. This connection is the provider's too, so a cancel
+   * of it registers exactly as a read transaction's does; otherwise a
+   * verification cancelled during start-up would leave a connection `close`
+   * knows nothing about.
+   */
   async verifyPrivileges(options: ReadTransactionOptions = {}): Promise<PrivilegeReport> {
-    return withReadOnlyConnection(
+    const call = withReadOnlyConnection(
       this.#config,
       (client, schema) => verifyDatabasePrivileges(client, schema),
-      options,
+      { ...options, registerCancellation: this.#register(options) },
     );
+    this.#inFlight.add(call);
+    try {
+      return await call;
+    } finally {
+      this.#inFlight.delete(call);
+    }
   }
 
   /**

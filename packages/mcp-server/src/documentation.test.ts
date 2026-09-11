@@ -75,7 +75,7 @@ async function collect(config?: string): Promise<Collected> {
 const DOCUMENTED = {
   offlineTests: 184,
   offlineFiles: 19,
-  databaseTests: 48,
+  databaseTests: 49,
   databaseFiles: 4,
 } as const;
 

@@ -588,6 +588,58 @@ describe('F8: one tool call reads one snapshot', () => {
     await runtime.close();
     expect(await readerBackends(database)).toBe(0);
   });
+
+  it('owns the cancelling connection of a verification too, and of a caller that registers none', async () => {
+    // A cancel opens a second connection of its own. Aborting between two
+    // statements is the widest window it has: the call unwinds on the client,
+    // without waiting for the server, so it can return while that second
+    // connection is still opening. Whoever registered the cancel waits for it
+    // at shutdown; a path that registers none must wait for it itself, or a
+    // reader backend outlives the call that opened it.
+    //
+    // Which of the two finishes first is a race on an idle server, so the
+    // window is opened repeatedly: waiting makes every attempt clean, and not
+    // waiting loses within a few attempts.
+    const attempts = 10;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const direct = new AbortController();
+      let aborted: unknown;
+      try {
+        await withReadOnlyConnection(
+          database.readerConfig,
+          async (client) => {
+            await client.query('SELECT 1');
+            direct.abort();
+            await client.query('SELECT 2');
+          },
+          { signal: direct.signal },
+        );
+      } catch (error) {
+        aborted = error;
+      }
+      expect(isToolError(aborted) && aborted.code).toBe('call_cancelled');
+      expect(await readerBackends(database)).toBe(0);
+
+      // Start-up privilege verification opens a connection of the provider's,
+      // so its cancel is the provider's to wait for as well.
+      const provider = new PostgresReadStoreProvider(database.readerConfig, {
+        mode: 'production',
+        textFetchMargin: textFetchMargin([DB_SECRET_API_KEY.length]),
+      });
+      const verifying = new AbortController();
+      let refused: unknown;
+      try {
+        const report = provider.verifyPrivileges({ signal: verifying.signal });
+        verifying.abort();
+        await report;
+      } catch (error) {
+        refused = error;
+      }
+      expect(isToolError(refused) && refused.code).toBe('call_cancelled');
+      await provider.close();
+      expect(await readerBackends(database)).toBe(0);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

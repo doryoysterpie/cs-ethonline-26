@@ -428,8 +428,11 @@ Sprint 5 evidence layer it reads is itself under correction.
   connection destroyed, and a live request socket is aborted. The concurrency permit is released
   only once that work has actually unwound, so repeated timeouts cannot accumulate work beyond
   the four-call accounting. Shutdown aborts every active call, waits a bounded time, and waits
-  for every cancelling connection to close before the process exits. A deadline answers
-  `tool_timeout`; a client cancellation or a shutdown answers `call_cancelled`.
+  for every cancelling connection to close before the process exits. That holds for every
+  connection the store opens, the start-up privilege verification's included, and a caller that
+  registers no cancellation with the store waits for its own before it returns: no connection
+  outlives the call that opened it. A deadline answers `tool_timeout`; a client cancellation or
+  a shutdown answers `call_cancelled`.
 - **A static catalogue with a pinned digest.** The four tool definitions are frozen application
   code; the SHA-256 of their names, titles, descriptions, annotations and schemas is pinned and
   checked at start-up and reproduced from the wire by a test. Untrusted data cannot modify a

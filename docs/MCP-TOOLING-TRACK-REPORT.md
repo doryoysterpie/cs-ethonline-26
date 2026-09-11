@@ -511,12 +511,12 @@ figures by `src/documentation.test.ts`.
 | Suite                         | Tests | Files |
 | ----------------------------- | ----: | ----: |
 | `@cas/mcp-server`, offline    |   184 |    19 |
-| `@cas/mcp-server`, PostgreSQL |    48 |     4 |
+| `@cas/mcp-server`, PostgreSQL |    49 |     4 |
 
 Workspace totals: **668 offline tests** across ten packages (contracts 9, taxonomy 7,
 drafting 19, evidence 69, database 24, graph-evidence 102, clustering 50, classification 56,
-worker 148, mcp-server 184) and **221 PostgreSQL tests** (database 81, worker 92,
-mcp-server 48). Section 5's figure of seventy offline tests in seven files is the rejected
+worker 148, mcp-server 184) and **222 PostgreSQL tests** (database 81, worker 92,
+mcp-server 49). Section 5's figure of seventy offline tests in seven files is the rejected
 candidate's.
 
 The PostgreSQL suite now creates a database and a login role of its own per file, named
@@ -524,7 +524,29 @@ The PostgreSQL suite now creates a database and a login role of its own per file
 database as the provisioned reader role and is no longer opt-in behind an environment
 variable.
 
-### 16.4 Offline proof under enforced network denial
+### 16.4 A cancelling connection the provider did not own
+
+Integrated verification found one defect the three corrections did not: a cancel opens a
+second connection of its own, and only `withReadTransaction` registered that connection with
+the provider. `verifyPrivileges`, the start-up privilege check, forwarded its options
+unchanged, so a verification cancelled during start-up left a connection `close` knew nothing
+about; any direct caller of `withReadOnlyConnection` was in the same position. The claim in
+`SECURITY.md` section 15 that shutdown waits for every cancelling connection was therefore
+true of tool calls and not of the verification.
+
+Both paths now register: the provider's registration is one method used by every entry point
+that opens a connection, and the primitive waits for its own cancelling connection when the
+caller registers none. `store.db.test.ts` covers it, and `SECURITY.md` section 15 now states
+the property for every connection the store opens rather than for tool calls alone.
+
+The defect surfaced as the existing F8 test `destroys the connection of a call that fails, and
+sends nothing once aborted` failing once under machine load of about 100. A standalone
+reproduction left a reader backend after `close()` in 2 of 8 rounds before the fix and 0 of 10
+after. The window is narrow on an idle server, so the regression test opens it ten times per
+run; it passes every run with the fix and caught the unfixed code in 2 of 4 runs. It is a
+partial detector of the defect and a complete statement of the property.
+
+### 16.5 Offline proof under enforced network denial
 
 Section 6's line, `sandbox-exec -f tools/offline-sandbox.sb corepack pnpm mcp:test`, no longer
 holds at this revision and is the rejected candidate's. Two files the content correction brings
@@ -555,7 +577,7 @@ default suite needs no database is carried by the deny-all profile, under which 
 except `@cas/mcp-server` passes with all network denied, and by the database suite being a
 separate command over separate files.
 
-### 16.5 What has not changed
+### 16.6 What has not changed
 
 The track is still isolated, still unmerged and still unaudited. It must not merge until
 Sprint 5 passes its own audit and the combined result passes a further independent audit.

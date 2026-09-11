@@ -454,7 +454,7 @@ Inputs: `DATABASE_URL` (optional; store-backed tools fail with a fixed code with
 `GRAPH_API_KEY` (live mode only), `GRAPH_GATEWAY_URL` (optional), `CAS_MCP_MODE` (optional;
 `production` by default). Outputs: MCP tool results with structured content validated against
 the advertised output schema. Tests: 184 offline tests in 19 files over linked in-memory
-transports and the built entry point as a child process with a synthetic provider, and 48
+transports and the built entry point as a child process with a synthetic provider, and 49
 PostgreSQL tests in 4 files, each file against a database and reader role of its own, with a
 before-and-after digest of every table.
 
