@@ -1,36 +1,47 @@
-;; A macOS sandbox profile that denies every network operation except a
-;; loopback socket:
+;; A macOS sandbox profile that denies every network operation except one to
+;; an address assigned to this machine. It exists for the single file of the
+;; default suite that needs a listening socket:
 ;;
-;;   sandbox-exec -f tools/loopback-sandbox.sb corepack pnpm test --force
+;;   corepack pnpm test:localhost
 ;;
-;; `tools/offline-sandbox.sb` denies everything and is the stronger statement.
-;; Two files of the default suite need a loopback socket and so cannot run
-;; under it: `packages/mcp-server/src/redirect.stdio.test.ts` serves real
-;; synthetic HTTP and HTTPS redirects from 127.0.0.1 to prove the gateway
-;; refuses every one of them, and `packages/mcp-server/src/stdio.test.ts`
-;; asserts the fixed start-up line for an unreachable database, whose reason
-;; is derived from the refusal the operating system returns. This profile
-;; exists so the whole default suite can still be shown to reach no host off
-;; this machine.
+;; which runs `packages/mcp-server/src/redirect.stdio.test.ts`, and nothing
+;; else. Everything else runs under `tools/offline-sandbox.sb`, which denies
+;; all network access and is the stronger statement.
 ;;
-;; What it proves, demonstrated in the same session by two probes that must
-;; each produce the outcome named beside them:
+;; WHAT THIS PROFILE ALLOWS, EXACTLY
 ;;
-;;   ;; no host outside loopback
-;;   sandbox-exec -f tools/loopback-sandbox.sb node -e \
-;;     "require('node:net').connect(443,'1.1.1.1').on('error',e=>console.log(e.code))"   ;; EPERM
+;; It permits connections to addresses assigned to the current machine. That
+;; includes the loopback addresses, 127.0.0.1 and ::1, AND this host's
+;; local-interface addresses, such as a LAN address on en0. It is NOT
+;; "loopback only", and must not be described as such: this dialect accepts
+;; only `*` or `localhost` as a network-address host, where `localhost` means
+;; the local host rather than 127.0.0.0/8, and it does not enforce the port,
+;; so the allowance can be narrowed neither to 127.0.0.0/8 or ::1 nor to a
+;; single port. The file name is historical; "local host" is the accurate
+;; description.
 ;;
-;;   ;; no name resolution
-;;   sandbox-exec -f tools/loopback-sandbox.sb node -e \
-;;     "require('node:dns').lookup('example.com',e=>console.log(e.code))"                ;; ENOTFOUND
+;; WHAT IT STILL DENIES
 ;;
-;; What it does not prove: this dialect accepts only `*` or `localhost` as a
-;; network address host and does not enforce the port, so a loopback
-;; allowance cannot exclude the local PostgreSQL port. That the default suite
-;; needs no database is carried by `tools/offline-sandbox.sb`, under which
-;; every package except `@cas/mcp-server` passes with all network denied, and
-;; by the database suite being a separate command over separate files.
-;; UNIX-domain sockets stay denied here, as in the deny-all profile.
+;; Every host off this machine, in IPv4 and in IPv6; name resolution; and
+;; UNIX-domain sockets. A subprocess inherits all of it.
+;;
+;; Demonstrated in the same session, under this profile, by a probe that
+;; prints every outcome as observed and fails if any host off this machine is
+;; reached:
+;;
+;;   sandbox-exec -f tools/loopback-sandbox.sb node tools/sandbox-probe.mjs
+;;
+;; The probe also binds and connects to a non-loopback address of this host
+;; and records that it succeeds, so the allowance above is shown rather than
+;; claimed. It skips that step on a host that has no non-loopback address.
+;;
+;; WHAT IT DOES NOT CARRY
+;;
+;; That the default suite needs no database. The allowance cannot exclude the
+;; local PostgreSQL port, so this profile proves nothing about it. That claim
+;; is carried by `tools/offline-sandbox.sb`, under which every package and
+;; every file but one passes with all network denied, and by the database
+;; suite being a separate command over separate files.
 (version 1)
 (allow default)
 (deny network*)

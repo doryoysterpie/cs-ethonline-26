@@ -18,6 +18,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.build.json && vitest run",
     "test:db": "pnpm -w exec turbo run build --filter=@cas/mcp-server && vitest run --config vitest.db.config.ts",
+    "test:denied": "tsc -p tsconfig.build.json && vitest run --exclude='**/*.db.test.ts' --exclude='**/redirect.stdio.test.ts'",
+    "test:localhost": "tsc -p tsconfig.build.json && vitest run src/redirect.stdio.test.ts",
     "start": "node dist/bin.js",
     "verify-role": "node dist/verify-role.js"
   },
