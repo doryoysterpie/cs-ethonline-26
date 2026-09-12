@@ -1,4 +1,4 @@
-import { isDatabaseError } from '@cas/database';
+import { isDatabaseError, type DatabaseError } from '@cas/database';
 import { isGraphProbeError } from '@cas/graph-evidence';
 
 /**
@@ -85,8 +85,28 @@ export function toolErrorMessage(code: ToolErrorCode): string {
 }
 
 const SQLSTATE = /^[0-9A-Z]{5}$/;
+/**
+ * POSIX errno shape, refused from the public `sqlstate` field whatever the
+ * store believes. `EPERM` is five uppercase characters and would satisfy a
+ * shape test on its own.
+ */
+const SYSTEM_ERRNO = /^E[A-Z0-9]+$/;
 /** PostgreSQL SQLSTATE for a statement stopped by `statement_timeout` or `pg_cancel_backend`. */
 const QUERY_CANCELED = '57014';
+
+/**
+ * The public `sqlstate` detail, when there is one to publish. Three
+ * independent conditions must hold: the database layer recorded the code as
+ * having come from PostgreSQL's SQLSTATE field, the value has the SQLSTATE
+ * shape, and it is not a system errno. The shape is never trusted by itself,
+ * so a POSIX errno cannot be published as a SQLSTATE even if the store were
+ * to mislabel it (Track D re-audit finding M2).
+ */
+function sqlstateDetail(error: DatabaseError): Record<string, SafeDetail> {
+  if (error.code === null || error.codeSource !== 'sqlstate') return {};
+  if (!SQLSTATE.test(error.code) || SYSTEM_ERRNO.test(error.code)) return {};
+  return { sqlstate: error.code };
+}
 
 /**
  * Maps any thrown value to a `ToolError`. Nothing about the original error
@@ -97,7 +117,7 @@ const QUERY_CANCELED = '57014';
 export function toToolError(error: unknown): ToolError {
   if (isToolError(error)) return error;
   if (isDatabaseError(error)) {
-    const code = error.code !== null && SQLSTATE.test(error.code) ? { sqlstate: error.code } : {};
+    const code = sqlstateDetail(error);
     // `query_canceled`: the statement timeout or a cancel stopped the work.
     // Either is a bound this server set, so the outcome is the timeout, not
     // an unavailable database (Track D finding F1).
