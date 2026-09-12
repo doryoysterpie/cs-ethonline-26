@@ -99,7 +99,10 @@ export const FORBIDDEN_PATH_RULES: readonly PathRule[] = [
   },
   {
     rule: 'sql_outside_migrations',
-    matches: (p) => extensionOf(p) === '.sql' && !p.startsWith('packages/database/migrations/'),
+    matches: (p) =>
+      extensionOf(p) === '.sql' &&
+      !p.startsWith('packages/database/migrations/') &&
+      !OPERATOR_SQL.has(p),
   },
   { rule: 'binary_or_archive', matches: (p) => BINARY_EXTENSIONS.has(extensionOf(p)) },
   {
@@ -108,6 +111,19 @@ export const FORBIDDEN_PATH_RULES: readonly PathRule[] = [
       basenameOf(p) === '.DS_Store' || basenameOf(p) === 'Thumbs.db' || extensionOf(p) === '.log',
   },
 ];
+
+/**
+ * SQL that is deliberately not a migration, listed by exact path.
+ *
+ * The rule exists so schema changes cannot arrive outside the checksummed
+ * migration chain, and that intent is preserved: nothing here touches a
+ * schema. `mcp-reader-role.sql` creates a database ROLE, which is a cluster
+ * object rather than a schema object, and it is run once by an operator
+ * holding privileges the application deliberately never has. Making it a
+ * migration would hand the application's own role the power to create roles
+ * and grant privileges, which is the opposite of what it is for.
+ */
+const OPERATOR_SQL: ReadonlySet<string> = new Set(['packages/mcp-server/sql/mcp-reader-role.sql']);
 
 export interface ForbiddenFilesResult {
   readonly scanned: number;

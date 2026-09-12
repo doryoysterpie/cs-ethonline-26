@@ -170,9 +170,11 @@ export {
 } from './database.js';
 export {
   classifyDriverError,
+  DATABASE_CODE_SOURCES,
   DATABASE_FAILURE_KINDS,
   DatabaseError,
   isDatabaseError,
+  type DatabaseCodeSource,
   type DatabaseFailureKind,
   type SafeDetailValue,
 } from './errors.js';

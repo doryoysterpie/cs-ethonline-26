@@ -39,7 +39,16 @@
     "sheets:inventory": "pnpm -s --filter @cas/worker cli sheets inventory",
     "sheets:timestamps": "pnpm -s --filter @cas/worker cli sheets timestamps",
     "sheets:dry-run": "pnpm -s --filter @cas/worker cli sheets dry-run",
-    "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db && pnpm --filter @cas/dashboard test:db"
+    "mcp:setup": "pnpm install --frozen-lockfile && turbo run build --filter=@cas/mcp-server...",
+    "mcp:build": "turbo run build --filter=@cas/mcp-server...",
+    "mcp:start": "node packages/mcp-server/dist/bin.js",
+    "mcp:verify-role": "node packages/mcp-server/dist/verify-role.js",
+    "mcp:test": "pnpm --filter @cas/mcp-server test",
+    "mcp:test:db": "pnpm --filter @cas/mcp-server test:db",
+    "test:denied": "sandbox-exec -f tools/offline-sandbox.sb corepack pnpm exec turbo run test --force --filter=!@cas/mcp-server && sandbox-exec -f tools/offline-sandbox.sb corepack pnpm --filter @cas/mcp-server run test:denied",
+    "test:localhost": "sandbox-exec -f tools/loopback-sandbox.sb corepack pnpm --filter @cas/mcp-server run test:localhost",
+    "sandbox:probe": "node tools/sandbox-probe.mjs",
+    "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db && pnpm --filter @cas/dashboard test:db && pnpm --filter @cas/mcp-server test:db"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",

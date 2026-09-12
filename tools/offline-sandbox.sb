@@ -1,18 +1,34 @@
 ;; A macOS sandbox profile that denies every network operation and nothing
-;; else. Used to demonstrate that the default test suite is genuinely offline
-;; rather than merely believed to be:
+;; else. It is the stronger of the two profiles and the default statement
+;; that the suite needs no network:
 ;;
-;;   sandbox-exec -f tools/offline-sandbox.sb corepack pnpm test --force
+;;   corepack pnpm test:denied
 ;;
-;; The denial is demonstrated to be active in the same session by attempting a
-;; connection under the same profile and requiring it to fail:
+;; which runs every package, and every file of `@cas/mcp-server` except the
+;; one that cannot run here, under this profile. Only
+;; `packages/mcp-server/src/redirect.stdio.test.ts` is excluded: it serves
+;; real synthetic HTTP and HTTPS redirects from 127.0.0.1 to prove the
+;; gateway refuses every one of them, so it needs a listening socket, which
+;; this profile denies along with everything else. Nothing else is excluded,
+;; and `src/coverage.test.ts` fails if anything else is added to the
+;; exclusion.
 ;;
-;;   sandbox-exec -f tools/offline-sandbox.sb node -e \
-;;     "require('node:net').connect(443,'1.1.1.1').on('error',e=>console.log(e.code))"
+;; The denial is demonstrated to be active in the same session by a probe
+;; under the same profile, which must reach no host off this machine:
+;;
+;;   sandbox-exec -f tools/offline-sandbox.sb node tools/sandbox-probe.mjs
+;;
+;; Under this profile the probe denies everything: a public IPv4 address, a
+;; public IPv6 address, name resolution, a loopback socket, this host's own
+;; non-loopback address, a UNIX-domain socket and a subprocess's connection.
 ;;
 ;; It denies UNIX-domain sockets too, so the PostgreSQL integration suite
-;; cannot run under it. That is the point: `pnpm test` must pass here and
-;; `pnpm test:db` must not be able to.
+;; cannot run under it. That is the point: the default suite must pass here
+;; and `pnpm test:db` must not be able to.
+;;
+;; `tools/loopback-sandbox.sb` is the weaker profile that the one excluded
+;; file runs under. It allows this machine's own addresses, not loopback
+;; alone; read its header before relying on it.
 (version 1)
 (allow default)
 (deny network*)

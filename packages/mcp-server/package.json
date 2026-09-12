@@ -2,7 +2,7 @@
   "name": "@cas/mcp-server",
   "version": "0.0.0",
   "private": true,
-  "description": "MCP tooling exposing incident intelligence. Placeholder after Sprint 0.",
+  "description": "Read-only MCP tooling over the incident store: list_incidents, explain_incident, chain_anomalies and draft_section over local stdio only. Parallel MCP tooling track (decision D28), pending independent audit.",
   "type": "module",
   "exports": {
     ".": {
@@ -15,9 +15,31 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.build.json && vitest run",
+    "test:db": "pnpm -w exec turbo run build --filter=@cas/mcp-server && vitest run --config vitest.db.config.ts",
+    "test:denied": "tsc -p tsconfig.build.json && vitest run --exclude='**/*.db.test.ts' --exclude='**/redirect.stdio.test.ts'",
+    "test:localhost": "tsc -p tsconfig.build.json && vitest run src/redirect.stdio.test.ts",
+    "start": "node dist/bin.js",
+    "verify-role": "node dist/verify-role.js"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*",
+    "@cas/database": "workspace:*",
+    "@cas/drafting": "workspace:*",
+    "@cas/evidence": "workspace:*",
+    "@cas/graph-evidence": "workspace:*",
+    "@modelcontextprotocol/server": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@modelcontextprotocol/client": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "bin": {
+    "cas-mcp-server": "./dist/bin.js",
+    "cas-mcp-verify-role": "./dist/verify-role.js"
   }
 }

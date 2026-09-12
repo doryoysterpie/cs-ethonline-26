@@ -56,7 +56,20 @@ export const SECRET_RULES: readonly SecretRule[] = [
   },
 ];
 
-const TEST_FILE = /\.test\.ts$/u;
+/**
+ * Files that exist only for tests.
+ *
+ * Two rules — `credential_in_url` and `secret_assignment` — deliberately skip
+ * these, because a URL with a synthetic password and a secret-shaped
+ * assignment are the very things a credential-policy or output-safety test
+ * constructs. The pattern covers `*.test.ts` and the support modules the tests
+ * import, which every package's `tsconfig.build.json` excludes from its build
+ * output: a value in one of them cannot reach a shipped artefact.
+ *
+ * The high-precision token rules above are not skipped for any file. A real
+ * GitHub, AWS, Stripe or Anthropic token is a finding wherever it appears.
+ */
+const TEST_FILE = /(?:\.test\.ts|(?:^|\/)(?:test-support|db-support)\.ts)$/u;
 
 /**
  * Lines a test constructs as an attack input, allowed by SHA-256 of the exact

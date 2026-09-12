@@ -602,6 +602,152 @@ and nothing is merged or deployed.
   implementation permitted only in `local`; the `postgres` store fails with a fixed message
   until the next migration number is allocated after the Sprint 5 correction.
 
+## 18. MCP tooling
+
+Rules the parallel MCP tooling track (`@cas/mcp-server`, decision D28) implements, as
+corrected after the audit of 10 September 2026 (D28 amendment). The track is **still pending
+an independent audit of the corrected revision**; nothing below is an audit result, and the
+Sprint 5 evidence layer it reads is itself under correction.
+
+- **Local stdio only.** No HTTP, SSE or WebSocket transport is enabled, no socket is opened and
+  no session exists. Remote hosting is not designed and not enabled. **No remote MCP service
+  has been enabled or deployed.**
+- **Read-only, enforced by the database, under a least-privilege role.** Every tool call runs
+  inside one transaction opened `REPEATABLE READ` and declared `READ ONLY` on the `BEGIN`
+  itself, bounded by a statement timeout, so a write on that connection is refused with
+  SQLSTATE 25006. Beyond that, production mode (the default, `CAS_MCP_MODE` unset) requires the
+  configured credential to be a dedicated reader role: an eighteen-check privilege matrix runs
+  at start-up, fail-closed with exit code 2, and again on every stored call's own connection
+  before any application read, answering `database_role_overprivileged` if it fails. The role
+  must hold CONNECT, USAGE and SELECT on exactly the eleven tables the four tools read, and no
+  superuser, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS attribute, no CREATE or TEMP on the
+  database, no CREATE on any schema, no ownership, no write privilege on any column, no
+  sequence privilege and no write-capable role membership. The administrator template is
+  `packages/mcp-server/sql/mcp-reader-role.sql` and `corepack pnpm mcp:verify-role` reports the
+  matrix. The server runs no migration, classification, clustering, evidence resolution,
+  ingestion or review action, and the integration suite digests every table before and after
+  every tool and requires them equal.
+- **One snapshot per call, and one connection destroyed with it.** Each tool call opens its own
+  single connection and reads run metadata, incidents, sources, associations, review state,
+  targets, signal history and draft data from that one snapshot, so a result never combines
+  states that were not read together. The connection is destroyed when the call ends, so no
+  session setting, temporary object, prepared statement or advisory lock survives into another
+  call. Every relation, built-in function, aggregate, operator and cast in the store's SQL is
+  schema-qualified.
+- **Cancellation that stops work, not just the answer.** One call-scoped abort signal is
+  aborted by the first of the tool's wall-clock deadline, the client's `notifications/cancelled`
+  and server shutdown, and reaches the transaction and the live request. Once it fires, no
+  further statement is sent, a statement already running is cancelled at the server with
+  `pg_cancel_backend` issued on a connection of its own, the transaction is rolled back and its
+  connection destroyed, and a live request socket is aborted. The concurrency permit is released
+  only once that work has actually unwound, so repeated timeouts cannot accumulate work beyond
+  the four-call accounting. Shutdown aborts every active call, waits a bounded time, and waits
+  for every cancelling connection to close before the process exits. That holds for every
+  connection the store opens, the start-up privilege verification's included, and a caller that
+  registers no cancellation with the store waits for its own before it returns: no connection
+  outlives the call that opened it. A deadline answers `tool_timeout`; a client cancellation or
+  a shutdown answers `call_cancelled`.
+- **An unreachable database is availability, not a failed query.** A connection refused by the
+  server, by the network or by a local policy — `EPERM` and `EACCES` from a sandbox, seccomp
+  profile or socket permission included — answers `database_unavailable`, because no statement
+  ran. The two kinds of error code are distinct concepts and never interchangeable: a
+  `DatabaseError` records whether its code is PostgreSQL's own SQLSTATE or a system errno, a
+  system errno is never formatted or described as a SQLSTATE, and the public `details.sqlstate`
+  is emitted only for a value recorded as a SQLSTATE that also has the SQLSTATE shape and is
+  not an errno. Shape alone decides nothing, because `EPERM` has the shape of one.
+- **Every request is answered.** A well-formed JSON-RPC request whose `params` is not an object
+  is answered with a fixed `-32602`, and one carrying a member JSON-RPC does not define with a
+  fixed `-32600`, rather than being discarded unanswered by the SDK's base validation. The
+  answer is written by the same outbound policy as every other error, so it carries the fixed
+  message for its code and no caller value. Notifications are never answered and no request is
+  answered twice.
+- **A static catalogue with a pinned digest.** The four tool definitions are frozen application
+  code; the SHA-256 of their names, titles, descriptions, annotations and schemas is pinned and
+  checked at start-up and reproduced from the wire by a test. Untrusted data cannot modify a
+  tool name, description or schema.
+- **Closed inputs, advertised exactly as validated.** Arguments are UUIDs, enumerations,
+  bounded integers and explicit UTC instants only. An instant must be an exact calendar instant:
+  the advertised pattern is a leap-year-aware grammar and the runtime rebuilds the instant from
+  its components and requires it to serialize back unchanged, so 30 February is refused rather
+  than normalized. `chain_anomalies` is a discriminated union of two strict alternatives,
+  advertised as `oneOf` over the same two, so a request the advertised schema admits is one the
+  runtime admits; a shared accepted/rejected matrix is checked against the runtime, a JSON
+  Schema validator over `tools/list`, Zod's schema reader and the wire. Proxies, unexpected
+  keys, symbol keys, accessors, foreign prototypes, nested values, oversized strings, oversized
+  or over-numerous keys, control characters, Unicode separators and bidirectional controls are
+  refused before any value is read, no accessor or trap is ever run, and a rejection never
+  echoes a value. Every tool names its subject; nothing selects a latest run and no stored
+  evaluation reads the server clock.
+- **Quoted evidence, redacted first, bounded truthfully.** Retrieved text is returned only as
+  quoted evidence with visible escapes for control characters, ANSI sequences, Unicode
+  separators, bidirectional and invisible formatting characters and angle brackets, and marked
+  `untrusted_quoted_evidence`. Redaction runs **before** display escaping and before any bound,
+  and covers each configured secret in a bounded set of transit forms: raw, percent-decoded, and
+  the `encodeURIComponent`, `encodeURI` and form encodings of each, in both escape cases. A
+  SQL-bounded column is fetched as a prefix plus the stored value's true character and byte
+  counts, with a sentinel margin sized from the longest secret, so a value that was cut is
+  flagged `truncated` and carries a visible marker counting what is missing; a complete quotation
+  and a silently shortened one are never confused. Fields the server controls are never composed
+  from retrieved text, and controlled metadata (versions, hosts, slugs, hashes, Subgraph IDs) is
+  held to strict grammars and refused with `stored_metadata_invalid` rather than quoted.
+- **Inert previews and classified references.** Every headline, publisher and claim in a draft
+  preview is quoted evidence whose Markdown-active ASCII punctuation is backslash-escaped, so no
+  image, link, heading, list, emphasis, fence, HTML tag, entity or autolink can form from
+  retrieved text. A stored URL is classified before it is shown: `http`/`https` only, no
+  credentials, no loopback, private, link-local, multicast or reserved address (IPv4
+  embeddings in IPv6 included) and no local or reserved name. An accepted reference is a code
+  span, which never autolinks; a rejected one is a fixed `reference withheld: <reason>` and the
+  value is not presented as a source. **The server never fetches a stored URL.** Every preview
+  opens with fixed status, evidence, naming and origin notices that survive on their own.
+- **No provider redirect, ever.** A live Graph request may address only the configured gateway,
+  over `https`, without credentials, query or fragment, with bounded host, path and URL lengths.
+  Requests run with `redirect: "manual"` and every 3xx answer is a fixed failure with zero
+  requests to the destination, so a provider cannot move a request to HTTP, to a private or
+  loopback address, to a credential-bearing location or down a chain. The refused destination is
+  classified for the log only and never echoed, and provenance therefore always names the
+  endpoint that was contacted.
+- **Nothing private leaves, at the complete boundary.** No review note, rationale, actor, raw
+  cell, derived body text, environment value, driver message, provider response body or stack
+  trace appears in any result or log line. Failures are a closed vocabulary of twenty-two codes
+  with fixed messages. The `tools/call` handler is installed at the request-handler level so an
+  unknown name or an unexpected argument key is answered with a fixed code rather than the SDK's
+  own validation text, and an outbound transport policy gives every protocol error the fixed
+  message for its code, drops its data except the supported protocol versions, and redacts,
+  escapes and bounds every error text to 4,096 UTF-8 bytes. A rejected argument object is never
+  inspected: logging reads the validated copy only.
+- **Recorded origins, labelled and not verified.** Every result labels `live`, `replay` or
+  `fixture`, and a stored anomaly evaluation reads only the history of the named run's recorded
+  origin. That origin is the value **the database recorded at ingest**: this server labels with
+  it and does not verify how the record was acquired, so a stored origin of `live` is a recorded
+  claim and never an authenticated live acquisition. Every stored result says so structurally,
+  in an `originProvenance` block naming the recorded claim, the absence of independent
+  verification, the rejected-and-under-correction historical base, and three fixed limitation
+  sentences. Live mode requires `GRAPH_API_KEY`, is explicitly selected, uses the Sprint 1
+  client with its URL validation and redaction, and never falls back to stored, replay or
+  fixture data. No other tool makes a network call.
+- **A named run bounds its own evaluation.** A stored anomaly result is fixed by the named run's
+  completion instant and the caller's required `asOf`: only completed runs of the same recorded
+  origin and signal version that completed at or before the named run contribute, only their
+  observations at or before `asOf` contribute, that cut precedes the per-target limit, and ties
+  are broken by run completion and signal identifier. Later or incomplete data cannot change an
+  older run's result, and every entry names the run and signal that produced the observation it
+  labels.
+- **Bounded before anything is fetched.** Page sizes, list lengths, sources per incident in a
+  draft, string lengths, result bytes, error-text bytes, wall-clock deadlines, the database
+  statement timeout, a per-process rate limit and a concurrency cap are fixed constants in one
+  file. The draft query bounds incidents, sources per incident and every text column inside the
+  statement, counts memberships without fetching them, and the result discloses what it left
+  out, so a large corpus cannot be materialized before a bound applies.
+- **Telemetry, not proof.** Every chain entry carries a fixed limitation sentence; nothing in
+  the server establishes that a cyberattack occurred.
+- **No model, no write, no publication.** `draft_section` assembles a preview in memory and
+  marks it unpublished. No tool invokes a model or reads a model credential. No structured
+  victim name is proposed and no name is redacted from quoted text; the naming counts say
+  exactly that.
+- **Four environment names.** The server reads `DATABASE_URL`, `GRAPH_API_KEY`,
+  `GRAPH_GATEWAY_URL` and `CAS_MCP_MODE` and no other; a test proves it enumerates nothing and
+  echoes no rejected value. stdout carries protocol messages only.
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,

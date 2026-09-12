@@ -15,4 +15,12 @@ export default defineConfig([
   ]),
   js.configs.recommended,
   tseslint.configs.recommended,
+  // Plain scripts under `tools/` run under Node, so they see its globals.
+  {
+    files: ['tools/**/*.mjs'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: { console: 'readonly', process: 'readonly' },
+    },
+  },
 ]);
