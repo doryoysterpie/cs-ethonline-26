@@ -4,6 +4,12 @@
 !.env.example
 *.pem
 *.key
+# Google service-account keys. The connector refuses a key inside the working
+# tree, so this rule is a second line rather than the boundary; the boundary is
+# that the key lives outside the repository entirely.
+*service-account*.json
+*-credentials.json
+gcp-key*.json
 
 # Dependencies and build output
 node_modules/

@@ -1,0 +1,21 @@
+{
+  "$comment": [
+    "The authorized-workbook policy. Not a secret, and deliberately so.",
+    "",
+    "`spreadsheetIdSha256` is the SHA-256 digest of the one Google spreadsheet",
+    "this project may read. The identifier itself is supplied through the",
+    "GOOGLE_SHEETS_SPREADSHEET_ID environment variable and is never committed;",
+    "a digest cannot be reversed into it.",
+    "",
+    "While the digest is null every Sheets operation refuses: the connector",
+    "fails closed, not open. To pin it, set the environment variable and run",
+    "`corepack pnpm sheets:pin`, which prints the digest and nothing else, then",
+    "paste that digest here in its own reviewable commit.",
+    "",
+    "Authorizing a different workbook is therefore a code change a human",
+    "reviews, not a configuration change anyone can make."
+  ],
+  "title": "Cyberattack Sunday - RSS Intake",
+  "spreadsheetIdSha256": null,
+  "note": "Shared with the dedicated service account as Viewer, on this one file. Revocation is removing that share."
+}
