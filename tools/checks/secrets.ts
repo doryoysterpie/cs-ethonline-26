@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { conclude, finding, isMain, type Finding } from './lib/report.ts';
 import { readTracked, repositoryRoot, trackedEntries, type TrackedEntry } from './lib/tracked.ts';
 
@@ -56,9 +58,36 @@ export const SECRET_RULES: readonly SecretRule[] = [
 
 const TEST_FILE = /\.test\.ts$/u;
 
+/**
+ * Lines a test constructs as an attack input, allowed by SHA-256 of the exact
+ * line rather than by file or by pattern.
+ *
+ * The `private_key_block` rule deliberately does not skip test files: a real
+ * key committed into a test is exactly the mistake worth catching, and
+ * exempting a whole file class to quieten a known-synthetic line would give
+ * that mistake somewhere to hide. So the exemption is the narrowest one
+ * available, and it is stored as a digest so that this file does not itself
+ * have to contain the shapes it scans for.
+ *
+ * Each exempted line was checked with `crypto.createPrivateKey` and does not
+ * decode to a usable key. Change the line by one character and the digest
+ * stops matching, so the exemption cannot drift into covering something else.
+ */
+const SYNTHETIC_SECRET_LINES: ReadonlySet<string> = new Set([
+  // packages/sheets-intake/src/redaction.test.ts: a truncated PEM prefix used
+  // to prove the redactor removes key material it was never told about.
+  '956c92eb6479377489f1e43dd048b4e38b720725f42665a25e67a5f24f5a37b2',
+  // packages/sheets-intake/src/credentials.test.ts: an invented marker body
+  // used to prove key material never reaches a refusal message.
+  '7391020fb55d5cdbc61b3a62080f27f1b8eabfeec67d24a12b4b21560ed8da33',
+]);
 export interface SecretsResult {
   readonly scanned: number;
   readonly findings: readonly Finding[];
+}
+
+function lineDigest(line: string): string {
+  return createHash('sha256').update(line, 'utf8').digest('hex');
 }
 
 export function scanTextForSecrets(relativePath: string, text: string): Finding[] {
@@ -68,7 +97,9 @@ export function scanTextForSecrets(relativePath: string, text: string): Finding[
   for (const [index, line] of lines.entries()) {
     for (const rule of SECRET_RULES) {
       if (rule.skipTests === true && isTest) continue;
-      if (rule.pattern.test(line)) findings.push(finding(relativePath, index + 1, rule.rule));
+      if (rule.pattern.test(line) && !SYNTHETIC_SECRET_LINES.has(lineDigest(line))) {
+        findings.push(finding(relativePath, index + 1, rule.rule));
+      }
     }
   }
   return findings;
