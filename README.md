@@ -143,6 +143,19 @@ Bazantic recipe tracks are attempted in Sprint 8 only if the Graph gate passes a
 allows; otherwise they are dropped. Requirement status per track is in
 `docs/HACKATHON_REQUIREMENTS.md`.
 
+**Parallel track: read-only Google Sheets intake.** A file-scoped connector for
+the one authorized workbook `Cyberattack Sunday - RSS Intake`, on
+`parallel/google-sheets-intake`. It reads through the Sheets API only: no Drive
+API, no user OAuth, no write scope, no Google SDK, and two allowed origins with
+no redirect ever followed. The workbook is a whitelist of one, pinned as a
+SHA-256 digest in a committed policy file that ships unpinned, so the connector
+fails closed until a human pins it. Nothing is written anywhere, and there is no
+database import path yet by design: the owner reviews an inventory report and
+approves a tab mapping first. The workbook's weekly tabs record candidate
+selections, not published outcomes, and are not evaluation truth until each is
+paired with its published edition (`docs/SHEETS-INTAKE.md`). **This track has
+not been audited, and no live inventory has been run.**
+
 ## Monorepo layout
 
 | Path                      | Package               | State after Sprint 5                                                                                                                               |
@@ -159,6 +172,7 @@ allows; otherwise they are dropped. Requirement status per track is in
 | `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25); 69 unit tests                                                      |
 | `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests                                                         |
 | `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                                                                        |
+| `packages/sheets-intake`  | `@cas/sheets-intake`  | parallel track: read-only, file-scoped Google Sheets intake; no Drive API, no write scope, no SDK; 126 unit tests                                  |
 | `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25); 19 unit tests. No model is called                                          |
 | `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                        |
 | `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                                   |
@@ -357,6 +371,7 @@ Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
 | `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence                                       |
 | `docs/SPRINT-4-REPORT.md`        | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections                |
 | `docs/SPRINT-5-REPORT.md`        | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting, audit correction; pending re-audit |
+| `docs/SHEETS-INTAKE.md`          | Read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                       |
 | `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                                  |
 | `docs/CHECKIN-2-DRAFT.md`        | Project Check-in #2 draft, due Thursday 10 September; not submitted                                               |
 | `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                                                              |

@@ -423,3 +423,39 @@ implicit period.
 Out of scope and not implemented in Sprint 5: the dashboard, the MCP server, any model call,
 any live Graph request, any automatic extraction of a protocol identity from text, and any
 editorial week boundary (D10 stays unresolved).
+
+## 14. Parallel track boundary: `@cas/sheets-intake`
+
+Built and verified within Claude sessions on `parallel/google-sheets-intake`.
+Not merged, not deployed and not audited. `docs/SHEETS-INTAKE.md` is its record.
+
+The package is pure in the sense that matters for a connector: it holds no
+database handle, writes nothing anywhere, and reaches exactly two hosts. It
+takes its workbook policy as an argument, exactly as `@cas/clustering` takes a
+contract, so the package cannot decide for itself what it is allowed to read.
+
+| Module                              | Responsibility                                                                                                                                                                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `policy.ts`                         | The authorization decision: a whitelist of one, compared as a SHA-256 digest in constant time, evaluated before any request. An unpinned policy refuses everything.                                          |
+| `config.ts`                         | Environment validation, complete before anything reaches the network. A refusal names the variable and the condition, never the value.                                                                       |
+| `credentials.ts`                    | Service-account key loading. Refuses a key inside the repository and a key readable beyond its owner, and reads only the three fields it needs.                                                              |
+| `token.ts`                          | The JWT-bearer flow, implemented on `node:crypto`. One scope constant, read-only, asserted by test to be the only scope string in the package.                                                               |
+| `transport.ts`                      | Two allowed origins, no redirect ever followed, responses bounded while they are read, retries bounded and cancellable, and no response body in any error.                                                   |
+| `client.ts`                         | Two reads: metadata under a field mask that cannot return cells, and one explicit A1 range. No write method exists on the prototype chain.                                                                   |
+| `a1.ts`                             | Range construction. A tab name is always quoted and its internal quotes doubled, so a name cannot break out into range syntax; an unrepresentable name is refused rather than repaired.                      |
+| `schema.ts`                         | Header description, never repair: blanks stay blank, duplicates stay duplicated, both with positions. Tab type is a typed hypothesis carrying its evidence, and the tab's name is deliberately not evidence. |
+| `values.ts`                         | Inert cells, explicit timestamp normalization in the workbook's own zone, and derived row identity that survives a row moving.                                                                               |
+| `reader.ts`                         | The bounded paginated read. Every bound reached is a counted refusal; nothing is truncated silently. Dry run is the default.                                                                                 |
+| `inventory.ts`                      | Structure without content. One unreadable tab is a warning on that tab, not an aborted run.                                                                                                                  |
+| `lineage.ts`                        | The five editorial stages as a typed constant, and the fixed sentence saying what a weekly tab is not.                                                                                                       |
+| `apps/worker/src/sheets/connect.ts` | Assembly, in the order that matters: configuration, policy, authorization, and only then the credential.                                                                                                     |
+| `apps/worker/src/sheets/output.ts`  | Count-only, identifier-only lines, redacted and forced to one physical line.                                                                                                                                 |
+
+Inputs: one environment-supplied identifier, one committed digest, one
+service-account key outside the tree. Outputs: an inventory report, a timestamp
+range, and dry-run counts. There is no import path and no database write, by
+design: the owner reviews an inventory and approves a tab mapping first.
+
+Out of scope and not implemented: the Drive API, user OAuth, any write, any
+fetch of a URL found in a cell, any model call, any database import, and any
+treatment of a weekly tab as a published outcome.
