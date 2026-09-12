@@ -191,7 +191,7 @@ export function catalogueSha256(entries: readonly CatalogueEntry[] = toolCatalog
  * the definitions test and stops the server from starting.
  */
 export const EXPECTED_CATALOGUE_SHA256 =
-  '676c0cf8ae08fa7c78a33c108c3a0b1072fe179822e74a62ad99478b2682f625';
+  'ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082';
 
 export class CatalogueIntegrityError extends Error {
   constructor() {

@@ -1,3 +1,5 @@
+import { PassThrough, type Readable } from 'node:stream';
+
 import type { JSONRPCMessage, Transport, TransportSendOptions } from '@modelcontextprotocol/server';
 
 import { ERROR_TEXT_MAX_BYTES } from '../bounds.js';
@@ -20,9 +22,14 @@ import { toSingleLineWithoutDirection } from '../safety/text.js';
  *     line with control, separator and directional characters escaped, and
  *     bounded in UTF-8 bytes with a visible marker.
  *
- * Nothing inbound is altered: the wrapper forwards every message to the SDK
- * unchanged, because the tools/call handler this server installs already
- * refuses hostile names and arguments without reflecting them.
+ * Inbound, the wrapper forwards every message to the SDK unchanged except
+ * one class it must answer itself: a well-formed request whose `params` is
+ * not an object, which the SDK discards without a reply, leaving the caller
+ * waiting (Track D re-audit finding L4). Such a request is answered with a
+ * fixed error here and not forwarded, so it receives exactly one response.
+ * Everything else reaches the SDK, because the tools/call handler this server
+ * installs already refuses hostile names and arguments without reflecting
+ * them.
  */
 
 const FIXED_ERROR_MESSAGES: Readonly<Record<number, string>> = {
@@ -48,6 +55,51 @@ export function sanitizeErrorText(text: string, redact: Redactor): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The fixed answer owed to a request the SDK would otherwise drop. */
+export interface InboundRefusal {
+  readonly id: string | number;
+  readonly code: number;
+}
+
+/** The four members JSON-RPC 2.0 gives a request object. */
+const REQUEST_MEMBERS = new Set(['jsonrpc', 'id', 'method', 'params']);
+
+/**
+ * A well-formed JSON-RPC request the pinned SDK drops without answering
+ * (Track D re-audit finding L4).
+ *
+ * The SDK validates a request against its base shape before any handler sees
+ * it, and a `params` that is not an object fails that shape: the message is
+ * discarded and the caller waits for a reply that never comes. This decides,
+ * from the raw message alone, which requests are owed a fixed answer here
+ * instead.
+ *
+ * It is deliberately narrow. A notification carries no `id` and JSON-RPC
+ * forbids answering one. A response is not a request. An absent `params`, an
+ * object `params` and an unknown method all reach the SDK, which already
+ * answers them with a fixed `-32602` or `-32601`, so none of them may be
+ * answered twice.
+ */
+export function inboundRefusal(message: unknown): InboundRefusal | null {
+  if (!isRecord(message)) return null;
+  if ('result' in message || 'error' in message) return null;
+  const id = message['id'];
+  if (typeof id !== 'string' && typeof id !== 'number') return null;
+  if (message['jsonrpc'] !== '2.0') return { id, code: -32600 };
+  const method = message['method'];
+  if (typeof method !== 'string' || method.length === 0) return { id, code: -32600 };
+  // JSON-RPC 2.0 gives a request object exactly four members. The SDK drops a
+  // request carrying any other one, so it is answered here instead.
+  for (const name of Object.keys(message)) {
+    if (!REQUEST_MEMBERS.has(name)) return { id, code: -32600 };
+  }
+  if (!('params' in message)) return null;
+  const params = message['params'];
+  if (params === undefined || isRecord(params)) return null;
+  // A string, array, number, boolean or null in `params`.
+  return { id, code: -32602 };
 }
 
 /** Applies the outbound policy to one message. Pure; the input is never mutated. */
@@ -82,6 +134,59 @@ export function applyOutboundPolicy(message: JSONRPCMessage, redact: Redactor): 
   return message;
 }
 
+/**
+ * Splits a newline-delimited JSON stream and holds back the requests the SDK
+ * would drop, handing each to `respond` instead (finding L4).
+ *
+ * The SDK's stdio transport validates a line against the base message shape
+ * and discards it before any `onmessage` hook runs, so a wrapper around the
+ * transport cannot see one. Filtering the stream the transport reads is the
+ * only place left that still knows the request's `id`. Every other line —
+ * valid, unparseable or empty — is forwarded byte for byte, so framing,
+ * protocol compatibility and cancellation are untouched.
+ */
+export function filterInbound(
+  source: Readable,
+  respond: (refusal: InboundRefusal) => void,
+): Readable {
+  const forwarded = new PassThrough();
+  let buffer = Buffer.alloc(0);
+
+  const handleLine = (line: Buffer): void => {
+    if (line.length > 0) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line.toString('utf8'));
+      } catch {
+        // Not JSON: the SDK owns the parse error.
+        forwarded.write(line);
+        forwarded.write('\n');
+        return;
+      }
+      const refusal = inboundRefusal(parsed);
+      if (refusal !== null) {
+        respond(refusal);
+        return;
+      }
+      forwarded.write(line);
+    }
+    forwarded.write('\n');
+  };
+
+  source.on('data', (chunk: Buffer) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    let index = buffer.indexOf(0x0a);
+    while (index !== -1) {
+      handleLine(buffer.subarray(0, index));
+      buffer = buffer.subarray(index + 1);
+      index = buffer.indexOf(0x0a);
+    }
+  });
+  source.on('end', () => forwarded.end());
+  source.on('error', (error: Error) => forwarded.destroy(error));
+  return forwarded;
+}
+
 export interface PolicyTransportOptions {
   readonly redact: Redactor;
 }
@@ -104,10 +209,36 @@ export class PolicyTransport implements Transport {
   }
 
   async start(): Promise<void> {
-    this.#inner.onmessage = (message, extra) => this.onmessage?.(message, extra);
+    this.#inner.onmessage = (message, extra) => {
+      // A transport that hands over a message the SDK would drop (an
+      // in-memory pair does) is answered here and not forwarded, so the
+      // request receives exactly one response and never two (finding L4).
+      const refusal = inboundRefusal(message);
+      if (refusal !== null) {
+        this.refuse(refusal);
+        return;
+      }
+      this.onmessage?.(message, extra);
+    };
     this.#inner.onclose = () => this.onclose?.();
     this.#inner.onerror = (error) => this.onerror?.(error);
     await this.#inner.start();
+  }
+
+  /**
+   * Writes the fixed answer owed to a request the SDK would have dropped. It
+   * goes out through `send`, so it carries the same fixed message, bounds and
+   * redaction as every other outbound error.
+   */
+  refuse(refusal: InboundRefusal): void {
+    const message = {
+      jsonrpc: '2.0',
+      id: refusal.id,
+      error: { code: refusal.code, message: fixedErrorMessage(refusal.code) },
+    } as unknown as JSONRPCMessage;
+    void this.send(message).catch((error: unknown) => {
+      this.onerror?.(error instanceof Error ? error : new Error('refusal send failed'));
+    });
   }
 
   async send(message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> {

@@ -6,7 +6,7 @@ import { assertCatalogueIntegrity } from './definitions.js';
 import { createRuntime, ENVIRONMENT_NAMES } from './runtime.js';
 import { sleep } from './safety/cancellation.js';
 import { createCasMcpServer } from './server.js';
-import { PolicyTransport } from './transport/policy.js';
+import { filterInbound, PolicyTransport } from './transport/policy.js';
 
 /**
  * The stdio entry point, and the only transport this package enables.
@@ -69,7 +69,13 @@ async function main(): Promise<void> {
     });
   };
 
-  const transport = new PolicyTransport(new StdioServerTransport(), { redact: runtime.redact });
+  // stdin is filtered before the SDK's transport parses it: a well-formed
+  // request whose `params` is not an object is answered with a fixed error
+  // here, because the SDK discards it without a reply and the caller would
+  // wait for one that never comes (Track D re-audit finding L4).
+  let transport: PolicyTransport | null = null;
+  const filtered = filterInbound(process.stdin, (refusal) => transport?.refuse(refusal));
+  transport = new PolicyTransport(new StdioServerTransport(filtered), { redact: runtime.redact });
   const handle = serveStdio(() => createCasMcpServer(runtime), {
     transport,
     onerror: () => runtime.log('cas-mcp-server transport_error'),

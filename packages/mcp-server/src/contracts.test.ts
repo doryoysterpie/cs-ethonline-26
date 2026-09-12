@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
 
 import { advertisedInputSchema, JSON_SCHEMA_TARGET, toolCatalogue } from './definitions.js';
-import { exactUtcInstant, ISO_INSTANT_PATTERN } from './schemas/common.js';
+import {
+  exactUtcInstant,
+  ISO_INSTANT_PATTERN,
+  VERSION_IDENTIFIER_PATTERN,
+} from './schemas/common.js';
+import { anomalyBoundary, storedAnomalies } from './schemas/output.js';
 import {
   chainAnomaliesInput,
   chainAnomaliesLiveInput,
@@ -347,5 +352,73 @@ describe('the draft_section period', () => {
       >
     )['description'];
     expect(String(description)).toContain('cannot be expressed in the advertised JSON Schema');
+  });
+});
+
+describe('the anomaly boundary and the signal run describe the same version the same way', () => {
+  /** Unwraps a nullable union to the branch that carries properties. */
+  function objectBranch(node: Record<string, unknown>): Record<string, unknown> {
+    const union = node['anyOf'] as Record<string, unknown>[] | undefined;
+    if (union === undefined) return node;
+    const branch = union.find((candidate) => candidate['properties'] !== undefined);
+    if (branch === undefined) throw new Error('no object branch in the union');
+    return branch;
+  }
+
+  /** Walks the advertised JSON Schema to the named property. */
+  function propertyAt(
+    schema: Record<string, unknown>,
+    path: readonly string[],
+  ): Record<string, unknown> {
+    let current = objectBranch(schema);
+    for (const step of path) {
+      const properties = current['properties'] as
+        Record<string, Record<string, unknown>> | undefined;
+      const next = properties?.[step];
+      if (next === undefined) throw new Error(`no property at ${path.join('.')}`);
+      current = objectBranch(next);
+    }
+    return current;
+  }
+
+  it('holds both signalVersion fields to one grammar on the wire', () => {
+    // `stored.boundary.signalVersion` and `stored.signalRun.signalVersion` are
+    // the same database column. The store correction introduced the boundary
+    // while the content correction was tightening the run, so the two were
+    // written apart; this keeps them from drifting apart again.
+    const entry = toolCatalogue().find((tool) => tool.name === 'chain_anomalies');
+    expect(entry).toBeDefined();
+    const output = entry?.outputSchema as Record<string, unknown>;
+    const boundary = propertyAt(output, ['stored', 'boundary', 'signalVersion']);
+    const run = propertyAt(output, ['stored', 'signalRun', 'signalVersion']);
+    expect(boundary['type']).toBe('string');
+    expect(boundary['pattern']).toBe(run['pattern']);
+    expect(boundary['maxLength']).toBe(run['maxLength']);
+    expect(String(boundary['pattern'])).toBe(VERSION_IDENTIFIER_PATTERN.source);
+  });
+
+  /** The `signalVersion` member of one of the two objects that carry it. */
+  function versionSchema(field: 'boundary' | 'signalRun'): z.ZodType {
+    const shape =
+      field === 'boundary'
+        ? (anomalyBoundary.shape as Record<string, z.ZodType | undefined>)
+        : (
+            (storedAnomalies.shape as Record<string, z.ZodType>)['signalRun'] as z.ZodObject<
+              Record<string, z.ZodType>
+            >
+          ).shape;
+    const version = (shape as Record<string, z.ZodType | undefined>)['signalVersion'];
+    if (version === undefined) throw new Error(`no signalVersion on ${field}`);
+    return version;
+  }
+
+  it('refuses a version outside the grammar and accepts one inside it', () => {
+    const hostile = `evidence-resolver@1${String.fromCodePoint(0x1b)}[31m`;
+    for (const field of ['boundary', 'signalRun'] as const) {
+      const schema = versionSchema(field);
+      expect(schema.safeParse(hostile).success, field).toBe(false);
+      expect(schema.safeParse('standardized-tvl-signal@1').success, field).toBe(true);
+      expect(schema.safeParse('x'.repeat(80)).success, field).toBe(false);
+    }
   });
 });

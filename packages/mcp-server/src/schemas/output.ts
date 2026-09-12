@@ -231,7 +231,11 @@ export const anomalyBoundary = z
     completedAt: instantOutput,
     asOf: instantOutput,
     dataOrigin: dataOriginSchema,
-    signalVersion: z.string().max(64),
+    // The same value as `storedAnomalies.signalRun.signalVersion`, held to the
+    // same grammar. The read gate already refuses a run whose version is
+    // outside it, so this is the second of two independent refusals rather
+    // than the only one (Track D re-audit).
+    signalVersion: versionIdentifierSchema,
     rule: z.literal(ANOMALY_BOUNDARY_SENTENCE),
     /** Distinct completed runs that contributed at least one used observation. */
     contributingRunCount: z.number().int().nonnegative(),
