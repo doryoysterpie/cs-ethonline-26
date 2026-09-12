@@ -153,4 +153,45 @@ export {
   type ClusterRunOutcome,
   type ClusterRunRequest,
 } from './clustering/run.js';
+export { buildAnomalyFeed, type AnomalyRequest } from './evidence/anomaly.js';
+export {
+  reportEvidenceRun,
+  resolveEvidence,
+  type EvidenceReport,
+  type EvidenceRunOutcome,
+  type EvidenceRunRequest,
+} from './evidence/run.js';
+// The Sprint 5 audit correction (F1, decision D26) split ingestion into two
+// functions whose input types share no field but a discriminant, so that a
+// file can never be ingested as live. The public surface follows: the file
+// path and the Graph-client path are both exported, and the single
+// `ingestSnapshot` they replaced is deliberately gone rather than aliased —
+// an alias would put the pre-correction name back in reach.
+export {
+  assertFileIngestInput,
+  ingestLiveEvaluations,
+  ingestSnapshotFile,
+  type FileIngestInput,
+  type FileOrigin,
+  type GraphClientIngestInput,
+  type IngestSnapshotOutcome,
+  type LiveTargetEvaluation,
+} from './evidence/signals.js';
+export {
+  recordIncidentSubject,
+  type RecordSubjectOutcome,
+  type RecordSubjectRequest,
+} from './evidence/subject.js';
+export {
+  decideAssociation,
+  evidenceReviewCounts,
+  type EvidenceDecisionOutcome,
+  type EvidenceDecisionRequest,
+} from './evidence/review.js';
+export { buildDraftRequest, type BuildDraftRequest } from './drafting/build.js';
+export {
+  assertReviewNote,
+  REVIEW_NOTE_MAX_LENGTH,
+  REVIEW_NOTE_MIN_LENGTH,
+} from './clustering/note.js';
 export { run, type CliIo, type CliOptions } from './cli.js';

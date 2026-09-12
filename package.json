@@ -39,7 +39,7 @@
     "sheets:inventory": "pnpm -s --filter @cas/worker cli sheets inventory",
     "sheets:timestamps": "pnpm -s --filter @cas/worker cli sheets timestamps",
     "sheets:dry-run": "pnpm -s --filter @cas/worker cli sheets dry-run",
-    "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db"
+    "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db && pnpm --filter @cas/dashboard test:db"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",

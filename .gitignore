@@ -42,3 +42,10 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Next.js build output and generated type stubs (apps/dashboard)
+.next/
+next-env.d.ts
+# Browser test output (apps/dashboard)
+test-results/
+playwright-report/

@@ -911,3 +911,80 @@ entries are unchanged except for status pointers.
 - **Decided by:** Security-foundation track of 2026-09-10, on the owner's brief; not yet
   owner-confirmed.
 - **Supersedes:** nothing. It does not revisit D3, D4, D8, D9, D10 or D13.
+
+## D28 Dashboard and authentication track (parallel, speculative)
+
+- **Date:** 2026-09-10
+- **Status:** PROVISIONAL
+- **Decision:** The Next.js dashboard and its authentication are built on the branch
+  `parallel/s6-dashboard-auth` from Sprint 5's final commit `6fad82c3`, in isolation, while
+  Sprint 5 is under independent audit. Nothing on the branch is merged or deployed before
+  Sprint 5 passes and Codex Desktop audits this track separately. The design commitments:
+  - **Authorization lives in one server-only data-access layer.** Every page, server action,
+    route handler and account operation resolves the principal through the session service
+    and calls a data-access function that begins with a capability check, validates its
+    identifiers, reads the object under the run that owns it, and returns an explicit DTO. The
+    request proxy redirects a cookieless browser early and validates nothing; it is never the
+    boundary. Deny by default: a capability is granted only where the role table lists it.
+  - **Three roles, written out in full.** `judge` sees sanitized read-only views (command
+    center, incidents, anomaly feed, evidence states, draft preview) and no source text, note,
+    rationale, mutation or administration; `editor` adds the queue, source text, notes and the
+    four editorial mutations; `admin` adds account provisioning, disabling, role assignment,
+    expiry and session revocation. Source text is selected as `NULL` by the database for a
+    principal without `view:source_text`, so it never crosses the wire.
+  - **Sessions are opaque and hashed.** A session is 32 CSPRNG bytes; the store keeps its
+    SHA-256 only. Sign-in always issues a new token and closes any live session it was
+    presented with; a privilege change revokes every session of the subject; absolute and idle
+    lifetimes are enforced; sign-out revokes; a disabled or expired account ends its sessions at
+    the next request. The cookie is host-only, `HttpOnly`, `SameSite=Strict`, `Secure` with the
+    `__Host-` prefix outside `local`.
+  - **Passwords are Argon2id at the OWASP minimum** (19 MiB, 2 iterations, 1 lane) through the
+    maintained `argon2` binding, a fresh 16-byte salt per hash, NFKC-normalised, verified only
+    within a parameter ceiling and behind a concurrency gate, with a dummy verification for an
+    unknown username. Failures are generic; throttling is keyed on the submitted username and
+    the network source, so nothing reveals whether an account exists. Audit events carry
+    identifiers and fixed codes, never a credential, a token or a submitted unknown username.
+  - **Every mutation is append-only through the audited worker APIs or the dashboard's own
+    append-only stores.** Merge, split and evidence decisions call `@cas/worker`; a queue
+    decision is a new human `ReviewState` record; a draft edit is a new revision under
+    optimistic concurrency with the generated draft as immutable revision 0. No machine record
+    is rewritten, and a test fingerprints every machine table before and after.
+  - **Hostile text is inert.** React renders stored strings as text; a display guard makes
+    controls and bidirectional overrides visible; drafts are parsed to an AST and sanitized
+    against an allowlist before becoming React elements; `http` and `https` are the only link
+    protocols; images are never rendered; no HTML string is ever set into the document. A
+    nonce-based policy with `default-src 'none'`, `frame-ancestors 'none'`, `nosniff`,
+    `no-referrer`, a restrictive permissions policy and HSTS in `production` is set on every
+    response, and protected responses are `private, no-store`.
+  - **Mutations require same-origin proof and a session-bound token.** `Sec-Fetch-Site` or
+    `Origin` must prove same origin, and every form and handler carries an HMAC derived from
+    the session token, compared in constant time.
+  - **Persistence for accounts, sessions, audit, draft revisions and queue decisions is
+    paused.** The coordination note of 10 September 2026 reserves migration 0009 for the
+    Sprint 5 correction and defers authentication migrations. The track therefore ships the
+    store interfaces and an in-memory implementation permitted only in `local`, and refuses the
+    `postgres` store with a fixed message. The PostgreSQL implementation and its migration are
+    allocated after Sprint 5's accepted SHA is integrated.
+  - **No account is provisioned.** The one-time command reads a replacement password on a
+    terminal without echo, validates it, hashes it and stores the hash; the three named
+    accounts are provisioned by a human after the audit. Tests use `syn_`-prefixed synthetic
+    accounts with passwords drawn from the CSPRNG at test time.
+- **Rationale:** The dashboard is the only writer of a human `ReviewState` and the surface a
+  judge sees, so its authorization boundary has to be the layer that touches data, not the
+  routing layer in front of it; the middleware bypass of March 2025 is exactly the failure a
+  proxy-only boundary invites. Everything the brief asks for is a property of that layer or of
+  the session service, and both are testable without a browser, which is why they carry the
+  bulk of the tests.
+- **Consequences:** `@cas/dashboard` depends on `@cas/worker` for the audited human review
+  layer rather than duplicating it, which is the one edge `ARCHITECTURE.md` section 5 did not
+  foresee (an application composing another application's exported functions); the worker's
+  manifest gains an `exports` map and re-exports for that purpose. The two Node-only workspace
+  packages are loaded at run time rather than bundled, because Next bundles every workspace
+  package. New catalog entries: `next`, `react`, `react-dom`, `argon2`, `server-only`, the four
+  Markdown packages, `@playwright/test` and the type packages, each pinned and each older than
+  the release-age gate. `argon2`'s install script is refused; its prebuilt binary is used.
+  Continuous integration does not run on `parallel/*` branches; verification is local until
+  the track is integrated.
+- **Decided by:** Parallel track implementation of 2026-09-10, on the owner's brief and the
+  coordination note of the same day.
+- **Supersedes:** nothing. It builds on D25 and does not revisit D3, D4, D9 or D10.

@@ -2,13 +2,42 @@
   "name": "@cas/dashboard",
   "version": "0.0.0",
   "private": true,
-  "description": "Editorial dashboard application. Placeholder after Sprint 0.",
+  "description": "Editorial dashboard application (Next.js). Parallel Sprint 6 track: login and sessions, role-gated command center, review queue, incident explorer, evidence and anomaly views, draft preview and editor, and account administration. Speculative until Codex Desktop audits it; account persistence is paused pending the next migration number.",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "pnpm -s build:cli && next build",
+    "build:cli": "tsc -p tsconfig.cli.json",
+    "dev": "next dev",
+    "start": "next start",
+    "typecheck": "next typegen && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.cli.json --noEmit",
+    "test": "vitest run",
+    "test:db": "pnpm -w exec turbo run build --filter=@cas/dashboard^... && vitest run --config vitest.db.config.ts",
+    "test:browser": "pnpm -s build && playwright test",
+    "provision": "pnpm -s build:cli && node --conditions=react-server dist/cli/provision.js"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*",
+    "@cas/database": "workspace:*",
+    "@cas/drafting": "workspace:*",
+    "@cas/evidence": "workspace:*",
+    "@cas/worker": "workspace:*",
+    "argon2": "catalog:",
+    "hast-util-sanitize": "catalog:",
+    "hast-util-to-jsx-runtime": "catalog:",
+    "mdast-util-from-markdown": "catalog:",
+    "mdast-util-to-hast": "catalog:",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "server-only": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@playwright/test": "catalog:",
+    "@types/hast": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

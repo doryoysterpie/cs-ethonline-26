@@ -139,6 +139,28 @@ export {
   type NewIncidentSubject,
 } from './evidence.js';
 export {
+  countDashboardTotals,
+  findReviewQueueEntry,
+  getIncidentCluster,
+  listAssociationDetails,
+  listClusteringRuns,
+  listEvidenceRuns,
+  listGraphSignalRuns,
+  listIncidentClusters,
+  listIncidentEvidenceStates,
+  listIncidentMembers,
+  listReviewQueueEntries,
+  type AssociationDetail,
+  type ClusteringRunSummary,
+  type DashboardTotals,
+  type EvidenceRunSummary,
+  type GraphSignalRunSummary,
+  type IncidentClusterSummary,
+  type IncidentEvidenceStateSummary,
+  type IncidentMemberSummary,
+  type ReviewQueueEntry,
+} from './dashboard.js';
+export {
   Database,
   openDatabase,
   type DatabaseOptions,
