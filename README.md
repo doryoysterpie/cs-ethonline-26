@@ -143,6 +143,19 @@ Bazantic recipe tracks are attempted in Sprint 8 only if the Graph gate passes a
 allows; otherwise they are dropped. Requirement status per track is in
 `docs/HACKATHON_REQUIREMENTS.md`.
 
+**Parallel track: read-only Google Sheets intake.** A file-scoped connector for
+the one authorized workbook `Cyberattack Sunday - RSS Intake`, on
+`parallel/google-sheets-intake`. It reads through the Sheets API only: no Drive
+API, no user OAuth, no write scope, no Google SDK, and two allowed origins with
+no redirect ever followed. The workbook is a whitelist of one, pinned as a
+SHA-256 digest in a committed policy file that ships unpinned, so the connector
+fails closed until a human pins it. Nothing is written anywhere, and there is no
+database import path yet by design: the owner reviews an inventory report and
+approves a tab mapping first. The workbook's weekly tabs record candidate
+selections, not published outcomes, and are not evaluation truth until each is
+paired with its published edition (`docs/SHEETS-INTAKE.md`). **This track has
+not been audited, and no live inventory has been run.**
+
 ## Monorepo layout
 
 | Path                      | Package               | State after integration                                                                                                                                     |
@@ -159,6 +172,7 @@ allows; otherwise they are dropped. Requirement status per track is in
 | `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25)                                                                               |
 | `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client with streaming body and JSON shape limits, adapter, TVL delta, identity gate, probe                                         |
 | `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                                                                                 |
+| `packages/sheets-intake`  | `@cas/sheets-intake`  | read-only, file-scoped Google Sheets intake; no Drive API, no write scope, no SDK; inactive until pinned                                       |
 | `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25). No model is called                                                                   |
 | `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                                 |
 | `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                                            |
@@ -389,6 +403,7 @@ audit and nothing in it is accepted.
 | `docs/ACCOUNT_READINESS.md`             | secret-free account readiness matrix                                                                                                      |
 | `docs/SPRINT_BOARD.md`                  | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                                                               |
 | `docs/SECURITY.md`                      | security policy                                                                                                                           |
+| `docs/SHEETS-INTAKE.md`                 | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                                               |
 | `docs/THREAT_MODEL.md`                  | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks                      |
 | `docs/RISK_REGISTER.md`                 | risks with owner, status, next action and review date                                                                                     |
 | `docs/DATA_CLASSIFICATION_RETENTION.md` | data classes, inventory, retention and removal                                                                                            |

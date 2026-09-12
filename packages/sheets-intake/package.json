@@ -1,0 +1,29 @@
+{
+  "name": "@cas/sheets-intake",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Read-only, file-scoped Google Sheets intake for the authorized RSS intake workbook: metadata inventory, bounded row reading and deterministic source identity. No Drive API, no write scope, no SDK.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

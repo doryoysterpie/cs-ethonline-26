@@ -1,4 +1,5 @@
 import { isDatabaseError, type SafeDetailValue } from '@cas/database';
+import { isSheetsIntakeError } from '@cas/sheets-intake';
 
 /**
  * Failure kinds of the ingestion path and the documented exit codes. Every
@@ -65,6 +66,24 @@ export function exitCodeFor(error: unknown): number {
   }
   if (isDatabaseError(error)) {
     return error.kind === 'configuration' ? EXIT_CODES.configuration : EXIT_CODES.database;
+  }
+  // The Sheets connector has its own taxonomy, for its own boundaries. It is
+  // mapped here rather than rewrapped, so a refusal keeps the code that names
+  // which boundary refused it.
+  if (isSheetsIntakeError(error)) {
+    switch (error.kind) {
+      case 'configuration':
+      case 'credential':
+      case 'policy':
+        return EXIT_CODES.configuration;
+      case 'schema':
+      case 'structural':
+        return EXIT_CODES.structural;
+      case 'timeout':
+        return EXIT_CODES.aborted;
+      default:
+        return EXIT_CODES.database;
+    }
   }
   return EXIT_CODES.unexpected;
 }

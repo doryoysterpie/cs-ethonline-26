@@ -35,6 +35,10 @@
     "classify:report": "pnpm -s --filter @cas/worker cli classification report",
     "classify:queue": "pnpm -s --filter @cas/worker cli classification queue",
     "classify:calibrate": "pnpm -s --filter @cas/worker cli classification calibrate",
+    "sheets:pin": "pnpm -s --filter @cas/worker cli sheets pin",
+    "sheets:inventory": "pnpm -s --filter @cas/worker cli sheets inventory",
+    "sheets:timestamps": "pnpm -s --filter @cas/worker cli sheets timestamps",
+    "sheets:dry-run": "pnpm -s --filter @cas/worker cli sheets dry-run",
     "test:db": "pnpm --filter @cas/database test:db && pnpm --filter @cas/worker test:db"
   },
   "devDependencies": {

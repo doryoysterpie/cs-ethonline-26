@@ -480,3 +480,46 @@ and no origin argument. The origin is stored on the signal run and on every sign
 every anomaly line, bound to every evidence run by composite foreign key (migration 0009), and
 it scopes the history query, so a replayed series can never enter a live target's baseline and
 a fixture demonstration can never present itself as a live observation.
+
+## 19. The Google Sheets intake connector (parallel track)
+
+The authorized workbook `Cyberattack Sunday - RSS Intake` holds the living RSS
+feed and roughly seventy historical weekly tabs. `docs/SHEETS-INTAKE.md` is the
+connector's full record; this section states what it may read and what its rows
+mean.
+
+**What the connector may read.** The workbook's title and tab properties; the
+first row of each tab, for header names; and, on an explicit opt-in command,
+one named timestamp column, from which it reports two instants and three counts
+and no cell. Nothing else is read by the inventory.
+
+**What the connector may never do.** Enumerate Drive, list or search files,
+request write access, follow a link found in a cell, evaluate a formula, or
+print a cell, a URL, a headline or the spreadsheet identifier.
+
+**What a row means, by stage.** The lineage has five stages and the workbook
+contains the first two:
+
+| Stage | Name                       | In the workbook | What a record means                                     |
+| ----: | -------------------------- | --------------- | ------------------------------------------------------- |
+|     1 | RSS source corpus          | yes             | a candidate input, carrying no editorial judgement      |
+|     2 | weekly candidate cut-down  | yes             | the story was a candidate that week; a selection signal |
+|     3 | assistant reformatting     | no              | a tool's output, not an editorial decision              |
+|     4 | owner edit                 | no              | not recorded anywhere in the workbook                   |
+|     5 | published Substack edition | no              | the authoritative editorial outcome                     |
+
+**Candidate selections are not authoritative outcomes.** A tab named after a
+Cyberattack Sunday week records what was a candidate, not what ran. The gap
+between stage 2 and stage 5 is the owner's editorial judgement, and none of it
+is in this file.
+
+**The historical weeks are not evaluation truth** until each is explicitly
+paired with its published edition, that pairing is reviewed and recorded by the
+owner, and the pairing is stored as its own record separate from the workbook.
+A group of paired weeks is then held back untouched before any tuning begins,
+and never used to iterate.
+
+A tab's stage is supplied explicitly by the owner after reviewing an inventory
+report. It is never inferred, and the connector deliberately ignores tab names
+as evidence: naming a tab after the publication says what the week was called,
+not which stage it belongs to.

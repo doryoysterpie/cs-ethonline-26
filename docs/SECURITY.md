@@ -483,6 +483,81 @@ result.
   message, its details or a printed line, and the tests plant a marker in every hostile input
   to prove it.
 
+## 16. Google Sheets intake (parallel track)
+
+Rules the read-only Sheets connector implements. The track is built and
+verified within Claude sessions on `parallel/google-sheets-intake`; it is not
+merged, not deployed and not audited. `docs/SHEETS-INTAKE.md` is its full
+record.
+
+- **One file, and a whitelist of size one.** The authorized workbook is
+  `Cyberattack Sunday - RSS Intake`. Its identifier arrives through the
+  environment and is checked against a SHA-256 digest committed in
+  `data/policy/authorized-workbook.json` before any request. A different
+  identifier is refused at the boundary, the digest is compared in constant
+  time, and there is no override flag: authorizing another workbook is a
+  reviewed commit.
+- **It fails closed.** The committed digest ships as `null`, so every operation
+  refuses until a human pins one. A connector that defaulted to open while
+  unconfigured would be most permissive exactly when nobody had checked it.
+- **The decision precedes the credential.** Configuration is validated, the
+  policy is loaded, and the identifier is authorized _before_ any key is read
+  or any token requested. A run pointed at the wrong workbook never presents a
+  credential anywhere, so a misconfiguration cannot become an access attempt
+  against a file the owner did not authorize.
+- **One scope, read-only.** `spreadsheets.readonly`. No write scope string
+  exists in the package, no method that could write exists on the client, and a
+  test enumerates the client's prototype chain to prove it.
+- **No Drive API, and no Google SDK.** The Sheets API reads a file whose
+  identifier the caller already holds; the Drive API _enumerates_. Only the
+  first is needed, so the second is absent: no Drive host, path or scope appears
+  anywhere the package ships, and a test scans the source for each. Implementing
+  the JWT flow and the two REST calls directly, rather than through a client
+  library, is what makes that a fact about the code instead of a claim about how
+  a large dependency is used.
+- **Two origins, and no redirect is followed.** Every request URL is parsed and
+  its origin compared with a frozen allowlist before a socket opens. A 3xx is
+  refused outright rather than chased: a redirect is the one mechanism that
+  could move a request off an allowed origin, and an article URL found in a cell
+  is therefore unreachable.
+- **A credential never lives in the repository.** A key inside the working tree
+  is refused whatever the ignore rules say, because an ignore rule stops
+  `git add .` and not a force-add, a changed rule, `git archive` or a build
+  context. A key readable beyond its owner is refused on POSIX hosts.
+- **Nothing is echoed.** No API response body reaches an error message: a Google
+  error body can quote the request, and the request path carries the identifier.
+  Failures carry a status and a fixed sentence. The redactor covers the
+  identifier, the key and any token in raw, percent-encoded, base64, base64url
+  and hexadecimal form, because a value that reached a log encoded is a value
+  that was not redacted.
+- **Workbook text cannot forge a line.** Tab names and header cells are authored
+  by someone else and may carry newlines, ANSI introducers or Unicode line
+  separators. Every one is rendered as a single line with control characters
+  shown as visible escapes before it reaches output, and the report says which
+  values had to be escaped.
+- **A cell is inert text.** Nothing evaluates a formula. A string beginning with
+  `=`, `+`, `-`, `@`, tab or carriage return is flagged as formula-leading and
+  preserved exactly, so a later exporter can neutralize it rather than hand a
+  spreadsheet a live formula. Flagging is not rewriting.
+- **Nothing is silently truncated.** A workbook, tab, row, column, cell or
+  response past its bound is an explicit counted refusal, never a prefix
+  presented as the whole. A partial reading that looks complete is worse than no
+  reading, because its counts will be believed.
+- **Row identity is derived, never positional.** A spreadsheet row number
+  changes when somebody inserts a row above it, so it is recorded as provenance
+  and never used as identity alone. Identity is a digest over the workbook
+  digest, the tab, the position and the content together, which is what makes a
+  re-read idempotent.
+- **Nothing is written, anywhere.** Not to the workbook, and not to the
+  database: the connector has no database handle, and no import command exists.
+  The dry run reads, validates and counts.
+- **A weekly tab is not a published outcome.** The workbook holds the RSS corpus
+  and the weekly candidate cut-downs; the assistant reformatting, the owner's
+  edit and the published edition are not in it. Treating a weekly tab as truth
+  would be the most damaging error available here, so the lineage is a typed
+  constant, every dry run requires an explicit stage that is never inferred from
+  a tab's name, and every inventory prints the limitation verbatim.
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,

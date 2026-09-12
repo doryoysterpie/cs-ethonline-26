@@ -110,6 +110,9 @@ importers:
       '@cas/evidence':
         specifier: workspace:*
         version: link:../../packages/evidence
+      '@cas/sheets-intake':
+        specifier: workspace:*
+        version: link:../../packages/sheets-intake
       csv-parse:
         specifier: 'catalog:'
         version: 7.0.2
@@ -252,6 +255,22 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+
+  packages/sheets-intake:
+    dependencies:
+      '@cas/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3))
 
   packages/taxonomy:
     devDependencies:

@@ -57,6 +57,15 @@ import { recordIncidentSubject } from './evidence/subject.js';
 import { armCommandDeadline, resolveCommandDeadline, type CommandDeadline } from './deadline.js';
 import { buildDraftRequest } from './drafting/build.js';
 import { publishDraft } from './drafting/generate.js';
+import { EDITORIAL_STAGES, type EditorialStage } from '@cas/sheets-intake';
+
+import { connectToWorkbook, computePin } from './sheets/connect.js';
+import {
+  formatInventory,
+  formatPin,
+  formatReadStats,
+  formatTimestampRange,
+} from './sheets/output.js';
 import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
 import { assertImportRequest, importCsvFile } from './editorial/import.js';
@@ -152,6 +161,10 @@ const USAGE = [
   '  evidence decide --run <uuid> --association <uuid> --operation <accept|reject> --relation <supports|conflicts|context> --reason <code> --actor <name> [--claim <uuid>] [--note <text>]',
   '  evidence anomaly --signal-run <uuid> [--as-of <iso>] [--clustering-run <uuid> --window <isoStart..isoEnd> ...]',
   '  drafting generate --evidence-run <uuid> --window <isoStart..isoEnd>',
+  '  sheets pin',
+  '  sheets inventory [--tabs <n>] [--no-headers]',
+  '  sheets timestamps --tab <name> --column <n>',
+  '  sheets dry-run --tab <name> --stage <stage> [--first-row <n>] [--columns <n>] [--timestamp-column <n>]',
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -408,6 +421,117 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       for (const line of formatReviewAction(outcome, redact)) emit(line);
       return EXIT_CODES.ok;
     }
+    if (group === 'sheets' && command === 'pin') {
+      // Reads the identifier from the environment and emits a one-way digest.
+      // No credential, no network, no database.
+      for (const entry of formatPin(computePin(options.env))) emit(entry);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'sheets' && command === 'inventory') {
+      const maximumTabs = parseCount(values.tabs, 'tabs');
+      const connection = await connectToWorkbook({
+        env: options.env,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      });
+      const { inventoryWorkbook } = await import('@cas/sheets-intake');
+      const inventory = await inventoryWorkbook(connection.client, {
+        limits: connection.config.limits,
+        readHeaders: values['no-headers'] !== true,
+        ...(maximumTabs === null ? {} : { maximumTabs }),
+      });
+      for (const entry of formatInventory(
+        inventory,
+        { workbookDigest: connection.workbookDigest, clientEmail: connection.clientEmail },
+        connection.redact,
+      )) {
+        emit(entry);
+      }
+      return EXIT_CODES.ok;
+    }
+    if (group === 'sheets' && command === 'timestamps') {
+      const tabName = values.tab;
+      if (tabName === undefined || tabName.length === 0) {
+        throw configurationError('tab_required', '--tab is required');
+      }
+      const column = parseCount(values.column, 'column');
+      if (column === null) {
+        throw configurationError('column_required', '--column is required');
+      }
+      const connection = await connectToWorkbook({
+        env: options.env,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      });
+      const { inspectTimestampRange } = await import('@cas/sheets-intake');
+      const metadata = await connection.client.metadata();
+      const tab = metadata.tabs.find((candidate) => candidate.title === tabName);
+      if (tab === undefined) {
+        throw configurationError(
+          'tab_not_found',
+          'no tab of that exact name exists in the workbook',
+        );
+      }
+      const range = await inspectTimestampRange(
+        connection.client,
+        tab,
+        column,
+        connection.config.limits,
+      );
+      for (const entry of formatTimestampRange(range, connection.redact)) emit(entry);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'sheets' && command === 'dry-run') {
+      // Reads, validates and counts. It collects nothing, writes nothing and
+      // has no database handle: until the owner has reviewed the inventory and
+      // approved a mapping, there is no import path to invoke by accident.
+      const tabName = values.tab;
+      if (tabName === undefined || tabName.length === 0) {
+        throw configurationError('tab_required', '--tab is required');
+      }
+      const stage = parseEditorialStage(values.stage);
+      const firstDataRow = parseCount(values['first-row'], 'first-row') ?? 2;
+      const columns = parseCount(values.columns, 'columns');
+      const timestampColumn = parseCount(values['timestamp-column'], 'timestamp-column');
+      const connection = await connectToWorkbook({
+        env: options.env,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      });
+      const { readTab } = await import('@cas/sheets-intake');
+      const metadata = await connection.client.metadata();
+      const tab = metadata.tabs.find((candidate) => candidate.title === tabName);
+      if (tab === undefined) {
+        throw configurationError(
+          'tab_not_found',
+          'no tab of that exact name exists in the workbook',
+        );
+      }
+      const outcome = await readTab(
+        connection.client,
+        tab,
+        {
+          title: tab.title,
+          stage,
+          firstDataRow,
+          ...(columns === null ? {} : { columns }),
+          ...(timestampColumn === null ? {} : { timestampColumn }),
+        },
+        {
+          limits: connection.config.limits,
+          timeZone: metadata.timeZone,
+          workbookDigest: connection.workbookDigest,
+          collectRows: false,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        },
+      );
+      for (const entry of formatReadStats(
+        outcome.stats,
+        { workbookDigest: connection.workbookDigest, dryRun: true },
+        outcome.warnings,
+        connection.redact,
+      )) {
+        emit(entry);
+      }
+      return EXIT_CODES.ok;
+    }
     if (group === 'evidence' && command === 'ingest') {
       // Origin first: a `live` request is refused before the file is named,
       // before it is opened and before a database handle is opened.
@@ -648,6 +772,35 @@ function parseRelation(value: string | undefined): 'supports' | 'conflicts' | 'c
   throw configurationError('relation_invalid', '--relation must be supports, conflicts or context');
 }
 
+/**
+ * The lineage stage a tab belongs to. Required, closed, and never inferred:
+ * assigning a weekly candidate tab to the wrong stage is the category error
+ * this whole track is built to prevent.
+ */
+function parseEditorialStage(value: string | undefined): EditorialStage {
+  if (value === undefined) {
+    throw configurationError(
+      'stage_required',
+      "--stage is required and must name the tab's lineage stage explicitly; it is never inferred from the tab name",
+    );
+  }
+  if ((EDITORIAL_STAGES as readonly string[]).includes(value)) return value as EditorialStage;
+  throw configurationError(
+    'stage_invalid',
+    `--stage must be one of: ${EDITORIAL_STAGES.join(', ')}`,
+  );
+}
+
+/** A positive integer flag, or null when absent. Never a silent default. */
+function parseCount(value: string | undefined, flag: string): number | null {
+  if (value === undefined) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1_000_000) {
+    throw configurationError(`${flag}_invalid`, `--${flag} must be a positive integer`);
+  }
+  return parsed;
+}
+
 function parseChain(value: string | undefined): 'ethereum' | 'base' {
   if (value === 'ethereum' || value === 'base') return value;
   throw configurationError('chain_invalid', '--chain must be ethereum or base');
@@ -741,6 +894,14 @@ const PARSE_OPTIONS = {
   'signal-run': { type: 'string' },
   'as-of': { type: 'string' },
   'source-row': { type: 'string' },
+  tab: { type: 'string' },
+  column: { type: 'string' },
+  tabs: { type: 'string' },
+  stage: { type: 'string' },
+  'first-row': { type: 'string' },
+  columns: { type: 'string' },
+  'timestamp-column': { type: 'string' },
+  'no-headers': { type: 'boolean' },
   statement: { type: 'string' },
   chain: { type: 'string' },
   protocol: { type: 'string' },
@@ -761,6 +922,14 @@ interface ParsedValues {
   readonly 'signal-run'?: string | undefined;
   readonly 'as-of'?: string | undefined;
   readonly 'source-row'?: string | undefined;
+  readonly tab?: string | undefined;
+  readonly column?: string | undefined;
+  readonly tabs?: string | undefined;
+  readonly stage?: string | undefined;
+  readonly 'first-row'?: string | undefined;
+  readonly columns?: string | undefined;
+  readonly 'timestamp-column'?: string | undefined;
+  readonly 'no-headers'?: boolean | undefined;
   readonly statement?: string | undefined;
   readonly chain?: string | undefined;
   readonly protocol?: string | undefined;
