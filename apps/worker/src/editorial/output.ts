@@ -1,4 +1,5 @@
 import { isDatabaseError, type IssueCodeCount, type Redactor } from '@cas/database';
+import { isSheetsIntakeError } from '@cas/sheets-intake';
 
 import { safeDisplay, toSingleLine } from './display.js';
 import { isIngestionError } from './errors.js';
@@ -115,7 +116,9 @@ export function formatBatchReport(report: BatchReport, redact: Redactor): string
 }
 
 function formatDetails(
-  details: Readonly<Record<string, string | number | boolean | null>>,
+  details: Readonly<
+    Record<string, string | number | boolean | null | readonly (string | number)[]>
+  >,
 ): string {
   const entries = Object.entries(details).filter(([, value]) => value !== null);
   if (entries.length === 0) return '';
@@ -129,6 +132,10 @@ export function formatError(error: unknown, redact: Redactor): string {
     line = `error[${error.kind}/${error.code}]: ${error.message}${formatDetails(error.details)}`;
   } else if (isDatabaseError(error)) {
     line = `error[database:${error.kind}${error.code === null ? '' : `/${error.code}`}]: ${error.message}${formatDetails(error.details)}`;
+  } else if (isSheetsIntakeError(error)) {
+    // The connector's details are already a closed set of safe values: counts,
+    // bounds, statuses and fixed reason codes, never a cell or an identifier.
+    line = `error[sheets:${error.kind}/${error.code}]: ${error.message}${formatDetails(error.details)}`;
   } else if (error instanceof Error) {
     line = `error[unexpected]: ${error.name}`;
   } else {

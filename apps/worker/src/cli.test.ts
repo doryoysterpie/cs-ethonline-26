@@ -613,3 +613,79 @@ describe('evidence ingestion origin boundary (no database)', () => {
     expect(r.out).toEqual([]);
   });
 });
+
+describe('the sheets commands fail closed and reach no network', () => {
+  it('refuses every sheets command while no workbook digest is pinned', async () => {
+    for (const argv of [
+      ['sheets', 'inventory'],
+      ['sheets', 'timestamps', '--tab', 'Feed', '--column', '3'],
+      ['sheets', 'dry-run', '--tab', 'Feed', '--stage', 'rss_source_corpus'],
+    ]) {
+      const { result, attempts } = await withoutNetwork(async () =>
+        exec(argv, {
+          GOOGLE_SHEETS_SPREADSHEET_ID: 'SyntheticAuthorized_0000000000000000000001',
+          GOOGLE_APPLICATION_CREDENTIALS: '/nowhere/key.json',
+        }),
+      );
+      expect(result.code, argv.join(' ')).toBe(EXIT_CODES.configuration);
+      expect(result.err.join('\n'), argv.join(' ')).toContain('workbook_not_pinned');
+      expect(result.out, argv.join(' ')).toEqual([]);
+      expect(attempts, argv.join(' ')).toEqual([]);
+    }
+  });
+
+  it('refuses a sheets command with no identifier configured', async () => {
+    const { result, attempts } = await withoutNetwork(async () =>
+      exec(['sheets', 'inventory'], {}),
+    );
+    expect(result.code).toBe(EXIT_CODES.configuration);
+    expect(result.err.join('\n')).toContain('spreadsheet_id_missing');
+    expect(attempts).toEqual([]);
+  });
+
+  it('prints a digest for the pin command and never the identifier', async () => {
+    const identifier = 'SyntheticAuthorized_0000000000000000000001';
+    const { result, attempts } = await withoutNetwork(async () =>
+      exec(['sheets', 'pin'], { GOOGLE_SHEETS_SPREADSHEET_ID: identifier }),
+    );
+    expect(result.code).toBe(EXIT_CODES.ok);
+    const output = result.out.join('\n');
+    expect(output).toMatch(/sheets:pin: digest=[0-9a-f]{64}/);
+    expect(output).not.toContain(identifier);
+    expect(output).toContain('is not printed here or anywhere');
+    // The pin command needs no credential and opens no socket.
+    expect(attempts).toEqual([]);
+  });
+
+  it('requires an explicit lineage stage for a dry run', async () => {
+    const { result } = await withoutNetwork(async () =>
+      exec(['sheets', 'dry-run', '--tab', 'CS86'], {
+        GOOGLE_SHEETS_SPREADSHEET_ID: 'SyntheticAuthorized_0000000000000000000001',
+        GOOGLE_APPLICATION_CREDENTIALS: '/nowhere/key.json',
+      }),
+    );
+    expect(result.code).toBe(EXIT_CODES.configuration);
+    expect(result.err.join('\n')).toContain('stage_required');
+  });
+
+  it('refuses a lineage stage outside the closed set', async () => {
+    const { result } = await withoutNetwork(async () =>
+      exec(['sheets', 'dry-run', '--tab', 'CS86', '--stage', 'ground_truth'], {
+        GOOGLE_SHEETS_SPREADSHEET_ID: 'SyntheticAuthorized_0000000000000000000001',
+        GOOGLE_APPLICATION_CREDENTIALS: '/nowhere/key.json',
+      }),
+    );
+    expect(result.code).toBe(EXIT_CODES.configuration);
+    expect(result.err.join('\n')).toContain('stage_invalid');
+  });
+
+  it('lists the sheets commands in its usage, and no import command', async () => {
+    const { result } = await withoutNetwork(async () => exec(['sheets'], {}));
+    const usage = [...result.out, ...result.err].join('\n');
+    expect(usage).toContain('sheets pin');
+    expect(usage).toContain('sheets inventory');
+    expect(usage).toContain('sheets dry-run');
+    // No path writes the workbook into the database yet, by design.
+    expect(usage).not.toContain('sheets import');
+  });
+});

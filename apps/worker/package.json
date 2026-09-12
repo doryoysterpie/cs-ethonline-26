@@ -18,6 +18,7 @@
     "@cas/database": "workspace:*",
     "@cas/drafting": "workspace:*",
     "@cas/evidence": "workspace:*",
+    "@cas/sheets-intake": "workspace:*",
     "csv-parse": "catalog:",
     "htmlparser2": "catalog:"
   },
