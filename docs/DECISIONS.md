@@ -951,11 +951,54 @@ rejected candidate implemented them and this amendment as the current contract.
   - _Naming claims only what is true._ No structured victim name is proposed and no name is
     redacted from quoted text; the counts say exactly that.
 - **Vocabulary and digest.** The closed error vocabulary is now twenty-two codes. The pinned
-  catalogue digest is `676c0cf8ae08fa7c78a33c108c3a0b1072fe179822e74a62ad99478b2682f625`.
+  catalogue digest is `ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082`.
 - **Status.** D28 remains **PROVISIONAL**. The corrected revision is **pending an independent
   re-audit and is not accepted**. It must not merge until Sprint 5 passes its own audit and the
   combined result passes a further independent audit, and no remote MCP service has been
   enabled or deployed. A future `PASS - ISOLATED TRACK ONLY` on this historical base would
   authorize no merge, no deployment, no remote access and no trust in rejected-base evidence.
 - **Decided by:** the integration of 2026-09-10, on the owner's brief. No decision number is
+  allocated; this amends D28.
+
+### D28 amendment, 2026-09-12: re-audit correction of the MCP tooling track
+
+Not a new decision. This amendment records what an independent diagnostic of
+`1d47f1b8e4a90e135d0224703d4444e6f1882106` returned and what was corrected in answer.
+
+**The diagnostic was produced by Claude Code, not by Codex Desktop.** It is a correction
+specification and not an independent acceptance. Track D has not been audited by Codex
+Desktop and remains pending its verdict.
+
+- **Verdict answered.** CHANGES REQUIRED, two Medium and two Low. All sixteen original
+  findings F1 to F16 remained closed and none was weakened.
+- **M2, the only product-contract defect.** A connection refused by a policy (`EPERM`,
+  `EACCES`, `ENETDOWN`, `ECONNABORTED`, `EADDRNOTAVAIL`) was reported as a failed query, and
+  `EPERM` was published as `details.sqlstate` because an errno has the same five-character
+  shape as a SQLSTATE. All five are now connection failures answering `database_unavailable`,
+  a `DatabaseError` records whether its code is a SQLSTATE or a system errno, and the public
+  `sqlstate` field is emitted only for a value recorded as PostgreSQL's own.
+- **M1.** Strict network denial excluded the whole MCP package. It now excludes one file,
+  `redirect.stdio.test.ts`, which needs a listening socket; `src/coverage.test.ts` fails if
+  anything else is added, and its last case is that falsification.
+- **L3.** `tools/loopback-sandbox.sb` allows every address assigned to this machine, not
+  loopback alone, and the dialect cannot be narrowed to `127.0.0.0/8`, `::1` or a port. The
+  rule is unchanged; the claim was wrong and is corrected, and `tools/sandbox-probe.mjs`
+  demonstrates the real scope in the same session as a run.
+- **L4.** A request whose `params` was not an object received no answer. It now receives one
+  fixed `-32602`, and a request with an undefined member one fixed `-32600`, without
+  answering any notification and without answering anything twice.
+- **Schema hardening.** `anomalyBoundary.signalVersion` now uses the same grammar as its
+  sibling. It was never reachable — the read gate refuses first — so this is a second gate,
+  not a fix to a live defect.
+- **Vocabulary and digest.** The closed error vocabulary is still twenty-two codes. The
+  pinned catalogue digest moves to
+  `ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082`.
+- **Unchanged by decision.** The advisory-lock policy stands: the reader role keeps PUBLIC
+  execution on PostgreSQL's advisory-lock functions, no MCP argument reaches them, per-call
+  connection destruction already prevents one surviving a call, and revoking from PUBLIC
+  would take it from the migration runner that needs it.
+- **Status.** D28 remains **PROVISIONAL** and **not accepted**. It must not merge until
+  Sprint 5 passes its own audit and the combined result passes a further independent audit,
+  and no remote MCP service has been enabled or deployed.
+- **Decided by:** the correction of 2026-09-12, on the owner's brief. No decision number is
   allocated; this amends D28.

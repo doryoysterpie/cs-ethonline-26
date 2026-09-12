@@ -251,6 +251,15 @@ argument key is answered with `unknown_tool` or `invalid_arguments` rather than 
 SDK's own validation text, and every other outbound protocol error carries the fixed message
 for its JSON-RPC code with its data dropped.
 
+A database that cannot be reached answers `database_unavailable`, whether the refusal came
+from the server, from the network or from a local policy: `EPERM`, `EACCES`, `ENETDOWN`,
+`ECONNABORTED`, `EADDRNOTAVAIL`, `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `EAI_AGAIN`,
+`ETIMEDOUT`, `EHOSTUNREACH`, `ENETUNREACH`, `EPIPE` and `ENOENT` all mean no statement ran, so
+none of them is reported as a query failure and the condition is one to retry rather than to
+correct. `details.sqlstate` carries a PostgreSQL SQLSTATE and nothing else: a system error
+code is never published there and is never described as a SQLSTATE, even though an errno such
+as `EPERM` has the same five-uppercase-character shape.
+
 `tool_timeout` is the tool's own wall-clock budget or a statement the database stopped;
 `call_cancelled` is a call the client cancelled over the protocol, or one aborted because
 the server was shutting down. Either way the work is stopped, not merely abandoned: the
@@ -258,6 +267,16 @@ call's transaction is rolled back, a statement still running is cancelled at the
 live request socket is aborted, and the concurrency permit is released only once that has
 happened. `database_role_overprivileged` means the configured credential holds more than the
 read-only privileges the server requires, and nothing was read.
+
+## Malformed requests
+
+Every request is answered. A request whose params is a string, array, number, boolean or null
+receives one `-32602`, and a request carrying a member JSON-RPC 2.0 does not define receives
+one `-32600`, rather than the silence the underlying SDK would return. Requests the SDK
+already answered are unchanged: an absent params, an object without a tool name and an
+unknown method still return `-32602`, `-32602` and `-32601`. A notification is never
+answered, because JSON-RPC forbids it, and no request is ever answered twice. Each answer
+carries the fixed message for its code and no value from the request.
 
 ## Environment
 

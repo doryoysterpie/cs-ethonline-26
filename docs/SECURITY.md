@@ -433,6 +433,20 @@ Sprint 5 evidence layer it reads is itself under correction.
   registers no cancellation with the store waits for its own before it returns: no connection
   outlives the call that opened it. A deadline answers `tool_timeout`; a client cancellation or
   a shutdown answers `call_cancelled`.
+- **An unreachable database is availability, not a failed query.** A connection refused by the
+  server, by the network or by a local policy — `EPERM` and `EACCES` from a sandbox, seccomp
+  profile or socket permission included — answers `database_unavailable`, because no statement
+  ran. The two kinds of error code are distinct concepts and never interchangeable: a
+  `DatabaseError` records whether its code is PostgreSQL's own SQLSTATE or a system errno, a
+  system errno is never formatted or described as a SQLSTATE, and the public `details.sqlstate`
+  is emitted only for a value recorded as a SQLSTATE that also has the SQLSTATE shape and is
+  not an errno. Shape alone decides nothing, because `EPERM` has the shape of one.
+- **Every request is answered.** A well-formed JSON-RPC request whose `params` is not an object
+  is answered with a fixed `-32602`, and one carrying a member JSON-RPC does not define with a
+  fixed `-32600`, rather than being discarded unanswered by the SDK's base validation. The
+  answer is written by the same outbound policy as every other error, so it carries the fixed
+  message for its code and no caller value. Notifications are never answered and no request is
+  answered twice.
 - **A static catalogue with a pinned digest.** The four tool definitions are frozen application
   code; the SHA-256 of their names, titles, descriptions, annotations and schemas is pinned and
   checked at start-up and reproduced from the wire by a test. Untrusted data cannot modify a

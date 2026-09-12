@@ -73,8 +73,8 @@ async function collect(config?: string): Promise<Collected> {
 
 /** The one place a documented count is written, so a drift shows up in one diff. */
 const DOCUMENTED = {
-  offlineTests: 184,
-  offlineFiles: 19,
+  offlineTests: 208,
+  offlineFiles: 22,
   databaseTests: 49,
   databaseFiles: 4,
 } as const;
@@ -298,5 +298,92 @@ describe('the historical evidence the report keeps', () => {
     }
     // And the superseded figures are still present, inside them.
     expect(report).toContain('edb68f5268e419e1b4294f4a4290c31e2d8ea9f06e3db872bc180ee299ae9b3a');
+  });
+});
+
+describe('the re-audit correction is stated where a reviewer reads', () => {
+  it('says a refused socket is an unavailable database and never a SQLSTATE', async () => {
+    const [skill, security, report] = await Promise.all([
+      read(SKILL),
+      read(SECURITY),
+      read(REPORT),
+    ]);
+    for (const [name, text] of [
+      ['SKILL.md', skill],
+      ['SECURITY.md', security],
+    ] as const) {
+      expect(flat(text), name).toContain('EPERM');
+      expect(flat(text), name).toContain('database_unavailable');
+    }
+    // The policy, not just the codes: a system errno is never a SQLSTATE.
+    expect(flat(skill)).toContain('never published there');
+    expect(flat(security)).toContain('never formatted or described as a SQLSTATE');
+    expect(flat(report)).toContain('a POSIX errno is five uppercase characters');
+  });
+
+  it('says every request is answered, and which codes answer which shape', async () => {
+    const [skill, security] = await Promise.all([read(SKILL), read(SECURITY)]);
+    for (const [name, text] of [
+      ['SKILL.md', skill],
+      ['SECURITY.md', security],
+    ] as const) {
+      expect(flat(text), name).toContain('-32602');
+      expect(flat(text), name).toContain('-32600');
+      expect(flat(text), name).toMatch(
+        /notification is never answered|Notifications are never answered/,
+      );
+    }
+  });
+
+  it('states the strict-denial and local-host split, by file and not by package', async () => {
+    const [readme, report] = await Promise.all([read(README), read(REPORT)]);
+    for (const [name, text] of [
+      ['README.md', readme],
+      ['the track report', report],
+    ] as const) {
+      expect(flat(text), name).toContain('test:denied');
+      expect(flat(text), name).toContain('test:localhost');
+      expect(flat(text), name).toContain('redirect.stdio.test.ts');
+    }
+    // The superseded strategy must not still read as current.
+    const current = report.slice(report.indexOf('## 17. Re-audit correction'));
+    expect(current).not.toContain('--filter=!@cas/mcp-server');
+  });
+
+  it('describes the weaker profile by what it allows, not as loopback alone', async () => {
+    const [readme, report] = await Promise.all([read(README), read(REPORT)]);
+    expect(flat(readme)).toContain('addresses assigned to this machine');
+    expect(flat(report)).toContain('every address assigned to this machine');
+    expect(flat(report)).toContain('127.0.0.0/8');
+    for (const text of [readme, report]) {
+      expect(flat(text)).not.toMatch(/allows a loopback socket and nothing else/i);
+    }
+  });
+
+  it('records that the diagnostic was not performed by Codex Desktop', async () => {
+    const [report, decisions] = await Promise.all([read(REPORT), read(DECISIONS)]);
+    for (const [name, text] of [
+      ['the track report', report],
+      ['DECISIONS.md', decisions],
+    ] as const) {
+      expect(flat(text), name).toContain('not by Codex Desktop');
+      expect(flat(text), name).toContain('not an independent acceptance');
+    }
+  });
+
+  it('prints the catalogue digest the build reproduces, and no earlier one', async () => {
+    const { EXPECTED_CATALOGUE_SHA256 } = await import('./definitions.js');
+    const texts = await Promise.all(ALL.map((path) => read(path)));
+    const printed = texts.filter((text) => text.includes(EXPECTED_CATALOGUE_SHA256));
+    expect(printed.length).toBeGreaterThan(0);
+    for (const text of texts) {
+      const digests = [...text.matchAll(/\b[0-9a-f]{64}\b/gu)].map((match) => match[0]);
+      for (const digest of digests) {
+        // Any other 64-hex value in these documents is a file hash, not a
+        // catalogue digest; only a catalogue-digest claim is checked.
+        const claimed = new RegExp(`catalogue digest[^.]{0,80}${digest}`, 'iu').test(flat(text));
+        if (claimed) expect(digest).toBe(EXPECTED_CATALOGUE_SHA256);
+      }
+    }
   });
 });

@@ -474,7 +474,7 @@ no migration was added, and no Sprint 5 correction commit was incorporated.
   one: `call_cancelled`, `database_role_overprivileged` and `stored_metadata_invalid`. Section
   2 and section 5 say nineteen; they describe the rejected candidate.
 - **The pinned catalogue digest is**
-  `676c0cf8ae08fa7c78a33c108c3a0b1072fe179822e74a62ad99478b2682f625`. The value
+  `ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082`. The value
   `edb68f5268e419e1b4294f4a4290c31e2d8ea9f06e3db872bc180ee299ae9b3a` in section 2 and section
   10 is the rejected candidate's.
 - **The server reads four environment names**, not three: `DATABASE_URL`, `GRAPH_API_KEY`,
@@ -510,12 +510,12 @@ figures by `src/documentation.test.ts`.
 
 | Suite                         | Tests | Files |
 | ----------------------------- | ----: | ----: |
-| `@cas/mcp-server`, offline    |   184 |    19 |
+| `@cas/mcp-server`, offline    |   208 |    22 |
 | `@cas/mcp-server`, PostgreSQL |    49 |     4 |
 
-Workspace totals: **668 offline tests** across ten packages (contracts 9, taxonomy 7,
-drafting 19, evidence 69, database 24, graph-evidence 102, clustering 50, classification 56,
-worker 148, mcp-server 184) and **222 PostgreSQL tests** (database 81, worker 92,
+Workspace totals: **700 offline tests** across ten packages (contracts 9, taxonomy 7,
+drafting 19, evidence 69, database 32, graph-evidence 102, clustering 50, classification 56,
+worker 148, mcp-server 208) and **222 PostgreSQL tests** (database 81, worker 92,
 mcp-server 49). Section 5's figure of seventy offline tests in seven files is the rejected
 candidate's.
 
@@ -546,7 +546,7 @@ after. The window is narrow on an idle server, so the regression test opens it t
 run; it passes every run with the fix and caught the unfixed code in 2 of 4 runs. It is a
 partial detector of the defect and a complete statement of the property.
 
-### 16.5 Offline proof under enforced network denial
+### 16.5 Offline proof under enforced network denial (superseded by section 17.2)
 
 Section 6's line, `sandbox-exec -f tools/offline-sandbox.sb corepack pnpm mcp:test`, no longer
 holds at this revision and is the rejected candidate's. Two files the content correction brings
@@ -583,3 +583,123 @@ The track is still isolated, still unmerged and still unaudited. It must not mer
 Sprint 5 passes its own audit and the combined result passes a further independent audit.
 Even a `PASS - ISOLATED TRACK ONLY` on this historical base would authorize no merge, no
 deployment, no remote access and no trust in rejected-base evidence.
+
+## 17. Re-audit correction (current state)
+
+An independent diagnostic of `1d47f1b8e4a90e135d0224703d4444e6f1882106` returned
+**CHANGES REQUIRED** with two Medium and two Low findings. **That diagnostic was produced by
+Claude Code, not by Codex Desktop.** It is a correction specification, not an independent
+acceptance, and it does not make this track audited. Track D remains pending until Codex
+Desktop issues its own verdict.
+
+All sixteen original findings F1 to F16 stayed closed; nothing in this section weakens them.
+Sections 1 to 16 above are the record of earlier revisions and are historical wherever they
+disagree with this one.
+
+### 17.1 M2: a refused socket is an unavailable database, not a failed query
+
+A connection refused by a policy rather than by the server — `EPERM` from a sandbox, a
+firewall, a seccomp profile or a socket permission — was classified as a query failure. No
+query had run. Worse, the public contract published `details.sqlstate = "EPERM"`: a POSIX
+errno is five uppercase characters and satisfied the SQLSTATE shape test, so the server
+advertised a SQLSTATE class (`EP`) that PostgreSQL does not define, in a field `SKILL.md`
+documents as carrying at most a SQLSTATE.
+
+`EPERM`, `EACCES`, `ENETDOWN`, `ECONNABORTED` and `EADDRNOTAVAIL` now join the connection
+codes, so all five answer `database_unavailable` with the retry semantics of an
+infrastructure failure. The two kinds of code are now distinct concepts rather than one
+string: `DatabaseError` carries a `codeSource` of `sqlstate` or `system`, a system errno is
+never formatted or described as a SQLSTATE, and the MCP boundary publishes `details.sqlstate`
+only when the database layer recorded the value as PostgreSQL's own **and** it has the
+SQLSTATE shape **and** it is not an errno. The shape alone decides nothing. Real SQLSTATE
+values are unaffected: `23505`, `40001`, `42501`, `28P01`, `3D000` and `57014` behave exactly
+as before.
+
+### 17.2 M1: strict network denial now covers every file that can run under it
+
+The previous evidence strategy excluded the whole `@cas/mcp-server` package from the deny-all
+profile, which left the package under audit as the only one with no strict-denial proof. Two
+files could not run under it, and one of the two — `stdio.test.ts` — failed only because of
+the `EPERM` classification above. With M2 fixed it passes.
+
+One file is left that genuinely needs a listening socket: `redirect.stdio.test.ts` serves
+real synthetic HTTP and HTTPS redirects from 127.0.0.1 to prove the gateway refuses every one
+of them. The split is now one file, not one package:
+
+| Profile                     | Command                        | Coverage                               |
+| --------------------------- | ------------------------------ | -------------------------------------- |
+| `tools/offline-sandbox.sb`  | `corepack pnpm test:denied`    | every package, and 21 of 22 MCP files  |
+| `tools/loopback-sandbox.sb` | `corepack pnpm test:localhost` | `redirect.stdio.test.ts` only, 4 tests |
+
+Derived from the runner, not carried over: the strict run is 16 of 16 tasks for the other nine
+packages, 492 tests, plus 204 of the 208 MCP tests in 21 of 22 files; the local-host run is
+the 4 tests of the one file that needs a listener. 696 and 4 sum to the 700 the default suite
+holds. The superseded strategy proved 484 of 668 and left every MCP test unproven.
+
+`src/coverage.test.ts` holds the exclusion to that one file: it reads the commands and both
+profile headers, requires them to name the same set, and fails if a file that does not need a
+listener is added to it. Its last case is the falsification — excluding the whole package
+again is detected, and so is excluding one extra file.
+
+### 17.3 L3: the weaker profile allows this machine, not loopback alone
+
+`tools/loopback-sandbox.sb` was described as allowing "loopback only". It does not. This
+Seatbelt dialect accepts only `*` or `localhost` as a network-address host, `localhost` means
+the local host rather than `127.0.0.0/8`, and the port is not enforced, so the allowance
+reaches every address assigned to this machine — a LAN address on `en0` included — and cannot
+be narrowed to `127.0.0.0/8`, to `::1` or to a single port. Both headers, the README row and
+this report now say so. The rule itself is unchanged, because the dialect cannot express the
+narrower one; only the claim was wrong.
+
+What the profile still denies is unchanged and is now demonstrated rather than asserted.
+`tools/sandbox-probe.mjs` runs under either profile in the same session as a test run and
+prints each outcome as observed: a public IPv4 address, a public IPv6 address, name
+resolution, a UNIX-domain socket and a subprocess's connection are all denied under both; a
+loopback socket and this host's own non-loopback address are denied under the deny-all
+profile and allowed under the weaker one. It skips the non-loopback step on a host that has
+none, and exits non-zero if any host off this machine is ever reached.
+
+### 17.4 L4: every request is answered
+
+A well-formed JSON-RPC request whose `params` was not an object received no reply at all: the
+pinned SDK validates a message against its base shape and discards it before any handler
+runs, so a conforming client waited for its own timeout. Nothing leaked and the server stayed
+healthy, but a request that is answered with nothing is not answered.
+
+The entry point now filters stdin ahead of the SDK. A request whose `params` is a string,
+array, number, boolean or null is answered with one fixed `-32602`; a request carrying a
+member JSON-RPC does not define is answered with one fixed `-32600`. Both go out through the
+same outbound policy as every other error, so they carry the fixed message for the code, no
+caller value, no control character and the same size bound. Requests the SDK already answered
+are untouched — an absent `params`, an object without `name` and an unknown method still
+return `-32602`, `-32602` and `-32601` — and a notification is never answered, whatever its
+params, because JSON-RPC forbids it. No request receives two responses.
+
+### 17.5 Schema hardening: one grammar for one column
+
+`stored.boundary.signalVersion` and `stored.signalRun.signalVersion` are the same database
+column, and the boundary field used a bounded string where its sibling used the version
+grammar. The store correction introduced the boundary while the content correction was
+tightening the run, so the two were written apart and the merge did not reconcile them.
+
+The loose field was never reachable: `requireCompletedSignalRun` applies the grammar at the
+read gate and answers `stored_metadata_invalid` before a boundary is built, which a hostile
+`signal_version` confirms. It is hardened anyway, so the refusal is two independent gates
+rather than one, and `src/contracts.test.ts` now requires the two fields to advertise one
+pattern and one bound. The fail-closed read-gate test is unchanged.
+
+This changes the advertised catalogue, so the pinned digest moves to
+`ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082`. Every reference to the
+previous digest has been updated; none remains in the repository.
+
+### 17.6 What has not changed
+
+The closed error vocabulary is still twenty-two codes. The advisory-lock policy is unchanged:
+the reader role keeps PUBLIC execution on PostgreSQL's advisory-lock functions, which no MCP
+argument can reach, which `SECURITY.md` discloses, and which per-call connection destruction
+already neutralises — revoking it from PUBLIC would also take it from the migration runner
+that needs it. Migrations, the lockfile and every dependency are untouched.
+
+The track is still isolated, still unmerged and still unaudited. It must not merge until
+Sprint 5 passes its own audit and the combined result passes a further independent audit. No
+remote MCP service has been enabled or deployed.
