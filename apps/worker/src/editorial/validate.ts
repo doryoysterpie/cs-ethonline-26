@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { EditorialSourceKind, ReviewState } from '@cas/contracts';
+import type { EditorialSourceKind, ImportLimits, ReviewState } from '@cas/contracts';
 
 import { readCsv, type CsvStreamStats } from './csv-stream.js';
 import { IngestionError } from './errors.js';
@@ -52,6 +52,8 @@ export interface ValidationReport {
 
 export interface ValidateOptions {
   readonly signal?: AbortSignal | undefined;
+  /** Test hook only; see `CsvReadOptions.limits`. Production uses the versioned defaults. */
+  readonly limits?: Partial<ImportLimits> | undefined;
 }
 
 export async function inspectCsvFile(
@@ -72,7 +74,7 @@ export async function inspectCsvFile(
         rowCount += 1;
       },
     },
-    { signal: options.signal },
+    { signal: options.signal, limits: options.limits },
   );
   if (layout === null) {
     throw new IngestionError('structural', 'header_missing', 'file rejected: no header row');
@@ -140,7 +142,7 @@ export async function validateCsvFile(
         }
       },
     },
-    { signal: options.signal },
+    { signal: options.signal, limits: options.limits },
   );
   if (layout === null) {
     throw new IngestionError('structural', 'header_missing', 'file rejected: no header row');

@@ -277,3 +277,15 @@ export type NamingDecision = (typeof NAMING_DECISIONS)[number];
 /** Status of a generated draft. There is no published status: publishing is human. */
 export const DRAFT_STATUSES = ['unpublished_requires_human_review'] as const;
 export type DraftStatus = (typeof DRAFT_STATUSES)[number];
+
+export {
+  RESOURCE_LIMIT_HEADROOM,
+  RESOURCE_LIMIT_MEASUREMENTS,
+  RESOURCE_LIMITS,
+  RESOURCE_LIMITS_VERSION,
+  type CommandLimits,
+  type DraftLimits,
+  type GraphLimits,
+  type ImportLimits,
+  type ResourceLimits,
+} from './limits.js';

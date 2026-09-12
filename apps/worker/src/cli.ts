@@ -54,6 +54,7 @@ import { reportEvidenceRun, resolveEvidence } from './evidence/run.js';
 import { ingestSnapshotFile, type FileOrigin } from './evidence/signals.js';
 import { assertClaimStatement, parseClaimKind, recordIncidentClaim } from './evidence/claim.js';
 import { recordIncidentSubject } from './evidence/subject.js';
+import { armCommandDeadline, resolveCommandDeadline, type CommandDeadline } from './deadline.js';
 import { buildDraftRequest } from './drafting/build.js';
 import { publishDraft } from './drafting/generate.js';
 import { toSingleLine } from './editorial/display.js';
@@ -89,7 +90,10 @@ import { validateCsvFile } from './editorial/validate.js';
  *
  * Exit codes: 0 success (a completed_with_issues import is a success that
  * retained every row); 2 configuration; 3 structural input; 4 database;
- * 5 unexpected; 130 interrupted. Output carries only basenames and labels
+ * 5 unexpected; 124 command deadline expired (`RESOURCE_LIMITS.command`,
+ * lowered but never raised by `CAS_COMMAND_DEADLINE_MS`; the command is
+ * aborted, its batch rolled back, and the process exits after a grace
+ * period); 130 interrupted. Output carries only basenames and labels
  * rendered as safe single-line text, hashes, counts, ids, statuses,
  * durations, issue codes and fixed messages. Every emitted entry passes
  * through the redactor for the connection string and its password
@@ -781,6 +785,34 @@ interface ParsedValues {
 export async function main(): Promise<void> {
   const controller = new AbortController();
   const onSignal = (): void => controller.abort();
+  const redact = baseRedactor(process.env);
+  // The deadline is resolved before any command runs, so a malformed
+  // CAS_COMMAND_DEADLINE_MS is a configuration error rather than a command
+  // that silently runs without one.
+  let deadline: CommandDeadline;
+  try {
+    deadline = resolveCommandDeadline(process.env);
+  } catch (error) {
+    console.error(formatError(error, redact));
+    process.exitCode = exitCodeFor(error);
+    return;
+  }
+  const armed = armCommandDeadline(deadline, {
+    onExpire: () => {
+      controller.abort();
+      console.error(
+        toSingleLine(
+          redact(
+            `error[deadline/command_deadline_expired]: command exceeded its deadline of ${deadline.deadlineMs} ms; work in progress is aborted and rolled back`,
+          ),
+        ),
+      );
+    },
+    // The grace period lets a cooperative command roll back and return. A
+    // command that has not returned by then is ended here; the database rolls
+    // back the transaction its dropped connection was inside.
+    onGraceExpired: () => process.exit(EXIT_CODES.deadline),
+  });
   process.once('SIGINT', onSignal);
   process.once('SIGTERM', onSignal);
   try {
@@ -789,8 +821,9 @@ export async function main(): Promise<void> {
       io: { log: (line) => console.log(line), error: (line) => console.error(line) },
       signal: controller.signal,
     });
-    process.exitCode = code;
+    process.exitCode = armed.fired() ? EXIT_CODES.deadline : code;
   } finally {
+    armed.disarm();
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
   }

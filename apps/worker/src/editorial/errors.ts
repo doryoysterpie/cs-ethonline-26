@@ -43,6 +43,8 @@ export const EXIT_CODES = {
   structural: 3,
   database: 4,
   unexpected: 5,
+  /** The command deadline (`RESOURCE_LIMITS.command`) expired; work was aborted and rolled back. */
+  deadline: 124,
   aborted: 130,
 } as const;
 

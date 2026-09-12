@@ -145,26 +145,27 @@ allows; otherwise they are dropped. Requirement status per track is in
 
 ## Monorepo layout
 
-| Path                      | Package               | State after Sprint 5                                                                                                                               |
-| ------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                                                                             |
-| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering, evidence, claim, anomaly and drafting commands; 196 offline tests, 105 PostgreSQL |
-| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                                        |
-| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                                      |
-| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set and the Graph evidence contracts; seven tests                                                            |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, nine migrations, ingestion, classification, clustering, evidence and claim ops; 24 offline tests, 81 PostgreSQL     |
-| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy; 7 unit tests. Incident taxonomy: future work                                                               |
-| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; 56 unit tests                                                         |
-| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22); 50 unit tests                                                       |
-| `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25); 69 unit tests                                                      |
-| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client, adapter, TVL delta, identity gate, probe; 102 unit tests                                                         |
-| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                                                                        |
-| `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25); 19 unit tests. No model is called                                          |
-| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                        |
-| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                                   |
-| `data/fixtures`           |                       | synthetic editorial CSV fixtures and synthetic evidence replay fixtures (`data/fixtures/README.md`)                                                |
-| `tools`                   |                       | `offline-sandbox.sb`, a sandbox profile that denies all network access, for proving the default suite is offline                                   |
-| `docs`                    |                       | charter documents and sprint reports, listed below                                                                                                 |
+| Path                      | Package               | State after integration                                                                                                                                     |
+| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/dashboard`          | `@cas/dashboard`      | placeholder; Next.js command center, built in Sprint 6                                                                                                      |
+| `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering, evidence, claim, anomaly and drafting commands; import limits and a command deadline        |
+| `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                                                 |
+| `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                                               |
+| `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set, the Graph evidence contracts and the versioned resource limits (`resource-limits@1`)                              |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, nine migrations, ingestion, classification, clustering, evidence and claim ops                                                |
+| `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy. Incident taxonomy: future work                                                                                      |
+| `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator                                                                                 |
+| `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22)                                                                                |
+| `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25)                                                                               |
+| `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client with streaming body and JSON shape limits, adapter, TVL delta, identity gate, probe                                         |
+| `packages/mcp-server`     | `@cas/mcp-server`     | placeholder                                                                                                                                                 |
+| `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25). No model is called                                                                   |
+| `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                                 |
+| `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                                            |
+| `data/fixtures`           |                       | synthetic editorial CSV fixtures and synthetic evidence replay fixtures (`data/fixtures/README.md`)                                                          |
+| `tools`                   |                       | `offline-sandbox.sb` (macOS network denial), `checks/` (hygiene, forbidden-file, secret, workflow and toolchain scans; Linux network denial), `supply-chain/` |
+| `supply-chain`            |                       | the committed CycloneDX 1.6 bill of materials and licence inventory, reproduced byte for byte in CI                                                         |
+| `docs`                    |                       | charter documents, security documents and sprint reports, listed below                                                                                      |
 
 A placeholder package contains one source file that exports nothing. The intended
 responsibility of each package is in `docs/ARCHITECTURE.md`. Next.js is fixed by the plan for
@@ -172,8 +173,9 @@ the dashboard and is not installed before Sprint 6.
 
 ## Local installation and verification
 
-Requirements: Node 24 (`.nvmrc`) and pnpm 11.10.0, pinned in the `packageManager` field of
-`package.json`. `corepack pnpm` runs the pinned version without a global install.
+Requirements: Node 24.21.0 exactly (`.nvmrc`) and pnpm 11.10.0, pinned in the `packageManager`
+field of `package.json`. `corepack pnpm` runs the pinned version without a global install.
+`corepack pnpm check:toolchain` asserts that the Node and pnpm in use are the pinned releases.
 
 ```bash
 corepack pnpm install --frozen-lockfile
@@ -199,10 +201,26 @@ corepack pnpm test
 corepack pnpm build
 ```
 
-`corepack pnpm verify` runs the five checks in that order. Continuous integration
-(`.github/workflows/ci.yml`) runs the same sequence on every push to `main` or a `sprint-*`
-branch and on every pull request. None of these steps touches the network or needs a secret.
+`corepack pnpm verify` runs those checks in that order, then `test:tools` (the repository
+tooling's own tests), `check:repo` (the hygiene, forbidden-file, secret and workflow scans)
+and `build`. None of these steps touches the network or needs a secret.
 Set `TURBO_TELEMETRY_DISABLED=1` to silence Turborepo telemetry locally.
+
+Continuous integration (`.github/workflows/ci.yml`) runs on every push to `main`, a
+`sprint-*` branch or a `parallel/*` branch and on every pull request, in three jobs: `Verify`
+(the sequence above, preceded by the toolchain assertion and followed by the offline suite
+rerun under an enforced network denial), `PostgreSQL integration` (a fresh, digest-pinned
+PostgreSQL 17 service: every migration applied, a no-op rerun, the drift check and the
+complete `test:db` suite, with a credential-free loopback URL) and `Supply chain`
+(`pnpm audit` and the byte-for-byte reproduction of `supply-chain/`). A separate CodeQL
+workflow analyses the TypeScript sources. Every action is pinned to a full commit SHA. The
+CI additions belong to the security-foundation track and are pending an independent audit.
+
+Two further commands exist for the same purpose locally: `corepack pnpm test:offline-enforced`
+(Linux; proves the network denial with a loopback control, then runs the default suite inside
+it) and `sandbox-exec -f tools/offline-sandbox.sb corepack pnpm test --force` (macOS).
+`corepack pnpm supply-chain:generate` regenerates the bill of materials after a lockfile
+change; `corepack pnpm supply-chain:check` fails when the committed files no longer match.
 
 ## Live Graph probe
 
@@ -302,10 +320,11 @@ physical line, and shows any control character or ANSI sequence in a filename or
 visible escape, so hostile metadata cannot forge a line in captured evidence. pnpm itself echoes the
 command line it runs, path argument included; pass `-s` to `corepack pnpm` when capturing
 evidence. Exit codes: 0 success (including `completed_with_issues`), 2 configuration,
-3 structural input, 4 database, 5 unexpected, 130 interrupted. PostgreSQL integration tests
+3 structural input (including a file that crosses an import limit), 4 database,
+5 unexpected, 124 command deadline expired, 130 interrupted. PostgreSQL integration tests
 run only through `corepack pnpm test:db`, need `DATABASE_URL`, and create and drop only
 schemas named `cas_test_<random>` in that database. Rules are in `docs/SECURITY.md`
-section 11 and `docs/DATA_INPUTS.md` section 14.
+sections 11 and 15 and `docs/DATA_INPUTS.md` section 14.
 
 ## Audit policy
 
@@ -342,27 +361,36 @@ and automatic publication.
 - Failures are explicit errors, never empty successes.
 - Every dependency version is pinned; versions younger than 24 hours are refused, with a
   narrow documented exception process (decision D13).
+- Every input boundary has a measured, versioned resource limit; oversized input is refused
+  whole with a fixed error and nothing is truncated to fit (decision D27, pending audit).
 
-Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`.
+Full rules: `docs/SECURITY.md` and `docs/DATA_INPUTS.md`. The threat model, risk register,
+data classification, incident-response preparation and disclosure policy are the
+security-foundation track's documents listed below; that track is pending an independent
+audit and nothing in it is accepted.
 
 ## Documentation
 
-| Document                         | Content                                                                                                           |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `docs/ARCHITECTURE.md`           | components, runtime data flow, contract boundary, dependency rules                                                |
-| `docs/DATA_INPUTS.md`            | editorial data, schemas, human versus machine labels, ingestion rules                                             |
-| `docs/PRIOR_INPUTS.md`           | the pre-existing corpus, its permitted uses, and the submission disclosure                                        |
-| `docs/HACKATHON_REQUIREMENTS.md` | requirement-to-evidence matrix per sponsor track and the official schedule                                        |
-| `docs/DECISIONS.md`              | append-only decision log, D1 to D26                                                                               |
-| `docs/SPRINT-3-REPORT.md`        | Sprint 3 classification proof: classifier, migration, calibration, evidence                                       |
-| `docs/SPRINT-4-REPORT.md`        | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections                |
-| `docs/SPRINT-5-REPORT.md`        | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting, audit correction; pending re-audit |
-| `docs/CHECKIN-1-DRAFT.md`        | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                                  |
-| `docs/CHECKIN-2-DRAFT.md`        | Project Check-in #2 draft, due Thursday 10 September; not submitted                                               |
-| `docs/ACCOUNT_READINESS.md`      | secret-free account readiness matrix                                                                              |
-| `docs/SPRINT_BOARD.md`           | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                                       |
-| `docs/SECURITY.md`               | security policy                                                                                                   |
-| `docs/SPRINT-0-REPORT.md`        | Sprint 0 report, audit remediation and final correction                                                           |
-| `docs/SPRINT-1-REPORT.md`        | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                |
-| `docs/SPRINT-2-REPORT.md`        | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                                        |
-| `LICENSE`                        | Apache License 2.0                                                                                                |
+| Document                                | Content                                                                                                                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/ARCHITECTURE.md`                  | components, runtime data flow, contract boundary, dependency rules                                                                        |
+| `docs/DATA_INPUTS.md`                   | editorial data, schemas, human versus machine labels, ingestion rules                                                                     |
+| `docs/PRIOR_INPUTS.md`                  | the pre-existing corpus, its permitted uses, and the submission disclosure                                                                |
+| `docs/HACKATHON_REQUIREMENTS.md`        | requirement-to-evidence matrix per sponsor track and the official schedule                                                                |
+| `docs/DECISIONS.md`                     | append-only decision log, D1 to D27                                                                                                       |
+| `docs/SPRINT-0-REPORT.md`               | Sprint 0 report, audit remediation and final correction                                                                                   |
+| `docs/SPRINT-1-REPORT.md`               | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                                        |
+| `docs/SPRINT-2-REPORT.md`               | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                                                                |
+| `docs/SPRINT-3-REPORT.md`               | Sprint 3 classification proof: classifier, migration, calibration, evidence                                                               |
+| `docs/SPRINT-4-REPORT.md`               | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections                                        |
+| `docs/SPRINT-5-REPORT.md`               | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting, audit correction                                            |
+| `docs/CHECKIN-1-DRAFT.md`               | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                                                          |
+| `docs/CHECKIN-2-DRAFT.md`               | Project Check-in #2 draft, due Thursday 10 September; not submitted                                                                       |
+| `docs/ACCOUNT_READINESS.md`             | secret-free account readiness matrix                                                                                                      |
+| `docs/SPRINT_BOARD.md`                  | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                                                               |
+| `docs/SECURITY.md`                      | security policy                                                                                                                           |
+| `docs/THREAT_MODEL.md`                  | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks                      |
+| `docs/RISK_REGISTER.md`                 | risks with owner, status, next action and review date                                                                                     |
+| `docs/DATA_CLASSIFICATION_RETENTION.md` | data classes, inventory, retention and removal                                                                                            |
+| `docs/INCIDENT_RESPONSE.md`             | roles, severities, triggers and runbooks                                                                                                  |
+| `LICENSE`                               | Apache License 2.0                                                                                                                        |

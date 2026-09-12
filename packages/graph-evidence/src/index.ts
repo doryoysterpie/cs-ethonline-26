@@ -14,14 +14,28 @@ export {
   type StandardizedTvlReading,
 } from './adapter.js';
 export {
+  parseContentLength,
+  readBodyBounded,
+  type BoundedBody,
+  type OverrunPolicy,
+} from './bounded-body.js';
+export {
   DEFAULT_GATEWAY_BASE_URL,
   DEFAULT_TIMEOUT_MS,
   GraphGatewayClient,
   gatewayBaseContainsCredential,
+  resolveGraphLimits,
   type FetchLike,
   type GraphGatewayClientOptions,
   type StandardizedTvlRequest,
 } from './client.js';
+export {
+  assertJsonShape,
+  parseJsonBounded,
+  scanJsonDepth,
+  type JsonShape,
+  type JsonShapeLimits,
+} from './json-shape.js';
 export {
   BASE_GATE_MINIMUM_PROTOCOLS,
   BASE_LENDING_TARGETS,

@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import type { DataOrigin, EditorialSourceKind, ImportBatchStatus } from '@cas/contracts';
+import type {
+  DataOrigin,
+  EditorialSourceKind,
+  ImportBatchStatus,
+  ImportLimits,
+} from '@cas/contracts';
 import {
   countRowIssues,
   countSourceRows,
@@ -65,6 +70,13 @@ export interface ImportOptions {
   readonly chunkSize?: number | undefined;
   /** Test hook invoked before each chunk flush; throwing here must roll the batch back. */
   readonly beforeChunk?: ((chunkIndex: number) => void | Promise<void>) | undefined;
+  /**
+   * Test hook only; see `CsvReadOptions.limits`. Both passes read under the
+   * same limits, so a file the structural pass admits is a file the import
+   * pass admits, and a file either pass refuses is refused before any write
+   * or inside the transaction that then rolls back.
+   */
+  readonly limits?: Partial<ImportLimits> | undefined;
 }
 
 export interface ImportOutcome {
@@ -310,6 +322,7 @@ export async function importCsvFile(
 
   const structure: StructuralSummary = await inspectCsvFile(request.filePath, {
     signal: options.signal,
+    limits: options.limits,
   });
   const idempotencyKey = computeIdempotencyKey({
     fileSha256: structure.sha256,
@@ -394,7 +407,7 @@ export async function importCsvFile(
           if (buffer.length >= chunkSize) await flush();
         },
       },
-      { signal: options.signal },
+      { signal: options.signal, limits: options.limits },
     );
     await flush();
     if (stats.sha256 !== structure.sha256 || parsed !== structure.rowCount) {
