@@ -59,7 +59,12 @@ import { buildDraftRequest } from './drafting/build.js';
 import { publishDraft } from './drafting/generate.js';
 import { EDITORIAL_STAGES, type EditorialStage } from '@cas/sheets-intake';
 
-import { connectToWorkbook, computePin } from './sheets/connect.js';
+import {
+  connectToWorkbook,
+  computePin,
+  type ConnectOptions,
+  type SheetsConnection,
+} from './sheets/connect.js';
 import {
   formatInventory,
   formatPin,
@@ -132,6 +137,16 @@ export interface CliOptions {
    * classification and the real redaction in the path and removes the socket.
    */
   readonly openDatabase?: ((config: DatabaseConfig) => Database) | undefined;
+  /**
+   * How a workbook connection is opened. Defaults to the real connector.
+   *
+   * Mirrors {@link openDatabase}: the only supported non-default use is a
+   * test that must exercise the connection or request-failure boundary
+   * without a real credential, network or spreadsheet — a rejected token
+   * request, a rejected metadata request, or a slow-then-successful one used
+   * to prove the process stays alive across a retry.
+   */
+  readonly connectToWorkbook?: ((options: ConnectOptions) => Promise<SheetsConnection>) | undefined;
 }
 
 const USAGE = [
@@ -270,6 +285,7 @@ async function withDatabase<T>(options: CliOptions, fn: (db: Database) => Promis
 
 export async function run(argv: readonly string[], options: CliOptions): Promise<number> {
   const redact = baseRedactor(options.env);
+  const openWorkbook = options.connectToWorkbook ?? connectToWorkbook;
   const emit = (line: string): void => options.io.log(toSingleLine(redact(line)));
   const emitError = (line: string): void => options.io.error(toSingleLine(redact(line)));
   const fail = (error: unknown): number => {
@@ -429,7 +445,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
     }
     if (group === 'sheets' && command === 'inventory') {
       const maximumTabs = parseCount(values.tabs, 'tabs');
-      const connection = await connectToWorkbook({
+      const connection = await openWorkbook({
         env: options.env,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
@@ -457,7 +473,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       if (column === null) {
         throw configurationError('column_required', '--column is required');
       }
-      const connection = await connectToWorkbook({
+      const connection = await openWorkbook({
         env: options.env,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
@@ -491,7 +507,7 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       const firstDataRow = parseCount(values['first-row'], 'first-row') ?? 2;
       const columns = parseCount(values.columns, 'columns');
       const timestampColumn = parseCount(values['timestamp-column'], 'timestamp-column');
-      const connection = await connectToWorkbook({
+      const connection = await openWorkbook({
         env: options.env,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
@@ -1001,5 +1017,11 @@ export async function main(): Promise<void> {
 const invokedDirectly =
   typeof process.argv[1] === 'string' && /[\\/]cli\.js$/.test(process.argv[1]);
 if (invokedDirectly) {
-  void main();
+  // Awaited, not fired-and-forgotten: `main()` is the process's only unit of
+  // work, so nothing legitimate is served by letting Node consider the event
+  // loop "done" before it settles. `void` here previously hid the transport's
+  // unref'd retry timer (see packages/sheets-intake/src/transport.ts) behind
+  // a false exit 0. With that timer fixed, awaiting is what actually reports
+  // a hang instead of masking one.
+  await main();
 }

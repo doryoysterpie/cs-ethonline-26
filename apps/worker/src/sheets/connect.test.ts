@@ -72,10 +72,13 @@ async function attempt(
 }
 
 describe('the committed policy fails closed', () => {
-  it('ships with no digest pinned, so nothing can be read yet', async () => {
+  it('carries the pinned digest for the one authorized workbook, and no other value', async () => {
+    // The digest is a one-way SHA-256 of the identifier, meant to be shared
+    // (the `pin` command prints it on purpose); the identifier it was taken
+    // from is not recovered from asserting its shape here.
     const policy = await loadWorkbookPolicy();
     expect(policy.title).toBe('Cyberattack Sunday - RSS Intake');
-    expect(policy.spreadsheetIdSha256).toBeNull();
+    expect(policy.spreadsheetIdSha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('refuses every workbook while the digest is null', async () => {

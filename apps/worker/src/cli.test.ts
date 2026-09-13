@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { openDatabase, type Database, type DatabaseConfig } from '@cas/database';
+import { fail } from '@cas/sheets-intake';
 import { describe, expect, it } from 'vitest';
 
 import { run, type CliOptions } from './cli.js';
@@ -33,6 +34,7 @@ async function exec(
   argv: string[],
   env: Record<string, string | undefined> = {},
   openDatabaseSeam?: CliOptions['openDatabase'],
+  connectToWorkbookSeam?: CliOptions['connectToWorkbook'],
 ): Promise<Captured & { code: number }> {
   const out: string[] = [];
   const err: string[] = [];
@@ -40,6 +42,7 @@ async function exec(
     env,
     io: { log: (l) => out.push(l), error: (l) => err.push(l) },
     ...(openDatabaseSeam === undefined ? {} : { openDatabase: openDatabaseSeam }),
+    ...(connectToWorkbookSeam === undefined ? {} : { connectToWorkbook: connectToWorkbookSeam }),
   });
   return { out, err, code };
 }
@@ -615,7 +618,12 @@ describe('evidence ingestion origin boundary (no database)', () => {
 });
 
 describe('the sheets commands fail closed and reach no network', () => {
-  it('refuses every sheets command while no workbook digest is pinned', async () => {
+  it('refuses every sheets command for an identifier that is not the pinned workbook', async () => {
+    // The committed policy (`data/policy/authorized-workbook.json`) now
+    // carries the real pinned digest, so an unrelated synthetic identifier
+    // is refused as unauthorized rather than as unpinned; a fully unpinned
+    // policy (`spreadsheetIdSha256: null`) is covered separately in
+    // `sheets/connect.test.ts`.
     for (const argv of [
       ['sheets', 'inventory'],
       ['sheets', 'timestamps', '--tab', 'Feed', '--column', '3'],
@@ -628,7 +636,7 @@ describe('the sheets commands fail closed and reach no network', () => {
         }),
       );
       expect(result.code, argv.join(' ')).toBe(EXIT_CODES.configuration);
-      expect(result.err.join('\n'), argv.join(' ')).toContain('workbook_not_pinned');
+      expect(result.err.join('\n'), argv.join(' ')).toContain('workbook_not_authorized');
       expect(result.out, argv.join(' ')).toEqual([]);
       expect(attempts, argv.join(' ')).toEqual([]);
     }
@@ -687,5 +695,76 @@ describe('the sheets commands fail closed and reach no network', () => {
     expect(usage).toContain('sheets dry-run');
     // No path writes the workbook into the database yet, by design.
     expect(usage).not.toContain('sheets import');
+  });
+});
+
+/**
+ * The injected connector, mirroring `openDatabase`'s existing seam.
+ *
+ * `packages/sheets-intake/src/inventory-subprocess.test.ts` proves the real
+ * connector survives a genuine retry against a faked network, in a real
+ * subprocess; that is the only way to observe the process-lifecycle bug this
+ * was written for (see that file's own comment). What belongs here instead is
+ * the boundary vitest *can* see in-process: that `run` actually calls the
+ * injected connector rather than the real one, and that a rejection from it
+ * reaches the caller as the same one fixed, redacted line and typed exit code
+ * every other failure in this CLI produces.
+ */
+describe('the sheets commands use an injected connector when one is given', () => {
+  it('calls the injected connector instead of the real one, for every sheets command that connects', async () => {
+    for (const argv of [
+      ['sheets', 'inventory'],
+      ['sheets', 'timestamps', '--tab', 'Feed', '--column', '3'],
+      ['sheets', 'dry-run', '--tab', 'Feed', '--stage', 'rss_source_corpus'],
+    ]) {
+      let calls = 0;
+      const { result, attempts } = await withoutNetwork(async () =>
+        exec(
+          argv,
+          {
+            GOOGLE_SHEETS_SPREADSHEET_ID: 'SyntheticAuthorized_0000000000000000000001',
+            GOOGLE_APPLICATION_CREDENTIALS: '/nowhere/key.json',
+          },
+          undefined,
+          () => {
+            calls += 1;
+            // A refusal here is enough to prove the seam was reached and the
+            // real connector (which would need the network) never was.
+            throw fail.credential('credential_unreadable', 'the injected connector refused');
+          },
+        ),
+      );
+      expect(calls, argv.join(' ')).toBe(1);
+      expect(result.err.join('\n'), argv.join(' ')).toContain('credential_unreadable');
+      expect(attempts, argv.join(' ')).toEqual([]);
+    }
+  });
+
+  it("formats a rejection from the injected connector as one fixed, redacted line with the connector taxonomy's exit code", async () => {
+    const { result } = await withoutNetwork(async () =>
+      exec(
+        ['sheets', 'inventory'],
+        {
+          GOOGLE_SHEETS_SPREADSHEET_ID: 'SyntheticAuthorized_0000000000000000000001',
+          GOOGLE_APPLICATION_CREDENTIALS: '/nowhere/key.json',
+        },
+        undefined,
+        () =>
+          Promise.reject(
+            fail.authorization('token_exchange_failed', 'the authorization exchange was refused', {
+              status: 401,
+            }),
+          ),
+      ),
+    );
+    expect(result.out).toEqual([]);
+    expect(result.err).toHaveLength(1);
+    expect(result.err[0]).toBe(
+      'error[sheets:authorization/token_exchange_failed]: the authorization exchange was refused (status=401)',
+    );
+    // 'authorization' is not one of the sheets kinds mapped to configuration,
+    // structural or timeout, so it falls to the database exit code — the
+    // same code every other unclassified Sheets refusal in this CLI gets.
+    expect(result.code).toBe(EXIT_CODES.database);
   });
 });

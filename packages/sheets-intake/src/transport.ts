@@ -128,9 +128,28 @@ async function readBounded(response: Response, maximumBytes: number): Promise<st
   return text + decoder.decode();
 }
 
+/**
+ * A retry delay is live work the caller is awaiting, not background upkeep:
+ * `request` is inside its own `for` loop, and the caller (ultimately the
+ * command's own top-level await) is waiting on that loop to finish. This
+ * timer was previously `.unref()`'d on the theory that a pending delay should
+ * never keep a *finished* process alive — true of the command deadline's own
+ * background timer (`apps/worker/src/deadline.ts`), false here: nothing is
+ * finished while a retry is pending. An unref'd timer does not keep the
+ * event loop alive on its own, so if nothing else held it open at the moment
+ * a retry was scheduled — the previous attempt's socket already closed —
+ * Node considered the loop empty and exited before the timer ever fired,
+ * abandoning this promise mid-flight. Fired-and-forgotten (`void main()`)
+ * that was a silent, exit-0 success with no output; properly awaited
+ * (top-level await) it is Node's "unsettled top-level await" diagnostic and
+ * exit 13. Either way the request was never retried and never answered.
+ * Kept ref'd, the delay is bounded (`retryMaximumDelayMs`) and bounded in
+ * count (`maximumAttempts`), so this cannot hang a command: it can only make
+ * an already-necessary wait real.
+ */
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
-    setTimeout(resolve, ms).unref?.();
+    setTimeout(resolve, ms);
   });
 
 /**
