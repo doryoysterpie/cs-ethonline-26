@@ -146,7 +146,7 @@ describe('import limits', () => {
   it('column count: accepts the exact bound and refuses one column more, before the header handler runs', async () => {
     const file = await tempCsv(
       csv([
-        ['a', 'b', HOSTILE.replace('\n', ' ')],
+        ['a', 'b', HOSTILE.replace(/\n/g, ' ')],
         ['1', '2', '3'],
       ]),
     );
