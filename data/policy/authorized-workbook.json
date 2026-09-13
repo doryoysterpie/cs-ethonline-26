@@ -16,6 +16,6 @@
     "reviews, not a configuration change anyone can make."
   ],
   "title": "Cyberattack Sunday - RSS Intake",
-  "spreadsheetIdSha256": null,
+  "spreadsheetIdSha256": "eb8c5fd7a7d7467c10d60eed928d45b5de85f009db17410bbe71ddfa1f805750",
   "note": "Shared with the dedicated service account as Viewer, on this one file. Revocation is removing that share."
 }
