@@ -219,7 +219,7 @@ describe('import limits', () => {
       ['h1', 'h2'],
       ['1', face.repeat(10)], // 1 + 40 bytes
       ['22', 'plain'], // 2 + 5 bytes
-      ['333', HOSTILE.replace('\n', ' ')],
+      ['333', HOSTILE.replace(/\n/g, ' ')],
     ];
     const total = rows
       .slice(1)
