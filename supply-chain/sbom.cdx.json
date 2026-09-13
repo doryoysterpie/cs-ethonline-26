@@ -406,7 +406,7 @@
       "properties": [
         {
           "name": "cas:license:source",
-          "value": "not-inventoried:platform-constrained-parents"
+          "value": "not-inventoried:no-supported-platform"
         }
       ]
     },
@@ -1442,7 +1442,7 @@
       "properties": [
         {
           "name": "cas:license:source",
-          "value": "not-inventoried:platform-constrained-parents"
+          "value": "not-inventoried:no-supported-platform"
         }
       ]
     },

@@ -53,7 +53,7 @@ export interface SbomSummary {
   readonly workspaceComponents: number;
   readonly licensed: number;
   readonly platformConstrained: number;
-  /** Unconstrained packages reachable only through platform-constrained ones. */
+  /** Unconstrained packages whose every parent installs on no supported platform. */
   readonly platformInherited: number;
   readonly lockfileSha256: string;
 }
@@ -101,6 +101,41 @@ function constrained(pkg: { os: readonly string[]; cpu: readonly string[]; libc:
   return pkg.os.length > 0 || pkg.cpu.length > 0 || pkg.libc.length > 0;
 }
 
+/**
+ * The platforms this repository is developed and checked on: macOS on Apple
+ * silicon, and continuous integration's Linux x64 runner with glibc. A
+ * platform-constrained package installs on one of them when its os, cpu and
+ * libc lists all admit it.
+ */
+export const SUPPORTED_PLATFORMS: readonly { readonly os: string; readonly cpu: string; readonly libc: string | null }[] = [
+  { os: 'darwin', cpu: 'arm64', libc: null },
+  { os: 'linux', cpu: 'x64', libc: 'glibc' },
+];
+
+/**
+ * Whether a constraint list admits a value, with npm's `!value` negation. An
+ * empty list admits everything. A platform with no libc of its own (macOS) is
+ * treated as admitted by any libc list, which is the fail-closed reading:
+ * assuming a package may install there keeps its dependants licence-checked.
+ */
+function admits(list: readonly string[], value: string | null): boolean {
+  if (list.length === 0 || value === null) return true;
+  if (list.includes(`!${value}`)) return false;
+  const allowed = list.filter((entry) => !entry.startsWith('!'));
+  return allowed.length === 0 || allowed.includes(value);
+}
+
+function installsOnASupportedPlatform(pkg: {
+  os: readonly string[];
+  cpu: readonly string[];
+  libc: readonly string[];
+}): boolean {
+  return SUPPORTED_PLATFORMS.some(
+    (platform) =>
+      admits(pkg.os, platform.os) && admits(pkg.cpu, platform.cpu) && admits(pkg.libc, platform.libc),
+  );
+}
+
 function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -142,17 +177,20 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
     }
   }
 
-  // A package that declares no constraint of its own, but that only
-  // platform-constrained packages depend on, is installed exactly where they
-  // are: on no platform in particular, so CI's runner lacks its manifest as
-  // surely as a developer's machine does. Reading its licence would make the
-  // document depend on the generating machine, so it inherits the
-  // not-inventoried status. Computed to a fixed point, so a chain of such
-  // packages is followed to its end. A package with even one parent outside
-  // the set, or one a workspace depends on directly, still needs a licence
+  // A package that declares no constraint of its own installs wherever any
+  // package depending on it installs. It is absent from every supported
+  // platform only when each of its parents is: a platform-constrained package
+  // whose constraint excludes every supported platform, or another package
+  // absent in the same way. Only then is its manifest missing on every machine
+  // that generates or checks this document, so only then does it inherit the
+  // not-inventoried status. Computed to a fixed point, so a chain is followed
+  // to its end. A package with even one parent that a supported platform
+  // installs, or one a workspace depends on directly, still needs a licence
   // and still fails closed without one.
   const notEverywhere = new Set<string>(
-    [...lock.packages.values()].filter((pkg) => constrained(pkg)).map((pkg) => pkg.key),
+    [...lock.packages.values()]
+      .filter((pkg) => constrained(pkg) && !installsOnASupportedPlatform(pkg))
+      .map((pkg) => pkg.key),
   );
   const inherited = new Set<string>();
   let grew: boolean;
@@ -215,12 +253,12 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
       platformInherited += 1;
       properties.push({
         name: 'cas:license:source',
-        value: 'not-inventoried:platform-constrained-parents',
+        value: 'not-inventoried:no-supported-platform',
       });
       notInventoried.push({
         name: pkg.name,
         version: pkg.version,
-        constraint: 'none of its own; reachable only through platform-constrained packages',
+        constraint: 'none of its own; every parent installs on no supported platform',
         parents: [...(allParents.get(key) ?? [])].sort(compare),
       });
     } else {
@@ -352,7 +390,7 @@ function renderLicenses(
   lines.push(`| Third-party packages in the lockfile | ${summary.components} |`);
   lines.push(`| With a licence from the installed manifest | ${summary.licensed} |`);
   lines.push(`| Platform-constrained optional packages, licence not inventoried offline | ${summary.platformConstrained} |`);
-  lines.push(`| Packages reachable only through those, licence not inventoried offline | ${summary.platformInherited} |`);
+  lines.push(`| Unconstrained packages that no supported platform installs, licence not inventoried offline | ${summary.platformInherited} |`);
   lines.push(`| Workspace packages (${inputs.root.license ?? 'NOASSERTION'}) | ${summary.workspaceComponents + 1} |`);
   lines.push('');
   lines.push('| Licence | Packages |');
@@ -377,7 +415,7 @@ function renderLicenses(
   lines.push('## Platform-constrained optional packages');
   lines.push('');
   lines.push(
-    'These packages are installed only where their operating system, CPU or C library matches, or are reachable only through packages that are, so their manifests are not present on every platform and their licence is not read offline. A constrained package names the optional parent it belongs to; a package with no constraint of its own names the constrained packages it is reachable through.',
+    'These packages are installed only where their operating system, CPU or C library matches, or have no constraint of their own but depend from packages that no supported platform (macOS arm64, Linux x64 glibc) installs, so their manifests are not present on every platform and their licence is not read offline. A constrained package names the optional parent it belongs to; an unconstrained one names the parents it is reachable through.',
   );
   lines.push('');
   lines.push('| Package | Version | Constraint | Optional dependency of |');

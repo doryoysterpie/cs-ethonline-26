@@ -242,37 +242,57 @@ describe('bill of materials', () => {
   });
 
   /**
-   * The synthetic lockfile with a chain below the constrained binary:
-   * native-bin depends on wasm-shim, which depends on wasm-runtime. Neither
-   * declares a constraint of its own, which is the shape of sharp's
-   * WebAssembly fallback and @emnapi/runtime in the real lockfile. Each
-   * extra edge makes one of them installed everywhere again.
+   * The synthetic lockfile with a chain below a constrained binary that no
+   * supported platform installs: alpha optionally depends on wasm-host
+   * (cpu wasm32), which depends on wasm-shim, which depends on wasm-runtime.
+   * Neither of the last two declares a constraint of its own, which is the
+   * shape of sharp's WebAssembly fallback and @emnapi/runtime in the real
+   * lockfile. Every other variant makes part of the chain installable on a
+   * supported platform, where its manifest exists and its licence must be read.
    */
-  function withInheritedChain(extra: 'none' | 'alpha-needs-runtime' | 'lib-needs-shim'): SbomInputs {
+  type ChainVariant =
+    | 'none'
+    | 'alpha-needs-runtime'
+    | 'lib-needs-shim'
+    | 'under-supported-native'
+    | 'host-admits-supported';
+  function withInheritedChain(variant: ChainVariant): SbomInputs {
+    const parent = variant === 'under-supported-native' ? 'native-bin' : 'wasm-host';
+    const chainEdge = '    dependencies:\n      wasm-shim: 1.0.0\n';
+    const hostConstraint = variant === 'host-admits-supported' ? "    os: ['!win32']\n" : '    cpu: [wasm32]\n';
     let text = SYNTHETIC_LOCKFILE.replace(
       '    libc: [glibc]\n\nsnapshots:\n',
-      '    libc: [glibc]\n\n  wasm-runtime@1.0.0:\n    resolution: {integrity: sha512-Ag==}\n\n  wasm-shim@1.0.0:\n    resolution: {integrity: sha512-Aw==}\n\nsnapshots:\n',
-    ).replace(
-      '  native-bin@3.0.0:\n    optional: true\n',
-      '  native-bin@3.0.0:\n    dependencies:\n      wasm-shim: 1.0.0\n    optional: true\n\n  wasm-runtime@1.0.0:\n    optional: true\n\n  wasm-shim@1.0.0:\n    dependencies:\n      wasm-runtime: 1.0.0\n    optional: true\n',
-    );
-    if (extra === 'alpha-needs-runtime') {
+      `    libc: [glibc]\n\n  wasm-host@1.0.0:\n    resolution: {integrity: sha512-BA==}\n${hostConstraint}\n  wasm-runtime@1.0.0:\n    resolution: {integrity: sha512-Ag==}\n\n  wasm-shim@1.0.0:\n    resolution: {integrity: sha512-Aw==}\n\nsnapshots:\n`,
+    )
+      .replace(
+        '    optionalDependencies:\n      native-bin: 3.0.0\n',
+        '    optionalDependencies:\n      native-bin: 3.0.0\n      wasm-host: 1.0.0\n',
+      )
+      .replace(
+        '  native-bin@3.0.0:\n    optional: true\n',
+        `  native-bin@3.0.0:\n${parent === 'native-bin' ? chainEdge : ''}    optional: true\n\n` +
+          `  wasm-host@1.0.0:\n${parent === 'wasm-host' ? chainEdge : ''}    optional: true\n\n` +
+          '  wasm-runtime@1.0.0:\n    optional: true\n\n' +
+          '  wasm-shim@1.0.0:\n    dependencies:\n      wasm-runtime: 1.0.0\n    optional: true\n',
+      );
+    if (variant === 'alpha-needs-runtime') {
       text = text.replace(
         "    dependencies:\n      '@scope/beta': 2.0.0\n    optionalDependencies:",
         "    dependencies:\n      '@scope/beta': 2.0.0\n      wasm-runtime: 1.0.0\n    optionalDependencies:",
       );
     }
-    if (extra === 'lib-needs-shim') {
+    if (variant === 'lib-needs-shim') {
       text = text.replace(
         "      '@scope/beta':\n        specifier: 2.0.0\n        version: 2.0.0\n",
         "      '@scope/beta':\n        specifier: 2.0.0\n        version: 2.0.0\n      wasm-shim:\n        specifier: 1.0.0\n        version: 1.0.0\n",
       );
     }
-    expect(text, 'the chain must actually be spliced into the fixture').toContain('wasm-shim: 1.0.0');
+    expect(text, 'the chain must actually be spliced into the fixture').toContain(chainEdge);
+    expect(text).toContain('      wasm-host: 1.0.0\n');
     return { ...syntheticInputs(licenses), lockfileText: text };
   }
 
-  it('records a package reachable only through constrained packages as not inventoried', () => {
+  it('records a package whose every parent installs on no supported platform as not inventoried', () => {
     const inputs = withInheritedChain('none');
     const output = buildSbom(inputs);
     expect(buildSbom(inputs).sbom).toBe(output.sbom);
@@ -284,26 +304,42 @@ describe('bill of materials', () => {
       const component = document.components.find((c) => c['name'] === name);
       expect(component?.['licenses'], name).toBeUndefined();
       expect(component?.['properties'], name).toEqual([
-        { name: 'cas:license:source', value: 'not-inventoried:platform-constrained-parents' },
+        { name: 'cas:license:source', value: 'not-inventoried:no-supported-platform' },
       ]);
     }
     const graph = new Map(document.dependencies.map((d) => [d.ref, d.dependsOn]));
-    expect(graph.get('pkg:npm/native-bin@3.0.0')).toEqual(['pkg:npm/wasm-shim@1.0.0']);
+    expect(graph.get('pkg:npm/wasm-host@1.0.0')).toEqual(['pkg:npm/wasm-shim@1.0.0']);
     expect(graph.get('pkg:npm/wasm-shim@1.0.0')).toEqual(['pkg:npm/wasm-runtime@1.0.0']);
     expect(output.summary).toMatchObject({
-      components: 5,
+      components: 6,
       licensed: 2,
-      platformConstrained: 1,
+      platformConstrained: 2,
       platformInherited: 2,
     });
     expect(output.licenses).toContain(
-      '| Packages reachable only through those, licence not inventoried offline | 2 |',
+      '| Unconstrained packages that no supported platform installs, licence not inventoried offline | 2 |',
+    );
+    expect(output.licenses).toContain('| wasm-host | 1.0.0 | cpu=wasm32 | alpha@1.0.0 |');
+    expect(output.licenses).toContain(
+      '| wasm-shim | 1.0.0 | none of its own; every parent installs on no supported platform | wasm-host@1.0.0 |',
     );
     expect(output.licenses).toContain(
-      '| wasm-shim | 1.0.0 | none of its own; reachable only through platform-constrained packages | native-bin@3.0.0 |',
+      '| wasm-runtime | 1.0.0 | none of its own; every parent installs on no supported platform | wasm-shim@1.0.0 |',
     );
-    expect(output.licenses).toContain(
-      '| wasm-runtime | 1.0.0 | none of its own; reachable only through platform-constrained packages | wasm-shim@1.0.0 |',
+  });
+
+  it('fails closed for a chain under a constrained package that a supported platform installs', () => {
+    // native-bin is linux, x64 or arm64, glibc: continuous integration installs it,
+    // so whatever it depends on is installed there and has a readable licence.
+    expect(() => buildSbom(withInheritedChain('under-supported-native'))).toThrowError(
+      /licence unavailable for wasm-runtime@1.0.0/u,
+    );
+  });
+
+  it('reads npm negation so a !value constraint does not hide an installed chain', () => {
+    // os: ['!win32'] admits macOS and Linux, so the chain below it installs there.
+    expect(() => buildSbom(withInheritedChain('host-admits-supported'))).toThrowError(
+      /licence unavailable for wasm-runtime@1.0.0/u,
     );
   });
 
@@ -315,7 +351,10 @@ describe('bill of materials', () => {
 
   it('still fails closed when a workspace depends on such a package directly', () => {
     const inputs = withInheritedChain('lib-needs-shim');
-    const withRuntime = { ...inputs, licenses: new Map([...inputs.licenses, ['wasm-runtime@1.0.0', 'MIT']]) };
+    const withRuntime = {
+      ...inputs,
+      licenses: new Map([...inputs.licenses, ['wasm-runtime@1.0.0', 'MIT']]),
+    };
     expect(() => buildSbom(withRuntime)).toThrowError(/licence unavailable for wasm-shim@1.0.0/u);
   });
 
