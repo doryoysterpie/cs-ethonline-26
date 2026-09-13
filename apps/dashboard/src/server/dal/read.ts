@@ -4,7 +4,7 @@ import { generateDraft } from '@cas/drafting';
 import { CHAIN_LIMITATION, REPORTING_LIMITATION } from '@cas/evidence';
 
 import { capabilitiesOf } from '../auth/roles.ts';
-import type { Principal } from '../auth/session.ts';
+import { displayIdentity, type Principal } from '../auth/session.ts';
 import { DashboardError } from '../errors.ts';
 import { instant, integer, optionalInstant, optionalUuid, uuid } from '../input.ts';
 import { workspace } from '../packages.ts';
@@ -43,7 +43,7 @@ const DRAFT_INCIDENTS = 500;
 
 export function describePrincipal(principal: Principal): PrincipalDto {
   return {
-    username: principal.username,
+    username: displayIdentity(principal),
     role: principal.role,
     capabilities: capabilitiesOf(principal.role),
   };
@@ -294,7 +294,7 @@ export async function reviewQueue(
     const decisions = await runtime.stores.queueDecisions.listForRun(runId);
     const accounts = new Map<string, string>();
     for (const account of await runtime.stores.accounts.list())
-      accounts.set(account.id, account.username);
+      accounts.set(account.id, account.username ?? account.normalizedEmail ?? account.id);
     const latest = new Map<string, (typeof decisions)[number]>();
     for (const decision of decisions) latest.set(decision.sourceRowId, decision);
     return {
@@ -561,7 +561,7 @@ export async function draftView(
     const latest = revisions[revisions.length - 1] ?? null;
     const accounts = new Map<string, string>();
     for (const account of await runtime.stores.accounts.list())
-      accounts.set(account.id, account.username);
+      accounts.set(account.id, account.username ?? account.normalizedEmail ?? account.id);
     return {
       draftKey: key,
       evidenceRun: {
@@ -597,13 +597,19 @@ export async function administration(
   requireCapability(who, 'admin:accounts');
   requireCapability(who, 'view:audit');
   const accounts = await runtime.stores.accounts.list();
-  const usernames = new Map(accounts.map((account) => [account.id, account.username]));
+  const usernames = new Map(
+    accounts.map((account) => [
+      account.id,
+      account.username ?? account.normalizedEmail ?? account.id,
+    ]),
+  );
   const dtos = [];
   for (const account of accounts) {
     const sessions = await runtime.stores.sessions.listForAccount(account.id);
     dtos.push({
       id: account.id,
       username: account.username,
+      normalizedEmail: account.normalizedEmail,
       role: account.role,
       createdAt: account.createdAt,
       passwordChangedAt: account.passwordChangedAt,

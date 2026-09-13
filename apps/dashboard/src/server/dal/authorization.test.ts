@@ -73,6 +73,7 @@ async function runtimeFor(): Promise<{ runtime: Runtime; principals: Record<Role
     principals[role] = {
       accountId: account.record.id,
       username: account.record.username,
+      normalizedEmail: null,
       role,
       sessionId: `session-${role}`,
       sessionToken: 'a'.repeat(43),

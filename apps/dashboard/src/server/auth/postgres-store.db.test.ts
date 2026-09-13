@@ -291,4 +291,63 @@ describe('the PostgreSQL store against a migrated schema', () => {
     }
     expect(lastDecision.allowed).toBe(false);
   });
+
+  it('issues, supersedes and consumes an OTP challenge, creating its session in the same call', async () => {
+    const emailAccount: AccountRecord = {
+      id: randomUUID(),
+      username: null,
+      role: 'admin',
+      passwordHash: null,
+      createdAt: new Date().toISOString(),
+      passwordChangedAt: new Date().toISOString(),
+      disabledAt: null,
+      expiresAt: null,
+      normalizedEmail: `otp-${randomUUID()}@example.com`,
+    };
+    await stores.accounts.insert(emailAccount);
+    expect((await stores.accounts.findByNormalizedEmail(emailAccount.normalizedEmail!))?.id).toBe(
+      emailAccount.id,
+    );
+
+    const now = new Date().toISOString();
+    const first = {
+      id: randomUUID(),
+      accountId: emailAccount.id,
+      codeDigest: 'a'.repeat(64),
+      createdAt: now,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      consumedAt: null,
+      supersededAt: null,
+      attemptCount: 0,
+      networkKey: null,
+    };
+    await stores.otpChallenges.issue(first);
+    const second = { ...first, id: randomUUID(), codeDigest: 'b'.repeat(64) };
+    await stores.otpChallenges.issue(second);
+    // Requesting a second code supersedes the first: only the second is live.
+    expect(await stores.otpChallenges.findLive(first.id, now)).toBeNull();
+    expect((await stores.otpChallenges.findLive(second.id, now))?.id).toBe(second.id);
+
+    const session: SessionRecord = {
+      id: randomUUID(),
+      accountId: emailAccount.id,
+      tokenHash: 'c'.repeat(64),
+      createdAt: now,
+      lastSeenAt: now,
+      absoluteExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      revokedAt: null,
+      revokedReason: null,
+    };
+    const consumed = await stores.otpChallenges.consumeAndCreateSession(second.id, now, 5, session);
+    expect(consumed).toBe(true);
+    expect((await stores.sessions.findByTokenHash(session.tokenHash))?.id).toBe(session.id);
+
+    // A second consume attempt, even with the same still-valid parameters, fails: already used.
+    const replay = await stores.otpChallenges.consumeAndCreateSession(second.id, now, 5, {
+      ...session,
+      id: randomUUID(),
+      tokenHash: 'd'.repeat(64),
+    });
+    expect(replay).toBe(false);
+  });
 });

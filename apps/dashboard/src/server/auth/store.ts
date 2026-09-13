@@ -22,15 +22,18 @@ import type { Throttle } from './rate-limit.ts';
 
 export interface AccountRecord {
   readonly id: string;
-  readonly username: string;
+  /** Absent for an email-identified account. */
+  readonly username: string | null;
   readonly role: Role;
-  /** Argon2id PHC string. Never leaves the server tree. */
-  readonly passwordHash: string;
+  /** Argon2id PHC string. Never leaves the server tree. Absent for an email-identified account. */
+  readonly passwordHash: string | null;
   readonly createdAt: string;
   readonly passwordChangedAt: string;
   readonly disabledAt: string | null;
   /** Required for a judge; optional otherwise. Past this instant the account cannot sign in. */
   readonly expiresAt: string | null;
+  /** Absent for a legacy username/password account. Exact, already normalized; see `email.ts`. */
+  readonly normalizedEmail: string | null;
 }
 
 export interface SessionRecord {
@@ -64,6 +67,7 @@ export const AUDIT_EVENT_KINDS = [
   'incident_split',
   'evidence_decided',
   'draft_revision_saved',
+  'otp_requested',
 ] as const;
 export type AuditEventKind = (typeof AUDIT_EVENT_KINDS)[number];
 
@@ -109,14 +113,53 @@ export interface QueueDecision {
 
 export interface AccountStore {
   findByUsername(username: string): Promise<AccountRecord | null>;
+  /** Exact match only; the caller normalizes before this is ever called. */
+  findByNormalizedEmail(normalizedEmail: string): Promise<AccountRecord | null>;
   getById(id: string): Promise<AccountRecord | null>;
   list(): Promise<AccountRecord[]>;
-  /** Refuses a username that exists. */
+  /** Refuses a username or email that exists. */
   insert(account: AccountRecord): Promise<void>;
   setPasswordHash(id: string, passwordHash: string, at: string): Promise<void>;
   setDisabled(id: string, at: string): Promise<void>;
   setRole(id: string, role: Role, expiresAt: string | null): Promise<void>;
   setExpiresAt(id: string, expiresAt: string | null): Promise<void>;
+}
+
+export interface OtpChallengeRecord {
+  readonly id: string;
+  readonly accountId: string;
+  /** HMAC-SHA-256(code, server pepper), hex. The code itself is never stored. */
+  readonly codeDigest: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly consumedAt: string | null;
+  readonly supersededAt: string | null;
+  readonly attemptCount: number;
+  readonly networkKey: string | null;
+}
+
+export interface OtpChallengeStore {
+  /** Supersedes every other live challenge of the account, then inserts this one. */
+  issue(challenge: OtpChallengeRecord): Promise<void>;
+  /** The challenge by id, only if still live: unconsumed, unsuperseded, unexpired. */
+  findLive(id: string, now: string): Promise<OtpChallengeRecord | null>;
+  /** Atomically records one more attempt. Returns the new count, or null if no longer live. */
+  recordAttempt(id: string, now: string): Promise<number | null>;
+  /**
+   * Atomically consumes the challenge and creates the session, in one
+   * transaction. Returns false — never throws — if the challenge could not
+   * be consumed (already consumed, superseded, expired, or attempts already
+   * exhausted): the caller must treat that as an ordinary failed
+   * verification, even when the presented code was in fact correct, because
+   * someone else's concurrent request, or this challenge's own attempt
+   * count, already decided the outcome first.
+   */
+  consumeAndCreateSession(
+    challengeId: string,
+    now: string,
+    maxAttempts: number,
+    session: SessionRecord,
+  ): Promise<boolean>;
 }
 
 export interface SessionStore {
@@ -158,6 +201,7 @@ export interface Stores {
   readonly audit: AuditStore;
   readonly drafts: DraftStore;
   readonly queueDecisions: QueueDecisionStore;
+  readonly otpChallenges: OtpChallengeStore;
   /** The login throttle bound to this store's persistence. */
   readonly throttle: Throttle;
 }

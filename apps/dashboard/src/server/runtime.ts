@@ -2,11 +2,26 @@ import 'server-only';
 
 import type { Database } from '@cas/database';
 
+import type { EmailProvider } from './auth/email-provider.ts';
+import { loadOtpEmailConfig, type OtpEmailConfig } from './auth/email-config.ts';
 import { SessionService, type SessionServiceOptions } from './auth/session.ts';
 import type { Stores } from './auth/store.ts';
 import { openStores } from './auth/stores.ts';
 import { loadDashboardConfig, type DashboardConfig } from './config.ts';
 import { workspace } from './packages.ts';
+
+/**
+ * The memory store is already restricted to `local` by `loadDashboardConfig`
+ * (development and tests, never production); this is the same restriction
+ * applied to email delivery, so a developer or a test does not also need a
+ * real Resend key and a real pepper just to load the runtime. The provider
+ * is never called for real work while this branch is active: production
+ * always uses the PostgreSQL store, which always requires `loadOtpEmailConfig`.
+ */
+function localOtpEmailConfig(): OtpEmailConfig {
+  const provider: EmailProvider = { send: async () => undefined };
+  return { provider, pepper: 'local-development-pepper-not-a-production-secret' };
+}
 
 /**
  * The process-wide composition root: configuration, stores, the session
@@ -66,7 +81,12 @@ export function getRuntime(): Promise<Runtime> {
         { maxConnections: 4 },
       );
       const stores = await openStores(config, database);
-      return createRuntime(config, stores, database);
+      const otp =
+        config.accountStore === 'memory' ? localOtpEmailConfig() : loadOtpEmailConfig(process.env);
+      return createRuntime(config, stores, database, {
+        emailProvider: otp.provider,
+        otpPepper: otp.pepper,
+      });
     })();
     // A failed start is not cached: the next request tries again and reports
     // the same fixed configuration error rather than a stale one.

@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { DashboardError } from '../errors.ts';
+import { isNormalizedEmailShaped } from './email.ts';
 import { isVerifiableHash } from './password.ts';
 import { LoginThrottle } from './rate-limit.ts';
 import { isRole, type Role } from './roles.ts';
@@ -15,6 +16,8 @@ import {
   type AuditStore,
   type DraftRevision,
   type DraftStore,
+  type OtpChallengeRecord,
+  type OtpChallengeStore,
   type QueueDecision,
   type QueueDecisionStore,
   type SessionRecord,
@@ -57,6 +60,12 @@ function instantOrNull(value: unknown, code: string): string | null {
   throw configuration(code, 'the seed file carries a malformed instant');
 }
 
+function stringOrNull(value: unknown, code: string): string | null {
+  if (value === null) return null;
+  if (typeof value === 'string') return value;
+  throw configuration(code, 'the seed file carries a malformed field');
+}
+
 /** Validates one seed account as a closed record. Rejections echo nothing. */
 export function assertSeedAccount(value: unknown): AccountRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -68,6 +77,7 @@ export function assertSeedAccount(value: unknown): AccountRecord {
     'disabledAt',
     'expiresAt',
     'id',
+    'normalizedEmail',
     'passwordChangedAt',
     'passwordHash',
     'role',
@@ -80,14 +90,26 @@ export function assertSeedAccount(value: unknown): AccountRecord {
   if (typeof record.id !== 'string' || !UUID.test(record.id)) {
     throw configuration('seed_account_id', 'a seed account has a malformed id');
   }
-  if (!isUsernameShaped(record.username)) {
+  const username = stringOrNull(record.username, 'seed_account_username');
+  if (username !== null && !isUsernameShaped(username)) {
     throw configuration('seed_account_username', 'a seed account has a malformed username');
+  }
+  const normalizedEmail = stringOrNull(record.normalizedEmail, 'seed_account_email');
+  if (normalizedEmail !== null && !isNormalizedEmailShaped(normalizedEmail)) {
+    throw configuration('seed_account_email', 'a seed account has a malformed email');
+  }
+  const passwordHash = stringOrNull(record.passwordHash, 'seed_account_hash');
+  if (passwordHash !== null && !isVerifiableHash(passwordHash)) {
+    throw configuration('seed_account_hash', 'a seed account has an unusable password hash');
+  }
+  if (normalizedEmail === null && (username === null || passwordHash === null)) {
+    throw configuration(
+      'seed_account_identity',
+      'a seed account proves neither an email nor a username and password',
+    );
   }
   if (!isRole(record.role)) {
     throw configuration('seed_account_role', 'a seed account has an unknown role');
-  }
-  if (typeof record.passwordHash !== 'string' || !isVerifiableHash(record.passwordHash)) {
-    throw configuration('seed_account_hash', 'a seed account has an unusable password hash');
   }
   if (typeof record.createdAt !== 'string' || !ISO.test(record.createdAt)) {
     throw configuration('seed_account_created', 'a seed account has a malformed creation instant');
@@ -102,13 +124,14 @@ export function assertSeedAccount(value: unknown): AccountRecord {
   }
   return {
     id: record.id,
-    username: record.username,
+    username,
     role: record.role,
-    passwordHash: record.passwordHash,
+    passwordHash,
     createdAt: record.createdAt,
     passwordChangedAt: record.passwordChangedAt,
     disabledAt,
     expiresAt,
+    normalizedEmail,
   };
 }
 
@@ -135,9 +158,19 @@ async function readSeed(seedPath: string): Promise<AccountRecord[]> {
     throw configuration('seed_format', 'the memory store seed file has an unknown format');
   }
   const accounts = (parsed as SeedFile).accounts.map(assertSeedAccount);
-  const names = new Set(accounts.map((account) => account.username));
-  if (names.size !== accounts.length) {
+  const names = new Set(
+    accounts.flatMap((account) => (account.username === null ? [] : [account.username])),
+  );
+  if (names.size !== accounts.filter((account) => account.username !== null).length) {
     throw configuration('seed_duplicate_username', 'the seed file repeats a username');
+  }
+  const emails = new Set(
+    accounts.flatMap((account) =>
+      account.normalizedEmail === null ? [] : [account.normalizedEmail],
+    ),
+  );
+  if (emails.size !== accounts.filter((account) => account.normalizedEmail !== null).length) {
+    throw configuration('seed_duplicate_email', 'the seed file repeats a normalized email');
   }
   return accounts;
 }
@@ -175,20 +208,33 @@ class MemoryAccounts implements AccountStore {
     return null;
   }
 
+  async findByNormalizedEmail(normalizedEmail: string): Promise<AccountRecord | null> {
+    for (const account of this.byId.values()) {
+      if (account.normalizedEmail === normalizedEmail) return account;
+    }
+    return null;
+  }
+
   async getById(id: string): Promise<AccountRecord | null> {
     return this.byId.get(id) ?? null;
   }
 
   async list(): Promise<AccountRecord[]> {
-    return [...this.byId.values()].sort((a, b) => (a.username < b.username ? -1 : 1));
+    const identityOf = (a: AccountRecord): string => a.username ?? a.normalizedEmail ?? a.id;
+    return [...this.byId.values()].sort((a, b) => (identityOf(a) < identityOf(b) ? -1 : 1));
   }
 
   async insert(account: AccountRecord): Promise<void> {
-    if (this.byId.has(account.id) || (await this.findByUsername(account.username)) !== null) {
+    const usernameTaken =
+      account.username !== null && (await this.findByUsername(account.username)) !== null;
+    const emailTaken =
+      account.normalizedEmail !== null &&
+      (await this.findByNormalizedEmail(account.normalizedEmail)) !== null;
+    if (this.byId.has(account.id) || usernameTaken || emailTaken) {
       throw new DashboardError(
         'conflict',
         'account_exists',
-        'an account with that username exists',
+        'an account with that identity exists',
       );
     }
     this.byId.set(account.id, account);
@@ -326,6 +372,62 @@ class MemoryQueueDecisions implements QueueDecisionStore {
   }
 }
 
+class MemoryOtpChallenges implements OtpChallengeStore {
+  private readonly byId = new Map<string, OtpChallengeRecord>();
+
+  constructor(private readonly sessions: SessionStore) {}
+
+  async issue(challenge: OtpChallengeRecord): Promise<void> {
+    for (const [id, existing] of this.byId) {
+      if (
+        existing.accountId === challenge.accountId &&
+        existing.consumedAt === null &&
+        existing.supersededAt === null
+      ) {
+        this.byId.set(id, { ...existing, supersededAt: challenge.createdAt });
+      }
+    }
+    this.byId.set(challenge.id, challenge);
+  }
+
+  async findLive(id: string, now: string): Promise<OtpChallengeRecord | null> {
+    const challenge = this.byId.get(id);
+    if (
+      challenge === undefined ||
+      challenge.consumedAt !== null ||
+      challenge.supersededAt !== null ||
+      challenge.expiresAt <= now
+    ) {
+      return null;
+    }
+    return challenge;
+  }
+
+  async recordAttempt(id: string, now: string): Promise<number | null> {
+    const challenge = await this.findLive(id, now);
+    if (challenge === null) return null;
+    const attemptCount = challenge.attemptCount + 1;
+    this.byId.set(id, { ...challenge, attemptCount });
+    return attemptCount;
+  }
+
+  async consumeAndCreateSession(
+    challengeId: string,
+    now: string,
+    maxAttempts: number,
+    session: SessionRecord,
+  ): Promise<boolean> {
+    const challenge = await this.findLive(challengeId, now);
+    if (challenge === null || challenge.attemptCount >= maxAttempts) return false;
+    this.byId.set(challengeId, { ...challenge, consumedAt: now });
+    // Not atomic with the read above the way a single SQL statement is, but
+    // this store has no concurrent callers: every operation runs to
+    // completion on Node's single thread before the next one starts.
+    await this.sessions.insert(session);
+    return true;
+  }
+}
+
 export interface MemoryStores extends Stores {
   readonly kind: 'memory';
 }
@@ -333,13 +435,15 @@ export interface MemoryStores extends Stores {
 /** Opens the memory stores, loading accounts from the seed file when one is named. */
 export async function openMemoryStores(seedPath: string | null): Promise<MemoryStores> {
   const accounts = seedPath === null ? [] : await readSeed(seedPath);
+  const sessions = new MemorySessions();
   return {
     kind: 'memory',
     accounts: new MemoryAccounts(seedPath, accounts),
-    sessions: new MemorySessions(),
+    sessions,
     audit: new MemoryAudit(),
     drafts: new MemoryDrafts(),
     queueDecisions: new MemoryQueueDecisions(),
+    otpChallenges: new MemoryOtpChallenges(sessions),
     throttle: new LoginThrottle(),
   };
 }

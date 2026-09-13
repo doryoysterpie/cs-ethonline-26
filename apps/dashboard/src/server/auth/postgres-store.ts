@@ -14,6 +14,8 @@ import type {
   AuditStore,
   DraftRevision,
   DraftStore,
+  OtpChallengeRecord,
+  OtpChallengeStore,
   QueueDecision,
   QueueDecisionStore,
   SessionRecord,
@@ -61,6 +63,14 @@ class PostgresAccounts implements AccountStore {
     return row === null ? null : toAccount(row);
   }
 
+  async findByNormalizedEmail(normalizedEmail: string): Promise<AccountRecord | null> {
+    const { database } = await workspace();
+    const row = await this.db.withClient((client) =>
+      database.findAccountByNormalizedEmail(client, normalizedEmail),
+    );
+    return row === null ? null : toAccount(row);
+  }
+
   async getById(id: string): Promise<AccountRecord | null> {
     const { database } = await workspace();
     const row = await this.db.withClient((client) => database.getAccountById(client, id));
@@ -79,7 +89,7 @@ class PostgresAccounts implements AccountStore {
       await this.db.withClient((client) => database.insertAccount(client, account));
     } catch (error) {
       if (await isUniqueViolation(error)) {
-        throw conflict('account_exists', 'an account with that username exists');
+        throw conflict('account_exists', 'an account with that identity exists');
       }
       throw error;
     }
@@ -110,13 +120,14 @@ class PostgresAccounts implements AccountStore {
 
 function toAccount(row: {
   readonly id: string;
-  readonly username: string;
+  readonly username: string | null;
   readonly role: string;
-  readonly passwordHash: string;
+  readonly passwordHash: string | null;
   readonly createdAt: string;
   readonly passwordChangedAt: string;
   readonly disabledAt: string | null;
   readonly expiresAt: string | null;
+  readonly normalizedEmail: string | null;
 }): AccountRecord {
   if (!isRole(row.role)) {
     throw new DashboardError(
@@ -240,6 +251,44 @@ class PostgresQueueDecisions implements QueueDecisionStore {
   }
 }
 
+class PostgresOtpChallenges implements OtpChallengeStore {
+  constructor(private readonly db: Database) {}
+
+  async issue(challenge: OtpChallengeRecord): Promise<void> {
+    const { database } = await workspace();
+    await this.db.withTransaction((tx) => database.issueOtpChallenge(tx, challenge));
+  }
+
+  async findLive(id: string, now: string): Promise<OtpChallengeRecord | null> {
+    const { database } = await workspace();
+    return this.db.withClient((client) => database.findLiveOtpChallenge(client, id, now));
+  }
+
+  async recordAttempt(id: string, now: string): Promise<number | null> {
+    const { database } = await workspace();
+    return this.db.withClient((client) => database.recordOtpChallengeAttempt(client, id, now));
+  }
+
+  async consumeAndCreateSession(
+    challengeId: string,
+    now: string,
+    maxAttempts: number,
+    session: SessionRecord,
+  ): Promise<boolean> {
+    const { database } = await workspace();
+    try {
+      return await this.db.withTransaction((tx) =>
+        database.consumeOtpChallengeAndCreateSession(tx, challengeId, now, maxAttempts, session),
+      );
+    } catch (error) {
+      if (await isUniqueViolation(error)) {
+        throw conflict('session_exists', 'a session with that identity exists');
+      }
+      throw error;
+    }
+  }
+}
+
 function remaining(windowStart: number, nowSeconds: number): number {
   return Math.max(0, windowStart + WINDOW_SECONDS - nowSeconds);
 }
@@ -312,6 +361,7 @@ export function openPostgresStores(db: Database): PostgresStores {
     audit: new PostgresAudit(db),
     drafts: new PostgresDrafts(db),
     queueDecisions: new PostgresQueueDecisions(db),
+    otpChallenges: new PostgresOtpChallenges(db),
     throttle: new PostgresLoginThrottle(db),
   };
 }

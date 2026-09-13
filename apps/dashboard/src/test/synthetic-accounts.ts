@@ -11,7 +11,8 @@ import type { AccountRecord, Stores } from '../server/auth/store.ts';
  * memory of the test that made it.
  */
 export interface SyntheticAccount {
-  readonly record: AccountRecord;
+  /** Always username/password-identified: `username` and `passwordHash` are never null. */
+  readonly record: AccountRecord & { readonly username: string; readonly passwordHash: string };
   readonly password: string;
 }
 
@@ -47,6 +48,7 @@ export async function syntheticAccount(
       passwordChangedAt: now,
       disabledAt: options.disabledAt ?? null,
       expiresAt,
+      normalizedEmail: null,
     },
   };
 }
