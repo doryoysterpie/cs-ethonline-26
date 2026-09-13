@@ -19,7 +19,7 @@
     "build": "turbo run build",
     "check:repo": "node tools/checks/hygiene.ts && node tools/checks/forbidden-files.ts && node tools/checks/secrets.ts && node tools/checks/workflows.ts",
     "check:toolchain": "node tools/checks/toolchain.ts",
-    "test:offline-enforced": "bash tools/checks/network-denial.sh pnpm test --force",
+    "test:offline-enforced": "bash tools/checks/network-denial.sh pnpm exec turbo run test --force --filter=!@cas/mcp-server && bash tools/checks/network-denial.sh pnpm --filter @cas/mcp-server run test:denied",
     "audit:deps": "pnpm audit --audit-level=low",
     "supply-chain:generate": "node tools/supply-chain/sbom.ts",
     "supply-chain:check": "node tools/supply-chain/sbom.ts --check --cross-check",

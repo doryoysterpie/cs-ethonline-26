@@ -223,7 +223,7 @@ and `build`. None of these steps touches the network or needs a secret.
 Set `TURBO_TELEMETRY_DISABLED=1` to silence Turborepo telemetry locally.
 
 Continuous integration (`.github/workflows/ci.yml`) runs on every push to `main`, a
-`sprint-*` branch or a `parallel/*` branch and on every pull request, in three jobs: `Verify`
+`sprint-*`, `parallel/*` or `release/*` branch and on every pull request, in three jobs: `Verify`
 (the sequence above, preceded by the toolchain assertion and followed by the offline suite
 rerun under an enforced network denial), `PostgreSQL integration` (a fresh, digest-pinned
 PostgreSQL 17 service: every migration applied, a no-op rerun, the drift check and the
@@ -232,9 +232,7 @@ complete `test:db` suite, with a credential-free loopback URL) and `Supply chain
 workflow analyses the TypeScript sources. Every action is pinned to a full commit SHA. The
 CI additions belong to the security-foundation track and are pending an independent audit.
 
-Two further commands exist for the same purpose locally: `corepack pnpm test:offline-enforced`
-(Linux; proves the network denial with a loopback control, then runs the default suite inside
-it) and `sandbox-exec -f tools/offline-sandbox.sb corepack pnpm test --force` (macOS).
+Two further commands exist for the same purpose locally: `corepack pnpm test:offline-enforced` (Linux; proves the network denial with a loopback control, then runs the default suite inside it) and `corepack pnpm test:denied` (macOS). Both run every default test except `redirect.stdio.test.ts`, which needs a listening socket that a strict denial refuses; it runs in the ordinary `Test` step and, on macOS, under `corepack pnpm test:localhost`.
 `corepack pnpm supply-chain:generate` regenerates the bill of materials after a lockfile
 change; `corepack pnpm supply-chain:check` fails when the committed files no longer match.
 
