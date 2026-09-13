@@ -1,9 +1,9 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, open, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CREDENTIALS_VARIABLE,
@@ -14,6 +14,17 @@ import {
 import { isInsideDirectory, loadServiceAccountCredential } from './credentials.js';
 import { isSheetsIntakeError } from './errors.js';
 import { AUTHORIZED_ID, syntheticKeyFile } from './test-support.js';
+
+/**
+ * `open` alone is mocked, wrapping the real implementation by default, so
+ * every other test in this file (and every other caller of `fs/promises`)
+ * is unaffected; only a test that calls `vi.mocked(open).mockImplementationOnce`
+ * observes different behaviour, and only for its one call.
+ */
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, open: vi.fn(actual.open) };
+});
 
 /**
  * The credential boundary and the offline guarantee.
@@ -172,6 +183,109 @@ describe('a credential never lives in the repository', () => {
     expect(JSON.stringify(isSheetsIntakeError(caught) ? caught.details : {})).not.toContain(
       'LEAKED-KEY-BODY',
     );
+  });
+});
+
+describe('the credential is opened once, never checked and read by path separately', () => {
+  let realOpen: typeof open;
+
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    realOpen = actual.open;
+  });
+
+  afterEach(() => {
+    vi.mocked(open).mockReset();
+    vi.mocked(open).mockImplementation(realOpen);
+  });
+
+  it('refuses a credential path that is itself a symbolic link', async () => {
+    if (process.platform === 'win32') return;
+    const real = await writeKey(path.join(outside, 'real-key.json'), syntheticKeyFile());
+    const linked = path.join(outside, 'linked-key.json');
+    await symlink(real, linked);
+    let caught: unknown;
+    try {
+      await loadServiceAccountCredential(linked, { repositoryRoot: directory });
+    } catch (error) {
+      caught = error;
+    }
+    expect(code(caught)).toBe('credential_is_symlink');
+  });
+
+  it('is immune to the file being replaced between the open and the read (TOCTOU)', async () => {
+    if (process.platform === 'win32') return;
+    const keyPath = await writeKey(
+      path.join(outside, 'raced.json'),
+      syntheticKeyFile({
+        client_email: 'toctou-original@synthetic-project.iam.gserviceaccount.com',
+      }),
+    );
+    vi.mocked(open).mockImplementationOnce(async (...args) => {
+      // The window a stat-then-read implementation would race: the handle
+      // below is already bound to the original file's inode, so replacing
+      // the directory entry immediately afterward must have no effect on
+      // what the loader goes on to validate and read.
+      const handle = await realOpen(...(args as Parameters<typeof open>));
+      await rm(keyPath, { force: true });
+      await writeFile(
+        keyPath,
+        syntheticKeyFile({
+          client_email: 'toctou-attacker@synthetic-project.iam.gserviceaccount.com',
+        }),
+        'utf8',
+      );
+      await chmod(keyPath, 0o600);
+      return handle;
+    });
+
+    const credential = await loadServiceAccountCredential(keyPath, { repositoryRoot: directory });
+    expect(credential.clientEmail).toBe(
+      'toctou-original@synthetic-project.iam.gserviceaccount.com',
+    );
+  });
+
+  it('is immune to the file being replaced with a symbolic link between the open and the read', async () => {
+    if (process.platform === 'win32') return;
+    const keyPath = await writeKey(
+      path.join(outside, 'raced-symlink.json'),
+      syntheticKeyFile({ client_email: 'presymlink@synthetic-project.iam.gserviceaccount.com' }),
+    );
+    const elsewhere = await writeKey(
+      path.join(outside, 'elsewhere.json'),
+      syntheticKeyFile({ client_email: 'elsewhere@synthetic-project.iam.gserviceaccount.com' }),
+    );
+    vi.mocked(open).mockImplementationOnce(async (...args) => {
+      const handle = await realOpen(...(args as Parameters<typeof open>));
+      await rm(keyPath, { force: true });
+      await symlink(elsewhere, keyPath);
+      return handle;
+    });
+
+    const credential = await loadServiceAccountCredential(keyPath, { repositoryRoot: directory });
+    expect(credential.clientEmail).toBe('presymlink@synthetic-project.iam.gserviceaccount.com');
+  });
+
+  it('refuses a file replaced with an oversized one between the open and the read, reading the original size', async () => {
+    if (process.platform === 'win32') return;
+    const keyPath = await writeKey(path.join(outside, 'raced-size.json'), syntheticKeyFile());
+    vi.mocked(open).mockImplementationOnce(async (...args) => {
+      const handle = await realOpen(...(args as Parameters<typeof open>));
+      await rm(keyPath, { force: true });
+      await writeFile(
+        keyPath,
+        JSON.stringify({ type: 'service_account', pad: 'x'.repeat(40_000) }),
+      );
+      await chmod(keyPath, 0o600);
+      return handle;
+    });
+
+    // The swapped-in file is oversized; the original, already open, is not.
+    // A stat-then-read implementation reading the swapped file by path would
+    // either accept oversized content or throw the wrong refusal. This one
+    // still validates and parses the original.
+    const credential = await loadServiceAccountCredential(keyPath, { repositoryRoot: directory });
+    expect(credential.clientEmail).toMatch(/\.iam\.gserviceaccount\.com$/);
   });
 });
 

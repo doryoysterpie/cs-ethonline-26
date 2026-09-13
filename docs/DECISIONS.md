@@ -1228,3 +1228,26 @@ specific headline had independently earned.
 - **Pinned catalogue digest.** `da9c9387bec21c4676c5f65984c5a90e58a73c4f80a4f4732e0387f7cb3fdeea`.
 - **Decided by:** the production-candidate pass of 2026-09-12, on the owner's brief. No
   decision number is allocated; this amends D26 and D28.
+
+### D29 amendment, 2026-09-13: the Sheets credential TOCTOU closed on `release/production-candidate`
+
+Not a new decision. Fixes the real finding CodeQL raised on the release head and the
+integration report recorded under production blocker 6:
+`loadServiceAccountCredential` (`packages/sheets-intake/src/credentials.ts`) checked the key
+file's type, size and permissions by path, then read it again by path, so a local actor able
+to replace the file in that window defeated every check.
+
+- **The fix.** The file is opened exactly once. Every check — file type, size, POSIX
+  permissions — reads the open file descriptor (`FileHandle#stat`), and the key is read from
+  that same descriptor (`FileHandle#readFile`), never by path again. `O_NOFOLLOW` on the
+  `open` call refuses a symbolic link at the credential path atomically, as part of the open
+  itself, so a symlink swap in the same window is refused rather than raced.
+- **Scope held.** Sheets-only read access, the exact-workbook digest boundary and fail-closed
+  behaviour are unchanged; no Drive API, Drive scope, write scope or OAuth user authorization
+  was added. The connector remains inactive for this submission.
+- **Tests.** Three new regression tests in `packages/sheets-intake/src/credentials.test.ts`
+  prove the fix under file replacement, replacement with a symbolic link, and a static
+  symlink at the credential path, in addition to the existing boundary tests; all pass
+  unchanged.
+- **Decided by:** the production-candidate pass of 2026-09-13, on the owner's brief. No
+  decision number is allocated; this amends D29.
