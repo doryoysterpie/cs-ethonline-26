@@ -53,6 +53,8 @@ export interface SbomSummary {
   readonly workspaceComponents: number;
   readonly licensed: number;
   readonly platformConstrained: number;
+  /** Unconstrained packages reachable only through platform-constrained ones. */
+  readonly platformInherited: number;
   readonly lockfileSha256: string;
 }
 
@@ -120,9 +122,58 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
     }
   }
 
+  // Every parent of every package, over regular and optional edges alike, and
+  // the packages a workspace depends on directly, which are installed everywhere.
+  const allParents = new Map<string, Set<string>>();
+  for (const snapshot of lock.snapshots.values()) {
+    for (const [name, specifier] of [...snapshot.dependencies, ...snapshot.optionalDependencies]) {
+      if (specifier.startsWith('link:')) continue;
+      const child = `${name}@${baseOfSpecifier(specifier)}`;
+      const parents = allParents.get(child) ?? new Set<string>();
+      parents.add(`${snapshot.name}@${snapshot.version}`);
+      allParents.set(child, parents);
+    }
+  }
+  const directlyRequired = new Set<string>();
+  for (const importer of lock.importers.values()) {
+    for (const [name, dependency] of importer.dependencies) {
+      if (dependency.version.startsWith('link:')) continue;
+      directlyRequired.add(`${name}@${baseOfSpecifier(dependency.version)}`);
+    }
+  }
+
+  // A package that declares no constraint of its own, but that only
+  // platform-constrained packages depend on, is installed exactly where they
+  // are: on no platform in particular, so CI's runner lacks its manifest as
+  // surely as a developer's machine does. Reading its licence would make the
+  // document depend on the generating machine, so it inherits the
+  // not-inventoried status. Computed to a fixed point, so a chain of such
+  // packages is followed to its end. A package with even one parent outside
+  // the set, or one a workspace depends on directly, still needs a licence
+  // and still fails closed without one.
+  const notEverywhere = new Set<string>(
+    [...lock.packages.values()].filter((pkg) => constrained(pkg)).map((pkg) => pkg.key),
+  );
+  const inherited = new Set<string>();
+  let grew: boolean;
+  do {
+    grew = false;
+    for (const key of [...lock.packages.keys()].sort(compare)) {
+      if (notEverywhere.has(key) || directlyRequired.has(key)) continue;
+      const parents = allParents.get(key);
+      if (parents === undefined || parents.size === 0) continue;
+      if ([...parents].every((parent) => notEverywhere.has(parent))) {
+        notEverywhere.add(key);
+        inherited.add(key);
+        grew = true;
+      }
+    }
+  } while (grew);
+
   const components: Record<string, unknown>[] = [];
   let licensed = 0;
   let platformConstrained = 0;
+  let platformInherited = 0;
   const byLicense = new Map<string, { name: string; version: string }[]>();
   const notInventoried: { name: string; version: string; constraint: string; parents: string[] }[] =
     [];
@@ -159,6 +210,18 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
         version: pkg.version,
         constraint,
         parents: [...(optionalParents.get(key) ?? [])].sort(compare),
+      });
+    } else if (inherited.has(key)) {
+      platformInherited += 1;
+      properties.push({
+        name: 'cas:license:source',
+        value: 'not-inventoried:platform-constrained-parents',
+      });
+      notInventoried.push({
+        name: pkg.name,
+        version: pkg.version,
+        constraint: 'none of its own; reachable only through platform-constrained packages',
+        parents: [...(allParents.get(key) ?? [])].sort(compare),
       });
     } else {
       const license = inputs.licenses.get(key);
@@ -259,6 +322,7 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
     workspaceComponents: workspaceComponents.length,
     licensed,
     platformConstrained,
+    platformInherited,
     lockfileSha256,
   };
   return {
@@ -288,6 +352,7 @@ function renderLicenses(
   lines.push(`| Third-party packages in the lockfile | ${summary.components} |`);
   lines.push(`| With a licence from the installed manifest | ${summary.licensed} |`);
   lines.push(`| Platform-constrained optional packages, licence not inventoried offline | ${summary.platformConstrained} |`);
+  lines.push(`| Packages reachable only through those, licence not inventoried offline | ${summary.platformInherited} |`);
   lines.push(`| Workspace packages (${inputs.root.license ?? 'NOASSERTION'}) | ${summary.workspaceComponents + 1} |`);
   lines.push('');
   lines.push('| Licence | Packages |');
@@ -312,7 +377,7 @@ function renderLicenses(
   lines.push('## Platform-constrained optional packages');
   lines.push('');
   lines.push(
-    'These packages are installed only where their operating system, CPU or C library matches, so their manifests are not present on every platform and their licence is not read offline. Each is an optional dependency of the parent named beside it, whose licence is inventoried above.',
+    'These packages are installed only where their operating system, CPU or C library matches, or are reachable only through packages that are, so their manifests are not present on every platform and their licence is not read offline. A constrained package names the optional parent it belongs to; a package with no constraint of its own names the constrained packages it is reachable through.',
   );
   lines.push('');
   lines.push('| Package | Version | Constraint | Optional dependency of |');
@@ -499,7 +564,7 @@ if (isMain(import.meta.url)) {
   const s = output.summary;
   const verdict = check ? (failures === 0 ? 'CHECK OK' : 'CHECK FAILED') : 'WRITTEN';
   console.log(
-    `sbom: components=${s.components} workspace=${s.workspaceComponents} licensed=${s.licensed} platformConstrained=${s.platformConstrained} lockfileSha256=${s.lockfileSha256} ${verdict}`,
+    `sbom: components=${s.components} workspace=${s.workspaceComponents} licensed=${s.licensed} platformConstrained=${s.platformConstrained} platformInherited=${s.platformInherited} lockfileSha256=${s.lockfileSha256} ${verdict}`,
   );
   process.exitCode = failures === 0 ? 0 : 1;
 }
