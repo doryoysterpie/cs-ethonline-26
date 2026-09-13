@@ -816,8 +816,20 @@ describe('draft_section', () => {
         expect(claim['evidenceRunId']).toBe(RUN);
         expect(claim['confidence']).toBe('reported');
         expect(claim['sourceRowIds'] as string[]).toEqual([claim['claimId']]);
+        // A claim is source attribution only: no evidence state of its own,
+        // never assigned one merely for belonging to an incident.
+        expect(claim).not.toHaveProperty('evidenceState');
+        expect(claim).not.toHaveProperty('graphEvidence');
+      }
+      // The evidence axis is answered once per incident, in a separate list.
+      const assessments = preview['incidentAssessments'] as Record<string, unknown>[];
+      expect(assessments).toHaveLength(FIXTURE_INCIDENTS);
+      const assessedIncidents = new Set(assessments.map((a) => a['incidentId']));
+      expect(assessedIncidents).toEqual(incidents);
+      for (const assessment of assessments) {
+        expect(assessment['evidenceRunId']).toBe(RUN);
         expect(['absent', 'observed', 'corroborating', 'contradictory']).toContain(
-          claim['graphEvidence'],
+          assessment['graphEvidence'],
         );
       }
       expect(EVIDENCE_LIMITATIONS).toHaveLength(3);

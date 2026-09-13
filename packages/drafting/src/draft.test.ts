@@ -130,22 +130,32 @@ describe('the draft never states more than its input supports', () => {
     }
   });
 
-  it('carries the evidence state and the Graph evidence beside every incident', () => {
+  it('states the evidence status once per incident, never once per claim', () => {
     const states = [
-      ['reported_only', 'no on-chain evidence has been accepted'],
-      ['onchain_observed', 'does not establish that this attack occurred'],
-      ['corroborated', 'supports a specific claim'],
-      ['contradicted', 'conflicts with a specific claim'],
+      ['reported_only', 'No on-chain evidence has been accepted'],
+      ['onchain_observed', 'does not establish that the incident occurred'],
+      ['corroborated', 'corroborates this incident as a whole'],
+      ['contradicted', 'conflicts with this incident as a whole'],
     ] as const;
     for (const [state, sentence] of states) {
       const draft = generateDraft(request({ incidents: [incident({ evidenceState: state })] }));
+      expect(draft.markdown, state).toContain('Incident-level assessment:');
       expect(draft.markdown, state).toContain(sentence);
-      expect(draft.provenance.claims[0]?.evidenceState, state).toBe(state);
+      // Never once per claim, and never worded as a fact about a specific headline.
+      expect(draft.markdown, state).not.toContain('a specific claim');
+      expect(draft.markdown, state).not.toContain('a named claim');
+      // The claim record itself carries no evidence state of its own.
+      expect(draft.provenance.claims[0]).not.toHaveProperty('evidenceState');
+      expect(draft.provenance.claims[0]).not.toHaveProperty('graphEvidence');
+      // The incident's own assessment is recorded exactly once, separately.
+      expect(draft.provenance.incidentAssessments).toHaveLength(1);
+      expect(draft.provenance.incidentAssessments[0]?.evidenceState, state).toBe(state);
+      expect(draft.provenance.incidentAssessments[0]?.incidentId).toBe('incident-1');
     }
     for (const graph of ['absent', 'observed', 'corroborating', 'contradictory'] as const) {
       const draft = generateDraft(request({ incidents: [incident({ graphEvidence: graph })] }));
-      expect(draft.markdown, graph).toContain('Graph evidence:');
-      expect(draft.provenance.claims[0]?.graphEvidence, graph).toBe(graph);
+      expect(draft.markdown, graph).toContain('Graph evidence (incident-level):');
+      expect(draft.provenance.incidentAssessments[0]?.graphEvidence, graph).toBe(graph);
     }
   });
 
@@ -155,7 +165,7 @@ describe('the draft never states more than its input supports', () => {
         incidents: [incident({ evidenceState: 'contradicted', graphEvidence: 'contradictory' })],
       }),
     );
-    expect(draft.markdown).toContain('It is unresolved.');
+    expect(draft.markdown).toContain('remains unresolved');
     expect(draft.markdown).toContain('contradictory, unresolved');
     expect(draft.provenance.counts.contradicted).toBe(1);
   });
@@ -233,8 +243,10 @@ describe('sections, ordering and determinism', () => {
 
   it('orders incidents by evidence state, then source count, then identifier', () => {
     const draft = generateDraft(mixed());
-    const contradicted = draft.sections.incidents.indexOf('conflicts with a specific claim');
-    const reported = draft.sections.incidents.indexOf('no on-chain evidence has been accepted');
+    const contradicted = draft.sections.incidents.indexOf(
+      'conflicts with this incident as a whole',
+    );
+    const reported = draft.sections.incidents.indexOf('No on-chain evidence has been accepted');
     expect(contradicted).toBeGreaterThan(-1);
     expect(contradicted).toBeLessThan(reported);
   });

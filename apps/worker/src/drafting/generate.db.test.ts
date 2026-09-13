@@ -340,7 +340,9 @@ describe('drafting from a real evidence run', () => {
     // Present, and labelled. A contradicted incident that vanished from the
     // draft would look like an incident nobody ever reported.
     expect(markdown).toContain(`**${contradicted?.headline ?? ''}**`);
-    expect(markdown).toContain('Accepted evidence conflicts with a specific claim');
+    expect(markdown).toContain(
+      'accepted on-chain evidence conflicts with this incident as a whole',
+    );
     expect(written.draft.provenance.counts.contradicted).toBe(1);
     expect(
       written.draft.provenance.claims.filter((claim) => claim.incidentId === contradictedIncidentId)

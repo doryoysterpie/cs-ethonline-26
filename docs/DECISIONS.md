@@ -1150,7 +1150,7 @@ rejected candidate implemented them and this amendment as the current contract.
   - _Naming claims only what is true._ No structured victim name is proposed and no name is
     redacted from quoted text; the counts say exactly that.
 - **Vocabulary and digest.** The closed error vocabulary is now twenty-two codes. The pinned
-  catalogue digest is `ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082`.
+  catalogue digest is `da9c9387bec21c4676c5f65984c5a90e58a73c4f80a4f4732e0387f7cb3fdeea`.
 - **Status.** D28 remains **PROVISIONAL**. The corrected revision is **pending an independent
   re-audit and is not accepted**. It must not merge until Sprint 5 passes its own audit and the
   combined result passes a further independent audit, and no remote MCP service has been
@@ -1191,7 +1191,7 @@ Desktop and remains pending its verdict.
   not a fix to a live defect.
 - **Vocabulary and digest.** The closed error vocabulary is still twenty-two codes. The
   pinned catalogue digest moves to
-  `ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082`.
+  `da9c9387bec21c4676c5f65984c5a90e58a73c4f80a4f4732e0387f7cb3fdeea`.
 - **Unchanged by decision.** The advisory-lock policy stands: the reader role keeps PUBLIC
   execution on PostgreSQL's advisory-lock functions, no MCP argument reaches them, per-call
   connection destruction already prevents one surviving a call, and revoking from PUBLIC
@@ -1201,3 +1201,30 @@ Desktop and remains pending its verdict.
   and no remote MCP service has been enabled or deployed.
 - **Decided by:** the correction of 2026-09-12, on the owner's brief. No decision number is
   allocated; this amends D28.
+
+### D26/D28 amendment, 2026-09-12: the Sprint 5 evidence-state defect corrected on `release/production-candidate`
+
+Not a new decision. Fixes the defect where a source headline was presented as though it
+independently carried its incident's evidence status — `ClaimProvenance` stamped the
+incident's `evidenceState` and `graphEvidence` onto every claim of that incident, including a
+bare headline restatement, so a per-claim record could be misread as an evidence fact that
+specific headline had independently earned.
+
+- **The fix.** `evidenceState` and `graphEvidence` are removed from `ClaimProvenance`
+  (`packages/drafting/src/draft.ts`) and recorded once per incident instead, in a new
+  `IncidentAssessment` list (`DraftProvenance.incidentAssessments`). A claim now carries only
+  source attribution — its sources, its confidence and the naming decision applied to it —
+  never an evidence state of its own. The rendered Markdown's evidence and Graph-evidence
+  sentences are reworded to say plainly that they are an incident-level assessment and that
+  they establish nothing about any single headline above; the previous wording pointed at "a
+  specific claim below" when no claim followed it and no specific claim was ever identified.
+- **Consumers updated in the same commit.** `packages/mcp-server`'s `draft_section` output
+  schema drops the same two fields from `claimProvenance` and adds a parallel
+  `incidentAssessments` array; the tool catalogue digest changes as a result and the pinned
+  constant, and every documented claim of it, is updated to match.
+- **Tests.** `packages/drafting/src/draft.test.ts` and `packages/mcp-server/src/tools.test.ts`
+  are updated to assert the new shape and prove the corrected wording; a dashboard browser
+  test (`apps/dashboard/tests/browser/`) proves the same wording in the rendered draft page.
+- **Pinned catalogue digest.** `da9c9387bec21c4676c5f65984c5a90e58a73c4f80a4f4732e0387f7cb3fdeea`.
+- **Decided by:** the production-candidate pass of 2026-09-12, on the owner's brief. No
+  decision number is allocated; this amends D26 and D28.

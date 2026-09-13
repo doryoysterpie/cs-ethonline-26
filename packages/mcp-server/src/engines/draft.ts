@@ -7,6 +7,7 @@ import {
   type ClaimProvenance,
   type DraftIncident,
   type DraftSection,
+  type IncidentAssessment,
 } from '@cas/drafting';
 
 import { DRAFT_INCIDENTS_MAX_LIMIT } from '../bounds.js';
@@ -65,8 +66,11 @@ export interface PreviewRequest {
   readonly incidents: readonly PreviewIncident[];
 }
 
-/** One sidecar record per claim, exactly as the drafter records it. */
+/** One sidecar record per claim, exactly as the drafter records it. Carries no evidence state. */
 export type PreviewClaimRecord = ClaimProvenance;
+
+/** One incident's evidence assessment, exactly as the drafter records it. Never per claim. */
+export type PreviewIncidentAssessment = IncidentAssessment;
 
 export interface PreviewResult {
   readonly markdown: string;
@@ -88,6 +92,8 @@ export interface PreviewResult {
   readonly claimsWithoutStructuredVictimName: number;
   /** The drafter's per-claim provenance sidecar for the whole draft. */
   readonly claims: readonly PreviewClaimRecord[];
+  /** The drafter's per-incident evidence assessment for the whole draft, one row per incident. */
+  readonly incidentAssessments: readonly PreviewIncidentAssessment[];
 }
 
 export interface DraftPreviewer {
@@ -151,6 +157,9 @@ export const deterministicPreviewer: DraftPreviewer = Object.freeze({
       claims: draft.provenance.claims.map((claim) => ({
         ...claim,
         sourceRowIds: [...claim.sourceRowIds],
+      })),
+      incidentAssessments: draft.provenance.incidentAssessments.map((assessment) => ({
+        ...assessment,
       })),
     };
   },

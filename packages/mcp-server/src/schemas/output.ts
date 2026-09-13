@@ -2,6 +2,7 @@ import { NAMING_DECISIONS } from '@cas/contracts';
 import * as z from 'zod/v4';
 
 import {
+  DRAFT_INCIDENTS_MAX_LIMIT,
   DRAFT_MARKDOWN_MAX_CHARACTERS,
   HEADLINE_MAX_CHARACTERS,
   IDENTITY_MAX_CHARACTERS,
@@ -418,6 +419,13 @@ export const NAMING_NOTE =
  * One line of the drafter's provenance sidecar, per claim, exactly as the
  * drafter records it. Returned in full so the preview's own statement that a
  * machine-readable sidecar exists is true of this result.
+ *
+ * Deliberately carries no evidence state and no Graph evidence: a claim here
+ * is source attribution — what was reported, by whom, under what naming
+ * decision — never an assessment of whether its incident is corroborated.
+ * `incidentAssessment` below is where that question is answered, once per
+ * incident, never once per claim; a headline is never assigned an evidence
+ * state merely for belonging to an incident.
  */
 export const claimProvenance = z
   .object({
@@ -427,13 +435,27 @@ export const claimProvenance = z
     batchId: uuidOutput,
     evidenceRunId: uuidOutput.nullable(),
     dataOrigin: dataOriginSchema,
-    evidenceState: evidenceStateSchema,
-    graphEvidence: z.enum(GRAPH_EVIDENCE_STATES),
     confidence: z.enum(CLAIM_CONFIDENCES),
     sourceRowIds: z.array(uuidOutput).max(32),
     namingDecision: z.enum(NAMING_DECISIONS),
     written: z.boolean(),
     omissionReason: vocabularySchema.nullable(),
+  })
+  .strict();
+
+/**
+ * One incident's evidence status: the only place an evidence state or a
+ * Graph evidence state is recorded. Named by incident, never by claim.
+ */
+export const incidentAssessment = z
+  .object({
+    incidentId: uuidOutput,
+    clusteringRunId: uuidOutput,
+    batchId: uuidOutput,
+    evidenceRunId: uuidOutput.nullable(),
+    dataOrigin: dataOriginSchema,
+    evidenceState: evidenceStateSchema,
+    graphEvidence: z.enum(GRAPH_EVIDENCE_STATES),
   })
   .strict();
 
@@ -479,6 +501,8 @@ export const draftSectionOutput = z
           .strict(),
         /** The drafter's per-claim provenance sidecar for the whole draft the section was cut from. */
         claims: z.array(claimProvenance).max(PREVIEW_CLAIM_RECORDS_LIMIT),
+        /** One evidence assessment per incident considered, never per claim. */
+        incidentAssessments: z.array(incidentAssessment).max(DRAFT_INCIDENTS_MAX_LIMIT),
       })
       .strict(),
     incidentsConsidered: z.number().int().nonnegative(),
@@ -520,3 +544,4 @@ export type AnomalyEntryDto = z.output<typeof anomalyEntry>;
 export type AnomalyEntryProvenanceDto = z.output<typeof anomalyEntryProvenance>;
 export type LiveTargetDto = z.output<typeof liveTarget>;
 export type ClaimProvenanceDto = z.output<typeof claimProvenance>;
+export type IncidentAssessmentDto = z.output<typeof incidentAssessment>;

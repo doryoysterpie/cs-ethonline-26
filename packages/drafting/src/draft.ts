@@ -90,7 +90,13 @@ export interface DraftRequest {
   readonly incidents: readonly DraftIncident[];
 }
 
-/** One line of the provenance sidecar: what a claim rests on. */
+/**
+ * One line of the provenance sidecar: what a claim rests on. Deliberately
+ * silent on evidence: a claim here is source attribution (what was reported,
+ * by whom, under what naming decision), never an assessment of whether the
+ * incident it belongs to is corroborated. `IncidentAssessment` below is
+ * where that question is answered, once per incident, never once per claim.
+ */
 export interface ClaimProvenance {
   readonly claimId: string;
   readonly incidentId: string;
@@ -98,13 +104,30 @@ export interface ClaimProvenance {
   readonly batchId: string;
   readonly evidenceRunId: string | null;
   readonly dataOrigin: DataOrigin;
-  readonly evidenceState: EvidenceState;
-  readonly graphEvidence: GraphEvidenceState;
   readonly confidence: ClaimConfidence;
   readonly sourceRowIds: readonly string[];
   readonly namingDecision: NamingDecision;
   readonly written: boolean;
   readonly omissionReason: string | null;
+}
+
+/**
+ * One incident's evidence status. This is the only place an evidence state
+ * or a Graph evidence state is recorded: it names the incident, never a
+ * claim, so nothing here can be misread as a fact a single headline
+ * independently established. A claim of that incident is unresolved or
+ * corroborated exactly as much as its incident is, and no more specifically
+ * than that — the drafter records no finer-grained evidence than the
+ * incident carries.
+ */
+export interface IncidentAssessment {
+  readonly incidentId: string;
+  readonly clusteringRunId: string;
+  readonly batchId: string;
+  readonly evidenceRunId: string | null;
+  readonly dataOrigin: DataOrigin;
+  readonly evidenceState: EvidenceState;
+  readonly graphEvidence: GraphEvidenceState;
 }
 
 export interface DraftProvenance {
@@ -117,6 +140,7 @@ export interface DraftProvenance {
   readonly periodEnd: string;
   readonly dataOrigin: DataOrigin;
   readonly claims: readonly ClaimProvenance[];
+  readonly incidentAssessments: readonly IncidentAssessment[];
   readonly counts: {
     readonly incidents: number;
     readonly claimsWritten: number;
@@ -133,19 +157,30 @@ export interface GeneratedDraft {
   readonly provenance: DraftProvenance;
 }
 
+/**
+ * Every sentence here is an incident-level assessment, stated as one, and
+ * none of them points at "a claim below": the headlines listed above this
+ * sentence are source attribution, not individually corroborated or
+ * contradicted, and naming one of them here would assign it an evidence
+ * state it does not independently carry.
+ */
 const EVIDENCE_SENTENCE: Readonly<Record<EvidenceState, string>> = {
-  reported_only: 'Reporting only; no on-chain evidence has been accepted for this incident.',
+  reported_only:
+    'Incident-level assessment: reporting only. No on-chain evidence has been accepted for this incident, and none of the headlines above is independently corroborated by it.',
   onchain_observed:
-    'Relevant on-chain activity was observed. It does not establish that this attack occurred.',
-  corroborated: 'An accepted on-chain signal supports a specific claim below.',
-  contradicted: 'Accepted evidence conflicts with a specific claim below. It is unresolved.',
+    'Incident-level assessment: relevant on-chain activity was observed for this incident. It does not establish that the incident occurred, and it does not corroborate any single headline above.',
+  corroborated:
+    'Incident-level assessment: an accepted on-chain signal corroborates this incident as a whole. It does not independently verify any single headline above.',
+  contradicted:
+    'Incident-level assessment: accepted on-chain evidence conflicts with this incident as a whole and remains unresolved. It does not confirm or refute any single headline above.',
 };
 
 const GRAPH_SENTENCE: Readonly<Record<GraphEvidenceState, string>> = {
-  absent: 'Graph evidence: none accepted.',
-  observed: 'Graph evidence: observed, not corroborating.',
-  corroborating: 'Graph evidence: corroborating a named claim.',
-  contradictory: 'Graph evidence: contradictory, unresolved.',
+  absent: 'Graph evidence (incident-level): none accepted.',
+  observed: 'Graph evidence (incident-level): observed, not corroborating.',
+  corroborating:
+    'Graph evidence (incident-level): corroborating the incident, not any single headline above.',
+  contradictory: 'Graph evidence (incident-level): contradictory, unresolved.',
 };
 
 function applySubstitutions(text: string, contract: DraftingContract): string {
@@ -211,6 +246,7 @@ function orderIncidents(
 interface RenderedIncident {
   readonly markdown: string;
   readonly provenance: readonly ClaimProvenance[];
+  readonly assessment: IncidentAssessment;
 }
 
 function renderIncident(incident: DraftIncident, contract: DraftingContract): RenderedIncident {
@@ -232,8 +268,6 @@ function renderIncident(incident: DraftIncident, contract: DraftingContract): Re
       batchId: incident.batchId,
       evidenceRunId: incident.evidenceRunId,
       dataOrigin: incident.dataOrigin,
-      evidenceState: incident.evidenceState,
-      graphEvidence: incident.graphEvidence,
       confidence: claim.confidence,
       sourceRowIds: [...claim.sourceRowIds].sort(),
       namingDecision: decision,
@@ -274,7 +308,16 @@ function renderIncident(incident: DraftIncident, contract: DraftingContract): Re
       lines.push(`- ${applySubstitutions(source.publisher, contract)} — ${source.url}`);
     }
   }
-  return { markdown: lines.join('\n'), provenance };
+  const assessment: IncidentAssessment = {
+    incidentId: incident.incidentId,
+    clusteringRunId: incident.clusteringRunId,
+    batchId: incident.batchId,
+    evidenceRunId: incident.evidenceRunId,
+    dataOrigin: incident.dataOrigin,
+    evidenceState: incident.evidenceState,
+    graphEvidence: incident.graphEvidence,
+  };
+  return { markdown: lines.join('\n'), provenance, assessment };
 }
 
 function header(request: DraftRequest, contract: DraftingContract): string {
@@ -300,8 +343,10 @@ function provenanceSection(provenance: DraftProvenance): string {
     `claims omitted for want of a source ${provenance.counts.claimsOmitted};`,
     `names withheld ${provenance.counts.namesWithheld}; contradicted incidents ${provenance.counts.contradicted}.`,
     '',
-    'Every claim above carries its incident, its sources, its evidence state and the naming',
-    'decision applied to it. The machine-readable sidecar holds the same record per claim.',
+    'Every claim above carries its incident, its sources and the naming decision applied to it —',
+    'never an evidence state of its own. Evidence is assessed once per incident, never per claim:',
+    'the machine-readable sidecar holds a claim record and an incident assessment as two separate',
+    'lists, and a headline is not assigned an evidence state merely for belonging to an incident.',
   ].join('\n');
 }
 
@@ -310,13 +355,19 @@ export function generateSection(
   section: DraftSection,
   request: DraftRequest,
   contract: DraftingContract = DRAFTING_CONTRACT,
-): { readonly markdown: string; readonly provenance: readonly ClaimProvenance[] } {
+): {
+  readonly markdown: string;
+  readonly provenance: readonly ClaimProvenance[];
+  readonly assessments: readonly IncidentAssessment[];
+} {
   const ordered = orderIncidents(request.incidents, contract).slice(
     0,
     contract.bounds.maximumIncidents,
   );
-  if (section === 'header') return { markdown: header(request, contract), provenance: [] };
-  if (section === 'provenance') return { markdown: '', provenance: [] };
+  if (section === 'header') {
+    return { markdown: header(request, contract), provenance: [], assessments: [] };
+  }
+  if (section === 'provenance') return { markdown: '', provenance: [], assessments: [] };
 
   const wanted = ordered.filter((incident) =>
     section === 'crypto' ? incident.onChainSubject : !incident.onChainSubject,
@@ -332,6 +383,7 @@ export function generateSection(
   return {
     markdown: `${heading}\n\n${body}`,
     provenance: rendered.flatMap((entry) => [...entry.provenance]),
+    assessments: rendered.map((entry) => entry.assessment),
   };
 }
 
@@ -342,11 +394,13 @@ export function generateDraft(
 ): GeneratedDraft {
   const sections: Partial<Record<DraftSection, string>> = {};
   const claims: ClaimProvenance[] = [];
+  const assessments: IncidentAssessment[] = [];
   for (const section of contract.sections) {
     if (section === 'provenance') continue;
     const generated = generateSection(section, request, contract);
     sections[section] = generated.markdown;
     claims.push(...generated.provenance);
+    assessments.push(...generated.assessments);
   }
   const ordered = orderIncidents(request.incidents, contract).slice(
     0,
@@ -362,6 +416,7 @@ export function generateDraft(
     periodEnd: request.periodEnd,
     dataOrigin: request.dataOrigin,
     claims,
+    incidentAssessments: assessments,
     counts: {
       incidents: ordered.length,
       claimsWritten: claims.filter((claim) => claim.written).length,

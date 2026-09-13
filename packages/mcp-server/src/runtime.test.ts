@@ -56,6 +56,7 @@ describe('deadlines and bounds', () => {
         },
         claimsWithoutStructuredVictimName: 0,
         claims: [],
+        incidentAssessments: [],
       }),
     };
     const { runtime } = testRuntime({ store: new FakeStore(), previewer });
@@ -127,6 +128,7 @@ describe('deadlines and bounds', () => {
         },
         claimsWithoutStructuredVictimName: 0,
         claims: [],
+        incidentAssessments: [],
       }),
     };
     const { runtime } = testRuntime({ store: new FakeStore(), previewer });

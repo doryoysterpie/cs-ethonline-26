@@ -474,7 +474,7 @@ no migration was added, and no Sprint 5 correction commit was incorporated.
   one: `call_cancelled`, `database_role_overprivileged` and `stored_metadata_invalid`. Section
   2 and section 5 say nineteen; they describe the rejected candidate.
 - **The pinned catalogue digest is**
-  `ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082`. The value
+  `da9c9387bec21c4676c5f65984c5a90e58a73c4f80a4f4732e0387f7cb3fdeea`. The value
   `edb68f5268e419e1b4294f4a4290c31e2d8ea9f06e3db872bc180ee299ae9b3a` in section 2 and section
   10 is the rejected candidate's.
 - **The server reads four environment names**, not three: `DATABASE_URL`, `GRAPH_API_KEY`,
@@ -689,7 +689,7 @@ rather than one, and `src/contracts.test.ts` now requires the two fields to adve
 pattern and one bound. The fail-closed read-gate test is unchanged.
 
 This changes the advertised catalogue, so the pinned digest moves to
-`ebddcec863a546a7cfcc7a3050cf9a962f1a3d7b2046df0a7e9c863349502082`. Every reference to the
+`da9c9387bec21c4676c5f65984c5a90e58a73c4f80a4f4732e0387f7cb3fdeea`. Every reference to the
 previous digest has been updated; none remains in the repository.
 
 ### 17.6 What has not changed

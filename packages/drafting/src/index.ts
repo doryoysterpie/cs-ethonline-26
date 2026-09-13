@@ -48,4 +48,5 @@ export {
   type DraftSource,
   type GeneratedDraft,
   type GraphEvidenceState,
+  type IncidentAssessment,
 } from './draft.js';
