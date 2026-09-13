@@ -167,7 +167,7 @@ describe('import limits', () => {
       csv([
         ['a', 'b'],
         ['1', `${cell}`],
-        ['2', HOSTILE.replace('\n', ' ')],
+        ['2', HOSTILE.replace(/\n/g, ' ')],
       ]),
     );
     expect((await read(file, { cellBytes: 1025 })).error).toBeNull();
@@ -199,7 +199,7 @@ describe('import limits', () => {
   it('row count: accepts the exact bound, refuses one row more, and delivers no row past the bound', async () => {
     const rows = [['a', 'b']];
     for (let i = 1; i <= 5; i += 1)
-      rows.push([String(i), i === 4 ? HOSTILE.replace('\n', ' ') : 'v']);
+      rows.push([String(i), i === 4 ? HOSTILE.replace(/\n/g, ' ') : 'v']);
     const file = await tempCsv(csv(rows));
     expect((await read(file, { rowCount: 6 })).error).toBeNull();
     const exact = await read(file, { rowCount: 5 });
