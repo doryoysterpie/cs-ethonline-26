@@ -324,7 +324,9 @@ describe('the token is fetched once and reused', () => {
     });
     await tokens.accessToken();
     await tokens.accessToken();
-    const exchanges = transport.requests.filter((r) => r.url.includes('oauth2.googleapis.com'));
+    const exchanges = transport.requests.filter(
+      (r) => new URL(r.url).hostname === 'oauth2.googleapis.com',
+    );
     expect(exchanges).toHaveLength(1);
   });
 
@@ -346,7 +348,9 @@ describe('the token is fetched once and reused', () => {
       sleep: transport.sleep,
     });
     await client.metadata().catch(() => undefined);
-    const apiRequest = transport.requests.find((r) => r.url.includes('sheets.googleapis.com'));
+    const apiRequest = transport.requests.find(
+      (r) => new URL(r.url).hostname === 'sheets.googleapis.com',
+    );
     expect(apiRequest?.headers['authorization']).toBe('Bearer synthetic-access-token-value');
     expect(apiRequest?.url).not.toContain('synthetic-access-token-value');
   });
