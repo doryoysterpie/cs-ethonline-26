@@ -1,3 +1,11 @@
+> **Superseded, 2026-09-12.** The persistence pause this document describes ended with migration
+> `0010_dashboard_persistence.sql` on `release/production-candidate`: the PostgreSQL store is
+> implemented and is production's required store, and the judge's draft-preview access this
+> document assumed (§2.2) is withdrawn by the owner's decision of 2026-09-12. See
+> `docs/DECISIONS.md` (the D28 and D26/D28 amendments of 2026-09-12) and
+> `docs/RELEASE-INTEGRATION-REPORT.md` for what changed. The rest of this document is left as
+> the historical record of the speculative track it describes.
+
 # Parallel Sprint 6 track: dashboard and authentication — handoff for Codex Desktop
 
 Branch `parallel/s6-dashboard-auth`, built from Sprint 5's final commit

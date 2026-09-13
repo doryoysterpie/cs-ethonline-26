@@ -15,12 +15,11 @@ import { DashboardError } from './errors.ts';
  *
  * `DASHBOARD_ACCOUNT_STORE` selects where accounts, sessions, audit events,
  * draft revisions and queue decisions live. `memory` is permitted only in the
- * `local` environment and exists for development and tests. `postgres` is the
- * intended production store, and it is **paused**: the coordination note of
- * 10 September 2026 reserves migration 0009 for the Sprint 5 correction and
- * defers every authentication migration until the next number is allocated.
- * Selecting `postgres` therefore fails explicitly with a fixed message rather
- * than pretending to persist anything.
+ * `local` environment and exists for development and tests. `postgres`
+ * (migration 0010) is production's store, and production requires it: the
+ * memory store can never be selected outside `local`, and the PostgreSQL
+ * store fails closed rather than falling back when no database handle is
+ * available to it.
  */
 
 export { ENVIRONMENTS, ENVIRONMENT_VARIABLE, type DashboardEnvironment } from './environment.ts';

@@ -9,9 +9,27 @@ import 'server-only';
  * about existence. A successful sign-in clears the account's failure count;
  * nothing clears a network's count except time.
  *
- * Process-local. A deployment with several processes shares no state here;
- * that is a named seam for the PostgreSQL store to close.
+ * `LoginThrottle` below is process-local, used by the memory store: a
+ * deployment of several processes shares no state through it. The
+ * PostgreSQL store's throttle (`apps/dashboard/src/server/auth/postgres-store.ts`)
+ * implements the same `Throttle` shape over a shared table instead, which is
+ * what makes the limit hold across every application instance.
  */
+
+/**
+ * The shape `SessionService` calls through. `LoginThrottle` satisfies it
+ * synchronously; a store-backed throttle satisfies it by returning promises.
+ * `SessionService` always awaits, so either implementation works unchanged.
+ */
+export interface Throttle {
+  check(
+    accountKey: string,
+    networkKey: string,
+    nowSeconds: number,
+  ): ThrottleDecision | Promise<ThrottleDecision>;
+  recordFailure(accountKey: string, nowSeconds: number): void | Promise<void>;
+  recordSuccess(accountKey: string): void | Promise<void>;
+}
 
 export const ACCOUNT_FAILURE_LIMIT = 5;
 export const NETWORK_ATTEMPT_LIMIT = 30;
@@ -51,7 +69,7 @@ function remaining(bucket: Bucket | undefined, now: number): number {
   return Math.max(0, bucket.windowStart + WINDOW_SECONDS - now);
 }
 
-export class LoginThrottle {
+export class LoginThrottle implements Throttle {
   private readonly accounts = new Map<string, Bucket>();
   private readonly networks = new Map<string, Bucket>();
 

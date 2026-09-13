@@ -3,18 +3,17 @@ import 'server-only';
 import type { ReviewState } from '@cas/contracts';
 
 import type { Role } from './roles.ts';
+import type { Throttle } from './rate-limit.ts';
 
 /**
  * The persistence interfaces of the dashboard.
  *
  * Every record here is a plain, explicit shape; nothing is a database row.
  * The interfaces are what the session service, the data-access layer and the
- * provisioning command program against. One implementation exists in this
- * track, `MemoryStores`, for development and tests. The PostgreSQL
- * implementation is deliberately absent: authentication persistence is paused
- * until the next migration number is allocated after the Sprint 5 correction
- * (coordination note of 10 September 2026), and a store that pretended to
- * persist would be worse than one that says it cannot.
+ * provisioning command program against. Two implementations exist:
+ * `MemoryStores`, for development and tests, and the PostgreSQL store
+ * (`postgres-store.ts`, migration 0010), which production requires — the
+ * memory store is refused outside the `local` environment.
  *
  * Every write is an insert or a narrowly named state change; nothing here
  * updates a password hash in place except `setPasswordHash`, which is the
@@ -159,6 +158,8 @@ export interface Stores {
   readonly audit: AuditStore;
   readonly drafts: DraftStore;
   readonly queueDecisions: QueueDecisionStore;
+  /** The login throttle bound to this store's persistence. */
+  readonly throttle: Throttle;
 }
 
 export const USERNAME = /^[a-z][a-z0-9_-]{2,31}$/u;

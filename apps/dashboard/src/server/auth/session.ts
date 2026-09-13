@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { DashboardError } from '../errors.ts';
 import { dummyHash, verifyPassword, VerificationGate } from './password.ts';
-import { LoginThrottle } from './rate-limit.ts';
+import type { Throttle } from './rate-limit.ts';
 import type { Role } from './roles.ts';
 import {
   isUsernameShaped,
@@ -68,7 +68,8 @@ export interface SessionServiceOptions {
   readonly now?: (() => Date) | undefined;
   readonly makeId?: (() => string) | undefined;
   readonly gate?: VerificationGate | undefined;
-  readonly throttle?: LoginThrottle | undefined;
+  /** Defaults to the throttle bound to the stores passed to the constructor. */
+  readonly throttle?: Throttle | undefined;
 }
 
 function seconds(date: Date): number {
@@ -83,7 +84,7 @@ export class SessionService {
   private readonly now: () => Date;
   private readonly makeId: () => string;
   readonly gate: VerificationGate;
-  readonly throttle: LoginThrottle;
+  readonly throttle: Throttle;
 
   constructor(
     private readonly stores: Stores,
@@ -92,7 +93,7 @@ export class SessionService {
     this.now = options.now ?? (() => new Date());
     this.makeId = options.makeId ?? randomUUID;
     this.gate = options.gate ?? new VerificationGate();
-    this.throttle = options.throttle ?? new LoginThrottle();
+    this.throttle = options.throttle ?? stores.throttle;
   }
 
   private async audit(event: Omit<AuditEvent, 'id' | 'at'>): Promise<void> {
@@ -142,7 +143,7 @@ export class SessionService {
     const password = typeof request.password === 'string' ? request.password : '';
     const key = accountKey(isUsernameShaped(username) ? username : 'malformed');
 
-    const decision = this.throttle.check(key, `network:${request.networkKey}`, seconds(at));
+    const decision = await this.throttle.check(key, `network:${request.networkKey}`, seconds(at));
     if (!decision.allowed) {
       await this.audit({
         kind: 'login_throttled',
@@ -178,7 +179,7 @@ export class SessionService {
 
     const usable = account !== null && this.accountIsUsable(account, at);
     if (account === null || !verified.value || !usable) {
-      this.throttle.recordFailure(key, seconds(at));
+      await this.throttle.recordFailure(key, seconds(at));
       await this.audit({
         kind: 'login_failed',
         outcome: 'failure',
@@ -211,7 +212,7 @@ export class SessionService {
       }
     }
 
-    this.throttle.recordSuccess(key);
+    await this.throttle.recordSuccess(key);
     const issued = await this.issue(account, at);
     await this.audit({
       kind: 'login_succeeded',

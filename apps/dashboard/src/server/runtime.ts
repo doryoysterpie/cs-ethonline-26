@@ -60,12 +60,12 @@ export function getRuntime(): Promise<Runtime> {
   if (state.shared === null) {
     state.shared = (async () => {
       const config = loadDashboardConfig(process.env);
-      const stores = await openStores(config);
       const { database: databasePackage } = await workspace();
       const database = databasePackage.openDatabase(
         databasePackage.parseDatabaseConfig(process.env, { schema: config.databaseSchema }),
         { maxConnections: 4 },
       );
+      const stores = await openStores(config, database);
       return createRuntime(config, stores, database);
     })();
     // A failed start is not cached: the next request tries again and reports

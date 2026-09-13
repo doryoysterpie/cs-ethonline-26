@@ -26,6 +26,7 @@ describe('loadMigrations', () => {
       '0007_clustering_integrity.sql',
       '0008_graph_evidence.sql',
       '0009_evidence_integrity.sql',
+      '0010_dashboard_persistence.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));

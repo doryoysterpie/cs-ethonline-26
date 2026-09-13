@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { openStores, PERSISTENCE_PAUSED_MESSAGE } from './auth/stores.ts';
+import { openStores } from './auth/stores.ts';
 import { loadDashboardConfig } from './config.ts';
 import { isDashboardError } from './errors.ts';
 
@@ -71,7 +71,7 @@ describe('dashboard configuration', () => {
     }
   });
 
-  it('refuses the PostgreSQL store with the fixed persistence-paused message', async () => {
+  it('fails closed when the PostgreSQL store is selected with no database handle', async () => {
     const config = loadDashboardConfig({
       DASHBOARD_ENVIRONMENT: 'production',
       DASHBOARD_ACCOUNT_STORE: 'postgres',
@@ -79,8 +79,8 @@ describe('dashboard configuration', () => {
     await expect(openStores(config)).rejects.toSatisfy(
       (error) =>
         isDashboardError(error) &&
-        error.kind === 'persistence_paused' &&
-        error.message === PERSISTENCE_PAUSED_MESSAGE,
+        error.kind === 'configuration' &&
+        error.code === 'postgres_store_requires_database',
     );
   });
 });

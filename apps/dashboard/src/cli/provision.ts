@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { stdin, stdout, stderr } from 'node:process';
 
+import type { Database } from '@cas/database';
+
 import { SessionService } from '../server/auth/session.ts';
 import { openStores } from '../server/auth/stores.ts';
 import { loadDashboardConfig } from '../server/config.ts';
 import { provisionAccount } from '../server/dal/mutate.ts';
 import { isDashboardError } from '../server/errors.ts';
+import { workspace } from '../server/packages.ts';
 
 /**
  * One-time account provisioning.
@@ -113,9 +116,17 @@ export async function main(argv: readonly string[]): Promise<number> {
     );
     return 2;
   }
+  let database: Database | undefined;
   try {
     const config = loadDashboardConfig(process.env);
-    const stores = await openStores(config);
+    if (config.accountStore === 'postgres') {
+      const { database: databasePackage } = await workspace();
+      database = databasePackage.openDatabase(
+        databasePackage.parseDatabaseConfig(process.env, { schema: config.databaseSchema }),
+        { maxConnections: 2 },
+      );
+    }
+    const stores = await openStores(config, database);
     const sessions = new SessionService(stores);
     const first = await readSecret('Replacement password (not echoed): ');
     const second = await readSecret('Again: ');
@@ -153,6 +164,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     }
     stderr.write(`provision: unexpected failure ${randomUUID().slice(0, 8)}\n`);
     return 5;
+  } finally {
+    await database?.end();
   }
 }
 

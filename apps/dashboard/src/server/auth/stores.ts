@@ -1,30 +1,33 @@
 import 'server-only';
 
+import type { Database } from '@cas/database';
+
 import type { DashboardConfig } from '../config.ts';
 import { DashboardError } from '../errors.ts';
 import { openMemoryStores } from './memory-store.ts';
+import { openPostgresStores } from './postgres-store.ts';
 import type { Stores } from './store.ts';
 
 /**
  * Store selection.
  *
- * The PostgreSQL store is not implemented in this track. Authentication
- * persistence is paused until the next migration number is allocated after the
- * Sprint 5 correction (which reserves 0009), so choosing it fails with one
- * fixed message rather than opening a connection to tables that do not exist.
- * The message is deliberate: a server that booted and silently could not sign
- * anyone in would be the failure mode this project refuses everywhere else.
+ * `memory` needs nothing further: it is refused outside the `local`
+ * environment by `loadDashboardConfig`. `postgres` (migration 0010) opens
+ * over the caller's own database handle, so this function never opens a
+ * connection of its own and never falls back: a `postgres` selection with no
+ * handle, or a handle that cannot reach the database, fails closed rather
+ * than serving a request no account exists to answer.
  */
-export const PERSISTENCE_PAUSED_MESSAGE =
-  'account persistence is paused: the PostgreSQL store waits for the next migration number after the Sprint 5 correction';
-
-export async function openStores(config: DashboardConfig): Promise<Stores> {
+export async function openStores(config: DashboardConfig, database?: Database): Promise<Stores> {
   if (config.accountStore === 'memory') {
     return openMemoryStores(config.memorySeedPath);
   }
-  throw new DashboardError(
-    'persistence_paused',
-    'postgres_store_paused',
-    PERSISTENCE_PAUSED_MESSAGE,
-  );
+  if (database === undefined) {
+    throw new DashboardError(
+      'configuration',
+      'postgres_store_requires_database',
+      'the PostgreSQL store requires an open database handle',
+    );
+  }
+  return openPostgresStores(database);
 }

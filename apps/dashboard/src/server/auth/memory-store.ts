@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { DashboardError } from '../errors.ts';
 import { isVerifiableHash } from './password.ts';
+import { LoginThrottle } from './rate-limit.ts';
 import { isRole, type Role } from './roles.ts';
 import {
   isUsernameShaped,
@@ -339,5 +340,6 @@ export async function openMemoryStores(seedPath: string | null): Promise<MemoryS
     audit: new MemoryAudit(),
     drafts: new MemoryDrafts(),
     queueDecisions: new MemoryQueueDecisions(),
+    throttle: new LoginThrottle(),
   };
 }
