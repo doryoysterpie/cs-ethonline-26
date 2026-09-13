@@ -5,7 +5,9 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "preDeployCommand": ["pnpm db:migrate && pnpm db:check"],
+    "preDeployCommand": [
+      "node apps/worker/dist/cli.js db migrate && node apps/worker/dist/cli.js db check"
+    ],
     "healthcheckPath": "/api/healthz",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
