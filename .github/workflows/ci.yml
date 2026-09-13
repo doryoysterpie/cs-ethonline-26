@@ -23,6 +23,7 @@ on:
       - main
       - 'sprint-*/**'
       - 'parallel/**'
+      - 'release/**'
   pull_request:
 
 # Least privilege. Every job only reads the repository.
