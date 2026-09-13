@@ -14,6 +14,7 @@ import {
   type DatabaseConfig,
   type Queryable,
 } from '@cas/database';
+import { OFFICIAL_GATEWAY_HOST } from '@cas/graph-evidence';
 
 /**
  * PostgreSQL test support, excluded from the build.
@@ -405,6 +406,17 @@ export interface SyntheticRun {
   readonly querySha256?: string | undefined;
 }
 
+/**
+ * The gateway host a synthetic run records. Migration 0009 (constraint
+ * `graph_signal_runs_live_host`) makes a live run naming a reserved-domain
+ * host unwritable, because live evidence comes from the Graph gateway and
+ * never from a file. A live row therefore names the official gateway; a
+ * fixture or replay row keeps the reserved fixture host.
+ */
+function hostFor(origin: DataOrigin): string {
+  return origin === 'live' ? OFFICIAL_GATEWAY_HOST : 'gateway.fixture.example';
+}
+
 /** One signal run under the guard triggers: inserted running, its signals written, then completed. */
 export async function insertSyntheticSignalRun(
   tx: Queryable,
@@ -424,7 +436,7 @@ export async function insertSyntheticSignalRun(
       run.signalVersion ?? 'standardized-tvl-signal@1',
       hex64('contract'),
       run.querySha256 ?? hex64('query'),
-      run.gatewayHost ?? 'gateway.fixture.example',
+      run.gatewayHost ?? hostFor(run.origin),
       randomHex64(),
       run.observations.length,
       run.startedAt,
@@ -503,7 +515,9 @@ async function insertSnapshotRun(
     observations: snapshot.observations,
     startedAt: instant,
     completedAt: instant,
-    gatewayHost: snapshot.gatewayHost,
+    // A replay snapshot's recorded host is reserved. Reused as live, the row
+    // must name the host a live run can carry.
+    gatewayHost: origin === 'live' ? hostFor(origin) : snapshot.gatewayHost,
     querySha256: snapshot.querySha256,
   });
 }
@@ -564,6 +578,8 @@ export interface SeededPipeline {
   /** Incident identifiers in cluster order. */
   readonly clusterIds: readonly string[];
   readonly sourceRowIds: readonly string[];
+  /** The recorded claim the corroborated incident's accepted decision cites. */
+  readonly claimId: string;
   readonly associationIds: readonly string[];
   readonly corroboratedIncidentId: string;
   readonly observedIncidentId: string;
@@ -624,6 +640,7 @@ export async function seedPipeline(
   const clusters = plan.map((members) => ({ id: randomUUID(), members }));
 
   let signals = options.signalRuns;
+  let claimId = '';
   const instants: string[] = signals?.instants ?? [];
 
   await db.withTransaction(async (tx) => {
@@ -897,7 +914,31 @@ export async function seedPipeline(
         ],
       );
     }
-    const claimId = sourceRowIds[corroborated.members[0] ?? 0] ?? null;
+    // Migration 0009: a claim is a record, not a UUID. An accepted `supports`
+    // decision and a corroborated state must cite a recorded claim of the same
+    // incident, clustering run, batch and origin, and that claim must cite a
+    // membership by its source row and row hash. A bare source-row identifier is
+    // refused by the schema's guard.
+    const claimMember = corroborated.members[0] ?? 0;
+    claimId = randomUUID();
+    await tx.query(
+      `INSERT INTO incident_claims (
+         id, clustering_run_id, batch_id, incident_cluster_id, data_origin, source_row_id,
+         row_hash, claim_kind, statement, fingerprint, actor, reason_code, created_at
+       ) VALUES ($1, $2, $3, $4, 'replay', $5, $6, 'reported_headline', $7, $8,
+                 'seed.reviewer', 'seed_recorded', $9::timestamptz)`,
+      [
+        claimId,
+        clusteringRunId,
+        batchId,
+        corroborated.id,
+        sourceRowIds[claimMember],
+        rowHashes[claimMember],
+        'A synthetic reported headline recorded as the seed claim.',
+        hex64(`claim:${corroborated.id}:${claimMember}`),
+        startedAt,
+      ],
+    );
     await tx.query(
       `INSERT INTO evidence_review_actions (
          id, evidence_run_id, association_id, operation, relation, claim_id, reason_code,
@@ -985,6 +1026,7 @@ export async function seedPipeline(
     incidentIds: clusterIds.map((row) => row.id),
     clusterIds: clusters.map((cluster) => cluster.id),
     sourceRowIds,
+    claimId,
     associationIds,
     corroboratedIncidentId: clusterIds.find((row) => row.state === 'corroborated')?.id ?? '',
     observedIncidentId: clusterIds.find((row) => row.state === 'onchain_observed')?.id ?? '',

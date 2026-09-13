@@ -274,9 +274,11 @@ describe('the MCP tools against a migrated database, as the reader role', () => 
       status: 'accepted',
       decidedByHuman: true,
     });
-    expect((associations[0]?.['effective'] as Record<string, unknown>)['claimId']).toBe(
-      seeded.sourceRowIds[0],
-    );
+    // A claim is a record, not a UUID (migration 0009): the effective claim is
+    // the recorded claim the seed created, never a source-row identifier.
+    const effectiveClaim = (associations[0]?.['effective'] as Record<string, unknown>)['claimId'];
+    expect(effectiveClaim).toBe(seeded.claimId);
+    expect(seeded.sourceRowIds).not.toContain(effectiveClaim);
     const text = textOf(result);
     expect(text).not.toContain('A private note that must never leave');
     expect(text).not.toContain('seed.reviewer');
