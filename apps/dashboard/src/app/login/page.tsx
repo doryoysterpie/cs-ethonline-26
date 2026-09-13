@@ -13,7 +13,7 @@ export default async function LoginPage({ searchParams }: { readonly searchParam
   const params = await searchParams;
   return (
     <main className="login">
-      <h1>CAS Chainwatch</h1>
+      <h1>Latest in Cyber</h1>
       <p className="small">Editorial dashboard. Sign in with a provisioned account.</p>
       <Notice code={single(params.notice)} />
       <form className="stack" action={signIn}>

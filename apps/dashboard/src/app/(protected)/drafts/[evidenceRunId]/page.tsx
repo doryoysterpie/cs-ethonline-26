@@ -50,7 +50,7 @@ export default async function DraftPage({
             <th>Claims omitted (no source)</th>
             <th>Names withheld</th>
             <th>Contradicted incidents</th>
-            <th>Crypto incidents</th>
+            <th>Latest in Crypto</th>
           </tr>
         </thead>
         <tbody>
@@ -60,7 +60,9 @@ export default async function DraftPage({
             <td>{view.counts.claimsOmitted}</td>
             <td>{view.counts.namesWithheld}</td>
             <td className="state-contradicted">{view.counts.contradicted}</td>
-            <td>{view.counts.cryptoIncidents}</td>
+            <td className="feed-crypto">
+              <span className="feed-name">{view.counts.cryptoIncidents}</span>
+            </td>
           </tr>
         </tbody>
       </table>

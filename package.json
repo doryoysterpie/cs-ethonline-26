@@ -2,7 +2,7 @@
   "name": "cs-ethonline-26",
   "version": "0.0.0",
   "private": true,
-  "description": "Cyberattack Sunday: Onchain Incident Intelligence (working name CAS Chainwatch). ETHOnline 2026 monorepo.",
+  "description": "Latest in Cyber: onchain incident intelligence for the weekly Cyberattack Sunday workflow. ETHOnline 2026 monorepo.",
   "type": "module",
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.10.0",

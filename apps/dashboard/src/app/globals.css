@@ -1,14 +1,46 @@
+/*
+ * Latest in Cyber: the owner's visual identity.
+ *
+ * Deep navy rather than black. A black cybersecurity dashboard is the genre
+ * default and says nothing about this product; navy carries the same low glare
+ * while leaving room for the accent colours to read as a palette rather than
+ * as warning lights.
+ *
+ * Every foreground token below was measured against both surfaces before it
+ * was chosen. The lowest ratio in the set is magenta on the raised panel at
+ * 6.37:1, comfortably past the 4.5:1 WCAG AA floor for body text; off-white on
+ * navy is 15.4:1. Magenta is an accent and is used for one thing — the crypto
+ * feed — so it stays restrained rather than decorative.
+ */
 :root {
-  color-scheme: light;
-  --ink: #1b1b1f;
-  --muted: #5c5f66;
-  --line: #d9dbe0;
-  --paper: #ffffff;
-  --panel: #f5f6f8;
-  --accent: #1f4e79;
-  --warn: #8a3b12;
-  --danger: #8c1d18;
-  --ok: #1d6b3a;
+  color-scheme: dark;
+
+  /* Surfaces */
+  --navy: #0d1b2e;
+  --paper: #0d1b2e;
+  --panel: #152742;
+  --line: #24395c;
+
+  /* Text */
+  --ink: #eef2f7;
+  --muted: #a8b8cc;
+
+  /* Brand accents, all AA on both surfaces */
+  --sky: #6fc3f7;
+  --orange: #ff9f4a;
+  --yellow: #ffd75e;
+  --green: #5fd68b;
+  --magenta: #ff7bc8;
+
+  /* Semantic roles, mapped onto the brand rather than invented beside it */
+  --accent: var(--sky);
+  --warn: var(--orange);
+  --danger: var(--magenta);
+  --ok: var(--green);
+
+  /* Pixel-inspired detail: square corners and a one-step shadow, no blur. */
+  --radius: 2px;
+  --pixel-shadow: 2px 2px 0 var(--line);
 }
 
 * {
@@ -143,7 +175,7 @@ code,
 
 .limitation {
   border-left: 4px solid var(--warn);
-  background: #fff8f2;
+  background: var(--panel);
   padding: 0.5rem 0.75rem;
   margin: 0.75rem 0;
   font-size: 0.9rem;
@@ -191,9 +223,10 @@ button {
   padding: 0.35rem 0.8rem;
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #fff;
-  border-radius: 3px;
+  color: var(--navy);
+  border-radius: var(--radius);
   cursor: pointer;
+  font-weight: 600;
 }
 
 button.quiet {
@@ -246,4 +279,65 @@ button.danger {
 .small {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+/*
+ * Keyboard navigation must be visible. A focus ring is drawn outside the
+ * element so it never changes layout, and it uses yellow, which is the
+ * highest-contrast token in the palette on both surfaces (12.47:1 on navy).
+ */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: 2px;
+  border-radius: 0;
+}
+
+/* Pixel-inspired detail: a hard offset edge instead of a soft shadow. */
+.nav,
+.login,
+.markdown {
+  box-shadow: var(--pixel-shadow);
+}
+
+.origin,
+.notice,
+.limitation {
+  border-radius: var(--radius);
+}
+
+/*
+ * The crypto feed's accent. Magenta appears here and nowhere else, so it reads
+ * as an identifier rather than as decoration.
+ */
+.feed-crypto {
+  border-left: 4px solid var(--magenta);
+  padding-left: 0.6rem;
+}
+
+.feed-crypto > .feed-name {
+  color: var(--magenta);
+  font-weight: 600;
+}
+
+/*
+ * Respect a reduced-motion preference. The interface has no essential motion,
+ * so this removes transitions and animation outright rather than shortening
+ * them.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Honour a forced-colours mode rather than fighting it. */
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 3px solid CanvasText;
+  }
 }

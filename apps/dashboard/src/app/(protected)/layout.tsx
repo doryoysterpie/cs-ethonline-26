@@ -23,7 +23,7 @@ export default async function ProtectedLayout({ children }: { readonly children:
   return (
     <div className="shell">
       <nav className="nav" aria-label="Sections">
-        <h1>CAS Chainwatch</h1>
+        <h1>Latest in Cyber</h1>
         <ul>
           <li>
             <Link href="/command-center">Command center</Link>

@@ -87,6 +87,27 @@ Decided by, Supersedes.
 - **Decided by:** Project owner, provisionally, via the Sprint 0 charter.
 - **Supersedes:** none.
 
+### D5 amendment, 2026-09-12: release naming
+
+Not a new decision. The release integration applies the owner's naming brief, which D5 allowed
+to change without code changes.
+
+- **Product and dashboard:** Latest in Cyber.
+- **Weekly cyberattack workflow:** Cyberattack Sunday.
+- **Crypto-focused editorial feed:** Latest in Crypto. The interface calls it a feed, never a
+  filter.
+- **Unchanged machine identifiers:** the repository name `cs-ethonline-26`, the `@cas/` package
+  scope, and the MCP server and skill name `cas-chainwatch-mcp`. A host's configuration and the
+  skill contract tests depend on them, so renaming them is a separate change.
+- **Historical records** that quote `CAS Chainwatch`, such as the Sprint 1 report's probe
+  output and the check-in drafts, stay as written.
+- **Visual identity:** a deep navy ground, off-white text, and sky blue, orange, yellow, green and
+  restrained magenta accents, with pixel-inspired borders and shadows. Every text colour meets
+  WCAG AA contrast on both surfaces it appears on, focus is a visible yellow outline, and
+  reduced-motion and forced-colours preferences are honoured. The Content Security Policy,
+  sanitization and browser controls are unchanged.
+- **Decided by:** Project owner, via the release integration brief of 2026-09-12.
+
 ## D6 Public-feed exposure
 
 - **Date:** 2026-09-04

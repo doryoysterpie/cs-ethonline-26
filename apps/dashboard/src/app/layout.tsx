@@ -3,8 +3,9 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata = {
-  title: 'CAS Chainwatch dashboard',
-  description: 'Cyberattack Sunday: Onchain Incident Intelligence. Editorial dashboard.',
+  title: 'Latest in Cyber',
+  description:
+    'Latest in Cyber: onchain incident intelligence. The editorial dashboard for the weekly Cyberattack Sunday workflow.',
 };
 
 export default function RootLayout({ children }: { readonly children: ReactNode }) {

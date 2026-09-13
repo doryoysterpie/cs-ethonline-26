@@ -176,7 +176,7 @@ export async function runProbe(options: ProbeOptions): Promise<ProbeRun> {
   }
   const redact = client.redact;
 
-  log(`CAS Chainwatch live Graph probe. query sha256=${queryDocumentSha256()}`);
+  log(`Latest in Cyber live Graph probe. query sha256=${queryDocumentSha256()}`);
   log(
     redact(
       `Queried at ${(options.now ?? (() => new Date()))().toISOString()} via ${client.gateway.provider} ${client.gateway.base} (credentials redacted).`,
