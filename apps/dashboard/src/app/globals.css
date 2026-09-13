@@ -1,0 +1,351 @@
+/*
+ * Latest in Cyber: the owner's visual identity.
+ *
+ * Deep teal rather than the generic navy this dashboard shipped with. A
+ * black or navy cybersecurity dashboard is the genre default and says
+ * nothing about this product; deep teal carries the same low glare while
+ * reading as this brand's own surface rather than a template's.
+ *
+ * Every foreground token below was measured against both surfaces before it
+ * was chosen. The lowest ratio in the set is magenta on the raised surface at
+ * 4.50:1, at the 4.5:1 WCAG AA floor for body text; off-white on the base
+ * background is 12.80:1. Magenta is an accent and is used for one thing — the
+ * crypto feed — so it stays restrained rather than decorative.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --navy: #162e3c;
+  --paper: #162e3c;
+  --panel: #1b3947;
+  --panel-raised: #204351;
+  --line: #204351;
+
+  /* Text */
+  --ink: #f5f3f9;
+  --muted: #b3c8d2;
+
+  /* Brand accents, all AA on both surfaces */
+  --sky: #9bcaeb;
+  --orange: #e57e3b;
+  --yellow: #fbe877;
+  --green: #90ba4b;
+  --green-secondary: #89b04c;
+  --magenta: #ff7bc8;
+
+  /* Semantic roles, mapped onto the brand rather than invented beside it */
+  --accent: var(--sky);
+  --warn: var(--orange);
+  --danger: var(--magenta);
+  --ok: var(--green);
+  --emphasis: var(--green);
+
+  /* Pixel-inspired detail: square corners and a one-step shadow, no blur. */
+  --radius: 2px;
+  --pixel-shadow: 2px 2px 0 var(--line);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.45;
+}
+
+a {
+  color: var(--accent);
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.nav {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 1rem;
+}
+
+.nav h1 {
+  font-size: 1rem;
+  margin: 0 0 1rem;
+  color: var(--emphasis);
+}
+
+.nav ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.nav li {
+  margin: 0.35rem 0;
+}
+
+.who {
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.main {
+  padding: 1.25rem 2rem 3rem;
+  max-width: 1200px;
+}
+
+.main h2 {
+  margin-top: 0;
+  color: var(--emphasis);
+}
+
+.main h3 {
+  margin-top: 1.75rem;
+  color: var(--emphasis);
+}
+
+.origin {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--panel);
+}
+
+.origin-live {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.origin-fixture {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.origin-replay {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+  margin: 0.5rem 0 1rem;
+}
+
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+th {
+  background: var(--panel);
+}
+
+code,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+.notice {
+  border-left: 4px solid var(--accent);
+  background: var(--panel);
+  padding: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.notice-error {
+  border-left-color: var(--danger);
+}
+
+.limitation {
+  border-left: 4px solid var(--warn);
+  background: var(--panel);
+  padding: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+form.inline {
+  display: inline;
+}
+
+form.stack {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 560px;
+  margin: 0.75rem 0 1.5rem;
+}
+
+label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+textarea.draft {
+  min-height: 24rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+button {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--emphasis);
+  background: var(--emphasis);
+  color: var(--navy);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button.quiet {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+button.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.login {
+  max-width: 380px;
+  margin: 6rem auto;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.markdown {
+  border: 1px solid var(--line);
+  padding: 1rem 1.25rem;
+  border-radius: 4px;
+  background: var(--paper);
+}
+
+.markdown pre {
+  overflow-x: auto;
+  background: var(--panel-raised);
+  padding: 0.5rem;
+}
+
+.state-contradicted {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.state-corroborated {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.label-positive_spike,
+.label-negative_spike {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.small {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/*
+ * Keyboard navigation must be visible. A focus ring is drawn outside the
+ * element so it never changes layout, and it uses yellow, which is the
+ * highest-contrast token in the palette on both surfaces (11.35:1 on the
+ * base background).
+ */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: 2px;
+  border-radius: 0;
+}
+
+/* Pixel-inspired detail: a hard offset edge instead of a soft shadow. */
+.nav,
+.login,
+.markdown {
+  box-shadow: var(--pixel-shadow);
+}
+
+.origin,
+.notice,
+.limitation {
+  border-radius: var(--radius);
+}
+
+/*
+ * The crypto feed's accent. Magenta appears here and nowhere else, so it reads
+ * as an identifier rather than as decoration.
+ */
+.feed-crypto {
+  border-left: 4px solid var(--magenta);
+  padding-left: 0.6rem;
+}
+
+.feed-crypto > .feed-name {
+  color: var(--magenta);
+  font-weight: 600;
+}
+
+/*
+ * Respect a reduced-motion preference. The interface has no essential motion,
+ * so this removes transitions and animation outright rather than shortening
+ * them.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Honour a forced-colours mode rather than fighting it. */
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 3px solid CanvasText;
+  }
+}

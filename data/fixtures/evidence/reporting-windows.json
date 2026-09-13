@@ -1,0 +1,193 @@
+{
+  "scenarios": [
+    {
+      "id": "volume-spike",
+      "expect": {
+        "volume": "positive_spike",
+        "concentration": "normal"
+      },
+      "windows": [
+        {
+          "windowId": "replay-window-01",
+          "startsAt": "2026-08-02T05:03:11Z",
+          "endsAt": "2026-08-09T05:03:11Z",
+          "sourceStoryCount": 40,
+          "incidentCount": 21,
+          "multiSourceIncidentCount": 4
+        },
+        {
+          "windowId": "replay-window-02",
+          "startsAt": "2026-08-09T05:03:11Z",
+          "endsAt": "2026-08-16T05:03:11Z",
+          "sourceStoryCount": 44,
+          "incidentCount": 24,
+          "multiSourceIncidentCount": 5
+        },
+        {
+          "windowId": "replay-window-03",
+          "startsAt": "2026-08-16T05:03:11Z",
+          "endsAt": "2026-08-23T05:03:11Z",
+          "sourceStoryCount": 38,
+          "incidentCount": 20,
+          "multiSourceIncidentCount": 3
+        },
+        {
+          "windowId": "replay-window-04",
+          "startsAt": "2026-08-23T05:03:11Z",
+          "endsAt": "2026-08-30T05:03:11Z",
+          "sourceStoryCount": 210,
+          "incidentCount": 72,
+          "multiSourceIncidentCount": 15
+        }
+      ]
+    },
+    {
+      "id": "story-concentration",
+      "expect": {
+        "volume": "normal",
+        "concentration": "positive_spike"
+      },
+      "windows": [
+        {
+          "windowId": "replay-window-01",
+          "startsAt": "2026-08-02T05:03:11Z",
+          "endsAt": "2026-08-09T05:03:11Z",
+          "sourceStoryCount": 40,
+          "incidentCount": 21,
+          "multiSourceIncidentCount": 4
+        },
+        {
+          "windowId": "replay-window-02",
+          "startsAt": "2026-08-09T05:03:11Z",
+          "endsAt": "2026-08-16T05:03:11Z",
+          "sourceStoryCount": 44,
+          "incidentCount": 24,
+          "multiSourceIncidentCount": 5
+        },
+        {
+          "windowId": "replay-window-03",
+          "startsAt": "2026-08-16T05:03:11Z",
+          "endsAt": "2026-08-23T05:03:11Z",
+          "sourceStoryCount": 38,
+          "incidentCount": 20,
+          "multiSourceIncidentCount": 3
+        },
+        {
+          "windowId": "replay-window-04",
+          "startsAt": "2026-08-23T05:03:11Z",
+          "endsAt": "2026-08-30T05:03:11Z",
+          "sourceStoryCount": 46,
+          "incidentCount": 9,
+          "multiSourceIncidentCount": 7
+        }
+      ]
+    },
+    {
+      "id": "high-incident-count-no-volume-spike",
+      "expect": {
+        "volume": "normal",
+        "concentration": "normal"
+      },
+      "windows": [
+        {
+          "windowId": "replay-window-01",
+          "startsAt": "2026-08-02T05:03:11Z",
+          "endsAt": "2026-08-09T05:03:11Z",
+          "sourceStoryCount": 40,
+          "incidentCount": 21,
+          "multiSourceIncidentCount": 4
+        },
+        {
+          "windowId": "replay-window-02",
+          "startsAt": "2026-08-09T05:03:11Z",
+          "endsAt": "2026-08-16T05:03:11Z",
+          "sourceStoryCount": 44,
+          "incidentCount": 24,
+          "multiSourceIncidentCount": 5
+        },
+        {
+          "windowId": "replay-window-03",
+          "startsAt": "2026-08-16T05:03:11Z",
+          "endsAt": "2026-08-23T05:03:11Z",
+          "sourceStoryCount": 38,
+          "incidentCount": 20,
+          "multiSourceIncidentCount": 3
+        },
+        {
+          "windowId": "replay-window-04",
+          "startsAt": "2026-08-23T05:03:11Z",
+          "endsAt": "2026-08-30T05:03:11Z",
+          "sourceStoryCount": 47,
+          "incidentCount": 44,
+          "multiSourceIncidentCount": 3
+        }
+      ]
+    },
+    {
+      "id": "insufficient-windows",
+      "expect": {
+        "volume": "insufficient_history",
+        "concentration": null
+      },
+      "windows": [
+        {
+          "windowId": "replay-window-01",
+          "startsAt": "2026-08-02T05:03:11Z",
+          "endsAt": "2026-08-09T05:03:11Z",
+          "sourceStoryCount": 40,
+          "incidentCount": 21,
+          "multiSourceIncidentCount": 4
+        },
+        {
+          "windowId": "replay-window-02",
+          "startsAt": "2026-08-09T05:03:11Z",
+          "endsAt": "2026-08-16T05:03:11Z",
+          "sourceStoryCount": 44,
+          "incidentCount": 24,
+          "multiSourceIncidentCount": 5
+        }
+      ]
+    },
+    {
+      "id": "flat-baseline",
+      "expect": {
+        "volume": "positive_spike",
+        "concentration": "normal"
+      },
+      "windows": [
+        {
+          "windowId": "replay-window-01",
+          "startsAt": "2026-08-02T05:03:11Z",
+          "endsAt": "2026-08-09T05:03:11Z",
+          "sourceStoryCount": 40,
+          "incidentCount": 21,
+          "multiSourceIncidentCount": 4
+        },
+        {
+          "windowId": "replay-window-02",
+          "startsAt": "2026-08-09T05:03:11Z",
+          "endsAt": "2026-08-16T05:03:11Z",
+          "sourceStoryCount": 40,
+          "incidentCount": 21,
+          "multiSourceIncidentCount": 4
+        },
+        {
+          "windowId": "replay-window-03",
+          "startsAt": "2026-08-16T05:03:11Z",
+          "endsAt": "2026-08-23T05:03:11Z",
+          "sourceStoryCount": 40,
+          "incidentCount": 21,
+          "multiSourceIncidentCount": 4
+        },
+        {
+          "windowId": "replay-window-04",
+          "startsAt": "2026-08-23T05:03:11Z",
+          "endsAt": "2026-08-30T05:03:11Z",
+          "sourceStoryCount": 41,
+          "incidentCount": 22,
+          "multiSourceIncidentCount": 4
+        }
+      ]
+    }
+  ]
+}

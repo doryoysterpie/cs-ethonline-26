@@ -1,0 +1,37 @@
+{
+  "name": "@cas/worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pipeline worker. Sprint 2: streaming CSV validation and manual on-demand editorial import into PostgreSQL through @cas/database, with a command-line interface. Later sprints add classification, queue routing, clustering and Graph correlation.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:db": "pnpm -w exec turbo run build --filter=@cas/worker && vitest run --config vitest.db.config.ts",
+    "cli": "pnpm -w exec turbo run build --filter=@cas/worker && node dist/cli.js"
+  },
+  "dependencies": {
+    "@cas/classification": "workspace:*",
+    "@cas/clustering": "workspace:*",
+    "@cas/contracts": "workspace:*",
+    "@cas/database": "workspace:*",
+    "@cas/drafting": "workspace:*",
+    "@cas/evidence": "workspace:*",
+    "@cas/sheets-intake": "workspace:*",
+    "csv-parse": "catalog:",
+    "htmlparser2": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

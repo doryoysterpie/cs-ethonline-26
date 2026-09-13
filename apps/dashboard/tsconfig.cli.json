@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"],
+    "rewriteRelativeImportExtensions": true,
+    "esModuleInterop": true
+  },
+  "include": ["src/server/**/*.ts", "src/cli/**/*.ts", "src/test/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/server/dal/principal.ts"]
+}

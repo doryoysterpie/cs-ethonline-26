@@ -1,0 +1,84 @@
+{
+  "gatewayHost": "gateway.fixture.example",
+  "querySha256": "d8d8de086d784f6bf3a6a33f26bf1bacbf22944df319a73c0099b05e7cd64bc9",
+  "observations": [
+    {
+      "chain": "ethereum",
+      "protocolSlug": "aave-v3",
+      "subgraphDeploymentId": "MM5jyh7quFSHXhH8siGcCehrjmbqyG9G",
+      "blockNumber": 21047600,
+      "blockHash": "0xeb2423e8bdc6de5cdd0209b296ec7c98c663b2c14cb8e29a50aabc01c90c4fb1",
+      "observedAt": "2026-09-01T03:17:41Z",
+      "baselineObservedAt": "2026-08-31T03:17:41Z",
+      "currentTvlUsd": "7383093200.00",
+      "baselineTvlUsd": "7412000000.00",
+      "deltaUsd": "-28906800.00",
+      "deltaPercent": "-0.39"
+    },
+    {
+      "chain": "ethereum",
+      "protocolSlug": "spark-lend",
+      "subgraphDeploymentId": "KrrdEMs2yxbcmX7Q4wbi3F41jMU2zyAh",
+      "blockNumber": 21047600,
+      "blockHash": "0x2945bb9b54610d89ae26b62eb1e5f581e71d3b758f01789ddf94cca2e5e8649a",
+      "observedAt": "2026-09-01T03:17:41Z",
+      "baselineObservedAt": "2026-08-31T03:17:41Z",
+      "currentTvlUsd": "2169465400.00",
+      "baselineTvlUsd": "2183000000.00",
+      "deltaUsd": "-13534600.00",
+      "deltaPercent": "-0.62"
+    },
+    {
+      "chain": "ethereum",
+      "protocolSlug": "compound-v3",
+      "subgraphDeploymentId": "HcVEm6Pk4HGiiiyjHzw2PWmEuyDEPQza",
+      "blockNumber": 21047600,
+      "blockHash": "0xc6ed211d75762262ad1f7889dfad1fd455927020bdbe2f8c099ef93fb2cc7a91",
+      "observedAt": "2026-09-01T03:17:41Z",
+      "baselineObservedAt": "2026-08-31T03:17:41Z",
+      "currentTvlUsd": "1098590400.00",
+      "baselineTvlUsd": "1104000000.00",
+      "deltaUsd": "-5409600.00",
+      "deltaPercent": "-0.49"
+    },
+    {
+      "chain": "ethereum",
+      "protocolSlug": "makerdao",
+      "subgraphDeploymentId": "q5EdPZ53reuh8PUK9u7hEmPHr13TwKs5",
+      "blockNumber": 21047600,
+      "blockHash": "0xb8e36a80fd4e4692663f47e9c76a536b55adafddbe5c9504fe70cd233b5a8d1a",
+      "observedAt": "2026-09-01T03:17:41Z",
+      "baselineObservedAt": "2026-08-31T03:17:41Z",
+      "currentTvlUsd": "5320000000.00",
+      "baselineTvlUsd": "5320000000.00",
+      "deltaUsd": "0.00",
+      "deltaPercent": "0"
+    },
+    {
+      "chain": "base",
+      "protocolSlug": "seamless-protocol",
+      "subgraphDeploymentId": "e8Z4MNL4v1R2osoGjiN2s3aDYC7v6rNU",
+      "blockNumber": 19497600,
+      "blockHash": "0x916bf527315307ad71a5d5871639d80fa595fa465782bcf80baa727c6894c9af",
+      "observedAt": "2026-09-01T03:17:41Z",
+      "baselineObservedAt": "2026-08-31T03:17:41Z",
+      "currentTvlUsd": "183190400.00",
+      "baselineTvlUsd": "184000000.00",
+      "deltaUsd": "-809600.00",
+      "deltaPercent": "-0.44"
+    },
+    {
+      "chain": "base",
+      "protocolSlug": "moonwell",
+      "subgraphDeploymentId": "DHZQU5iiLbQWtfC1Fx6MyjUys8owNPiS",
+      "blockNumber": 19497600,
+      "blockHash": "0x98a827e12dea623822fab4a2d7316e267bbcac1daaa4c6b93f53ce9d3235ea57",
+      "observedAt": "2026-09-01T03:17:41Z",
+      "baselineObservedAt": "2026-08-31T03:17:41Z",
+      "currentTvlUsd": "396404500.00",
+      "baselineTvlUsd": "397000000.00",
+      "deltaUsd": "-595500.00",
+      "deltaPercent": "-0.15"
+    }
+  ]
+}

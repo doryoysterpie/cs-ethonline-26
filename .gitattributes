@@ -1,0 +1,5 @@
+# The weekly synthetic fixture intentionally uses CRLF line endings, because the
+# real weekly exports do. Keep its bytes exactly as committed on every platform
+# and tell `git diff --check` that its carriage returns are not trailing
+# whitespace. No other file is affected.
+data/fixtures/editorial/weekly-synthetic.csv -text whitespace=cr-at-eol

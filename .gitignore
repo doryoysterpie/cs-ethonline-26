@@ -1,0 +1,51 @@
+# Secrets. Only .env.example is tracked; it holds no real values.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Google service-account keys. The connector refuses a key inside the working
+# tree, so this rule is a second line rather than the boundary; the boundary is
+# that the key lives outside the repository entirely.
+*service-account*.json
+*-credentials.json
+gcp-key*.json
+
+# Dependencies and build output
+node_modules/
+dist/
+.turbo/
+coverage/
+
+# Editorial output. Drafts (see docs/DECISIONS.md D3) may contain text derived
+# from third-party reporting and are never committed by default.
+output/
+
+# Raw editorial inputs. The Excel/RSS exports and weekly snapshot sheets contain
+# third-party article text and must never enter the repository
+# (docs/DATA_INPUTS.md). Synthetic fixtures under data/fixtures are the only
+# permitted tabular data.
+data/raw/
+data/private/
+*.csv
+*.xlsx
+*.xlsm
+!data/fixtures/**/*.csv
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Next.js build output and generated type stubs (apps/dashboard)
+.next/
+next-env.d.ts
+# Browser test output (apps/dashboard)
+test-results/
+playwright-report/
