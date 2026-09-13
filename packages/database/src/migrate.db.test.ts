@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { copyFile, mkdtemp, readdir, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -6,7 +9,7 @@ import type { Database } from './database.js';
 import { openDatabase, parseDatabaseConfig } from './index.js';
 import { isDatabaseError } from './errors.js';
 import { countAllRows } from './ingestion.js';
-import { migrationStatus, runMigrations } from './migrate.js';
+import { MIGRATIONS_DIRECTORY, migrationStatus, runMigrations } from './migrate.js';
 import { listTables } from './schema.js';
 import { migrationsUpTo, openIsolatedSchema, type IsolatedSchema } from './test-support.js';
 
@@ -31,6 +34,7 @@ const EXPECTED_TABLES = [
   'incident_signal_associations',
   'incident_subjects',
   'login_throttle_buckets',
+  'otp_challenges',
   'queue_decisions',
   'review_entries',
   'review_snapshots',
@@ -135,21 +139,81 @@ describe('migration runner against a fresh schema', () => {
       '0008_graph_evidence.sql',
       '0009_evidence_integrity.sql',
       '0010_dashboard_persistence.sql',
+      '0011_passwordless_email_auth.sql',
     ]);
     expect(first.alreadyApplied).toBe(0);
-    expect(first.total).toBe(10);
+    expect(first.total).toBe(11);
     const tables = await isolated.base.withClient((c) => listTables(c, isolated.name));
     expect(tables).toEqual(EXPECTED_TABLES);
 
     const second = await runMigrations(isolated.db);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied).toBe(10);
+    expect(second.alreadyApplied).toBe(11);
 
     const status = await migrationStatus(isolated.db);
     expect(status.pending).toEqual([]);
     expect(status.drift).toEqual([]);
-    expect(status.applied.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(status.applied.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     expect(status.applied[0]?.appliedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('upgrades a schema that already has 0010 applied and holds a legacy password account, without data loss', async () => {
+    const subset = await migrationsUpTo(10);
+    try {
+      const before = await runMigrations(isolated.db, { directory: subset.directory });
+      expect(before.applied.at(-1)).toBe('0010_dashboard_persistence.sql');
+      await isolated.db.withClient((c) =>
+        c.query(
+          `INSERT INTO accounts (id, username, role, password_hash, created_at, password_changed_at)
+           VALUES ($1, 'admin', 'admin', $2, now(), now())`,
+          [randomUUID(), '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2g'],
+        ),
+      );
+
+      const upgrade = await runMigrations(isolated.db);
+      expect(upgrade.applied).toEqual(['0011_passwordless_email_auth.sql']);
+      expect(upgrade.alreadyApplied).toBe(10);
+
+      const legacy = await isolated.db.withClient((c) =>
+        c.query<{ username: string; normalized_email: string | null; has_password: boolean }>(
+          `SELECT username, normalized_email,
+                  password_hash IS NOT NULL AS has_password
+             FROM accounts WHERE username = 'admin'`,
+        ),
+      );
+      expect(legacy.rows).toEqual([
+        { username: 'admin', normalized_email: null, has_password: true },
+      ]);
+      expect((await migrationStatus(isolated.db)).pending).toEqual([]);
+    } finally {
+      await subset.cleanup();
+    }
+  });
+
+  it('refuses 0011 when applied without its 0010 precondition, and leaves no partial table', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'cas-migrations-gap-'));
+    try {
+      for (const fileName of await readdir(MIGRATIONS_DIRECTORY)) {
+        if (fileName.startsWith('0010_')) continue; // deliberately omit 0010
+        await copyFile(path.join(MIGRATIONS_DIRECTORY, fileName), path.join(directory, fileName));
+      }
+      await expect(runMigrations(isolated.db, { directory })).rejects.toMatchObject({
+        kind: 'migration',
+      });
+      const table = await isolated.db.withClient((c) =>
+        c.query<{ reg: string | null }>(
+          "SELECT pg_catalog.to_regclass(pg_catalog.quote_ident($1) || '.otp_challenges')::text AS reg",
+          [isolated.name],
+        ),
+      );
+      expect(table.rows[0]?.reg).toBeNull();
+      const applied = await isolated.db.withClient((c) =>
+        c.query<{ version: number }>('SELECT version FROM schema_migrations ORDER BY version'),
+      );
+      expect(applied.rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('upgrades a schema that already has 0001 applied and holds valid rows, without data loss', async () => {
@@ -179,6 +243,7 @@ describe('migration runner against a fresh schema', () => {
         '0008_graph_evidence.sql',
         '0009_evidence_integrity.sql',
         '0010_dashboard_persistence.sql',
+        '0011_passwordless_email_auth.sql',
       ]);
       expect(upgrade.alreadyApplied).toBe(1);
       expect(await isolated.db.withClient(countAllRows)).toEqual(counts);
@@ -282,12 +347,12 @@ describe('migration runner against a fresh schema', () => {
       const [a, b] = await Promise.all([runMigrations(isolated.db), runMigrations(other)]);
       // Every migration is applied exactly once in total, whichever runner
       // won the lock; the loser finds nothing pending.
-      expect(a.applied.length + b.applied.length).toBe(10);
+      expect(a.applied.length + b.applied.length).toBe(11);
       expect(Math.min(a.applied.length, b.applied.length)).toBe(0);
       const rows = await isolated.db.withClient((c) =>
         c.query<{ count: string }>('SELECT count(*)::text AS count FROM schema_migrations'),
       );
-      expect(rows.rows[0]?.count).toBe('10');
+      expect(rows.rows[0]?.count).toBe('11');
     } finally {
       await other.end();
     }

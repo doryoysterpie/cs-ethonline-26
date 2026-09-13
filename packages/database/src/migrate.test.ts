@@ -27,6 +27,7 @@ describe('loadMigrations', () => {
       '0008_graph_evidence.sql',
       '0009_evidence_integrity.sql',
       '0010_dashboard_persistence.sql',
+      '0011_passwordless_email_auth.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));

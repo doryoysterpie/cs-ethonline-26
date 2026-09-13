@@ -256,7 +256,10 @@ export interface DraftViewDto {
 
 export interface AccountDto {
   readonly id: string;
-  readonly username: string;
+  /** Absent for an email-identified account. */
+  readonly username: string | null;
+  /** Absent for a legacy username/password account. */
+  readonly normalizedEmail: string | null;
   readonly role: Role;
   readonly createdAt: string;
   readonly passwordChangedAt: string;

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { Notice } from '../../components/ui.tsx';
 import { currentPrincipal } from '../../server/dal/principal.ts';
 import { single, type SearchParams } from '../page-support.ts';
-import { signIn } from './actions.ts';
+import { requestCode } from './actions.ts';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,24 +14,14 @@ export default async function LoginPage({ searchParams }: { readonly searchParam
   return (
     <main className="login">
       <h1>Latest in Cyber</h1>
-      <p className="small">Editorial dashboard. Sign in with a provisioned account.</p>
+      <p className="small">Editorial dashboard. Sign in with your approved email.</p>
       <Notice code={single(params.notice)} />
-      <form className="stack" action={signIn}>
+      <form className="stack" action={requestCode}>
         <label>
-          Username
-          <input name="username" autoComplete="username" required maxLength={32} />
+          Email
+          <input name="email" type="email" autoComplete="email" required maxLength={254} />
         </label>
-        <label>
-          Password
-          <input
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            maxLength={128}
-          />
-        </label>
-        <button type="submit">Sign in</button>
+        <button type="submit">Send me a code</button>
       </form>
     </main>
   );

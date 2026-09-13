@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { Database } from '@cas/database';
 
+import { loadOtpEmailConfig } from './auth/email-config.ts';
 import { SessionService, type SessionServiceOptions } from './auth/session.ts';
 import type { Stores } from './auth/store.ts';
 import { openStores } from './auth/stores.ts';
@@ -66,7 +67,11 @@ export function getRuntime(): Promise<Runtime> {
         { maxConnections: 4 },
       );
       const stores = await openStores(config, database);
-      return createRuntime(config, stores, database);
+      const otp = loadOtpEmailConfig(process.env);
+      return createRuntime(config, stores, database, {
+        emailProvider: otp.provider,
+        otpPepper: otp.pepper,
+      });
     })();
     // A failed start is not cached: the next request tries again and reports
     // the same fixed configuration error rather than a stale one.

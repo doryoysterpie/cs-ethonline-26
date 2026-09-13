@@ -99,6 +99,7 @@ describe('data-access layer against PostgreSQL', () => {
       principals[role] = {
         accountId: account.record.id,
         username: account.record.username,
+        normalizedEmail: null,
         role,
         sessionId: randomUUID(),
         sessionToken: 'a'.repeat(43),

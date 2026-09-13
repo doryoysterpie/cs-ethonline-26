@@ -58,3 +58,40 @@ export function readCookie(cookieHeader: string | null, name: string): string | 
   }
   return null;
 }
+
+/**
+ * The pending-verification cookie: holds an OTP challenge's own id between
+ * the email screen and the code screen, so the code screen never needs the
+ * email again — not in the form, not in the URL. It grants nothing by
+ * itself: it only names which challenge the next code is checked against,
+ * and that challenge is otherwise exactly as bounded (one code, an attempt
+ * cap, a fixed expiry) whether or not this cookie is ever read back. Same
+ * attributes as the session cookie, and the same `__Host-` reasoning, but a
+ * distinct name so the two are never confused, and a maximum age tied to the
+ * code's own expiry rather than a session's.
+ */
+export const OTP_PENDING_COOKIE_BASE = 'cas_otp_pending';
+
+export function otpPendingCookieName(environment: DashboardEnvironment): string {
+  return environment === 'local' ? OTP_PENDING_COOKIE_BASE : `__Host-${OTP_PENDING_COOKIE_BASE}`;
+}
+
+export function otpPendingCookieAttributes(
+  environment: DashboardEnvironment,
+  maxAgeSeconds: number,
+): SessionCookieAttributes {
+  return {
+    name: otpPendingCookieName(environment),
+    httpOnly: true,
+    secure: environment !== 'local',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: maxAgeSeconds,
+  };
+}
+
+/** The `Set-Cookie` header value that clears the pending-verification cookie. */
+export function clearingOtpPendingCookieHeader(environment: DashboardEnvironment): string {
+  const secure = environment !== 'local' ? '; Secure' : '';
+  return `${otpPendingCookieName(environment)}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${secure}`;
+}

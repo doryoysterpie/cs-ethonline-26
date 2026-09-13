@@ -4,9 +4,10 @@ import { randomUUID } from 'node:crypto';
 
 import { REVIEW_STATES, type ReviewState } from '@cas/contracts';
 
+import { normalizeEmail } from '../auth/email.ts';
 import { assertPassword, hashPassword } from '../auth/password.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
-import type { Principal } from '../auth/session.ts';
+import { displayIdentity, type Principal } from '../auth/session.ts';
 import { isUsernameShaped, type AccountRecord, type AuditEvent } from '../auth/store.ts';
 import { DashboardError, validation } from '../errors.ts';
 import {
@@ -161,7 +162,7 @@ export async function mergeIncidentsAction(
       incidentIds,
       reasonCode: reason,
       note,
-      actor: principal.username,
+      actor: displayIdentity(principal),
       expectedRevision,
     });
     await audit(runtime, {
@@ -212,7 +213,7 @@ export async function splitIncidentAction(
       membershipIds,
       reasonCode: reason,
       note,
-      actor: principal.username,
+      actor: displayIdentity(principal),
       expectedRevision,
     });
     await audit(runtime, {
@@ -283,7 +284,7 @@ export async function decideEvidence(
       relation,
       claimId,
       reasonCode: reason,
-      actor: principal.username,
+      actor: displayIdentity(principal),
       rationale,
     });
     await audit(runtime, {
@@ -463,6 +464,7 @@ export async function provisionAccount(
       passwordChangedAt: now.toISOString(),
       disabledAt: null,
       expiresAt,
+      normalizedEmail: null,
     };
     await runtime.stores.accounts.insert(account);
     await audit(runtime, {
@@ -501,6 +503,66 @@ export async function provisionAccount(
     subjectId: null,
   });
   return { accountId: existing.id, outcome: 'rotated' };
+}
+
+export interface InviteInput {
+  readonly email: unknown;
+  readonly role: unknown;
+  readonly expiresAt: unknown;
+}
+
+/**
+ * Invite-only account approval: an administrator names an approved email and
+ * a role. Unlike `provisionAccount` there is no secret to enter, so there is
+ * no TTY-only requirement — an email address is not a credential — and no
+ * rotation path: an email identity, like a username, does not change once
+ * an account exists.
+ */
+export async function inviteAccount(
+  runtime: Pick<Runtime, 'stores'>,
+  who: Principal | null,
+  input: InviteInput,
+  options: {
+    readonly now?: (() => Date) | undefined;
+    readonly fromCommandLine?: boolean | undefined;
+  } = {},
+): Promise<{ readonly accountId: string }> {
+  const principal =
+    options.fromCommandLine === true ? null : requireCapability(who, 'admin:accounts');
+  const now = (options.now ?? (() => new Date()))();
+  const normalized = normalizeEmail(input.email);
+  if (normalized === null) {
+    throw validation('email_invalid', 'A valid email address is required.');
+  }
+  const role = enumOf<Role>(input.role, ROLES, 'role');
+  const expiresAt = optionalInstant(input.expiresAt, 'expiresAt');
+  assertRoleExpiry(role, expiresAt, now);
+  const existing = await runtime.stores.accounts.findByNormalizedEmail(normalized);
+  if (existing !== null) {
+    throw new DashboardError('conflict', 'account_exists', 'An account with that email exists.');
+  }
+  const account: AccountRecord = {
+    id: randomUUID(),
+    username: null,
+    role,
+    passwordHash: null,
+    createdAt: now.toISOString(),
+    passwordChangedAt: now.toISOString(),
+    disabledAt: null,
+    expiresAt,
+    normalizedEmail: normalized,
+  };
+  await runtime.stores.accounts.insert(account);
+  await audit(runtime, {
+    kind: 'account_provisioned',
+    outcome: 'success',
+    code: role,
+    actorAccountId: principal?.accountId ?? null,
+    subjectAccountId: account.id,
+    sessionId: principal?.sessionId ?? null,
+    subjectId: null,
+  });
+  return { accountId: account.id };
 }
 
 export async function disableAccount(

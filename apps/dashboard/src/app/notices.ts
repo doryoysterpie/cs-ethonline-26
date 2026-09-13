@@ -16,6 +16,9 @@ const NOTICES: Readonly<Record<string, string>> = {
   signed_out: 'Signed out.',
   session_expired: 'Your session ended. Sign in again.',
   sign_in_failed: 'Sign-in failed.',
+  code_sent: 'If that email is approved, a code was sent. Enter it below.',
+  code_invalid: 'That code did not work. Enter the latest code, or request a new one.',
+  code_expired: 'Enter your email again to request a new code.',
   forbidden: 'You do not have access to this.',
   invalid: 'The request was not valid.',
   conflict: 'The record changed while you were working; reload and try again.',
@@ -38,6 +41,8 @@ export function isErrorNotice(code: unknown): boolean {
     code === 'conflict' ||
     code === 'not_found' ||
     code === 'failed' ||
-    code === 'session_expired'
+    code === 'session_expired' ||
+    code === 'code_invalid' ||
+    code === 'code_expired'
   );
 }

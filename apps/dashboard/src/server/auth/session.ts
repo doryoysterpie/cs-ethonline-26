@@ -3,6 +3,9 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 
 import { DashboardError } from '../errors.ts';
+import { normalizeEmail } from './email.ts';
+import type { EmailProvider } from './email-provider.ts';
+import { generateOtpCode, hashOtpCode, OTP_LIFETIME_SECONDS, OTP_MAX_ATTEMPTS } from './otp.ts';
 import { dummyHash, verifyPassword, VerificationGate } from './password.ts';
 import type { Throttle } from './rate-limit.ts';
 import type { Role } from './roles.ts';
@@ -13,7 +16,30 @@ import {
   type SessionRecord,
   type Stores,
 } from './store.ts';
-import { generateSessionToken, hashSessionToken, isSessionTokenShaped } from './tokens.ts';
+import {
+  constantTimeEqual,
+  generateSessionToken,
+  hashSessionToken,
+  isSessionTokenShaped,
+} from './tokens.ts';
+
+/** A challenge id (a UUID) is shaped like this, whether or not it names a real row. */
+const CHALLENGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+function isChallengeIdShaped(value: unknown): value is string {
+  return typeof value === 'string' && CHALLENGE_ID.test(value);
+}
+
+/**
+ * A digest of a code that verifies against nothing, so a challenge that does
+ * not exist still pays for one HMAC and one constant-time comparison before
+ * failing — the same reasoning as `dummyHash()` for an unknown username,
+ * scaled to the far cheaper primitive OTP verification uses.
+ */
+let dummyDigest: string | null = null;
+function dummyCodeDigest(pepper: string): string {
+  dummyDigest ??= hashOtpCode(generateOtpCode(), pepper);
+  return dummyDigest;
+}
 
 /**
  * The session service: sign-in, session validation, rotation and revocation.
@@ -45,11 +71,19 @@ export const SESSION_TOUCH_INTERVAL_SECONDS = 60;
 
 export interface Principal {
   readonly accountId: string;
-  readonly username: string;
+  /** Absent for an email-identified account. */
+  readonly username: string | null;
+  /** Absent for a legacy username/password account. */
+  readonly normalizedEmail: string | null;
   readonly role: Role;
   readonly sessionId: string;
   /** Kept only to derive the CSRF token; never rendered or logged. */
   readonly sessionToken: string;
+}
+
+/** A safe, human-facing identity for a principal, whichever kind of account it is. */
+export function displayIdentity(principal: Principal): string {
+  return principal.username ?? principal.normalizedEmail ?? principal.accountId;
 }
 
 export type LoginOutcome =
@@ -70,6 +104,10 @@ export interface SessionServiceOptions {
   readonly gate?: VerificationGate | undefined;
   /** Defaults to the throttle bound to the stores passed to the constructor. */
   readonly throttle?: Throttle | undefined;
+  /** Required to call `requestOtp`; absent, that method fails closed. */
+  readonly emailProvider?: EmailProvider | undefined;
+  /** Required to call `requestOtp` or `verifyOtp`; absent, both fail closed. */
+  readonly otpPepper?: string | undefined;
 }
 
 function seconds(date: Date): number {
@@ -80,9 +118,30 @@ function accountKey(username: string): string {
   return `account:${username.toLowerCase()}`;
 }
 
+function emailKey(normalizedEmail: string): string {
+  return `otp-request:${normalizedEmail}`;
+}
+
+function verifyKey(challengeId: string): string {
+  return `otp-verify:${challengeId}`;
+}
+
+function principalOf(account: AccountRecord, sessionId: string, sessionToken: string): Principal {
+  return {
+    accountId: account.id,
+    username: account.username,
+    normalizedEmail: account.normalizedEmail,
+    role: account.role,
+    sessionId,
+    sessionToken,
+  };
+}
+
 export class SessionService {
   private readonly now: () => Date;
   private readonly makeId: () => string;
+  private readonly emailProvider: EmailProvider | undefined;
+  private readonly otpPepper: string | undefined;
   readonly gate: VerificationGate;
   readonly throttle: Throttle;
 
@@ -94,6 +153,8 @@ export class SessionService {
     this.makeId = options.makeId ?? randomUUID;
     this.gate = options.gate ?? new VerificationGate();
     this.throttle = options.throttle ?? stores.throttle;
+    this.emailProvider = options.emailProvider;
+    this.otpPepper = options.otpPepper;
   }
 
   private async audit(event: Omit<AuditEvent, 'id' | 'at'>): Promise<void> {
@@ -126,13 +187,7 @@ export class SessionService {
     };
     await this.stores.sessions.insert(session);
     return {
-      principal: {
-        accountId: account.id,
-        username: account.username,
-        role: account.role,
-        sessionId: session.id,
-        sessionToken: token,
-      },
+      principal: principalOf(account, session.id, token),
       absoluteExpiresAt,
     };
   }
@@ -227,6 +282,260 @@ export class SessionService {
     return { ok: true, principal: issued.principal, absoluteExpiresAt: issued.absoluteExpiresAt };
   }
 
+  /** A presented session, valid or not, is never continued past a new sign-in. */
+  private async revokePresented(presentedToken: string | null, at: Date): Promise<void> {
+    if (presentedToken === null || !isSessionTokenShaped(presentedToken)) return;
+    const presented = await this.stores.sessions.findByTokenHash(hashSessionToken(presentedToken));
+    if (presented !== null && presented.revokedAt === null) {
+      await this.stores.sessions.revoke(presented.id, at.toISOString(), 'superseded_by_login');
+    }
+  }
+
+  /**
+   * Requests a one-time code. The response is the same `{ ok: true }`
+   * whether or not the email is approved, sent or unknown — approval is
+   * never observable from the outcome, only from the (identical either way)
+   * next screen. Throttled is the one outcome that differs, exactly as it
+   * already does for password sign-in.
+   *
+   * The email send is not awaited: an approved and an unapproved email both
+   * return as soon as their (comparably fast) database work finishes, so the
+   * far slower and more variable cost of actually reaching a mail provider
+   * is never part of the timing an unauthenticated caller can observe.
+   */
+  async requestOtp(request: {
+    readonly email: unknown;
+    readonly networkKey: string;
+  }): Promise<
+    | { readonly ok: true; readonly challengeId: string }
+    | { readonly ok: false; readonly status: 429 }
+  > {
+    if (this.emailProvider === undefined || this.otpPepper === undefined) {
+      throw new DashboardError(
+        'configuration',
+        'otp_email_not_configured',
+        'passwordless sign-in is not configured',
+      );
+    }
+    const at = this.now();
+    const normalized = normalizeEmail(request.email);
+    const key = emailKey(normalized ?? 'malformed');
+    const decision = await this.throttle.check(key, `network:${request.networkKey}`, seconds(at));
+    if (!decision.allowed) {
+      await this.audit({
+        kind: 'otp_requested',
+        outcome: 'failure',
+        code: decision.reason === 'account' ? 'email_window' : 'network_window',
+        actorAccountId: null,
+        subjectAccountId: null,
+        sessionId: null,
+        networkKey: request.networkKey,
+        subjectId: null,
+      });
+      return { ok: false, status: 429 };
+    }
+
+    const account =
+      normalized === null ? null : await this.stores.accounts.findByNormalizedEmail(normalized);
+    const usable =
+      account !== null && account.normalizedEmail !== null && this.accountIsUsable(account, at);
+    // Unapproved and malformed submissions get a challenge id too — one that
+    // names no real row — so the response and the next screen are identical
+    // either way; only a real code will ever verify against a real one.
+    const challengeId = this.makeId();
+    if (usable) {
+      const code = generateOtpCode();
+      const challenge = {
+        id: challengeId,
+        accountId: account.id,
+        codeDigest: hashOtpCode(code, this.otpPepper),
+        createdAt: at.toISOString(),
+        expiresAt: new Date(at.getTime() + OTP_LIFETIME_SECONDS * 1000).toISOString(),
+        consumedAt: null,
+        supersededAt: null,
+        attemptCount: 0,
+        networkKey: request.networkKey,
+      };
+      await this.stores.otpChallenges.issue(challenge);
+      const provider = this.emailProvider;
+      const minutes = Math.round(OTP_LIFETIME_SECONDS / 60);
+      void provider
+        .send({
+          to: account.normalizedEmail,
+          subject: 'Your Latest in Cyber sign-in code',
+          text:
+            `Your one-time sign-in code is ${code}. It expires in ${minutes} minutes ` +
+            'and can be used once.\n\n' +
+            'If you did not request this, you can ignore this email; support will never ask you for this code.',
+        })
+        .catch(() => undefined);
+      await this.audit({
+        kind: 'otp_requested',
+        outcome: 'success',
+        code: 'code_issued',
+        actorAccountId: null,
+        subjectAccountId: account.id,
+        sessionId: null,
+        networkKey: request.networkKey,
+        subjectId: challenge.id,
+      });
+    } else {
+      await this.audit({
+        kind: 'otp_requested',
+        outcome: 'failure',
+        code: normalized === null ? 'malformed_email' : 'email_not_approved',
+        actorAccountId: null,
+        subjectAccountId: account?.id ?? null,
+        sessionId: null,
+        networkKey: request.networkKey,
+        subjectId: null,
+      });
+    }
+    return { ok: true, challengeId };
+  }
+
+  /**
+   * Verifies a one-time code against the challenge named by `challengeId`
+   * (the pending-verification cookie's value — never the email, never in a
+   * URL). Consuming a correct code and creating the session is one atomic
+   * store operation (`OtpChallengeStore.consumeAndCreateSession`), so
+   * concurrent verification of the same code resolves to exactly one
+   * success; every other concurrent or later attempt, even with the right
+   * code, is an ordinary failure.
+   */
+  async verifyOtp(request: {
+    readonly challengeId: unknown;
+    readonly code: unknown;
+    readonly networkKey: string;
+    readonly presentedToken: string | null;
+  }): Promise<LoginOutcome> {
+    if (this.otpPepper === undefined) {
+      throw new DashboardError(
+        'configuration',
+        'otp_email_not_configured',
+        'passwordless sign-in is not configured',
+      );
+    }
+    const at = this.now();
+    const challengeId = isChallengeIdShaped(request.challengeId) ? request.challengeId : null;
+    const code = typeof request.code === 'string' ? request.code : '';
+    const key = verifyKey(challengeId ?? 'malformed');
+
+    const decision = await this.throttle.check(key, `network:${request.networkKey}`, seconds(at));
+    if (!decision.allowed) {
+      await this.audit({
+        kind: 'login_throttled',
+        outcome: 'failure',
+        code: decision.reason === 'account' ? 'account_window' : 'network_window',
+        actorAccountId: null,
+        subjectAccountId: null,
+        sessionId: null,
+        networkKey: request.networkKey,
+        subjectId: null,
+      });
+      return { ok: false, status: 429 };
+    }
+
+    const challenge =
+      challengeId === null
+        ? null
+        : await this.stores.otpChallenges.findLive(challengeId, at.toISOString());
+    const digest = hashOtpCode(code, this.otpPepper);
+    const matches =
+      challenge !== null &&
+      challenge.attemptCount < OTP_MAX_ATTEMPTS &&
+      constantTimeEqual(digest, challenge.codeDigest);
+    // A challenge that does not exist still pays for one comparison, against
+    // a fixed reference digest, so its absence costs the same time as a
+    // present-but-wrong code.
+    if (challenge === null) constantTimeEqual(digest, dummyCodeDigest(this.otpPepper));
+
+    if (!matches) {
+      if (challenge !== null)
+        await this.stores.otpChallenges.recordAttempt(challenge.id, at.toISOString());
+      await this.throttle.recordFailure(key, seconds(at));
+      await this.audit({
+        kind: 'login_failed',
+        outcome: 'failure',
+        code:
+          challenge === null
+            ? 'no_such_challenge'
+            : challenge.attemptCount >= OTP_MAX_ATTEMPTS
+              ? 'attempts_exhausted'
+              : 'code_mismatch',
+        actorAccountId: null,
+        subjectAccountId: challenge?.accountId ?? null,
+        sessionId: null,
+        networkKey: request.networkKey,
+        subjectId: challengeId,
+      });
+      return { ok: false, status: 401 };
+    }
+
+    await this.revokePresented(request.presentedToken, at);
+
+    const token = generateSessionToken();
+    const session: SessionRecord = {
+      id: this.makeId(),
+      accountId: challenge.accountId,
+      tokenHash: hashSessionToken(token),
+      createdAt: at.toISOString(),
+      lastSeenAt: at.toISOString(),
+      absoluteExpiresAt: new Date(at.getTime() + SESSION_ABSOLUTE_SECONDS * 1000).toISOString(),
+      revokedAt: null,
+      revokedReason: null,
+    };
+    const consumed = await this.stores.otpChallenges.consumeAndCreateSession(
+      challenge.id,
+      at.toISOString(),
+      OTP_MAX_ATTEMPTS,
+      session,
+    );
+    if (!consumed) {
+      await this.audit({
+        kind: 'login_failed',
+        outcome: 'failure',
+        code: 'code_already_used',
+        actorAccountId: null,
+        subjectAccountId: challenge.accountId,
+        sessionId: null,
+        networkKey: request.networkKey,
+        subjectId: challengeId,
+      });
+      return { ok: false, status: 401 };
+    }
+
+    const account = await this.stores.accounts.getById(challenge.accountId);
+    if (account === null || !this.accountIsUsable(account, at)) {
+      await this.stores.sessions.revoke(session.id, at.toISOString(), 'account_unusable');
+      await this.audit({
+        kind: 'login_failed',
+        outcome: 'failure',
+        code: 'account_unusable',
+        actorAccountId: null,
+        subjectAccountId: challenge.accountId,
+        sessionId: session.id,
+        networkKey: request.networkKey,
+        subjectId: null,
+      });
+      return { ok: false, status: 401 };
+    }
+
+    await this.throttle.recordSuccess(key);
+    const principal = principalOf(account, session.id, token);
+    await this.audit({
+      kind: 'login_succeeded',
+      outcome: 'success',
+      code: 'session_issued',
+      actorAccountId: account.id,
+      subjectAccountId: account.id,
+      sessionId: session.id,
+      networkKey: request.networkKey,
+      subjectId: null,
+    });
+    return { ok: true, principal, absoluteExpiresAt: session.absoluteExpiresAt };
+  }
+
   /**
    * Resolves a presented token to a principal, or null. Every reason for
    * null is checked in order: shape, existence, revocation, absolute expiry,
@@ -267,13 +576,7 @@ export class SessionService {
     if (at.getTime() - Date.parse(session.lastSeenAt) >= SESSION_TOUCH_INTERVAL_SECONDS * 1000) {
       await this.stores.sessions.touch(session.id, at.toISOString());
     }
-    return {
-      accountId: account.id,
-      username: account.username,
-      role: account.role,
-      sessionId: session.id,
-      sessionToken: presentedToken,
-    };
+    return principalOf(account, session.id, presentedToken);
   }
 
   /** Revokes the principal's own session. */

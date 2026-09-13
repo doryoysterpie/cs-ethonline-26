@@ -19,13 +19,17 @@ import type { Queryable } from './database.js';
 
 export interface AccountRow {
   readonly id: string;
-  readonly username: string;
+  /** Absent for an email-identified account (migration 0011). */
+  readonly username: string | null;
   readonly role: string;
-  readonly passwordHash: string;
+  /** Absent for an email-identified account (migration 0011). */
+  readonly passwordHash: string | null;
   readonly createdAt: string;
   readonly passwordChangedAt: string;
   readonly disabledAt: string | null;
   readonly expiresAt: string | null;
+  /** Absent for a legacy username/password account. Exact, already normalized. */
+  readonly normalizedEmail: string | null;
 }
 
 export interface SessionRow {
@@ -80,7 +84,8 @@ const ACCOUNT_COLUMNS = `id, username, role, password_hash AS "passwordHash",
   pg_catalog.to_json(created_at) #>> '{}' AS "createdAt",
   pg_catalog.to_json(password_changed_at) #>> '{}' AS "passwordChangedAt",
   pg_catalog.to_json(disabled_at) #>> '{}' AS "disabledAt",
-  pg_catalog.to_json(expires_at) #>> '{}' AS "expiresAt"`;
+  pg_catalog.to_json(expires_at) #>> '{}' AS "expiresAt",
+  normalized_email AS "normalizedEmail"`;
 
 export async function findAccountByUsername(
   client: Queryable,
@@ -89,6 +94,18 @@ export async function findAccountByUsername(
   const result = await client.query<AccountRow>(
     `SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE username = $1`,
     [username],
+  );
+  return result.rows[0] ?? null;
+}
+
+/** Exact match only; the caller normalizes before this is ever called. */
+export async function findAccountByNormalizedEmail(
+  client: Queryable,
+  normalizedEmail: string,
+): Promise<AccountRow | null> {
+  const result = await client.query<AccountRow>(
+    `SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE normalized_email = $1`,
+    [normalizedEmail],
   );
   return result.rows[0] ?? null;
 }
@@ -103,15 +120,15 @@ export async function getAccountById(client: Queryable, id: string): Promise<Acc
 
 export async function listAccounts(client: Queryable): Promise<AccountRow[]> {
   const result = await client.query<AccountRow>(
-    `SELECT ${ACCOUNT_COLUMNS} FROM accounts ORDER BY username`,
+    `SELECT ${ACCOUNT_COLUMNS} FROM accounts ORDER BY pg_catalog.coalesce(username, normalized_email)`,
   );
   return result.rows;
 }
 
 export async function insertAccount(client: Queryable, account: AccountRow): Promise<void> {
   await client.query(
-    `INSERT INTO accounts (id, username, role, password_hash, created_at, password_changed_at, disabled_at, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    `INSERT INTO accounts (id, username, role, password_hash, created_at, password_changed_at, disabled_at, expires_at, normalized_email)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       account.id,
       account.username,
@@ -121,6 +138,7 @@ export async function insertAccount(client: Queryable, account: AccountRow): Pro
       account.passwordChangedAt,
       account.disabledAt,
       account.expiresAt,
+      account.normalizedEmail,
     ],
   );
 }
@@ -361,6 +379,120 @@ export async function listQueueDecisionsForRun(
     [classificationRunId],
   );
   return result.rows;
+}
+
+export interface OtpChallengeRow {
+  readonly id: string;
+  readonly accountId: string;
+  /** HMAC-SHA-256(code, server pepper), hex. The code itself is never stored. */
+  readonly codeDigest: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly consumedAt: string | null;
+  readonly supersededAt: string | null;
+  readonly attemptCount: number;
+  readonly networkKey: string | null;
+}
+
+const OTP_CHALLENGE_COLUMNS = `id, account_id AS "accountId", code_digest AS "codeDigest",
+  pg_catalog.to_json(created_at) #>> '{}' AS "createdAt",
+  pg_catalog.to_json(expires_at) #>> '{}' AS "expiresAt",
+  pg_catalog.to_json(consumed_at) #>> '{}' AS "consumedAt",
+  pg_catalog.to_json(superseded_at) #>> '{}' AS "supersededAt",
+  attempt_count AS "attemptCount",
+  network_key AS "networkKey"`;
+
+/**
+ * Supersedes every other live challenge of the account, then inserts the new
+ * one: "invalidated when a newer code is requested" is these two statements,
+ * run by the caller inside one transaction so a reader never observes two
+ * live challenges for the same account at once.
+ */
+export async function issueOtpChallenge(
+  client: Queryable,
+  challenge: OtpChallengeRow,
+): Promise<void> {
+  await client.query(
+    `UPDATE otp_challenges SET superseded_at = $2
+       WHERE account_id = $1 AND consumed_at IS NULL AND superseded_at IS NULL`,
+    [challenge.accountId, challenge.createdAt],
+  );
+  await client.query(
+    `INSERT INTO otp_challenges (id, account_id, code_digest, created_at, expires_at, network_key)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      challenge.id,
+      challenge.accountId,
+      challenge.codeDigest,
+      challenge.createdAt,
+      challenge.expiresAt,
+      challenge.networkKey,
+    ],
+  );
+}
+
+/** The challenge by id, only if it is still live: unconsumed, unsuperseded, unexpired. */
+export async function findLiveOtpChallenge(
+  client: Queryable,
+  id: string,
+  now: string,
+): Promise<OtpChallengeRow | null> {
+  const result = await client.query<OtpChallengeRow>(
+    `SELECT ${OTP_CHALLENGE_COLUMNS} FROM otp_challenges
+      WHERE id = $1 AND consumed_at IS NULL AND superseded_at IS NULL AND expires_at > $2`,
+    [id, now],
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Atomically records one more attempt against a still-live challenge.
+ * Returns the new count, or null if the challenge was no longer live to
+ * attempt against (already consumed, superseded or expired) — the caller
+ * treats that exactly like a wrong code, never as a different outcome.
+ */
+export async function recordOtpChallengeAttempt(
+  client: Queryable,
+  id: string,
+  now: string,
+): Promise<number | null> {
+  const result = await client.query<{ attemptCount: number }>(
+    `UPDATE otp_challenges SET attempt_count = attempt_count + 1
+       WHERE id = $1 AND consumed_at IS NULL AND superseded_at IS NULL AND expires_at > $2
+     RETURNING attempt_count AS "attemptCount"`,
+    [id, now],
+  );
+  return result.rows[0]?.attemptCount ?? null;
+}
+
+/**
+ * Consumes a challenge and creates its session in one transaction: the two
+ * either both happen or neither does. The `UPDATE ... WHERE ... RETURNING`
+ * is what makes concurrent verification of the same challenge resolve to
+ * exactly one success — PostgreSQL serializes concurrent updates to the same
+ * row, so only the first to reach this statement finds `consumed_at IS
+ * NULL` still true; every other concurrent or later call, however many,
+ * updates zero rows and creates no session. Returns false in that case; the
+ * caller must treat it as an ordinary failure, never as a crash, even though
+ * the code it was given was correct.
+ */
+export async function consumeOtpChallengeAndCreateSession(
+  client: Queryable,
+  challengeId: string,
+  now: string,
+  maxAttempts: number,
+  session: SessionRow,
+): Promise<boolean> {
+  const consumed = await client.query(
+    `UPDATE otp_challenges SET consumed_at = $2
+       WHERE id = $1 AND consumed_at IS NULL AND superseded_at IS NULL
+         AND expires_at > $2 AND attempt_count < $3
+     RETURNING id`,
+    [challengeId, now, maxAttempts],
+  );
+  if ((consumed.rowCount ?? 0) === 0) return false;
+  await insertSession(client, session);
+  return true;
 }
 
 /**

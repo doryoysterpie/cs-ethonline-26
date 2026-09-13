@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:db": "pnpm -w exec turbo run build --filter=@cas/dashboard^... && vitest run --config vitest.db.config.ts",
     "test:browser": "pnpm -s build && playwright test",
-    "provision": "pnpm -s build:cli && node --conditions=react-server dist/cli/provision.js"
+    "provision": "pnpm -s build:cli && node --conditions=react-server dist/cli/provision.js",
+    "account": "pnpm -s build:cli && node --conditions=react-server dist/cli/account.js"
   },
   "dependencies": {
     "@cas/contracts": "workspace:*",
