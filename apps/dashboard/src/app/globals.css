@@ -1,35 +1,37 @@
 /*
  * Latest in Cyber: the owner's visual identity.
  *
- * Deep navy rather than black. A black cybersecurity dashboard is the genre
- * default and says nothing about this product; navy carries the same low glare
- * while leaving room for the accent colours to read as a palette rather than
- * as warning lights.
+ * Deep teal rather than the generic navy this dashboard shipped with. A
+ * black or navy cybersecurity dashboard is the genre default and says
+ * nothing about this product; deep teal carries the same low glare while
+ * reading as this brand's own surface rather than a template's.
  *
  * Every foreground token below was measured against both surfaces before it
- * was chosen. The lowest ratio in the set is magenta on the raised panel at
- * 6.37:1, comfortably past the 4.5:1 WCAG AA floor for body text; off-white on
- * navy is 15.4:1. Magenta is an accent and is used for one thing — the crypto
- * feed — so it stays restrained rather than decorative.
+ * was chosen. The lowest ratio in the set is magenta on the raised surface at
+ * 4.50:1, at the 4.5:1 WCAG AA floor for body text; off-white on the base
+ * background is 12.80:1. Magenta is an accent and is used for one thing — the
+ * crypto feed — so it stays restrained rather than decorative.
  */
 :root {
   color-scheme: dark;
 
   /* Surfaces */
-  --navy: #0d1b2e;
-  --paper: #0d1b2e;
-  --panel: #152742;
-  --line: #24395c;
+  --navy: #162e3c;
+  --paper: #162e3c;
+  --panel: #1b3947;
+  --panel-raised: #204351;
+  --line: #204351;
 
   /* Text */
-  --ink: #eef2f7;
-  --muted: #a8b8cc;
+  --ink: #f5f3f9;
+  --muted: #b3c8d2;
 
   /* Brand accents, all AA on both surfaces */
-  --sky: #6fc3f7;
-  --orange: #ff9f4a;
-  --yellow: #ffd75e;
-  --green: #5fd68b;
+  --sky: #9bcaeb;
+  --orange: #e57e3b;
+  --yellow: #fbe877;
+  --green: #90ba4b;
+  --green-secondary: #89b04c;
   --magenta: #ff7bc8;
 
   /* Semantic roles, mapped onto the brand rather than invented beside it */
@@ -37,6 +39,7 @@
   --warn: var(--orange);
   --danger: var(--magenta);
   --ok: var(--green);
+  --emphasis: var(--green);
 
   /* Pixel-inspired detail: square corners and a one-step shadow, no blur. */
   --radius: 2px;
@@ -80,6 +83,7 @@ a {
 .nav h1 {
   font-size: 1rem;
   margin: 0 0 1rem;
+  color: var(--emphasis);
 }
 
 .nav ul {
@@ -106,10 +110,12 @@ a {
 
 .main h2 {
   margin-top: 0;
+  color: var(--emphasis);
 }
 
 .main h3 {
   margin-top: 1.75rem;
+  color: var(--emphasis);
 }
 
 .origin {
@@ -221,8 +227,8 @@ textarea.draft {
 
 button {
   padding: 0.35rem 0.8rem;
-  border: 1px solid var(--accent);
-  background: var(--accent);
+  border: 1px solid var(--emphasis);
+  background: var(--emphasis);
   color: var(--navy);
   border-radius: var(--radius);
   cursor: pointer;
@@ -232,6 +238,7 @@ button {
 button.quiet {
   background: transparent;
   color: var(--accent);
+  border-color: var(--accent);
 }
 
 button.danger {
@@ -256,7 +263,7 @@ button.danger {
 
 .markdown pre {
   overflow-x: auto;
-  background: var(--panel);
+  background: var(--panel-raised);
   padding: 0.5rem;
 }
 
@@ -284,7 +291,8 @@ button.danger {
 /*
  * Keyboard navigation must be visible. A focus ring is drawn outside the
  * element so it never changes layout, and it uses yellow, which is the
- * highest-contrast token in the palette on both surfaces (12.47:1 on navy).
+ * highest-contrast token in the palette on both surfaces (11.35:1 on the
+ * base background).
  */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 3px solid var(--yellow);
