@@ -116,7 +116,7 @@ describe('import limits', () => {
   it('file bytes: accepts the exact bound and refuses one byte more', async () => {
     const content = csv([
       ['a', 'b'],
-      ['1', HOSTILE.replace('\n', ' ')],
+      ['1', HOSTILE.replace(/\n/g, ' ')],
       ['2', 'y'],
     ]);
     const bytes = Buffer.byteLength(content, 'utf8');
