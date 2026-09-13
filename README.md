@@ -468,28 +468,32 @@ audit and nothing in it is accepted.
 
 ## Documentation
 
-| Document                                | Content                                                                                                               |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `docs/ARCHITECTURE.md`                  | components, runtime data flow, contract boundary, dependency rules                                                    |
-| `docs/DATA_INPUTS.md`                   | editorial data, schemas, human versus machine labels, ingestion rules                                                 |
-| `docs/PRIOR_INPUTS.md`                  | the pre-existing corpus, its permitted uses, and the submission disclosure                                            |
-| `docs/HACKATHON_REQUIREMENTS.md`        | requirement-to-evidence matrix per sponsor track and the official schedule                                            |
-| `docs/DECISIONS.md`                     | append-only decision log, D1 to D28                                                                                   |
-| `docs/SPRINT-0-REPORT.md`               | Sprint 0 report, audit remediation and final correction                                                               |
-| `docs/SPRINT-1-REPORT.md`               | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                    |
-| `docs/SPRINT-2-REPORT.md`               | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                                            |
-| `docs/SPRINT-3-REPORT.md`               | Sprint 3 classification proof: classifier, migration, calibration, evidence                                           |
-| `docs/SPRINT-4-REPORT.md`               | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections                    |
-| `docs/SPRINT-5-REPORT.md`               | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting, audit correction                       |
-| `docs/CHECKIN-1-DRAFT.md`               | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                                      |
-| `docs/CHECKIN-2-DRAFT.md`               | Project Check-in #2 draft, due Thursday 10 September; not submitted                                                   |
-| `docs/ACCOUNT_READINESS.md`             | secret-free account readiness matrix                                                                                  |
-| `docs/SPRINT_BOARD.md`                  | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                                           |
-| `docs/SECURITY.md`                      | security policy                                                                                                       |
-| `docs/SHEETS-INTAKE.md`                 | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                           |
-| `docs/THREAT_MODEL.md`                  | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks |
-| `docs/RISK_REGISTER.md`                 | risks with owner, status, next action and review date                                                                 |
-| `docs/DATA_CLASSIFICATION_RETENTION.md` | data classes, inventory, retention and removal                                                                        |
-| `docs/INCIDENT_RESPONSE.md`             | roles, severities, triggers and runbooks                                                                              |
-| `docs/MCP-TOOLING-TRACK-REPORT.md`      | MCP tooling track: server, tests, read-only proof, clean-install evidence; pending audit                              |
-| `LICENSE`                               | Apache License 2.0                                                                                                    |
+| Document                                  | Content                                                                                                               |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `docs/ARCHITECTURE.md`                    | components, runtime data flow, contract boundary, dependency rules                                                    |
+| `docs/DATA_INPUTS.md`                     | editorial data, schemas, human versus machine labels, ingestion rules                                                 |
+| `docs/PRIOR_INPUTS.md`                    | the pre-existing corpus, its permitted uses, and the submission disclosure                                            |
+| `docs/HACKATHON_REQUIREMENTS.md`          | requirement-to-evidence matrix per sponsor track and the official schedule                                            |
+| `docs/DECISIONS.md`                       | append-only decision log, D1 to D29                                                                                   |
+| `docs/SPRINT-0-REPORT.md`                 | Sprint 0 report, audit remediation and final correction                                                               |
+| `docs/SPRINT-1-REPORT.md`                 | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                    |
+| `docs/SPRINT-2-REPORT.md`                 | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                                            |
+| `docs/SPRINT-3-REPORT.md`                 | Sprint 3 classification proof: classifier, migration, calibration, evidence                                           |
+| `docs/SPRINT-4-REPORT.md`                 | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections                    |
+| `docs/SPRINT-5-REPORT.md`                 | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting, audit correction                       |
+| `docs/CHECKIN-1-DRAFT.md`                 | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                                      |
+| `docs/CHECKIN-2-DRAFT.md`                 | Project Check-in #2 draft, due Thursday 10 September; not submitted                                                   |
+| `docs/ACCOUNT_READINESS.md`               | secret-free account readiness matrix                                                                                  |
+| `docs/SPRINT_BOARD.md`                    | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                                           |
+| `docs/SECURITY.md`                        | security policy                                                                                                       |
+| `docs/SHEETS-INTAKE.md`                   | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                           |
+| `docs/THREAT_MODEL.md`                    | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks |
+| `docs/RISK_REGISTER.md`                   | risks with owner, status, next action and review date                                                                 |
+| `docs/DATA_CLASSIFICATION_RETENTION.md`   | data classes, inventory, retention and removal                                                                        |
+| `docs/INCIDENT_RESPONSE.md`               | roles, severities, triggers and runbooks                                                                              |
+| `docs/MCP-TOOLING-TRACK-REPORT.md`        | MCP tooling track: server, tests, read-only proof, clean-install evidence; pending audit                              |
+| `docs/SECURITY-FOUNDATION-REPORT.md`      | security-foundation track: resource limits, CI database, toolchain pins, bill of materials; pending audit             |
+| `docs/SPRINT-6-DASHBOARD-AUTH-HANDOFF.md` | dashboard and authentication track: design, interpretation choices, known limitations; pending audit                  |
+| `docs/VULNERABILITY_DISCLOSURE.md`        | how to report a vulnerability privately, scope and safe harbour                                                       |
+| `docs/RELEASE-INTEGRATION-REPORT.md`      | Latest in Cyber release integration: merges, reconciliation, verification, security review, production blockers       |
+| `LICENSE`                                 | Apache License 2.0                                                                                                    |
