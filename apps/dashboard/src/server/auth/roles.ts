@@ -36,12 +36,18 @@ export const CAPABILITIES = [
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
+/**
+ * A judge holds no `view:draft`: the production-candidate owner decision of
+ * 2026-09-12 withdraws draft-preview access from the judge role entirely. A
+ * judge must not receive a source headline, a source link, source text, an
+ * editor note or any other unsanitized draft content — only the sanitized,
+ * aggregate views below.
+ */
 const JUDGE: readonly Capability[] = [
   'view:command_center',
   'view:incidents',
   'view:anomaly',
   'view:evidence',
-  'view:draft',
 ];
 
 const EDITOR: readonly Capability[] = [

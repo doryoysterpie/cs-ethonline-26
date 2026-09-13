@@ -36,12 +36,14 @@ test.describe('role boundaries in the browser', () => {
       page.getByText('A suggestion is not evidence until a named person accepts it.'),
     ).toBeVisible();
 
-    await page.goto(
+    // Draft preview is withdrawn from the judge role entirely: no headline, no
+    // source link, no source text, no editor note and no unsanitized draft
+    // content of any kind reaches a judge, so the page itself refuses.
+    const draft = await page.goto(
       `/drafts/${seeded.evidenceRunId}?start=2026-09-01T00:00:00Z&end=2026-09-08T00:00:00Z`,
     );
-    await expect(page.getByRole('heading', { name: /^Draft for evidence run/u })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Save revision/u })).toHaveCount(0);
-    await expect(page.locator('.markdown')).toContainText('unpublished');
+    expect(draft?.status()).toBe(403);
+    await expect(page.getByRole('heading', { name: 'Forbidden' })).toBeVisible();
   });
 
   test('an editor reviews but cannot administer', async ({ page }) => {

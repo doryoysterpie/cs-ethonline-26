@@ -161,7 +161,7 @@ const ADMIN_ONLY = new Set([
   'setAccountExpiry',
   'revokeAccountSessions',
 ]);
-const EDITOR_ONLY_READS = new Set(['reviewQueue']);
+const EDITOR_ONLY_READS = new Set(['reviewQueue', 'draftView']);
 
 async function kindOf(call: Promise<unknown>): Promise<string> {
   try {

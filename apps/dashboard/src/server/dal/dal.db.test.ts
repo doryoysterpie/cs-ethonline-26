@@ -366,18 +366,15 @@ describe('data-access layer against PostgreSQL', () => {
     expect(withReporting.stats.reportingWindows).toBe(1);
   });
 
-  it('previews the generated draft for a judge and appends editor revisions with optimistic concurrency', async () => {
-    const judge = await draftView(
-      runtime,
-      principals.judge,
-      seeded.evidenceRunId,
-      PERIOD_START,
-      PERIOD_END,
-    );
-    expect(judge.revision).toBe(0);
-    expect(judge.status).toBe('unpublished_requires_human_review');
-    expect(judge.markdown).toContain('unpublished');
-    expect(judge.canEdit).toBe(false);
+  it('refuses draft preview to a judge entirely, and appends editor revisions with optimistic concurrency', async () => {
+    // The owner decision of 2026-09-12 withdraws draft-preview access from
+    // the judge role: no headline, no source link, no source text, no
+    // editor note and no unsanitized draft content reaches a judge.
+    expect(
+      await kindOf(
+        draftView(runtime, principals.judge, seeded.evidenceRunId, PERIOD_START, PERIOD_END),
+      ),
+    ).toBe('authorization');
     expect(
       await kindOf(
         saveDraftRevision(runtime, principals.judge, {
@@ -389,6 +386,19 @@ describe('data-access layer against PostgreSQL', () => {
         }),
       ),
     ).toBe('authorization');
+
+    const editor = await draftView(
+      runtime,
+      principals.editor,
+      seeded.evidenceRunId,
+      PERIOD_START,
+      PERIOD_END,
+    );
+    expect(editor.revision).toBe(0);
+    expect(editor.status).toBe('unpublished_requires_human_review');
+    expect(editor.markdown).toContain('unpublished');
+    expect(editor.canEdit).toBe(true);
+
     const saved = await saveDraftRevision(runtime, principals.editor, {
       evidenceRunId: seeded.evidenceRunId,
       periodStart: PERIOD_START,
@@ -410,7 +420,7 @@ describe('data-access layer against PostgreSQL', () => {
     ).toBe('conflict');
     const after = await draftView(
       runtime,
-      principals.judge,
+      principals.admin,
       seeded.evidenceRunId,
       PERIOD_START,
       PERIOD_END,

@@ -15,7 +15,7 @@ import {
  * rights shows up as a failing test rather than a surprise in production.
  */
 const MATRIX: Readonly<Record<(typeof ROLES)[number], readonly string[]>> = {
-  judge: ['view:command_center', 'view:incidents', 'view:anomaly', 'view:evidence', 'view:draft'],
+  judge: ['view:command_center', 'view:incidents', 'view:anomaly', 'view:evidence'],
   editor: [
     'view:command_center',
     'view:incidents',
@@ -77,5 +77,11 @@ describe('roles and capabilities', () => {
     expect(can('judge', 'view:source_text')).toBe(false);
     expect(can('judge', 'view:notes')).toBe(false);
     expect(can('judge', 'view:queue')).toBe(false);
+  });
+
+  it('withdraws draft preview from the judge role entirely', () => {
+    expect(can('judge', 'view:draft')).toBe(false);
+    expect(can('editor', 'view:draft')).toBe(true);
+    expect(can('admin', 'view:draft')).toBe(true);
   });
 });
