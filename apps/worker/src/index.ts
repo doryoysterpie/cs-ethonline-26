@@ -163,19 +163,18 @@ export {
 } from './evidence/run.js';
 // The Sprint 5 audit correction (F1, decision D26) split ingestion into two
 // functions whose input types share no field but a discriminant, so that a
-// file can never be ingested as live. The public surface follows: the file
-// path and the Graph-client path are both exported, and the single
-// `ingestSnapshot` they replaced is deliberately gone rather than aliased —
-// an alias would put the pre-correction name back in reach.
+// file can never be ingested as live. Only the file path is public: it is
+// what the dashboard's test seed calls, and it accepts fixture or replay
+// alone. The live path, `ingestLiveEvaluations`, stays internal to the worker
+// until a real Graph-client caller exists, because its input is a plain
+// object that nothing outside the worker can prove came from the client. The
+// single `ingestSnapshot` both replaced is deliberately gone rather than
+// aliased, since an alias would put the pre-correction name back in reach.
 export {
-  assertFileIngestInput,
-  ingestLiveEvaluations,
   ingestSnapshotFile,
   type FileIngestInput,
   type FileOrigin,
-  type GraphClientIngestInput,
   type IngestSnapshotOutcome,
-  type LiveTargetEvaluation,
 } from './evidence/signals.js';
 export {
   recordIncidentSubject,
