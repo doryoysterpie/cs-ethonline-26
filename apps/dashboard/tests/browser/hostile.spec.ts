@@ -72,7 +72,10 @@ test.describe('hostile stored content', () => {
     expect(anchors.some((anchor) => anchor.href === 'https://example.org/x')).toBe(true);
     expect(anchors.every((anchor) => anchor.rel === 'noopener noreferrer nofollow')).toBe(true);
     expect(anchors.every((anchor) => anchor.onclick === null)).toBe(true);
-    expect(anchors.some((anchor) => anchor.href?.startsWith('javascript:'))).toBe(false);
+    const blockedSchemes = ['javascript:', 'data:', 'vbscript:'];
+    expect(
+      anchors.some((anchor) => blockedSchemes.some((scheme) => anchor.href?.startsWith(scheme))),
+    ).toBe(false);
     expect(dialogs).toEqual([]);
     // The rendered preview carries no handler attribute. The editor's textarea
     // below it legitimately shows the stored source as escaped text, so the
