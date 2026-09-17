@@ -496,4 +496,7 @@ audit and nothing in it is accepted.
 | `docs/SPRINT-6-DASHBOARD-AUTH-HANDOFF.md` | dashboard and authentication track: design, interpretation choices, known limitations; pending audit                  |
 | `docs/VULNERABILITY_DISCLOSURE.md`        | how to report a vulnerability privately, scope and safe harbour                                                       |
 | `docs/RELEASE-INTEGRATION-REPORT.md`      | Latest in Cyber release integration: merges, reconciliation, verification, security review, production blockers       |
+| `docs/POST-EVENT-PLAN.md`                 | post-event plan: the product after the hackathon, the TCU definition and standard steps, nine units, open questions   |
+| `docs/FETCH-POLICY.md`                    | proposed contract for fetching source pages: rules, reason codes, threat-model rows, required tests, owner decisions  |
+| `docs/tcu/CAS-001.md` to `CAS-009.md`     | one tracker per unit: steps in order, standard steps, acceptance, evidence record, walk-through log                   |
 | `LICENSE`                                 | Apache License 2.0                                                                                                    |
