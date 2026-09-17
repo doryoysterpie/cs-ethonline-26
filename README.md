@@ -474,7 +474,7 @@ audit and nothing in it is accepted.
 | `docs/DATA_INPUTS.md`                     | editorial data, schemas, human versus machine labels, ingestion rules                                                 |
 | `docs/PRIOR_INPUTS.md`                    | the pre-existing corpus, its permitted uses, and the submission disclosure                                            |
 | `docs/HACKATHON_REQUIREMENTS.md`          | requirement-to-evidence matrix per sponsor track and the official schedule                                            |
-| `docs/DECISIONS.md`                       | append-only decision log, D1 to D29                                                                                   |
+| `docs/DECISIONS.md`                       | append-only decision log, D1 to D36                                                                                   |
 | `docs/SPRINT-0-REPORT.md`                 | Sprint 0 report, audit remediation and final correction                                                               |
 | `docs/SPRINT-1-REPORT.md`                 | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                    |
 | `docs/SPRINT-2-REPORT.md`                 | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                                            |

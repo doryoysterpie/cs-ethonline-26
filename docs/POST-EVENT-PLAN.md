@@ -92,9 +92,9 @@ section 15): blockers 1, 2 and 4 have correction commits on `main` (`67e3941`, `
 ## 3. Decisions taken on 16 September 2026
 
 These are the owner's decisions from the planning conversation, with their grounds. They are
-recorded here first and transcribed into `docs/DECISIONS.md` as the next free numbers by
-CAS-001 step 2, so that they exist where a third party can contest them. Numbers are reserved
-in `DECISIONS.md` at transcription, never assumed here.
+recorded here first and were transcribed into `docs/DECISIONS.md` as D30 to D36 on
+16 September 2026 (CAS-001 step 2), so that they exist where a third party can contest them.
+The decision log is authoritative from that date; this table is the summary.
 
 | Ref | Decision                                                                                                                                                                                                                                                                                                                                        | Ground                                                                                                                                                                                                 | Class              |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |

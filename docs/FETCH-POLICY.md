@@ -114,8 +114,8 @@ Each is a falsification of one rule. A missing test blocks S4.
 **Decided.** O-1 was decided by the owner on 16 September 2026: option (a), memory only, with
 a digest of each extracted text kept in the revision's provenance. O-3 was decided the same
 day: the industry-standard form, `LatestInCyber/<version> (+<live dashboard address>)`, with the
-address filled in at S0. O-2 was decided the same day: option (a), obey. All three are taken; they are recorded in
-`docs/DECISIONS.md` when CAS-005 reaches S0.
+address filled in at S0. O-2 was decided the same day: option (a), obey. All three are taken and recorded as decision
+D36 in `docs/DECISIONS.md`; CAS-005 fixes the numeric bounds at S0.
 
 ## 7. What this document is not
 

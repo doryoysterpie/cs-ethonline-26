@@ -155,7 +155,8 @@ to change without code changes.
 
 - **Date:** 2026-09-04
 - **Status:** SUPERSEDED by D20 (2026-09-06), which fixes manual on-demand CSV import through
-  a command-line interface
+  a command-line interface; amended by D31 (2026-09-16), which makes the Google Sheets workbook
+  the transport and keeps the CSV path as the fallback
 - **Decision:** The transport for the CSV inputs, whether manual upload, a watched local
   export directory or direct authenticated workbook access, must be chosen before Sprint 2.
   Permitted fields, refresh cadence and failure behaviour are decided with it.
@@ -169,7 +170,8 @@ to change without code changes.
 ## D8 Deployment and Postgres targets
 
 - **Date:** 2026-09-04
-- **Status:** UNRESOLVED
+- **Status:** RESOLVED by D30 (2026-09-16): Railway, Hobby plan, for the dashboard and its
+  PostgreSQL database
 - **Decision:** No live deployment target and no live Postgres target are chosen. Local
   development support is recorded separately: a local Postgres reachable through
   `DATABASE_URL` is the Sprint 1 development baseline.
@@ -1251,3 +1253,140 @@ to replace the file in that window defeated every check.
   unchanged.
 - **Decided by:** the production-candidate pass of 2026-09-13, on the owner's brief. No
   decision number is allocated; this amends D29.
+
+## D30 Hosting stays on Railway, on the Hobby plan
+
+- **Date:** 2026-09-16
+- **Status:** ACCEPTED
+- **Decision:** The dashboard and its PostgreSQL database stay on Railway, on the Hobby plan.
+  This resolves D8. The owner upgraded the project on 16 September 2026.
+- **Rationale:** The populated local database, the living ledger plus two weekly cut-downs and
+  every run to migration 9, measured 527 MB on 16 September 2026, above the 0.5 GB volume of
+  Railway's Free and Trial plans. Hobby (USD 5 per month) provides 5 GB, roughly nine times
+  headroom. The `Dockerfile`, health check and pre-deploy migration step already target
+  Railway, so no platform move is needed. A cost judgment, not a vendor commitment: the
+  hackathon has ended and no sponsor obligation remains.
+- **Consequences:** `docs/ACCOUNT_READINESS.md` records the live hosting row as resolved.
+  Backups and their restore test are CAS-006's. Only the dashboard image is deployed; the
+  pipeline commands still run from an operator's machine until CAS-003 decides scheduling.
+- **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
+  section 3 (P-1).
+- **Supersedes:** resolves D8.
+
+## D31 Google Sheets is the intake
+
+- **Date:** 2026-09-16
+- **Status:** ACCEPTED
+- **Decision:** The living RSS ledger is read from the one authorized workbook,
+  `Cyberattack Sunday - RSS Intake`, through the read-only, file-scoped connector
+  (`docs/SHEETS-INTAKE.md`). The manual CSV import of D20 remains available as the fallback
+  transport and is no longer the path.
+- **Rationale:** The owner maintains the ledger in Google Sheets. The connector exists, was
+  built for this workbook, and on 16 September 2026 read it live: 83 tabs, the current feed
+  tab with 24,608 rows read and all usable, and a dry-run that would accept every row with no
+  database write. The workbook digest printed by `sheets:pin` matched the one pinned on
+  13 September.
+- **Consequences:** CAS-001 builds the command that imports the current feed tab as a batch
+  with `DataOrigin` `live` through the existing two-pass import and idempotency key. The CSV
+  importer's behaviour is unchanged. The historical weekly tabs are calibration data for
+  CAS-002, not intake.
+- **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
+  section 3 (P-2).
+- **Supersedes:** amends D7b and D20 on transport only.
+
+## D32 Every hackathon-only component receives an explicit disposition
+
+- **Date:** 2026-09-16
+- **Status:** ACCEPTED as a rule; the dispositions themselves are pending
+- **Decision:** Each component built for a sponsor track or for the event alone,
+  `@cas/graph-evidence` and the live Graph path, the evidence and anomaly layer,
+  `apps/payer-agent`, `packages/feed-api`, `packages/mcp-server` and `apps/sunday-agent`,
+  receives one of three dispositions from the owner in CAS-006: keep, park or remove, each
+  with a reason. Nothing is removed before its disposition is recorded, and a removal is its
+  own reviewed commit naming every file. Applied migrations are never edited whatever the
+  disposition.
+- **Rationale:** The hackathon has ended and the product has no vendor allegiance; silent
+  deletion is a named failure mode of AI-assisted builds and is forbidden in this repository.
+- **Consequences:** Until CAS-006 records a disposition, every component stays as it is on
+  `main`. The plan's units do not depend on any of them.
+- **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
+  section 3 (P-3).
+- **Supersedes:** nothing; D23's post-event roadmap item is absorbed into CAS-006.
+
+## D33 Two output types, produced by a model from a selection
+
+- **Date:** 2026-09-16
+- **Status:** ACCEPTED for direction; parameters pending
+- **Decision:** From a persisted selection of stories the program produces two different
+  outputs, both with a model. A **round-up** is the selected stories reformatted into the
+  rundown template, cleaned and deduplicated; it is the specific article type the owner
+  produces today and it is built first (CAS-004). An **article** is original prose written
+  after reading every source in full, the way a tech reporter would; it is built second
+  (CAS-005). Reformatting is not writing, and neither output ever chooses which stories are in
+  the issue or which facts are true.
+- **Rationale:** The owner's product statement of 16 September 2026, including the correction
+  that reformatting is one article type and writing an article is a different act. This
+  resolves the direction of D9 and none of its parameters: the model identifier, settings,
+  spend cap and prompt contract are closed by CAS-004 for the round-up and revisited by
+  CAS-005 for the article, against the current API reference at that time.
+- **Consequences:** D21's model-free classifier is untouched by this decision. Every
+  generated entry or paragraph cites source rows from the selection, and a citation outside
+  it rejects the whole response. The deterministic draft of D25 stays revision 0; a generated
+  output is a later revision with model identifier, prompt hash and input digest.
+- **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
+  section 3 (P-4).
+- **Supersedes:** resolves the direction of D9; leaves D3, D4, D21 and D25 as they are.
+
+## D34 Generation and editing of either output belong to the owner's account only
+
+- **Date:** 2026-09-16
+- **Status:** ACCEPTED
+- **Decision:** The capabilities to generate a round-up, to generate an article and to edit
+  either are granted to the owner's account only. No other account receives them.
+- **Rationale:** The owner's product statement. The dashboard's role table is deny by default
+  (D28), so one role holding these capabilities is the existing mechanism; CAS-004 decides
+  whether that is a fourth role or an account flag.
+- **Consequences:** A request from any other principal is refused at the data-access layer
+  with a fixed code, and tests prove it.
+- **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
+  section 3 (P-5).
+- **Supersedes:** nothing.
+
+## D35 Publication to Substack stays a manual act by the owner
+
+- **Date:** 2026-09-16
+- **Status:** ACCEPTED
+- **Decision:** The system never posts to Substack. The owner copies the edited output and
+  pastes it, and adds the extras for Cyberattack Sunday personally.
+- **Rationale:** The owner's product statement, and the human step between generation and
+  publication that D3 preserves.
+- **Consequences:** The outputs of CAS-004 and CAS-005 end at a copy-ready Markdown export.
+  No Substack credential is ever configured.
+- **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
+  section 3 (P-6).
+- **Supersedes:** nothing; strengthens D3.
+
+## D36 The source fetch policy is the contract for any outbound fetch
+
+- **Date:** 2026-09-16
+- **Status:** ACCEPTED as the contract; binding on implementation when CAS-005 records it at
+  S0 with the numeric bounds fixed
+- **Decision:** Any fetch of a source page by this system obeys `docs/FETCH-POLICY.md`: rules
+  R1 to R17, its fixed reason codes, its threat-model additions and its required tests. The
+  three owner decisions it lists were taken on 16 September 2026: fetched text is held in
+  memory for one generation only, with a digest of each extracted text kept in the revision's
+  provenance (O-1); the program obeys a publisher's `robots.txt` and lists a disallowed source
+  as not read (O-2); the user agent takes the industry-standard form, product name, version and
+  the live dashboard address (O-3). The numeric bounds, body bytes, deadlines and concurrency,
+  are fixed at CAS-005's S0 against measurements.
+- **Rationale:** No code in this repository fetches a URL today. CAS-005 introduces the first
+  outbound fetch from the deployed service to an address a feed row carries; without the
+  address, resolution, redirect and size rules a crafted URL aims the service at the hosting
+  network. A security necessity, written before any code so that it cannot be skipped at build
+  time.
+- **Consequences:** CAS-005 cannot pass S4 with a test of section 5 missing, and S7 adds the
+  rows of section 4 to `docs/THREAT_MODEL.md`. The MCP server's reference policy is unchanged
+  and still never fetches.
+- **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
+  section 3 (P-7) and `docs/FETCH-POLICY.md` section 6.
+- **Supersedes:** nothing.
