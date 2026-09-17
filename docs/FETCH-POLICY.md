@@ -2,7 +2,7 @@
 
 Version 0.1. Written 16 September 2026. Status: **PROPOSED, not implemented**. This is the
 contract CAS-005 (`docs/POST-EVENT-PLAN.md`, section 5) implements before any code fetches a
-source. Of the three owner decisions in section 6, O-1 and O-3 are decided and O-2 is open; nothing in sections 2 to 5 depends on them.
+source. All three owner decisions in section 6 were taken on 16 September 2026; nothing in sections 2 to 5 depends on them.
 
 ## 1. Why this document exists
 
@@ -114,8 +114,8 @@ Each is a falsification of one rule. A missing test blocks S4.
 **Decided.** O-1 was decided by the owner on 16 September 2026: option (a), memory only, with
 a digest of each extracted text kept in the revision's provenance. O-3 was decided the same
 day: the industry-standard form, `LatestInCyber/<version> (+<live dashboard address>)`, with the
-address filled in at S0. O-2 remains open; the proposed default, pending the owner's word, is
-option (a), obey.
+address filled in at S0. O-2 was decided the same day: option (a), obey. All three are taken; they are recorded in
+`docs/DECISIONS.md` when CAS-005 reaches S0.
 
 ## 7. What this document is not
 

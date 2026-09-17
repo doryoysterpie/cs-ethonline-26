@@ -8,8 +8,9 @@ Version 0.2. Written 16 September 2026. Status: **DRAFT, pending the owner's rev
 This is the single normative plan for the work after ETHOnline 2026. It defines what a
 Technical Capability Unit (TCU) is in this repository, the standard steps every unit must
 complete, and the nine units that turn the hackathon submission into the owner's weekly
-product. The GitHub issues created from `docs/tcu/CAS-00N.md` hold live status, blockers and
-evidence, and link here; they do not restate contracts. When a contract changes, this file and
+product. The GitHub issues created from `docs/tcu/CAS-00N.md`, numbers #3 to #11, hold live status,
+blockers and evidence, and link here; they do not restate contracts. A step is marked done on
+the issue; the tracker file is the normative step list. When a contract changes, this file and
 the affected tracker change together.
 
 Nothing in this document marks a test as passed, changes an audit status, or admits any unit to
@@ -103,7 +104,7 @@ in `DECISIONS.md` at transcription, never assumed here.
 | P-4 | Two output types, produced by a model from a selection: the round-up through the rundown template, built first; the article written from the full text of every source, built second. This resolves the direction of D9, not its parameters (model, settings, cap), which CAS-004 closes for the round-up and CAS-005 revisits for the article. | The owner's product statement of 16 September, including the correction that reformatting is one specific article type and writing an article is a different act.                                      | Owner's decision   |
 | P-5 | Round-up generation, article generation and editing of either are capabilities of the owner's account only.                                                                                                                                                                                                                                     | The owner's product statement. The dashboard's role table is deny by default (D28), so a capability granted to one role is the existing mechanism.                                                     | Owner's decision   |
 | P-6 | Publication to Substack stays a manual act by the owner.                                                                                                                                                                                                                                                                                        | The owner's product statement. It also keeps the human step between generation and publication that D3 preserves.                                                                                      | Owner's decision   |
-| P-7 | Any outbound fetch of a source page obeys the contract in `docs/FETCH-POLICY.md`; it is PROPOSED until CAS-005 records it at S0 with the two owner decisions it lists.                                                                                                                                                                          | The fetch is a new outbound boundary from the deployed service; without the address, resolution, redirect and size rules a feed URL can aim the service at the hosting network.                        | Security necessity |
+| P-7 | Any outbound fetch of a source page obeys the contract in `docs/FETCH-POLICY.md`; its three owner decisions were taken on 16 September 2026 and it becomes binding when CAS-005 records it at S0.                                                                                                                                               | The fetch is a new outbound boundary from the deployed service; without the address, resolution, redirect and size rules a feed URL can aim the service at the hosting network.                        | Security necessity |
 
 ## 4. What a TCU is in this repository
 
@@ -156,7 +157,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-001: Hosting and intake
 
-**Tracker:** `docs/tcu/CAS-001.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-001.md`. **Issue, live status:** [#3](https://github.com/doryoysterpie/cs-ethonline-26/issues/3).
 
 - **Objective.** The current feed tab of the owner's workbook reaches PostgreSQL on Railway
   Hobby by one command, idempotently, with the same provenance the CSV importer records.
@@ -181,7 +182,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-002: Categories
 
-**Tracker:** `docs/tcu/CAS-002.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-002.md`. **Issue, live status:** [#4](https://github.com/doryoysterpie/cs-ethonline-26/issues/4).
 
 - **Objective.** Every imported story receives a decision per category, beginning with
   cyberattack and crypto, and adding a category is a policy change with tests, not a code
@@ -208,7 +209,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-003: Weekly run and sift table
 
-**Tracker:** `docs/tcu/CAS-003.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-003.md`. **Issue, live status:** [#5](https://github.com/doryoysterpie/cs-ethonline-26/issues/5).
 
 - **Objective.** One command runs the editorial week (import, classify, cluster) for a fixed
   window, and the dashboard shows a category-filtered table of clustered stories where the
@@ -230,7 +231,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-004: Round-up generation through the rundown template, and the owner editor
 
-**Tracker:** `docs/tcu/CAS-004.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-004.md`. **Issue, live status:** [#6](https://github.com/doryoysterpie/cs-ethonline-26/issues/6).
 
 - **Objective.** From a persisted selection, generate a round-up by filling the rundown
   template with a model, for a cyberattack or a crypto selection alike, editable by the owner
@@ -269,7 +270,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-005: Article writing from the full sources
 
-**Tracker:** `docs/tcu/CAS-005.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-005.md`. **Issue, live status:** [#7](https://github.com/doryoysterpie/cs-ethonline-26/issues/7).
 
 - **Objective.** From a persisted selection, read every source in full and write an original
   article in a tech reporter's register, editable by the owner alone, exported as copy-ready
@@ -312,7 +313,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-006: Debt, audits and dispositions
 
-**Tracker:** `docs/tcu/CAS-006.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-006.md`. **Issue, live status:** [#8](https://github.com/doryoysterpie/cs-ethonline-26/issues/8).
 
 - **Objective.** The repository tells the truth about itself and carries no unreviewed
   production risk it has not named.
@@ -335,7 +336,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-007: Reader access
 
-**Tracker:** `docs/tcu/CAS-007.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-007.md`. **Issue, live status:** [#9](https://github.com/doryoysterpie/cs-ethonline-26/issues/9).
 
 - **Objective.** Anyone can request an account on the owner's instance with an email address
   alone; the owner approves each request; an approved reader holds the `reader` role and sees
@@ -377,7 +378,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-008: Supporter tier and donations
 
-**Tracker:** `docs/tcu/CAS-008.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-008.md`. **Issue, live status:** [#10](https://github.com/doryoysterpie/cs-ethonline-26/issues/10).
 
 - **Objective.** Reading stays free. A paid supporter tier and one-off crypto donations exist,
   and neither gates anything a reader needs. Payment is a support mechanism, not access
@@ -403,7 +404,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 
 ### CAS-009: Shareable story cards (queued)
 
-**Tracker:** `docs/tcu/CAS-009.md`, then its GitHub issue.
+**Tracker:** `docs/tcu/CAS-009.md`. **Issue, live status:** [#11](https://github.com/doryoysterpie/cs-ethonline-26/issues/11).
 
 - **Objective.** A reader picks stories and receives a shareable card.
 - **Admitted when.** CAS-007 is Complete and the owner opens this unit. The owner designs the
@@ -442,7 +443,7 @@ walk-through in a Claude session, in this shape:
 | Editorial week start, end and late-arrival rule (D10)                                                                                           | owner | CAS-003   |
 | Does a labelled crypto weekly set exist, or is crypto recall unmeasured in v0?                                                                  | owner | CAS-002   |
 | Scheduled run on Railway, or manual from the owner's machine?                                                                                   | owner | CAS-003   |
-| Fetch-policy decisions O-1, O-2 and O-3 (`docs/FETCH-POLICY.md` section 6); the reporter register                                               | owner | CAS-005   |
+| The reporter register (fetch-policy decisions O-1 to O-3 were taken on 16 September 2026)                                                       | owner | CAS-005   |
 | Disposition of each hackathon-only component                                                                                                    | owner | CAS-006   |
 | Stay public under Apache-2.0, or go private now that the hackathon rule no longer applies? Versions already published stay licensed either way. | owner | CAS-006   |
 | What a reader sees, page by page, within D6's allowlist; reader account expiry                                                                  | owner | CAS-007   |
