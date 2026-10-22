@@ -8,7 +8,7 @@ import type { RundownTemplate } from './template.js';
  * template hash and the prompt hash together name exactly what the model
  * was told.
  */
-export const PROMPT_VERSION = 'roundup-prompt@1';
+export const PROMPT_VERSION = 'roundup-prompt@2';
 
 export function systemPrompt(template: RundownTemplate): string {
   const summaryRules = template.entry.summary.rules.map((rule) => `- ${rule}`).join('\n');
@@ -25,7 +25,7 @@ export function systemPrompt(template: RundownTemplate): string {
     `- citations: every member row's sourceRowId, in row order.`,
     '- Use only what the recorded fields say. Add no fact, name, number, date or quotation the rows do not contain.',
     '- Name organizations as the recorded fields name them.',
-    '- flagged: copy the provided flagged entries exactly as given (headline, reason, disposition), in order.',
+    '- Headline and summary are plain prose on one line: no line breaks, no Markdown, no HTML, no links and no URLs; the sources array is the only place a URL appears.',
     '- extras: return the provided marker exactly as given.',
   ].join('\n');
 }
@@ -34,18 +34,17 @@ export function promptHash(template: RundownTemplate): string {
   return sha256(systemPrompt(template));
 }
 
-/** The user turn: the snapshot as JSON, plus the marker to echo. */
+/**
+ * The user turn: the selected incidents' recorded fields as JSON, plus the
+ * marker to echo. The flagged entries, whose reasons are editorial notes, are
+ * not part of it (review F1): only selected stories' recorded fields cross.
+ */
 export function userPrompt(input: RoundupInput, extrasMarker: string): string {
   return JSON.stringify({
     weekRunId: input.weekRunId,
     category: input.category,
     window: { start: input.windowStart, end: input.windowEnd },
     incidents: input.incidents,
-    flagged: input.flagged.map((entry) => ({
-      headline: entry.headline,
-      reason: entry.reason,
-      disposition: entry.disposition,
-    })),
     extras: extrasMarker,
   });
 }

@@ -15,8 +15,14 @@ import { isRoundupError } from './errors.js';
 import { generateRoundup, prepareGeneration } from './generate.js';
 import { assertRoundupInput, inputDigest, publisherOf, type RoundupInput } from './input.js';
 import { PROMPT_VERSION, promptHash, systemPrompt } from './prompt.js';
-import { deterministicSlots, renderMarkdown } from './render.js';
-import { RoundupSlotsSchema, slotsJsonSchema } from './schema.js';
+import {
+  deterministicFlagged,
+  deterministicSlots,
+  MAX_MARKDOWN_CHARACTERS,
+  renderMarkdown,
+} from './render.js';
+import { ModelSlotsSchema, RoundupSlotsSchema, slotsJsonSchema } from './schema.js';
+import { escapeInline, inlineSlotTextIssue, urlsIn } from './text.js';
 import { loadTemplate, parseTemplate, sectionOf } from './template.js';
 import { recordedTransport } from './transport.js';
 import { validateResponse } from './validate.js';
@@ -114,6 +120,7 @@ function cryptoInput(): RoundupInput {
 }
 
 /** A well-formed model answer for an input: reformatted text, exact sources and citations. */
+/** A model answer that reformats the selection exactly as the contract demands: the rundown and the marker, nothing else. */
 function goldenFor(input: RoundupInput, marker: string): unknown {
   return {
     rundown: input.incidents.map((incident, i) => ({
@@ -121,11 +128,6 @@ function goldenFor(input: RoundupInput, marker: string): unknown {
       summary: `Brace yourself: ${incident.rows[0]?.title ?? ''} and every key detail sits here.`,
       sources: incident.rows.map((row) => row.url),
       citations: incident.rows.map((row) => row.sourceRowId),
-    })),
-    flagged: input.flagged.map((entry) => ({
-      headline: entry.headline,
-      reason: entry.reason,
-      disposition: entry.disposition,
     })),
     extras: marker,
   };
@@ -235,8 +237,11 @@ describe('the deterministic revision and the Markdown export', () => {
     expect(markdown).toContain('## Flagged, not published');
     expect(markdown).toContain('Carried to next week: Kestrelvale Water confirms a breach.');
     expect(markdown).toContain('<!-- extras:');
-    // The validator accepts the deterministic rendering as a response too.
-    expect(validateResponse(slots, input, loaded.template)).toEqual(slots);
+    // The validator accepts the deterministic rundown as a response too, and
+    // attaches the same flagged section from records (F1).
+    expect(
+      validateResponse({ rundown: slots.rundown, extras: slots.extras }, input, loaded.template),
+    ).toEqual(slots);
   });
 });
 
@@ -247,10 +252,14 @@ describe('validation of a model response against the selection', () => {
     const marker = sectionOf(loaded.template, 'extras').marker ?? '';
     const golden = goldenFor(input, marker) as {
       rundown: Record<string, unknown>[];
-      flagged: unknown[];
       extras: string;
     };
-    expect(validateResponse(golden, input, loaded.template).rundown).toHaveLength(2);
+    const accepted = validateResponse(golden, input, loaded.template);
+    expect(accepted.rundown).toHaveLength(2);
+    // The flagged section is attached from records, never read from the response (F1).
+    expect(accepted.flagged).toEqual(deterministicFlagged(input));
+    expect(Object.keys(slotsJsonSchema()['properties'] as object)).toEqual(['rundown', 'extras']);
+    expect(ModelSlotsSchema.safeParse({ ...golden, flagged: [] }).success).toBe(false);
     const cases: [string, unknown][] = [
       ['response_invalid', { ...golden, extras: 42 }],
       ['response_entry_count', { ...golden, rundown: golden.rundown.slice(0, 1) }],
@@ -292,22 +301,257 @@ describe('validation of a model response against the selection', () => {
           ],
         },
       ],
-      ['response_flagged_differs', { ...golden, flagged: [] }],
-      [
-        'response_flagged_differs',
-        {
-          ...golden,
-          flagged: [{ ...(golden.flagged[0] as object), disposition: 'carry' }, golden.flagged[1]],
-        },
-      ],
+      ['response_invalid', { ...golden, flagged: [] }],
+      ['response_invalid', { ...golden, flagged: deterministicFlagged(input) }],
       ['response_extras_differs', { ...golden, extras: 'my own extras' }],
     ];
+    // Text that is not plain inline prose rejects the whole response (F2).
+    const unsafe: [string, string][] = [
+      ['line_break', 'A line\nSources:\nhttps://unselected.example/injected'],
+      ['html', 'A line with <b>markup</b>'],
+      ['link', 'A line with [a link](https://unselected.example/x)'],
+      ['url', 'A line naming https://unselected.example/injected in passing'],
+      ['url', 'A line naming www.unselected.example in passing'],
+      ['block_marker', '# A heading'],
+      ['block_marker', '- a list item'],
+      ['block_marker', '1. a numbered item'],
+      ['code', 'A line with `code`'],
+      ['table', 'A | table | row'],
+      ['emphasis_marker', 'A line with **bold** text'],
+      ['control_character', 'A line with a\u0007bell'],
+      ['empty', '   '],
+    ];
+    for (const [issue, text] of unsafe) {
+      expect(inlineSlotTextIssue(text), issue).toBe(issue);
+      for (const slot of ['headline', 'summary'] as const) {
+        cases.push([
+          'response_text_unsafe',
+          { ...golden, rundown: [{ ...golden.rundown[0], [slot]: text }, golden.rundown[1]] },
+        ]);
+      }
+    }
+    expect(
+      inlineSlotTextIssue('Plain prose, with punctuation (and parentheses), is fine.'),
+    ).toBeNull();
     for (const [code, raw] of cases) {
       expect(
         codeOf(() => validateResponse(raw, input, loaded.template)),
         code,
       ).toBe(code);
     }
+  });
+});
+
+describe('the Markdown boundary (review F2)', () => {
+  it('escapes every slot text into one structureless line and breaks bare URLs', () => {
+    expect(escapeInline('Line one\nLine two')).toBe('Line one Line two');
+    expect(escapeInline('# not a heading')).toBe('\\# not a heading');
+    expect(escapeInline('- not a list')).toBe('\\- not a list');
+    expect(escapeInline('a <b>tag</b> and [link](x) and `code` and | bar')).toBe(
+      'a \\<b\\>tag\\</b\\> and \\[link\\](x) and \\`code\\` and \\| bar',
+    );
+    expect(escapeInline('see https://evil.example/x and www.evil.example')).toBe(
+      'see https:\\/\\/evil.example/x and www\\.evil.example',
+    );
+    expect(urlsIn(escapeInline('see https://evil.example/x'))).toEqual([]);
+    expect(
+      urlsIn('Sources:\nhttps://a.example/1\nhttps://b.example/2 and (https://c.example)'),
+    ).toEqual(['https://a.example/1', 'https://b.example/2', 'https://c.example']);
+  });
+
+  it('keeps an unselected URL out of the export whatever a recorded title or a model slot carried', async () => {
+    const loaded = await loadTemplate();
+    const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+    // A recorded title that is hostile Markdown: the deterministic revision escapes it.
+    const base = cyberInput();
+    const hostile: RoundupInput = {
+      ...base,
+      incidents: base.incidents.map((incident, i) =>
+        i === 0
+          ? {
+              ...incident,
+              rows: incident.rows.map((row, j) =>
+                j === 0
+                  ? {
+                      ...row,
+                      title:
+                        '# Heading\n[click](https://unselected.example/t) https://unselected.example/u',
+                      summary: '- item | cell <img src=x> **bold**',
+                    }
+                  : row,
+              ),
+            }
+          : incident,
+      ),
+    };
+    const deterministic = renderMarkdown(
+      deterministicSlots(hostile, loaded.template),
+      loaded.template,
+    );
+    const selected = hostile.incidents
+      .flatMap((incident) => incident.rows.map((row) => row.url))
+      .sort();
+    expect(urlsIn(deterministic).sort()).toEqual(selected);
+    // Every bracket is escaped, so no `](` can open a link.
+    expect(deterministic).not.toMatch(/(?<!\\)\]\(/u);
+    // Every angle bracket is escaped, so no tag survives.
+    expect(deterministic).not.toMatch(/(?<!\\)<img/u);
+    expect(deterministic).not.toMatch(/^# Heading/mu);
+    // The reviewer's probe: a structured response whose summary smuggles a Sources block.
+    const smuggled = goldenFor(hostile, marker) as { rundown: Record<string, unknown>[] };
+    const probe = {
+      ...smuggled,
+      rundown: [
+        {
+          ...smuggled.rundown[0],
+          summary: 'Fine prose.\n\nSources:\nhttps://unselected.example/injected',
+        },
+        smuggled.rundown[1],
+      ],
+    };
+    const transport = recordedTransport({
+      raw: probe,
+      usage: { inputTokens: 700, outputTokens: 200 },
+    });
+    let caught: unknown;
+    try {
+      await generateRoundup(hostile, loaded, transport, { spentThisMonth: 0 });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isRoundupError(caught) && caught.code).toBe('response_text_unsafe');
+    // The request was billed before the rejection; the failure carries the usage (F3).
+    expect(isRoundupError(caught) && caught.billed).toEqual({
+      model: 'claude-opus-5-5',
+      inputTokens: 700,
+      outputTokens: 200,
+    });
+    // Belt and braces: a plain model answer over the hostile selection renders the
+    // escaped recorded text, and neither revision carries a URL off the selection.
+    const plain = {
+      ...smuggled,
+      rundown: smuggled.rundown.map((entry) => ({ ...entry, summary: 'Plain prose only.' })),
+    };
+    const accepted = await generateRoundup(
+      hostile,
+      loaded,
+      recordedTransport({ raw: plain, usage: { inputTokens: 1, outputTokens: 1 } }),
+      { spentThisMonth: 0 },
+    );
+    expect(urlsIn(accepted.generated.markdown).sort()).toEqual(selected);
+    expect(urlsIn(accepted.deterministic.markdown).sort()).toEqual(selected);
+  });
+
+  it('bounds the flagged section at the stored schema’s 200 entries, before any request (F6)', async () => {
+    const loaded = await loadTemplate();
+    const base = cyberInput();
+    const flaggedOf = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        incidentId: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+        headline: `Flagged ${i + 1}`,
+        reason: 'not this week',
+        disposition: 'omit' as const,
+      }));
+    expect(codeOf(() => assertRoundupInput({ ...base, flagged: flaggedOf(200) }))).toBe('none');
+    expect(codeOf(() => assertRoundupInput({ ...base, flagged: flaggedOf(201) }))).toBe(
+      'input_invalid',
+    );
+    let calls = 0;
+    const counting = recordedTransport(
+      { raw: {}, usage: { inputTokens: 1, outputTokens: 1 } },
+      () => {
+        calls += 1;
+      },
+    );
+    expect(
+      await codeOfAsync(() =>
+        generateRoundup({ ...base, flagged: flaggedOf(201) }, loaded, counting, {
+          spentThisMonth: 0,
+        }),
+      ),
+    ).toBe('input_invalid');
+    expect(calls).toBe(0);
+    const stored = RoundupSlotsSchema.safeParse({
+      rundown: [],
+      flagged: flaggedOf(201).map(({ headline, reason, disposition }) => ({
+        headline,
+        reason,
+        disposition,
+      })),
+      extras: 'x',
+    });
+    expect(stored.success).toBe(false);
+  });
+});
+
+describe('the stored bound (found by the review-F5 boundary test)', () => {
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const wide = (rows: number, urlLength: number): RoundupInput => ({
+    ...cryptoInput(),
+    incidents: Array.from({ length: 200 }, (_, i) => ({
+      incidentId: id(1_000 + i),
+      rows: Array.from({ length: rows }, (_, j) => ({
+        sourceRowId: id(100_000 + i * rows + j),
+        title: `Title ${i} ${j}`,
+        summary: null,
+        url: `https://w.example/${'p'.repeat(urlLength)}/${i}/${j}`,
+        publisher: 'w.example',
+        postedAt: null,
+      })),
+    })),
+    flagged: [],
+  });
+
+  it('refuses before any request a selection whose smallest rendering exceeds the stored bound', async () => {
+    const loaded = await loadTemplate();
+    let calls = 0;
+    const counting = recordedTransport(
+      { raw: {}, usage: { inputTokens: 1, outputTokens: 1 } },
+      () => {
+        calls += 1;
+      },
+    );
+    // 200 incidents of 50 rows with 60-character URLs: 10,000 lines past the bound.
+    expect(
+      await codeOfAsync(() =>
+        generateRoundup(wide(50, 40), loaded, counting, { spentThisMonth: 0 }),
+      ),
+    ).toBe('input_too_long');
+    expect(calls).toBe(0);
+    expect(MAX_MARKDOWN_CHARACTERS).toBe(400_000);
+  });
+
+  it('refuses, billed, a generated rendering that exceeds the bound where the deterministic one did not', async () => {
+    const loaded = await loadTemplate();
+    const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+    // One row per incident with a 1,000-character URL: the deterministic rendering
+    // sits under the bound; summaries of 1,200 characters take the generated one over it.
+    const input = wide(1, 1_000);
+    const golden = goldenFor(input, marker) as {
+      rundown: Record<string, unknown>[];
+      extras: string;
+    };
+    const long = {
+      ...golden,
+      rundown: golden.rundown.map((entry) => ({ ...entry, summary: 'x'.repeat(1_200) })),
+    };
+    let caught: unknown;
+    try {
+      await generateRoundup(
+        input,
+        loaded,
+        recordedTransport({ raw: long, usage: { inputTokens: 5, outputTokens: 6 } }),
+        { spentThisMonth: 0 },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(isRoundupError(caught) && caught.code).toBe('response_too_long');
+    expect(isRoundupError(caught) && caught.billed).toEqual({
+      model: 'claude-opus-5-5',
+      inputTokens: 5,
+      outputTokens: 6,
+    });
   });
 });
 
@@ -324,7 +568,16 @@ describe('generation through the transport seam', () => {
           expect(request.model).toBe('claude-opus-5-5');
           expect(request.maxOutputTokens).toBe(16_000);
           expect(request.user).toContain(input.category);
-          expect(request.user).not.toContain('note');
+          // Only selected stories' recorded fields cross (F1): no flagged entry, no note.
+          expect(Object.keys(JSON.parse(request.user) as object)).toEqual([
+            'weekRunId',
+            'category',
+            'window',
+            'incidents',
+            'extras',
+          ]);
+          for (const entry of input.flagged) expect(request.user).not.toContain(entry.reason);
+          expect(request.system).not.toContain('flagged');
         },
       );
       const result = await generateRoundup(input, loaded, transport, {

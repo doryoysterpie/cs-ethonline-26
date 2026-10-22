@@ -1,6 +1,24 @@
 import type { RoundupInput } from './input.js';
-import type { RoundupSlots } from './schema.js';
+import type { RoundupFlagged, RoundupSlots } from './schema.js';
 import { sectionOf, type RundownTemplate } from './template.js';
+import { escapeInline } from './text.js';
+
+/**
+ * The most characters a stored revision holds: migration 0015's bound on
+ * `roundup_revisions.markdown`, pinned here so a round-up that could not be
+ * stored is refused before any request is made (found by the review-F5
+ * boundary test: a selection at the row bound rendered past the bound).
+ */
+export const MAX_MARKDOWN_CHARACTERS = 400_000;
+
+/** The flagged section, from records alone: the same in every revision, never from a model (review F1). */
+export function deterministicFlagged(input: RoundupInput): RoundupFlagged[] {
+  return input.flagged.map((entry) => ({
+    headline: entry.headline,
+    reason: entry.reason,
+    disposition: entry.disposition,
+  }));
+}
 
 /**
  * The deterministic revision 0: the same snapshot rendered without a model.
@@ -24,16 +42,16 @@ export function deterministicSlots(input: RoundupInput, template: RundownTemplat
         citations: incident.rows.map((row) => row.sourceRowId),
       };
     }),
-    flagged: input.flagged.map((entry) => ({
-      headline: entry.headline,
-      reason: entry.reason,
-      disposition: entry.disposition,
-    })),
+    flagged: deterministicFlagged(input),
     extras,
   };
 }
 
-/** Copy-ready Markdown in the template's entry format (D40). */
+/**
+ * Copy-ready Markdown in the template's entry format (D40). Every slot text,
+ * model-written or recorded, passes through `escapeInline` (review F2): one
+ * line, no structure, no link; the sources lines are the only URLs.
+ */
 export function renderMarkdown(slots: RoundupSlots, template: RundownTemplate): string {
   const rundown = sectionOf(template, 'rundown');
   const extras = sectionOf(template, 'extras');
@@ -41,14 +59,22 @@ export function renderMarkdown(slots: RoundupSlots, template: RundownTemplate): 
   const label = template.entry.sources.label;
   const lines: string[] = [`## ${rundown.title}`, ''];
   for (const entry of slots.rundown) {
-    lines.push(`**${entry.headline}**`, '', entry.summary, '', label, ...entry.sources, '');
+    lines.push(
+      `**${escapeInline(entry.headline)}**`,
+      '',
+      escapeInline(entry.summary),
+      '',
+      label,
+      ...entry.sources,
+      '',
+    );
   }
   lines.push(`## ${extras.title}`, '', slots.extras, '');
   if (slots.flagged.length > 0) {
     lines.push(`## ${flagged.title}`, '');
     for (const entry of slots.flagged) {
       lines.push(
-        `- ${entry.disposition === 'carry' ? 'Carried to next week' : 'Omitted'}: ${entry.headline}. ${entry.reason}`,
+        `- ${entry.disposition === 'carry' ? 'Carried to next week' : 'Omitted'}: ${escapeInline(entry.headline)}. ${escapeInline(entry.reason)}`,
       );
     }
     lines.push('');

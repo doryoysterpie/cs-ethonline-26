@@ -569,7 +569,7 @@ content. No scheduled service exists (D37). The report is `docs/CAS-003-REPORT.m
 ## 19. CAS-004 boundary: the round-up and the model
 
 `packages/roundup` is a pure package: the rundown template (`data/policy/rundown-template.json`,
-versioned and hashed, D40), the slot schema, the prompt contract (`roundup-prompt@1`, hashed
+versioned and hashed, D40), the slot schema, the prompt contract (`roundup-prompt@2`, hashed
 with the template), the deterministic rendering, the response validation against the selection,
 and the cost rules D9 resolved for this output. It never opens a socket; it takes a transport
 interface and returns coded results. The one transport implementation lives in the dashboard
