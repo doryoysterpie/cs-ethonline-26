@@ -24,6 +24,15 @@ import {
   splitIncidentAction,
 } from './mutate.ts';
 import {
+  approveSignup,
+  denySignup,
+  pendingSignups,
+  publishedList,
+  publishedOutput,
+  publishOutput,
+  unpublishOutput,
+} from './readers.ts';
+import {
   administration,
   anomalyView,
   articleView,
@@ -100,9 +109,18 @@ const READS: Readonly<Record<string, Call>> = {
   draftView: (r, p) => draftView(r, p, ID, '2026-08-09T00:00:00Z', '2026-08-16T00:00:00Z'),
   administration: (r, p) => administration(r, p),
   articleView: (r, p) => articleView(r, p, ID, 'cyberattack'),
+  publishedList: (r, p) => publishedList(r, p),
+  publishedOutput: (r, p) => publishedOutput(r, p, ID, 'cyberattack', 'roundup'),
+  pendingSignups: (r, p) => pendingSignups(r, p),
 };
 
 const MUTATIONS: Readonly<Record<string, Call>> = {
+  approveSignup: (r, p) => approveSignup(r, p, { requestId: ID, expiresAt: null }),
+  denySignup: (r, p) => denySignup(r, p, { requestId: ID }),
+  publishOutput: (r, p) =>
+    publishOutput(r, p, { weekRunId: ID, category: 'cyberattack', output: 'roundup', revision: 1 }),
+  unpublishOutput: (r, p) =>
+    unpublishOutput(r, p, { weekRunId: ID, category: 'cyberattack', output: 'roundup' }),
   readArticleSources: (r, p) =>
     readArticleSources(r, p, { weekRunId: ID, category: 'cyberattack' }),
   generateArticle: (r, p) =>
@@ -178,6 +196,9 @@ const ADMIN_ONLY = new Set([
   'assignRole',
   'setAccountExpiry',
   'revokeAccountSessions',
+  'pendingSignups',
+  'approveSignup',
+  'denySignup',
 ]);
 const EDITOR_ONLY_READS = new Set(['reviewQueue', 'draftView', 'articleView']);
 

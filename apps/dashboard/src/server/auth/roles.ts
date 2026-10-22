@@ -73,6 +73,7 @@ const EDITOR: readonly Capability[] = [
   'review:evidence',
   'edit:draft',
   'select:stories',
+  'view:published',
 ];
 
 const ADMIN: readonly Capability[] = [
@@ -89,6 +90,7 @@ const ADMIN: readonly Capability[] = [
   'review:evidence',
   'edit:draft',
   'select:stories',
+  'view:published',
   'admin:accounts',
   'admin:sessions',
   'view:audit',

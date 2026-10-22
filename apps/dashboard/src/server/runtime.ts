@@ -56,6 +56,8 @@ export interface Runtime {
   readonly otpPepper: string | null;
   /** The fixed-window limits of CAS-007. */
   readonly limits: Limits;
+  /** The dashboard's public https origin (DASHBOARD_PUBLIC_URL), named in the approval email; null when unset. */
+  readonly publicUrl: string | null;
 }
 
 export function createRuntime(
@@ -67,9 +69,10 @@ export function createRuntime(
     readonly reader?: SourceReaderDeps | null | undefined;
     readonly readings?: ReadingCache | undefined;
     readonly limits?: Limits | undefined;
+    readonly publicUrl?: string | null | undefined;
   } = {},
 ): Runtime {
-  const { model, reader, readings, limits, ...sessionOptions } = options;
+  const { model, reader, readings, limits, publicUrl, ...sessionOptions } = options;
   return {
     config,
     stores,
@@ -81,6 +84,7 @@ export function createRuntime(
     email: sessionOptions.emailProvider ?? null,
     otpPepper: sessionOptions.otpPepper ?? null,
     limits: limits ?? defaultLimits(),
+    publicUrl: publicUrl ?? null,
   };
 }
 
@@ -126,6 +130,7 @@ export function getRuntime(): Promise<Runtime> {
         otpPepper: otp.pepper,
         model: modelConfig === null ? null : createAnthropicTransport(modelConfig),
         reader: readerConfig === null ? null : createNodeReader(readerConfig, sourceReader),
+        publicUrl: readerConfig === null ? null : new URL(readerConfig.publicUrl).origin,
       });
     })();
     // A failed start is not cached: the next request tries again and reports

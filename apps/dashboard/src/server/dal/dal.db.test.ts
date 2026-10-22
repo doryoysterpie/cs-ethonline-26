@@ -16,6 +16,20 @@ import { openPostgresStores } from '../auth/postgres-store.ts';
 import { recordedTransport, sectionOf, loadTemplate } from '@cas/roundup';
 import { recordedTransport as recordedPages, type RawTransport } from '@cas/source-reader';
 import { ReadingCache } from './readings.ts';
+import { insertRoundupRevision } from '@cas/database';
+import type { EmailMessage } from '../auth/email-provider.ts';
+import { WindowLimiter } from '../http/limits.ts';
+import {
+  approveSignup,
+  denySignup,
+  pendingSignups,
+  publishedList,
+  publishedOutput,
+  publishOutput,
+  requestSignup,
+  unpublishOutput,
+  verifySignup,
+} from './readers.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
 import type { Principal } from '../auth/session.ts';
 import { isDashboardError } from '../errors.ts';
@@ -855,6 +869,7 @@ describe('data-access layer against PostgreSQL', () => {
     model: ReturnType<typeof recordedTransport> | null,
     schema: IsolatedSchema = isolated,
     reader: RawTransport | null = null,
+    extra: Partial<Parameters<typeof createRuntime>[3]> = {},
   ) {
     const persistent = openPostgresStores(schema.db);
     const rt = createRuntime(
@@ -879,6 +894,7 @@ describe('data-access layer against PostgreSQL', () => {
                 userAgent: 'LatestInCyber/0.1 (+https://dashboard.example.org)',
               },
         readings: new ReadingCache(),
+        ...extra,
       },
     );
     const persisted = {} as Record<Role, Principal>;
@@ -1627,6 +1643,295 @@ describe('data-access layer against PostgreSQL', () => {
       expect(
         (await articleView(noModel, p2.owner, good.weekRunId, 'cyberattack')).revisions,
       ).toEqual([]);
+    });
+  });
+
+  describe('readers (CAS-007)', () => {
+    const PEPPER = 'p'.repeat(32);
+    function mailbox() {
+      const sent: EmailMessage[] = [];
+      return { sent, provider: { send: async (message: EmailMessage) => void sent.push(message) } };
+    }
+    const codeIn = (message: EmailMessage | undefined): string =>
+      /\b(\d{6})\b/u.exec(message?.text ?? '')?.[1] ?? '';
+
+    it('answers every address the same way, sends a code only where one is due, locks after five wrong codes, and verifies once', async () => {
+      const mail = mailbox();
+      const { rt, persisted, persistent } = await persistentRuntime(null, isolated, null, {
+        emailProvider: mail.provider,
+        otpPepper: PEPPER,
+        publicUrl: 'https://dashboard.example.org',
+      });
+      const shape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+      const fresh = await requestSignup(rt, {
+        email: 'New.Reader@Example.org',
+        networkKey: 'direct',
+      });
+      expect(fresh.requestId).toMatch(shape);
+      expect(mail.sent).toHaveLength(1);
+      expect(mail.sent[0]?.to).toBe('new.reader@example.org');
+      expect(codeIn(mail.sent[0])).toMatch(/^\d{6}$/u);
+      // Pending again, an existing account's address, and a malformed address: the same answer, no mail.
+      const again = await requestSignup(rt, {
+        email: 'new.reader@example.org',
+        networkKey: 'direct',
+      });
+      const malformed = await requestSignup(rt, { email: 'not an address', networkKey: 'direct' });
+      for (const answer of [again, malformed]) expect(Object.keys(answer)).toEqual(['requestId']);
+      for (const answer of [again, malformed]) expect(answer.requestId).toMatch(shape);
+      expect(mail.sent).toHaveLength(1);
+      const requested = (await persistent.audit.list(50)).filter(
+        (e) => e.kind === 'signup_requested',
+      );
+      expect(requested.map((e) => e.code).sort()).toEqual(['sent', 'silent', 'silent']);
+      expect(requested.every((e) => !JSON.stringify(e).includes('example.org'))).toBe(true);
+      // Wrong codes: four invalid, the fifth locks; the right code is then refused too.
+      const wrong = codeIn(mail.sent[0]) === '000000' ? '000001' : '000000';
+      for (let i = 0; i < 4; i += 1) {
+        expect(
+          await verifySignup(rt, { requestId: fresh.requestId, code: wrong, networkKey: 'direct' }),
+        ).toBe('invalid');
+      }
+      expect(
+        await verifySignup(rt, { requestId: fresh.requestId, code: wrong, networkKey: 'direct' }),
+      ).toBe('locked');
+      expect(
+        await verifySignup(rt, {
+          requestId: fresh.requestId,
+          code: codeIn(mail.sent[0]),
+          networkKey: 'direct',
+        }),
+      ).toBe('locked');
+      expect(
+        (await persistent.audit.list(50)).filter((e) => e.kind === 'signup_locked'),
+      ).toHaveLength(1);
+      // A second address verifies once with its code; a bogus identifier answers as expired.
+      const second = await requestSignup(rt, { email: 'second@example.org', networkKey: 'direct' });
+      expect(
+        await verifySignup(rt, {
+          requestId: second.requestId,
+          code: codeIn(mail.sent[1]),
+          networkKey: 'direct',
+        }),
+      ).toBe('verified');
+      expect(
+        await verifySignup(rt, {
+          requestId: second.requestId,
+          code: codeIn(mail.sent[1]),
+          networkKey: 'direct',
+        }),
+      ).toBe('verified');
+      expect(
+        await verifySignup(rt, { requestId: randomUUID(), code: '123456', networkKey: 'direct' }),
+      ).toBe('expired');
+      expect(
+        await verifySignup(rt, { requestId: 'nonsense', code: '123456', networkKey: 'direct' }),
+      ).toBe('expired');
+      // The admin sees the verified request and nobody else does.
+      for (const role of ['reader', 'editor', 'owner'] as const) {
+        expect(await kindOf(pendingSignups(rt, persisted[role]))).toBe('authorization');
+      }
+      const pending = await pendingSignups(rt, persisted.admin);
+      expect(pending.map((p) => [p.requestId, p.email])).toEqual([
+        [second.requestId, 'second@example.org'],
+      ]);
+      // Approval creates a reader with a one-year expiry and sends the fixed text; the request is decided once.
+      for (const role of ['reader', 'editor', 'owner'] as const) {
+        expect(
+          await kindOf(
+            approveSignup(rt, persisted[role], { requestId: second.requestId, expiresAt: null }),
+          ),
+        ).toBe('authorization');
+      }
+      const approved = await approveSignup(rt, persisted.admin, {
+        requestId: second.requestId,
+        expiresAt: null,
+      });
+      const account = await persistent.accounts.getById(approved.accountId);
+      expect(account?.role).toBe('reader');
+      expect(account?.normalizedEmail).toBe('second@example.org');
+      const days = (Date.parse(account?.expiresAt ?? '') - Date.now()) / 86_400_000;
+      expect(days).toBeGreaterThan(364);
+      expect(days).toBeLessThan(366);
+      expect(mail.sent[2]).toMatchObject({
+        to: 'second@example.org',
+        subject: 'Your request to read Latest in Cyber was approved',
+      });
+      expect(mail.sent[2]?.text).toContain(
+        'Sign in at https://dashboard.example.org with this address',
+      );
+      expect(mail.sent[2]?.text).not.toMatch(/https?:\/\/\S*(?:token|code|key)=/u);
+      expect(
+        await kindOf(
+          approveSignup(rt, persisted.admin, { requestId: second.requestId, expiresAt: null }),
+        ),
+      ).toBe('validation');
+      expect(await pendingSignups(rt, persisted.admin)).toEqual([]);
+      // The address now holds an account: a request for it answers the same way and sends nothing.
+      const existing = await requestSignup(rt, {
+        email: 'second@example.org',
+        networkKey: 'direct',
+      });
+      expect(existing.requestId).toMatch(shape);
+      expect(mail.sent).toHaveLength(3);
+      // Denial of a third verified request: the fixed text, no account.
+      const third = await requestSignup(rt, {
+        email: 'third@example.org',
+        networkKey: 'elsewhere',
+      });
+      expect(
+        await verifySignup(rt, {
+          requestId: third.requestId,
+          code: codeIn(mail.sent[3]),
+          networkKey: 'elsewhere',
+        }),
+      ).toBe('verified');
+      await denySignup(rt, persisted.admin, { requestId: third.requestId });
+      expect(mail.sent[4]).toEqual({
+        to: 'third@example.org',
+        subject: 'Your request to read Latest in Cyber',
+        text: 'Your request was not approved.',
+      });
+      expect(await persistent.accounts.findByNormalizedEmail('third@example.org')).toBeNull();
+      expect(await kindOf(denySignup(rt, persisted.admin, { requestId: third.requestId }))).toBe(
+        'validation',
+      );
+      const decisions = (await persistent.audit.list(100)).filter(
+        (e) => e.kind === 'signup_approved' || e.kind === 'signup_denied',
+      );
+      expect(decisions.map((e) => e.kind).sort()).toEqual(['signup_approved', 'signup_denied']);
+      expect(
+        decisions.every(
+          (e) => e.actorAccountId === persisted.admin.accountId && !JSON.stringify(e).includes('@'),
+        ),
+      ).toBe(true);
+    });
+
+    it('throttles a burst per address and per source with one count-only event each, and limits a reader’s reads', async () => {
+      const mail = mailbox();
+      const { rt, persisted, persistent } = await persistentRuntime(null, isolated, null, {
+        emailProvider: mail.provider,
+        otpPepper: PEPPER,
+        limits: {
+          signupAddress: new WindowLimiter(2, 900),
+          signupNetwork: new WindowLimiter(3, 900),
+          readerReads: new WindowLimiter(2, 900),
+        },
+      });
+      const outcomes: string[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        await requestSignup(rt, { email: 'burst@example.org', networkKey: `source-${i}` });
+        outcomes.push(
+          (await persistent.audit.list(5)).find((e) => e.kind === 'signup_requested')?.code ?? '',
+        );
+      }
+      expect(outcomes).toEqual(['sent', 'silent', 'limited', 'limited']);
+      let trips = (await persistent.audit.list(100)).filter((e) => e.kind === 'limit_tripped');
+      expect(trips.map((e) => e.code)).toEqual(['signup_address']);
+      for (let i = 0; i < 4; i += 1) {
+        await requestSignup(rt, { email: `n${i}@example.org`, networkKey: 'one-source' });
+      }
+      trips = (await persistent.audit.list(100)).filter((e) => e.kind === 'limit_tripped');
+      expect(trips.map((e) => e.code).sort()).toEqual(['signup_address', 'signup_network']);
+      // A reader's third read in the window is refused with the wait; one event for the window.
+      await commandCenter(rt, persisted.reader);
+      await commandCenter(rt, persisted.reader);
+      let caught: unknown;
+      try {
+        await commandCenter(rt, persisted.reader);
+      } catch (error) {
+        caught = error;
+      }
+      expect(
+        isDashboardError(caught) &&
+          caught.kind === 'throttled' &&
+          caught.code === 'reader_read_limit',
+      ).toBe(true);
+      expect(await kindOf(commandCenter(rt, persisted.reader))).toBe('throttled');
+      expect(
+        (await persistent.audit.list(100)).filter(
+          (e) => e.kind === 'limit_tripped' && e.code === 'reader_reads',
+        ),
+      ).toHaveLength(1);
+      // An editor is not limited.
+      await commandCenter(rt, persisted.editor);
+      await commandCenter(rt, persisted.editor);
+      await commandCenter(rt, persisted.editor);
+    });
+
+    it('publishes one revision for readers, by the latest mark, and nothing without it', async () => {
+      const week = await seedWeek(isolated.db);
+      const { rt, persisted, persistent } = await persistentRuntime(null);
+      const at = new Date().toISOString();
+      await isolated.db.withTransaction(async (tx) => {
+        await insertRoundupRevision(tx, {
+          weekRunId: week.weekRunId,
+          category: 'cyberattack',
+          revision: 0,
+          kind: 'deterministic',
+          slots: { rundown: [] },
+          markdown: '## Rundown\n\n**Revision zero**',
+          provenance: null,
+          savedByAccountId: persisted.owner.accountId,
+          createdAt: at,
+        });
+      });
+      const target = { weekRunId: week.weekRunId, category: 'cyberattack', output: 'roundup' };
+      expect(
+        await kindOf(
+          publishedOutput(rt, persisted.reader, week.weekRunId, 'cyberattack', 'roundup'),
+        ),
+      ).toBe('not_found');
+      expect(await publishedList(rt, persisted.reader)).toEqual([]);
+      for (const role of ['reader', 'editor', 'admin'] as const) {
+        expect(await kindOf(publishOutput(rt, persisted[role], { ...target, revision: 0 }))).toBe(
+          'authorization',
+        );
+      }
+      expect(await kindOf(publishOutput(rt, persisted.owner, { ...target, revision: 7 }))).toBe(
+        'validation',
+      );
+      await publishOutput(rt, persisted.owner, { ...target, revision: 0 });
+      const listed = await publishedList(rt, persisted.reader);
+      expect(listed.map((e) => [e.output, e.revision, e.category])).toEqual([
+        ['roundup', 0, 'cyberattack'],
+      ]);
+      const page = await publishedOutput(
+        rt,
+        persisted.reader,
+        week.weekRunId,
+        'cyberattack',
+        'roundup',
+      );
+      expect(page.markdown).toBe('## Rundown\n\n**Revision zero**');
+      expect(Object.keys(page).sort()).toEqual([
+        'category',
+        'markdown',
+        'output',
+        'publishedAt',
+        'revision',
+        'week',
+      ]);
+      // Editors and the owner may read the public page; nobody but the owner unmarks it.
+      expect(
+        (await publishedOutput(rt, persisted.editor, week.weekRunId, 'cyberattack', 'roundup'))
+          .revision,
+      ).toBe(0);
+      expect(await kindOf(unpublishOutput(rt, persisted.admin, target))).toBe('authorization');
+      await unpublishOutput(rt, persisted.owner, target);
+      expect(
+        await kindOf(
+          publishedOutput(rt, persisted.reader, week.weekRunId, 'cyberattack', 'roundup'),
+        ),
+      ).toBe('not_found');
+      expect(await kindOf(unpublishOutput(rt, persisted.owner, target))).toBe('validation');
+      const marks = (await persistent.audit.list(100)).filter(
+        (e) => e.kind === 'output_published' || e.kind === 'output_unpublished',
+      );
+      expect(marks.map((e) => `${e.kind}:${e.code}`).sort()).toEqual([
+        'output_published:roundup_0',
+        'output_unpublished:roundup_0',
+      ]);
     });
   });
 });

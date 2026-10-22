@@ -36,6 +36,7 @@ const MATRIX: Readonly<Record<(typeof ROLES)[number], readonly string[]>> = {
     'review:evidence',
     'edit:draft',
     'select:stories',
+    'view:published',
   ],
   admin: [
     'view:command_center',
@@ -51,6 +52,7 @@ const MATRIX: Readonly<Record<(typeof ROLES)[number], readonly string[]>> = {
     'review:evidence',
     'edit:draft',
     'select:stories',
+    'view:published',
     'admin:accounts',
     'admin:sessions',
     'view:audit',
@@ -69,6 +71,7 @@ const MATRIX: Readonly<Record<(typeof ROLES)[number], readonly string[]>> = {
     'review:evidence',
     'edit:draft',
     'select:stories',
+    'view:published',
     'generate:roundup',
     'generate:article',
     'edit:output',

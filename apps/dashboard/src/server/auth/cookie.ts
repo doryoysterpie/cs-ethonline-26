@@ -95,3 +95,26 @@ export function clearingOtpPendingCookieHeader(environment: DashboardEnvironment
   const secure = environment !== 'local' ? '; Secure' : '';
   return `${otpPendingCookieName(environment)}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${secure}`;
 }
+
+/** The sign-up request's pending cookie (CAS-007): the request's identifier, never the address. */
+export const SIGNUP_PENDING_COOKIE_BASE = 'cas_signup_pending';
+
+export function signupPendingCookieName(environment: DashboardEnvironment): string {
+  return environment === 'local'
+    ? SIGNUP_PENDING_COOKIE_BASE
+    : `__Host-${SIGNUP_PENDING_COOKIE_BASE}`;
+}
+
+export function signupPendingCookieAttributes(
+  environment: DashboardEnvironment,
+  maxAgeSeconds: number,
+): SessionCookieAttributes {
+  return {
+    name: signupPendingCookieName(environment),
+    httpOnly: true,
+    secure: environment !== 'local',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: maxAgeSeconds,
+  };
+}

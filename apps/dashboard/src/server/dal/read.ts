@@ -34,6 +34,7 @@ import type {
   WeekTableDto,
 } from './dto.ts';
 import { holds, requireCapability } from './guard.ts';
+import { enforceReaderLimit } from './reader-limit.ts';
 import { mapFailure } from './failures.ts';
 
 /**
@@ -66,7 +67,8 @@ export async function commandCenter(
   runtime: Runtime,
   who: Principal | null,
 ): Promise<CommandCenterDto> {
-  requireCapability(who, 'view:command_center');
+  const principal = requireCapability(who, 'view:command_center');
+  await enforceReaderLimit(runtime, principal);
   const packages = await workspace();
   const {
     countDashboardTotals,
@@ -153,7 +155,8 @@ export async function incidentExplorer(
   clusteringRunId: unknown,
   afterId: unknown,
 ): Promise<IncidentExplorerDto> {
-  requireCapability(who, 'view:incidents');
+  const principal = requireCapability(who, 'view:incidents');
+  await enforceReaderLimit(runtime, principal);
   const runId = uuid(clusteringRunId, 'clusteringRunId');
   const after = optionalUuid(afterId, 'after');
   const packages = await workspace();
@@ -209,6 +212,7 @@ export async function incidentDetail(
   incidentId: unknown,
 ): Promise<IncidentDetailDto> {
   const principal = requireCapability(who, 'view:incidents');
+  await enforceReaderLimit(runtime, principal);
   const runId = uuid(clusteringRunId, 'clusteringRunId');
   const id = uuid(incidentId, 'incidentId');
   const withText = holds(principal, 'view:source_text');
@@ -369,6 +373,7 @@ export async function evidenceView(
   evidenceRunId: unknown,
 ): Promise<EvidenceViewDto> {
   const principal = requireCapability(who, 'view:evidence');
+  await enforceReaderLimit(runtime, principal);
   const runId = uuid(evidenceRunId, 'evidenceRunId');
   const withNotes = holds(principal, 'view:notes');
   const packages = await workspace();
@@ -470,7 +475,8 @@ export async function anomalyView(
   who: Principal | null,
   query: AnomalyQuery,
 ): Promise<AnomalyViewDto> {
-  requireCapability(who, 'view:anomaly');
+  const principal = requireCapability(who, 'view:anomaly');
+  await enforceReaderLimit(runtime, principal);
   const signalRunId = uuid(query.signalRunId, 'signalRunId');
   const asOf = optionalInstant(query.asOf, 'asOf');
   const clusteringRunId = optionalUuid(query.clusteringRunId, 'clusteringRunId');
@@ -668,7 +674,7 @@ const WEEK_TABLE = 500;
 const WEEK_SEARCH = { min: 1, max: 200 } as const;
 const WEEK_SORTS = ['posted_desc', 'members_desc'] as const;
 
-function weekRunDto(run: {
+export function weekRunDto(run: {
   readonly id: string;
   readonly dataOrigin: WeekRunDto['dataOrigin'];
   readonly status: WeekRunDto['status'];
