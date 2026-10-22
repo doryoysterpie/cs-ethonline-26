@@ -194,7 +194,12 @@ export async function insertModelCall(client: Queryable, call: NewModelCall): Pr
   );
 }
 
-/** The month's spend in microdollars: completed calls between the two instants. */
+/**
+ * The month's spend in microdollars: every call between the two instants,
+ * whatever its outcome. A request the model answered is billed whether or
+ * not the answer was kept (review of pull request 24, F3); a refusal before
+ * any request carries zero and adds nothing.
+ */
 export async function spendBetween(client: Queryable, from: string, to: string): Promise<number> {
   if (
     Number.isNaN(Date.parse(from)) ||
@@ -205,7 +210,7 @@ export async function spendBetween(client: Queryable, from: string, to: string):
   }
   const result = await client.query<{ spent: string }>(
     `SELECT coalesce(sum(cost_microdollars), 0)::text AS spent FROM model_calls
-      WHERE outcome = 'completed' AND created_at >= $1::timestamptz AND created_at < $2::timestamptz`,
+      WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz`,
     [from, to],
   );
   return Number(result.rows[0]?.spent ?? '0');
@@ -229,13 +234,16 @@ export interface SelectedRowRecord {
   readonly postedAt: string | null;
 }
 
+/** The most rows one call may ask for; a caller asks for its bound plus one and refuses a full page (review F5). */
+export const SELECTION_PAGE_MAX = 20_000;
+
 export async function listSelectedRows(
   client: Queryable,
   weekRunId: string,
   category: string,
   limit: number,
 ): Promise<SelectedRowRecord[]> {
-  if (limit < 1 || limit > 10_000)
+  if (!Number.isInteger(limit) || limit < 1 || limit > SELECTION_PAGE_MAX)
     throw new DatabaseError('query', 'selection page size out of range');
   const result = await client.query<{
     incident_id: string;
@@ -283,7 +291,7 @@ export async function listOmittedIncidents(
   category: string,
   limit: number,
 ): Promise<{ readonly incidentId: string; readonly title: string; readonly reason: string }[]> {
-  if (limit < 1 || limit > 10_000)
+  if (!Number.isInteger(limit) || limit < 1 || limit > SELECTION_PAGE_MAX)
     throw new DatabaseError('query', 'selection page size out of range');
   const result = await client.query<{ incident_id: string; title: string | null; note: string }>(
     `WITH latest AS (

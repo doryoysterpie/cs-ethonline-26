@@ -414,6 +414,17 @@ describe('round-up revisions, the model ledger and the owner role (migration 001
         }),
       ),
     ).toBe('P0001');
+    // The stored bound on the rendering: 400,000 characters, the constant the package pins.
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(
+          `INSERT INTO roundup_revisions (week_run_id, category, revision, kind, slots, markdown, saved_by_account_id, created_at)
+           SELECT $1, 'cyberattack', max(revision) + 1, 'edited', '{}'::jsonb, repeat('x', 400001), $2, now()
+             FROM roundup_revisions WHERE week_run_id = $1 AND category = 'cyberattack'`,
+          [weekRunId, owner],
+        ),
+      ),
+    ).toBe('23514');
     // Append-only.
     expect(
       await expectRejected(isolated.db, (tx) =>
@@ -427,7 +438,7 @@ describe('round-up revisions, the model ledger and the owner role (migration 001
     ).toBe('P0001');
   });
 
-  it('sums the month’s completed calls only, and keeps the ledger append-only', async () => {
+  it('sums every billed call of the month, whatever its outcome, and keeps the ledger append-only', async () => {
     const call = (outcome: 'completed' | 'refused' | 'failed', cost: number, at: string) => ({
       id: randomUUID(),
       kind: 'roundup' as const,
@@ -438,21 +449,29 @@ describe('round-up revisions, the model ledger and the owner role (migration 001
       outputTokens: 10,
       costMicrodollars: cost,
       outcome,
-      code: outcome === 'completed' ? 'completed' : 'spend_cap_exceeded',
+      code:
+        outcome === 'completed'
+          ? 'completed'
+          : outcome === 'failed'
+            ? 'response_sources_differ'
+            : 'spend_cap_exceeded',
       actorAccountId: owner,
       createdAt: at,
     });
     await isolated.db.withTransaction(async (tx) => {
       await insertModelCall(tx, call('completed', 600, '2026-10-05T00:00:00.000Z'));
       await insertModelCall(tx, call('completed', 400, '2026-10-20T00:00:00.000Z'));
-      await insertModelCall(tx, call('refused', 999_999, '2026-10-21T00:00:00.000Z'));
+      // A refusal before any request carries nothing; a response the validator
+      // rejected was billed all the same (review F3) and counts.
+      await insertModelCall(tx, call('refused', 0, '2026-10-21T00:00:00.000Z'));
+      await insertModelCall(tx, call('failed', 300, '2026-10-22T00:00:00.000Z'));
       await insertModelCall(tx, call('completed', 5_000, '2026-11-01T00:00:00.000Z'));
     });
     expect(
       await isolated.db.withClient((c) =>
         spendBetween(c, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z'),
       ),
-    ).toBe(1_000);
+    ).toBe(1_300);
     expect(
       await expectRejected(isolated.db, (tx) =>
         tx.query(`DELETE FROM model_calls WHERE week_run_id = $1`, [weekRunId]),

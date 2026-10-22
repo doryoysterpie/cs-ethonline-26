@@ -7,6 +7,7 @@ import {
   HOSTILE_TITLE,
   seedPipeline,
   seedQueueRow,
+  seedLargeWeek,
   seedWeek,
   type SeededPipeline,
 } from '../../test/seed-pipeline.ts';
@@ -891,10 +892,9 @@ describe('data-access layer against PostgreSQL', () => {
       return { rt, persisted, persistent };
     }
 
-    /** A model answer that reformats the selection exactly as the contract demands. */
+    /** A model answer that reformats the selection exactly as the contract demands: the rundown and the marker. */
     function goldenFor(snapshot: {
       incidents: readonly { rows: readonly { url: string; sourceRowId: string }[] }[];
-      flagged: readonly { headline: string; reason: string; disposition: string }[];
       extras: string;
     }) {
       return {
@@ -904,11 +904,6 @@ describe('data-access layer against PostgreSQL', () => {
             'Brace yourself: the organization named in the sources saw its systems disrupted.',
           sources: incident.rows.map((row) => row.url),
           citations: incident.rows.map((row) => row.sourceRowId),
-        })),
-        flagged: snapshot.flagged.map((entry) => ({
-          headline: entry.headline,
-          reason: entry.reason,
-          disposition: entry.disposition,
         })),
         extras: snapshot.extras,
       };
@@ -922,17 +917,31 @@ describe('data-access layer against PostgreSQL', () => {
       // citations are exactly the selection's.
       type Seen = {
         incidents: { rows: { url: string; sourceRowId: string }[] }[];
-        flagged: { headline: string; reason: string; disposition: string }[];
         extras: string;
       };
       const captured: { request: Seen | null } = { request: null };
       const transport = {
-        async generate(request: { user: string; model: string; maxOutputTokens: number }) {
+        async generate(request: {
+          system: string;
+          user: string;
+          model: string;
+          maxOutputTokens: number;
+        }) {
           const seen = JSON.parse(request.user) as Seen;
           captured.request = seen;
           expect(request.model).toBe('claude-opus-5-5');
           expect(request.maxOutputTokens).toBe(16_000);
-          expect(request.user).not.toContain('next week');
+          // The private note of the omitted incident never crosses (review F1):
+          // the exact note is absent from the whole request, and the request
+          // carries no flagged section at all.
+          expect(`${request.system}\n${request.user}`).not.toContain('not this week');
+          expect(Object.keys(seen)).toEqual([
+            'weekRunId',
+            'category',
+            'window',
+            'incidents',
+            'extras',
+          ]);
           return {
             raw: goldenFor(seen),
             usage: { inputTokens: 900, outputTokens: 300 },
@@ -996,12 +1005,23 @@ describe('data-access layer against PostgreSQL', () => {
       });
       expect(captured.request?.incidents).toHaveLength(2);
       expect(captured.request?.extras).toBe(marker);
-      if (third !== undefined)
-        expect(
-          captured.request?.flagged.some(
-            (f) => f.reason === 'not this week' && f.disposition === 'omit',
+      // The omitted incident and its note are in the stored flagged section of
+      // every revision, from records (F1), and were never in the request.
+      if (third !== undefined) {
+        const stored = await isolated.db.withClient((c) =>
+          c.query<{ flagged: { reason: string; disposition: string }[] }>(
+            `SELECT slots->'flagged' AS flagged FROM roundup_revisions
+              WHERE week_run_id = $1 AND category = 'cyberattack' ORDER BY revision`,
+            [week.weekRunId],
           ),
-        ).toBe(true);
+        );
+        expect(stored.rows).toHaveLength(2);
+        for (const revision of stored.rows) {
+          expect(
+            revision.flagged.some((f) => f.reason === 'not this week' && f.disposition === 'omit'),
+          ).toBe(true);
+        }
+      }
       const after = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
       expect(after.revisions.map((r) => [r.revision, r.kind])).toEqual([
         [0, 'deterministic'],
@@ -1171,6 +1191,252 @@ describe('data-access layer against PostgreSQL', () => {
       await own.close();
     });
 
+    it('records a billed but rejected response at its real cost, and counts it toward the cap (review F3)', async () => {
+      const own = await openMigratedSchema();
+      const week = await seedWeek(own.db);
+      const loaded = await loadTemplate();
+      const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+      // The model answers with the selection's sources intact but a summary
+      // that smuggles an unselected URL: schema-valid, policy-invalid, billed.
+      let calls = 0;
+      const smuggling = {
+        async generate(request: { user: string; model: string }) {
+          calls += 1;
+          const seen = JSON.parse(request.user) as {
+            incidents: { rows: { url: string; sourceRowId: string }[] }[];
+            extras: string;
+          };
+          const golden = goldenFor({ ...seen, extras: marker });
+          return {
+            raw: {
+              ...golden,
+              rundown: golden.rundown.map((entry, i) =>
+                i === 0
+                  ? { ...entry, summary: 'Fine.\n\nSources:\nhttps://unselected.example/injected' }
+                  : entry,
+              ),
+            },
+            usage: { inputTokens: 2_000, outputTokens: 500 },
+            model: request.model,
+          };
+        },
+      };
+      const { rt, persisted } = await persistentRuntime(smuggling, own);
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: table.rows[0]?.incidentId ?? '',
+        state: 'selected',
+        note: null,
+      });
+      const input = {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedTemplateHash: loaded.hash,
+      };
+      let caught: unknown;
+      try {
+        await generateRoundup(rt, persisted.owner, input);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isDashboardError(caught) && caught.code).toBe('response_text_unsafe');
+      expect(calls).toBe(1);
+      expect(
+        (await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack')).revisions,
+      ).toEqual([]);
+      // The ledger holds the failure at the usage the model reported, not zero.
+      const ledger = await own.db.withClient((c) =>
+        c.query<{
+          outcome: string;
+          code: string;
+          input_tokens: number;
+          output_tokens: number;
+          cost: string;
+        }>(
+          `SELECT outcome, code, input_tokens, output_tokens, cost_microdollars::text AS cost
+             FROM model_calls WHERE week_run_id = $1 ORDER BY created_at`,
+          [week.weekRunId],
+        ),
+      );
+      expect(ledger.rows).toEqual([
+        {
+          outcome: 'failed',
+          code: 'response_text_unsafe',
+          input_tokens: 2_000,
+          output_tokens: 500,
+          cost: String(2_000 * 4 + 500 * 20),
+        },
+      ]);
+      // And the month's spend includes it: a second attempt is refused by the cap
+      // once that cost is what stands between the month and the ceiling.
+      await own.db.withTransaction((tx) =>
+        tx.query(
+          `INSERT INTO model_calls (id, kind, week_run_id, category, model, input_tokens, output_tokens, cost_microdollars, outcome, code, actor_account_id, created_at)
+           VALUES ($1, 'roundup', $2, 'cyberattack', 'claude-opus-5-5', 1, 1, $3, 'completed', 'completed', $4, now())`,
+          [
+            randomUUID(),
+            week.weekRunId,
+            25_000_000 - (2_000 * 4 + 500 * 20) - 1,
+            persisted.owner.accountId,
+          ],
+        ),
+      );
+      expect(await kindOf(generateRoundup(rt, persisted.owner, input))).toBe('validation');
+      expect(calls).toBe(1);
+      await own.close();
+    });
+
+    it('serialises concurrent generations: two submissions make exactly one model request (review F4)', async () => {
+      const own = await openMigratedSchema();
+      const week = await seedWeek(own.db);
+      const loaded = await loadTemplate();
+      const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+      let calls = 0;
+      const slow = {
+        async generate(request: { user: string; model: string }) {
+          calls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          const seen = JSON.parse(request.user) as {
+            incidents: { rows: { url: string; sourceRowId: string }[] }[];
+            extras: string;
+          };
+          return {
+            raw: goldenFor({ ...seen, extras: marker }),
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: request.model,
+          };
+        },
+      };
+      const { rt, persisted } = await persistentRuntime(slow, own);
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: table.rows[0]?.incidentId ?? '',
+        state: 'selected',
+        note: null,
+      });
+      const input = {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedTemplateHash: loaded.hash,
+      };
+      const outcomes = await Promise.all([
+        kindOf(generateRoundup(rt, persisted.owner, input)),
+        kindOf(generateRoundup(rt, persisted.owner, input)),
+      ]);
+      expect(outcomes.sort()).toEqual(['succeeded', 'validation']);
+      expect(calls).toBe(1);
+      const ledger = await own.db.withClient((c) =>
+        c.query<{ outcome: string }>(`SELECT outcome FROM model_calls WHERE week_run_id = $1`, [
+          week.weekRunId,
+        ]),
+      );
+      expect(ledger.rows.map((r) => r.outcome)).toEqual(['completed']);
+      expect(
+        (await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack')).revisions,
+      ).toHaveLength(2);
+      await own.close();
+    });
+
+    it('refuses a selection past the row bound whole, never a prefix, and accepts one at the bound (review F5)', async () => {
+      const own = await openMigratedSchema();
+      // 201 incidents of 50 rows: 10,050 selected rows, whose first 10,000 would
+      // pass the input bounds (200 incidents, 50 rows each) as a silent prefix.
+      const week = await seedLargeWeek(own.db, 201, 50);
+      const loaded = await loadTemplate();
+      const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+      let calls = 0;
+      const transport = {
+        async generate(request: { user: string; model: string }) {
+          calls += 1;
+          const seen = JSON.parse(request.user) as {
+            incidents: { rows: { url: string; sourceRowId: string }[] }[];
+            extras: string;
+          };
+          return {
+            raw: goldenFor({ ...seen, extras: marker }),
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: request.model,
+          };
+        },
+      };
+      const { rt, persisted } = await persistentRuntime(transport, own);
+      const incidents = await own.db.withClient((c) =>
+        c.query<{ id: string; member_count: number }>(
+          `SELECT id, member_count FROM incident_clusters WHERE clustering_run_id = $1 ORDER BY created_at, id`,
+          [week.clusteringRunId],
+        ),
+      );
+      expect(incidents.rows).toHaveLength(201);
+      expect(incidents.rows.every((row) => row.member_count === 50)).toBe(true);
+      for (const incident of incidents.rows) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: incident.id,
+          state: 'selected',
+          note: null,
+        });
+      }
+      const input = {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedTemplateHash: loaded.hash,
+      };
+      let caught: unknown;
+      try {
+        await generateRoundup(rt, persisted.owner, input);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isDashboardError(caught) && `${caught.kind}:${caught.code}`).toBe(
+        'validation:selection_too_large',
+      );
+      expect(calls).toBe(0);
+      expect(
+        (await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack')).revisions,
+      ).toEqual([]);
+      // Set one incident aside: exactly 10,000 rows, the bound inclusive, every row kept.
+      const last = incidents.rows[200];
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: last?.id ?? '',
+        state: 'unselected',
+        note: null,
+      });
+      const result = await generateRoundup(rt, persisted.owner, input);
+      expect(result.revision).toBe(1);
+      expect(calls).toBe(1);
+      const stored = await own.db.withClient((c) =>
+        c.query<{ entries: string; sources: string }>(
+          `SELECT jsonb_array_length(slots->'rundown')::text AS entries,
+                    (SELECT count(*) FROM jsonb_array_elements(slots->'rundown') e, jsonb_array_elements(e->'sources'))::text AS sources
+               FROM roundup_revisions WHERE week_run_id = $1 AND revision = 1`,
+          [week.weekRunId],
+        ),
+      );
+      expect(stored.rows[0]).toEqual({ entries: '200', sources: '10000' });
+      await own.close();
+    }, 180_000);
+
     it('lets the owner edit as the next revision under the expected one, and refuses everyone else', async () => {
       const week = await seedWeek(isolated.db);
       const loaded = await loadTemplate();
@@ -1178,7 +1444,6 @@ describe('data-access layer against PostgreSQL', () => {
         async generate(request: { user: string; model: string }) {
           const seen = JSON.parse(request.user) as {
             incidents: { rows: { url: string; sourceRowId: string }[] }[];
-            flagged: { headline: string; reason: string; disposition: string }[];
             extras: string;
           };
           return {

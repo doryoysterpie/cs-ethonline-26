@@ -47,6 +47,8 @@ export const INPUT_LIMITS = {
   urlCharacters: 2_048,
   publisherCharacters: 253,
   reasonCharacters: 2_000,
+  /** The stored slot schema admits 200 flagged entries; an input past that can satisfy no revision (review F6). */
+  flagged: 200,
 } as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -89,6 +91,7 @@ export function assertRoundupInput(input: RoundupInput): void {
         throw invalid('publisher length');
     }
   }
+  if (input.flagged.length > INPUT_LIMITS.flagged) throw invalid('too many flagged entries');
   for (const entry of input.flagged) {
     if (!UUID.test(entry.incidentId) || seen.has(entry.incidentId))
       throw invalid('a flagged entry names a selected incident');
