@@ -301,3 +301,18 @@ dashboard 26, mcp-server 49). One observation on the loop itself: under the para
 loop the dashboard's authorization test, which first loads three workspace packages, once
 exceeded its five-second limit; alone it passes in well under a second, and the rerun of the
 loop was green. It is noted for the follow-up on CI reliability, not changed here.
+
+### 7.1 Second round, at `ad94940`: CHANGES REQUIRED, one Medium
+
+The re-review closed F1, F2, F4, F5 and F6 and reopened F3: an explicitly supplied category list
+that names nothing (`--categories ','`, or only separators and spaces) was filtered to an empty
+array, the preflight loop had nothing to check, and the workbook was opened before the
+orchestrator's own `category_required` refusal. Correction: the preflight refuses an explicit
+empty list with `category_required` before the database configuration is read, the policy
+loaded or the workbook opened. Test: `','` and `' , '` join the refusals that must open the
+injected connector zero times. One wording the reviewer noted is corrected in the tracker: the
+five green checks at `ffbfb6b` span CI run 39814933593 (Verify, PostgreSQL integration, Supply
+chain) and CodeQL workflow run 39814933608 (Analyze) with the CodeQL service check, not one
+run. `main` at `592d3bc` (pull request 22 merged) is merged into the branch in the same push,
+so the ledger rows for pull request 22's PASS and this unit's two verdicts are recorded here
+in one place.

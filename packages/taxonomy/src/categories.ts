@@ -189,6 +189,7 @@ export class CategoryPolicyError extends Error {
       | 'policy_version_invalid'
       | 'policy_shape_invalid'
       | 'category_policy_conflict'
+      | 'policy_version_taken'
       | 'category_unknown',
     message: string,
   ) {
@@ -267,6 +268,19 @@ export function registerCategoryPolicy(policy: CategoryPolicy): CategoryPolicy {
       'category_policy_conflict',
       'that category is registered with a different policy; a change is a new policy version',
     );
+  }
+  // A policy version names one category, decided here, at registration, in
+  // registration order and nowhere else. The contract hash includes the
+  // policy version, so two categories with distinct versions can never build
+  // to one hash, and a later category can never claim an earlier one's hash
+  // whatever the order in which contracts are first built.
+  for (const other of REGISTRY.values()) {
+    if (other.policyVersion === policy.policyVersion) {
+      throw new CategoryPolicyError(
+        'policy_version_taken',
+        'that policy version is registered to another category; a policy version names one category',
+      );
+    }
   }
   const frozen = deepFreeze({ ...policy });
   REGISTRY.set(frozen.category, frozen);

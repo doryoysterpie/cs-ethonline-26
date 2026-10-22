@@ -619,6 +619,15 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       // registered categories, refused here before any credential is read or
       // any connection opened (review of 22 October 2026, F3).
       resolveWeekWindow(windows?.[0]);
+      // An explicit list that names nothing (`--categories ','`) is refused
+      // here too, so that no shape of the argument reaches the workbook
+      // before the orchestrator's own check (re-review of 22 October 2026, F3).
+      if (categoriesRequested !== undefined && categoriesRequested.length === 0) {
+        throw configurationError(
+          'category_required',
+          `--categories must name at least one registered category: ${categories().join(', ')}`,
+        );
+      }
       for (const name of categoriesRequested ?? []) {
         if (!isCategory(name)) {
           throw configurationError(

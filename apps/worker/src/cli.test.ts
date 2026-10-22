@@ -242,6 +242,30 @@ describe('cli configuration handling (no database)', () => {
         ],
         code: 'category_invalid',
       },
+      // An explicit list naming nothing is refused before the connector too
+      // (re-review of 22 October 2026, F3 reopened).
+      {
+        argv: [
+          'week',
+          'run',
+          '--window',
+          '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z',
+          '--categories',
+          ',',
+        ],
+        code: 'category_required',
+      },
+      {
+        argv: [
+          'week',
+          'run',
+          '--window',
+          '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z',
+          '--categories',
+          ' , ',
+        ],
+        code: 'category_required',
+      },
     ];
     for (const { argv, code } of refusals) {
       const r = await exec(argv, env, undefined, connector);
