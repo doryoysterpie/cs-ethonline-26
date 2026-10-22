@@ -1251,3 +1251,24 @@ to replace the file in that window defeated every check.
   unchanged.
 - **Decided by:** the production-candidate pass of 2026-09-13, on the owner's brief. No
   decision number is allocated; this amends D29.
+
+### D29 amendment, 2026-10-22: dependency advisories closed on `main`
+
+Not a new decision. `corepack pnpm audit --audit-level=low`, the required Supply chain step
+of CI, failed on 21 October 2026 with 25 advisories that predate CAS-001: one critical in
+`next` 16.3.4, nine high, thirteen moderate, two low. Every pin moved to the oldest patched
+version that is also older than the 24-hour release gate of D13, so no exception was needed:
+
+- `next` 16.3.4 to 16.3.8; `@modelcontextprotocol/server` and `@modelcontextprotocol/client`
+  2.0.0 to 2.3.1; `eslint` 10.9.1 to 10.13.0; `vitest` 4.1.11 to 4.1.12, all through the
+  catalogue.
+- Four transitive packages whose parents kept an old resolution, pinned exactly through the
+  `overrides` setting of `pnpm-workspace.yaml`: `brace-expansion` 5.0.12, `source-map-js` 1.2.2,
+  `sharp` 0.35.5, `vite` 8.2.4. An override names one package and one exact version, and is
+  the first use of the mechanism in this repository; it is removed when the parent's own
+  resolution reaches the patched version.
+
+The SDK moved two minor versions for the MCP tooling track; its behaviour is proven by the
+track's own suites, which this change reran, and its catalogue digest is recomputed by the
+documentation test against the built value. The bill of materials is regenerated. The
+dashboard's framework moved four patch versions. Nothing else changed.
