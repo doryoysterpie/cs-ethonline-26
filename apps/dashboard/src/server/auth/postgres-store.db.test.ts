@@ -254,6 +254,46 @@ describe('the PostgreSQL store against a migrated schema', () => {
     ).rejects.toBeTruthy();
   });
 
+  it('appends the 100th decision and refuses the 101st when two arrive together (CAS-006, blocker 7, Codex F1)', async () => {
+    const account = (await syntheticAccount('editor')).record;
+    await stores.accounts.insert(account);
+    const row = await isolated.db.withClient((client) =>
+      client.query<{ source_row_id: string }>(
+        'SELECT source_row_id FROM classification_results WHERE run_id = $1 ORDER BY source_row_id DESC LIMIT 1',
+        [seeded.classificationRunId],
+      ),
+    );
+    const sourceRowId = row.rows[0]?.source_row_id ?? '';
+    expect(sourceRowId).not.toBe('');
+    const decision = () => ({
+      id: randomUUID(),
+      classificationRunId: seeded.classificationRunId,
+      sourceRowId,
+      reviewState: 'rejected' as const,
+      reasonCode: 'editorial_judgement',
+      note: null,
+      actorAccountId: account.id,
+      createdAt: '2026-10-22T00:00:00.000Z',
+    });
+    const limit = 100;
+    const already = await stores.queueDecisions.countForEntry(
+      seeded.classificationRunId,
+      sourceRowId,
+    );
+    for (let n = already; n < limit - 1; n += 1) await stores.queueDecisions.append(decision());
+    // Two appends race from 99: the entry lock serializes them, so exactly
+    // one lands and the other reads 100 and stops.
+    const outcomes = await Promise.all([
+      stores.queueDecisions.appendIfBelow(decision(), limit),
+      stores.queueDecisions.appendIfBelow(decision(), limit),
+    ]);
+    expect([...outcomes].sort()).toEqual(['appended', 'limit']);
+    expect(await stores.queueDecisions.countForEntry(seeded.classificationRunId, sourceRowId)).toBe(
+      limit,
+    );
+    expect(await stores.queueDecisions.appendIfBelow(decision(), limit)).toBe('limit');
+  });
+
   it('holds the login-attempt limit across two independent throttle instances, closing the multi-instance seam', async () => {
     // Two throttles over the same database stand in for two application
     // processes sharing no in-memory state: the property under test is that

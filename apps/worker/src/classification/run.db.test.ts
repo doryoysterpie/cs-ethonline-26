@@ -1,13 +1,22 @@
 import { randomUUID } from 'node:crypto';
 
-import { CLASSIFIER_VERSION, rulesetHash, RULESET_VERSION } from '@cas/classification';
+import {
+  categoryPolicy,
+  categoryRulesetHash,
+  CLASSIFIER_VERSION,
+  registerCategoryPolicy,
+  rulesetHash,
+  RULESET_VERSION,
+} from '@cas/classification';
 import type { ReviewState } from '@cas/contracts';
 import {
   countReviewState,
   countRunDecisions,
   countUnclassifiedRows,
   deriveRunDecisionCounts,
+  getClassificationPolicy,
   getClassificationRun,
+  getClassificationRunCategory,
   getImportBatch,
   isDatabaseError,
   openDatabase,
@@ -185,6 +194,7 @@ describe('classifyBatch against a migrated schema', () => {
   it('would create a distinct run for a changed ruleset, and keeps run scopes separate', async () => {
     const current = computeRunIdempotencyKey({
       batchId: batch.batchId,
+      category: 'cyberattack',
       classifierVersion: CLASSIFIER_VERSION,
       rulesetVersion: RULESET_VERSION,
       rulesetHash: rulesetHash(),
@@ -192,6 +202,7 @@ describe('classifyBatch against a migrated schema', () => {
     });
     const changedRules = computeRunIdempotencyKey({
       batchId: batch.batchId,
+      category: 'cyberattack',
       classifierVersion: CLASSIFIER_VERSION,
       rulesetVersion: RULESET_VERSION,
       rulesetHash: hash('e'),
@@ -199,12 +210,22 @@ describe('classifyBatch against a migrated schema', () => {
     });
     const changedClassifier = computeRunIdempotencyKey({
       batchId: batch.batchId,
+      category: 'cyberattack',
       classifierVersion: `${CLASSIFIER_VERSION}-next`,
       rulesetVersion: RULESET_VERSION,
       rulesetHash: rulesetHash(),
       mode: 'rules',
     });
-    expect(new Set([current, changedRules, changedClassifier]).size).toBe(3);
+    // The category alone, with every other input equal, is a distinct identity.
+    const changedCategory = computeRunIdempotencyKey({
+      batchId: batch.batchId,
+      category: 'crypto',
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesetVersion: RULESET_VERSION,
+      rulesetHash: rulesetHash(),
+      mode: 'rules',
+    });
+    expect(new Set([current, changedRules, changedClassifier, changedCategory]).size).toBe(4);
 
     // A second batch classified with the same rules is a separate run whose
     // queue and results never mix with the first.
@@ -368,6 +389,123 @@ describe('classifyBatch against a migrated schema', () => {
   //
   // A second real connection is coordinated through seams that run at exact
   // points inside the classifier's transaction. No test sleeps.
+
+  describe('categories (CAS-002, migration 0013)', () => {
+    it('records the default run as cyberattack, hash for hash with Sprint 3', async () => {
+      const outcome = await classifyBatch(isolated.db, { batchId: batch.batchId });
+      expect(outcome.category).toBe('cyberattack');
+      expect(outcome.run.rulesetHash).toBe(rulesetHash());
+      expect(outcome.run.rulesetHash).toBe(categoryRulesetHash('cyberattack'));
+      const stored = await isolated.db.withClient((c) =>
+        getClassificationRunCategory(c, outcome.run.id),
+      );
+      expect(stored).toMatchObject({
+        runId: outcome.run.id,
+        batchId: batch.batchId,
+        category: 'cyberattack',
+        policyVersion: categoryPolicy('cyberattack').policyVersion,
+        policyHash: outcome.run.rulesetHash,
+      });
+      expect((await reportRun(isolated.db, outcome.run.id)).category?.category).toBe('cyberattack');
+    });
+
+    it('answers a second category on the same batch with a distinct, idempotent run', async () => {
+      const cyber = await classifyBatch(isolated.db, { batchId: batch.batchId });
+      const crypto = await classifyBatch(isolated.db, {
+        batchId: batch.batchId,
+        category: 'crypto',
+      });
+      expect(crypto.outcome).toBe('classified');
+      expect(crypto.category).toBe('crypto');
+      expect(crypto.run.id).not.toBe(cyber.run.id);
+      expect(crypto.run.rulesetVersion).toBe(RULESET_VERSION);
+      expect(crypto.run.rulesetHash).toBe(categoryRulesetHash('crypto'));
+      expect(crypto.run.rulesetHash).not.toBe(cyber.run.rulesetHash);
+      expect(crypto.run.expectedRowCount).toBe(ROWS.length);
+      expect(crypto.run.classifiedRowCount).toBe(ROWS.length);
+
+      const report = await reportRun(isolated.db, crypto.run.id);
+      expect(report.reconciled).toBe(true);
+      expect(report.category).toMatchObject({
+        category: 'crypto',
+        policyVersion: categoryPolicy('crypto').policyVersion,
+        policyHash: crypto.run.rulesetHash,
+      });
+      // Each category keeps its own run on the batch, and its own queue.
+      expect((await reportRun(isolated.db, cyber.run.id)).category?.category).toBe('cyberattack');
+      expect((await reviewQueue(isolated.db, crypto.run.id)).count).toBe(crypto.run.reviewCount);
+
+      const again = await classifyBatch(isolated.db, {
+        batchId: batch.batchId,
+        category: 'crypto',
+      });
+      expect(again.outcome).toBe('already_classified');
+      expect(again.category).toBe('crypto');
+      expect(again.run.id).toBe(crypto.run.id);
+    });
+
+    it('registers each policy identity once, and binds the category row to it', async () => {
+      const registered = await isolated.db.withClient((c) =>
+        getClassificationPolicy(c, 'crypto', categoryPolicy('crypto').policyVersion),
+      );
+      expect(registered?.policyHash).toBe(categoryRulesetHash('crypto'));
+      expect(
+        (
+          await isolated.db.withClient((c) =>
+            getClassificationPolicy(c, 'cyberattack', categoryPolicy('cyberattack').policyVersion),
+          )
+        )?.policyHash,
+      ).toBe(rulesetHash());
+    });
+
+    it('answers a fixture-only third category through the production boundary, with no code change', async () => {
+      // Registered through the production registry; nothing in the worker,
+      // the database package or the dashboard knows the name in advance.
+      registerCategoryPolicy({
+        category: 'weather',
+        question: 'Is this a weather story?',
+        policyVersion: 'fixture-weather-policy@1',
+        signals: [
+          { id: 'storm', tier: 'decisive', terms: ['hurricane', 'blizzard', 'tornado'] },
+          { id: 'forecast', tier: 'contextual', terms: ['forecast', 'rainfall'] },
+          { id: 'sport', tier: 'out_of_scope', terms: ['football match', 'recipe'] },
+        ],
+        patternSignals: [],
+        thresholds: { decisiveHitsForInclude: 1, distinctContextualHitsForInclude: 2 },
+        weights: { decisive: 3, contextual: 1, out_of_scope: 0 },
+        calibrated: false,
+      });
+      const weather = await classifyBatch(isolated.db, {
+        batchId: batch.batchId,
+        category: 'weather',
+      });
+      expect(weather.outcome).toBe('classified');
+      expect(weather.category).toBe('weather');
+      expect(weather.run.rulesetHash).toBe(categoryRulesetHash('weather'));
+      expect(weather.run.classifiedRowCount).toBe(ROWS.length);
+      const report = await reportRun(isolated.db, weather.run.id);
+      expect(report.reconciled).toBe(true);
+      expect(report.category).toMatchObject({
+        category: 'weather',
+        policyVersion: 'fixture-weather-policy@1',
+        policyHash: weather.run.rulesetHash,
+      });
+      expect((await reviewQueue(isolated.db, weather.run.id)).count).toBe(weather.run.reviewCount);
+      expect(
+        (
+          await isolated.db.withClient((c) =>
+            getClassificationPolicy(c, 'weather', 'fixture-weather-policy@1'),
+          )
+        )?.policyHash,
+      ).toBe(weather.run.rulesetHash);
+      const again = await classifyBatch(isolated.db, {
+        batchId: batch.batchId,
+        category: 'weather',
+      });
+      expect(again.outcome).toBe('already_classified');
+      expect(again.run.id).toBe(weather.run.id);
+    });
+  });
 
   describe('concurrent source-set mutation', () => {
     async function withRival<T>(fn: (rival: Database) => Promise<T>): Promise<T> {

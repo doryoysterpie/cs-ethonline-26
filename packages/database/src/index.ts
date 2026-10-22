@@ -49,6 +49,13 @@ export {
   type NewClassificationRun,
   type QueueEntry,
   type RationaleCodeCount,
+  getClassificationPolicy,
+  getClassificationRunCategory,
+  insertClassificationRunCategory,
+  listClassificationRunCategories,
+  registerClassificationPolicy,
+  type ClassificationPolicyRecord,
+  type ClassificationRunCategoryRecord,
 } from './classification.js';
 export {
   completeClusteringRun,
@@ -205,6 +212,8 @@ export {
   type QueueDecisionRow,
   type SessionRow,
   type ThrottleBucket,
+  countQueueDecisionsForEntry,
+  lockQueueEntry,
 } from './dashboard-auth.js';
 export {
   classifyDriverError,

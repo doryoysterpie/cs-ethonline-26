@@ -1,5 +1,5 @@
 import { constants as fsConstants } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 import { fail } from './errors.js';
@@ -120,6 +120,28 @@ export async function loadServiceAccountCredential(
 ): Promise<ServiceAccountCredential> {
   const resolved = path.resolve(keyPath);
   if (isInsideDirectory(resolved, options.repositoryRoot)) {
+    throw fail.credential(
+      'credential_inside_repository',
+      'the service-account key is inside the repository. Move it to a path outside the working tree; an ignore rule is not a boundary.',
+    );
+  }
+  // The lexical check above cannot see a symbolic link in an intermediate
+  // directory: a path that spells "outside" can land inside the working tree.
+  // The key's directory and the repository root are resolved to their real
+  // paths and compared again (CAS-006, release blocker 6). The final
+  // component is not resolved here; `O_NOFOLLOW` below refuses it atomically
+  // if it is a link.
+  const [realDirectory, realRoot] = await Promise.all([
+    realpath(path.dirname(resolved)).catch(() => null),
+    realpath(options.repositoryRoot).catch(() => path.resolve(options.repositoryRoot)),
+  ]);
+  if (realDirectory === null) {
+    throw fail.credential(
+      'credential_unreadable',
+      'the service-account key could not be read at the configured path',
+    );
+  }
+  if (isInsideDirectory(path.join(realDirectory, path.basename(resolved)), realRoot)) {
     throw fail.credential(
       'credential_inside_repository',
       'the service-account key is inside the repository. Move it to a path outside the working tree; an ignore rule is not a boundary.',

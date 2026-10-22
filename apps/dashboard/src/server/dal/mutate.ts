@@ -41,7 +41,11 @@ import { draftKeyOf } from './read.ts';
 
 const REASON_CODE = /^[a-z][a-z0-9_]{2,63}$/u;
 const NOTE = { min: 1, max: 280 } as const;
-const MAX_DRAFT_CHARACTERS = 200_000;
+export const MAX_DRAFT_CHARACTERS = 200_000;
+/** Revisions one draft keeps. Append-only, so the bound is a refusal, never a deletion (CAS-006, blocker 7). */
+export const MAX_DRAFT_REVISIONS = 1_000;
+/** Decisions one queue row of one run keeps. */
+export const MAX_QUEUE_DECISIONS_PER_ENTRY = 100;
 const MAX_MERGE = 64;
 const MAX_SPLIT = 500;
 
@@ -94,6 +98,17 @@ export async function reviewQueueEntry(
   const packages = await workspace();
   const { findReviewQueueEntry } = packages.database;
   try {
+    // The bound is checked before the queue lookup: it depends only on the
+    // dashboard's own append-only store, so a row that has reached it is
+    // refused whatever the queue says, and the rule is testable on its own.
+    // A row outside the queue holds no decisions and still answers not_found.
+    const prior = await runtime.stores.queueDecisions.countForEntry(runId, sourceRowId);
+    if (prior >= MAX_QUEUE_DECISIONS_PER_ENTRY) {
+      throw validation(
+        'decision_limit',
+        `A queue row keeps at most ${MAX_QUEUE_DECISIONS_PER_ENTRY} decisions.`,
+      );
+    }
     const entry = await runtime.database.withClient((client) =>
       findReviewQueueEntry(client, runId, sourceRowId, { withText: false, maxTextCharacters: 1 }),
     );
@@ -105,16 +120,28 @@ export async function reviewQueueEntry(
       );
     }
     const decisionId = randomUUID();
-    await runtime.stores.queueDecisions.append({
-      id: decisionId,
-      classificationRunId: runId,
-      sourceRowId,
-      reviewState,
-      reasonCode: reason,
-      note,
-      actorAccountId: principal.accountId,
-      createdAt: new Date().toISOString(),
-    });
+    // The bound is enforced where the write happens, atomically with it: the
+    // early check above is a fast refusal, this is the one that holds when two
+    // reviews of the same row arrive together (Codex review of 22 October 2026).
+    const appended = await runtime.stores.queueDecisions.appendIfBelow(
+      {
+        id: decisionId,
+        classificationRunId: runId,
+        sourceRowId,
+        reviewState,
+        reasonCode: reason,
+        note,
+        actorAccountId: principal.accountId,
+        createdAt: new Date().toISOString(),
+      },
+      MAX_QUEUE_DECISIONS_PER_ENTRY,
+    );
+    if (appended === 'limit') {
+      throw validation(
+        'decision_limit',
+        `A queue row keeps at most ${MAX_QUEUE_DECISIONS_PER_ENTRY} decisions.`,
+      );
+    }
     await audit(runtime, {
       kind: 'queue_reviewed',
       outcome: 'success',
@@ -367,6 +394,9 @@ export async function saveDraftRevision(
     const key = draftKeyOf(runId, start, end);
     const latest = await runtime.stores.drafts.latest(key);
     const current = latest?.revision ?? 0;
+    if (current >= MAX_DRAFT_REVISIONS) {
+      throw validation('revision_limit', `A draft keeps at most ${MAX_DRAFT_REVISIONS} revisions.`);
+    }
     if (expectedRevision !== current) {
       throw new DashboardError(
         'conflict',

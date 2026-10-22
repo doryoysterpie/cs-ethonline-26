@@ -9,6 +9,7 @@ import {
   isVerifiableHash,
   validatePassword,
   verifyPassword,
+  PASSWORD_MAX_LENGTH,
 } from './password.ts';
 
 const SAMPLE = 'synthetic-only-Passphrase-42';
@@ -120,5 +121,13 @@ describe('verification gate', () => {
       }),
     ).rejects.toThrowError('boom');
     expect(await gate.run(async () => 'ok')).toEqual({ ok: true, value: 'ok' });
+  });
+});
+
+describe('the length cap on verification', () => {
+  it('refuses a submitted password above the cap without hashing it', async () => {
+    const stored = await hashPassword(SAMPLE);
+    expect(await verifyPassword(stored, 'a'.repeat(PASSWORD_MAX_LENGTH + 1))).toBe(false);
+    expect(await verifyPassword(stored, SAMPLE)).toBe(true);
   });
 });

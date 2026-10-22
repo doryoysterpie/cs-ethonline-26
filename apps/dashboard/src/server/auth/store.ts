@@ -166,7 +166,8 @@ export interface SessionStore {
   insert(session: SessionRecord): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<SessionRecord | null>;
   touch(id: string, lastSeenAt: string): Promise<void>;
-  revoke(id: string, at: string, reason: string): Promise<void>;
+  /** True when a live session was revoked by this call; false when none was. */
+  revoke(id: string, at: string, reason: string): Promise<boolean>;
   /** Revokes every live session of the account, optionally keeping one. Returns how many. */
   revokeAllForAccount(
     accountId: string,
@@ -192,7 +193,15 @@ export interface DraftStore {
 
 export interface QueueDecisionStore {
   append(decision: QueueDecision): Promise<void>;
+  /**
+   * Appends only while the entry holds fewer than `limit` decisions, as one
+   * atomic operation: the count and the append cannot interleave with another
+   * caller's. `'limit'` means nothing was written.
+   */
+  appendIfBelow(decision: QueueDecision, limit: number): Promise<'appended' | 'limit'>;
   listForRun(classificationRunId: string): Promise<QueueDecision[]>;
+  /** How many decisions one queue row of one run already holds. */
+  countForEntry(classificationRunId: string, sourceRowId: string): Promise<number>;
 }
 
 export interface Stores {

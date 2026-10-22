@@ -223,17 +223,20 @@ export async function touchSession(
   await client.query('UPDATE sessions SET last_seen_at = $2 WHERE id = $1', [id, lastSeenAt]);
 }
 
+/** True when a live session was revoked by this statement; false when none matched. */
 export async function revokeSession(
   client: Queryable,
   id: string,
   at: string,
   reason: string,
-): Promise<void> {
-  await client.query(
+): Promise<boolean> {
+  const result = await client.query<{ id: string }>(
     `UPDATE sessions SET revoked_at = $2, revoked_reason = $3
-       WHERE id = $1 AND revoked_at IS NULL`,
+       WHERE id = $1 AND revoked_at IS NULL
+       RETURNING id`,
     [id, at, reason],
   );
+  return result.rows.length > 0;
 }
 
 export async function revokeAllSessionsForAccount(
@@ -364,6 +367,36 @@ export async function appendQueueDecision(
       decision.createdAt,
     ],
   );
+}
+
+/**
+ * Serializes writers of one queue entry for the rest of the transaction.
+ * Two reviews of the same (run, row) therefore count and append one after the
+ * other, so a bound checked inside the transaction holds under concurrency.
+ * The lock is transaction-scoped and released at commit or rollback.
+ */
+export async function lockQueueEntry(
+  client: Queryable,
+  classificationRunId: string,
+  sourceRowId: string,
+): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))', [
+    classificationRunId,
+    sourceRowId,
+  ]);
+}
+
+export async function countQueueDecisionsForEntry(
+  client: Queryable,
+  classificationRunId: string,
+  sourceRowId: string,
+): Promise<number> {
+  const result = await client.query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM queue_decisions
+      WHERE classification_run_id = $1 AND source_row_id = $2`,
+    [classificationRunId, sourceRowId],
+  );
+  return Number(result.rows[0]?.count ?? 0);
 }
 
 export async function listQueueDecisionsForRun(
