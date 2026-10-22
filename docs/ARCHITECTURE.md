@@ -225,9 +225,9 @@ error, never an empty result and never a silent fallback to fixture or replay da
 | Package manager | pnpm 11.10.0, pinned in `packageManager`                                                                                                                | cost judgment           |
 | Task runner     | Turborepo 2.10.12                                                                                                                                       | charter                 |
 | Language        | TypeScript 6.0.3, `NodeNext` modules, strict                                                                                                            | compatibility need      |
-| Lint            | ESLint 10.9.1 flat config with typescript-eslint 8.69                                                                                                   | preference              |
+| Lint            | ESLint 10.13.0 flat config with typescript-eslint 8.69                                                                                                  | preference              |
 | Format          | Prettier 3.9.6                                                                                                                                          | preference              |
-| Tests           | Vitest 4.1.11                                                                                                                                           | preference              |
+| Tests           | Vitest 4.1.12                                                                                                                                           | preference              |
 | Node typings    | `@types/node` 24.13.3, Sprint 1, through the catalog                                                                                                    | necessity for Node APIs |
 | Postgres driver | `pg` 8.23.0 with `@types/pg` 8.23.1, Sprint 2                                                                                                           | necessity; no ORM       |
 | CSV parser      | `csv-parse` 7.0.2, Sprint 2, streaming RFC 4180                                                                                                         | necessity               |
