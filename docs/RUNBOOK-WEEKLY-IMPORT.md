@@ -166,3 +166,23 @@ agent carries; without it the control reports `reader_not_configured`. Writing n
 `ANTHROPIC_API_KEY` and the PostgreSQL account store, as the round-up does. The article's USD 25
 monthly cap is separate from the round-up's; a request whose worst case would pass it is refused
 (`spend_cap_exceeded`) and recorded.
+
+## 10. Readers: requests, approval and publication (CAS-007)
+
+Anyone may ask for access at `/signup`: the address, then the code the dashboard emails to it.
+A verified request appears at `/admin/requests` for an admin, oldest first. Approve creates a
+`reader` account for the address with an expiry (one year from now unless you enter one) and
+sends the approval email naming the dashboard's address; deny records the decision and sends the
+denial. Both are audit events. A reader signs in as everyone does, by the code sent to the
+address, and sees the command centre, the incident explorer, the evidence states, the anomaly
+feed and `/published`; nothing else.
+
+Nothing generated is public until you mark it. On the round-up page and the article page each
+revision carries "Publish this revision"; the marked one carries "Published · unpublish". Readers
+see the marked revision at `/published` the moment it is marked, and nothing the moment it is
+unmarked; a later generation or edit changes nothing public until you mark the new revision.
+
+Sign-up needs `RESEND_API_KEY`, `AUTH_EMAIL_FROM` and `AUTH_OTP_PEPPER` as sign-in does, and
+`DASHBOARD_PUBLIC_URL` for the address the approval email names. The limits (three requests per
+address and ten per source in fifteen minutes, five wrong codes, six hundred reads per reader in
+fifteen minutes) are fixed in code; a trip is one audit event, never a page.

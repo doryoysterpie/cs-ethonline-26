@@ -603,3 +603,20 @@ writes revision 1 and the ledger row in one transaction. Dependency edges added:
 depends on `@cas/source-reader`; the dashboard depends on both packages; `@cas/source-reader`
 depends on `@cas/contracts` and `htmlparser2`; `@cas/article` depends on nothing in the
 workspace. The report is `docs/CAS-005-REPORT.md`.
+
+## 21. CAS-007 boundary: readers, approval and the published mark
+
+The dashboard gains its second unauthenticated entry point beside sign-in: a sign-up request
+(`/signup`, `/signup/verify`), the address then a one-time code, under the same-origin check, a
+limit per address and per network source, and the same answer whatever the address. Migration
+0017 records requests (`signup_requests`, one-way transitions by guard) and the published mark
+(`output_publications`, append-only, the latest record per output deciding), and retires `judge`
+into `reader` (D43). An admin approves or denies from `/admin/requests`; approval creates a
+`reader` account through the existing invitation path with a per-account expiry and sends a
+fixed email with no sign-in link. A reader holds the four sanitized views and `view:published`;
+the owner alone holds `publish:output` and marks one revision of a round-up or an article public
+(D42), from the round-up and article pages; `/published` renders the marked revision through the
+sanitiser. Every reader-reachable read passes a per-account fixed-window limit, and
+`/robots.txt` serves a fixed, versioned list of AI crawlers to disallow. No new package; no new
+dependency; the data-access layer, the store interfaces and the session service are reused. The
+report is `docs/CAS-007-REPORT.md`.

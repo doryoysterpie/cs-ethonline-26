@@ -177,3 +177,70 @@ transition of a request (request, verify, lock, approve, deny) and its guard; th
 role change; the publications table and the public revision; a reader's page responses with
 source text selected as `NULL`; the audit events' codes. Then the loop, the four suites, a clean
 clone and CI.
+
+## 2. The data contract, S2 (step 4)
+
+`packages/database/migrations/0017_readers.sql`, forward-only, checksum
+`13c3ed7f6f5bf8761f479407d8c021c29881f443051a16759c83fe797c3b787b`, unapplied outside test and
+scratch databases: `signup_requests` and its one-way guard (section 1.2); `output_publications`,
+append-only, its guard refusing a revision that does not exist in the output's table;
+`accounts.role` admitting `reader` and no longer `judge`, every existing `judge` row made a
+`reader` inside the migration (D43), and `accounts_reader_expiry` in place of
+`accounts_judge_expiry`; the eight audit kinds. `packages/database/src/readers.ts` is the
+operations module: insert a request (`open_exists` when the address has one), read it, record an
+attempt, verify once, decide once, list the pending ones; insert a publication, the current
+publication of an output, the list of everything published. Tests: the role check admits
+`reader` with an expiry and refuses `judge`; a request moves one way and only one is open per
+address; a decision needs a verification; an account needs an approval; a publication names a
+revision that exists; the latest record decides; unmarking is a record; nothing is rewritten or
+deleted; the eight kinds are admitted.
+
+## 3. The reference implementation and the role, S3 (steps 5 and 6 in part)
+
+`judge` became `reader` throughout the code and the tests (D43): the role table, the capability
+sets, the provisioning and invitation commands, the memory store's seed check, the synthetic
+accounts, the authorization enumeration. `reader` holds the judge's four sanitized views and
+`view:published`; editors, admins and the owner hold `view:published` too, so the owner can see
+the public page as readers do; `publish:output` is the owner's alone (D42).
+
+`apps/dashboard/src/server/dal/readers.ts` holds the transitions over the store and the
+database: `requestSignup` (the limits, the normalisation, the same answer whatever the address,
+the code sent only where one is due), `verifySignup` (one verification, five attempts, the lock),
+`pendingSignups`, `approveSignup` (the reader account through the invitation path, the decision,
+the fixed email) and `denySignup`; `publishOutput` and `unpublishOutput`; `publishedList` and
+`publishedOutput`. `reader-limit.ts` applies the reader read limit where every reader-reachable
+read begins: the four sanitized views and the two published reads. `http/limits.ts` is the
+fixed-window limiter, bounded in memory, that carries the three limits of section 1.6.
+
+## 4. The interface, S5 (step 6), and the emails (step 8)
+
+`/signup` and `/signup/verify` are the two unauthenticated steps, behind the same-origin check
+and the limits, the request identifier in a host-only pending cookie of its own (never the
+address); every outcome of the first step redirects to the same screen with the same notice.
+`/admin/requests` lists verified requests for a principal holding `admin:accounts`, with approve
+(an expiry field, one year by default) and deny. `/published` lists what the owner has marked;
+`/published/<week run>?category=&output=` renders the marked revision through the existing
+sanitiser and nothing else. The round-up and article pages gain a column per revision with
+"Publish this revision" or "Published · unpublish" for the owner, and the word "published" for
+everyone else. `/robots.txt` serves the fixed, versioned list (`robots-policy@1`). The proxy
+admits the three new public paths. The approval and denial emails are the fixed texts of
+section 1.8; the approval names the dashboard's public address as text, never a token.
+
+## 5. Audit events and the limits, S6 (steps 7 and 8a)
+
+Every outcome is an audit event with identifiers and fixed codes (section 1.7): a request as
+`sent`, `silent` or `limited`; a verification; a lock; an approval naming the admin, the request
+and the new reader; a denial; a publication or its removal with `<output>_<revision>`; and
+`limit_tripped` with `signup_address`, `signup_network` or `reader_reads`, written once per window
+on the first refusal and never per refused request. No event carries an address, a code or
+content; the tests assert it. The hosting layer's bot management was checked and recorded
+(section 1.6): nothing is assumed from it.
+
+## 6. Verification, S8 (step 12)
+
+On the branch at `ae5e7e3`, 22 October 2026, from the runner: the database 32 offline and 109
+against PostgreSQL (the three for migration 0017 among them), the dashboard 88 offline (the
+limiter, `robots.txt`, the roles and the authorization enumeration with the seven new functions
+among them) and 34 against PostgreSQL (the three for sign-up, the limits and the published mark
+among them). The full loop, the four suites, the clean clone and CI are recorded below as they
+complete.
