@@ -29,6 +29,7 @@ export const CAPABILITIES = [
   'review:incidents',
   'review:evidence',
   'edit:draft',
+  'select:stories',
   // Administration.
   'admin:accounts',
   'admin:sessions',
@@ -63,6 +64,7 @@ const EDITOR: readonly Capability[] = [
   'review:incidents',
   'review:evidence',
   'edit:draft',
+  'select:stories',
 ];
 
 const ADMIN: readonly Capability[] = [
@@ -78,6 +80,7 @@ const ADMIN: readonly Capability[] = [
   'review:incidents',
   'review:evidence',
   'edit:draft',
+  'select:stories',
   'admin:accounts',
   'admin:sessions',
   'view:audit',
@@ -112,6 +115,7 @@ export const MUTATION_CAPABILITIES: readonly Capability[] = [
   'review:incidents',
   'review:evidence',
   'edit:draft',
+  'select:stories',
   'admin:accounts',
   'admin:sessions',
 ];

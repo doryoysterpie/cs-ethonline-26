@@ -6,7 +6,15 @@ import { CHAIN_LIMITATION, REPORTING_LIMITATION } from '@cas/evidence';
 import { capabilitiesOf } from '../auth/roles.ts';
 import { displayIdentity, type Principal } from '../auth/session.ts';
 import { DashboardError } from '../errors.ts';
-import { instant, integer, optionalInstant, optionalUuid, uuid } from '../input.ts';
+import {
+  enumOf,
+  instant,
+  integer,
+  optionalInstant,
+  optionalText,
+  optionalUuid,
+  uuid,
+} from '../input.ts';
 import { workspace } from '../packages.ts';
 import type { Runtime } from '../runtime.ts';
 import type {
@@ -19,6 +27,9 @@ import type {
   IncidentExplorerDto,
   PrincipalDto,
   ReviewQueueDto,
+  WeekListDto,
+  WeekRunDto,
+  WeekTableDto,
 } from './dto.ts';
 import { holds, requireCapability } from './guard.ts';
 import { mapFailure } from './failures.ts';
@@ -646,4 +657,175 @@ export async function administration(
       networkKey: event.networkKey,
     })),
   };
+}
+
+// ------------------------------------------------------------ the editorial week (CAS-003)
+
+const WEEK_LIST = 52;
+const WEEK_TABLE = 500;
+const WEEK_SEARCH = { min: 1, max: 200 } as const;
+const WEEK_SORTS = ['posted_desc', 'members_desc'] as const;
+
+function weekRunDto(run: {
+  readonly id: string;
+  readonly dataOrigin: WeekRunDto['dataOrigin'];
+  readonly status: WeekRunDto['status'];
+  readonly failureCode: string | null;
+  readonly timeZone: string;
+  readonly windowStart: string;
+  readonly windowEnd: string;
+  readonly publicationCutoffAt: string;
+  readonly categories: readonly string[];
+  readonly batchId: string;
+  readonly startedAt: string;
+  readonly completedAt: string | null;
+}): WeekRunDto {
+  return {
+    id: run.id,
+    dataOrigin: run.dataOrigin,
+    status: run.status,
+    failureCode: run.failureCode,
+    timeZone: run.timeZone,
+    windowStart: run.windowStart,
+    windowEnd: run.windowEnd,
+    publicationCutoffAt: run.publicationCutoffAt,
+    categories: run.categories,
+    batchId: run.batchId,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+  };
+}
+
+export async function weekList(runtime: Runtime, who: Principal | null): Promise<WeekListDto> {
+  requireCapability(who, 'view:incidents');
+  const packages = await workspace();
+  try {
+    const weeks = await runtime.database.withClient((client) =>
+      packages.database.listWeekRuns(client, WEEK_LIST),
+    );
+    return { weeks: weeks.map(weekRunDto) };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}
+
+/**
+ * The sift table: one week, one category at a time. The category must be one
+ * the week covered, the search is bounded text compared in the database and
+ * never echoed, and the sort is one of two fixed orders. Titles cross only
+ * for a principal with `view:source_text`.
+ */
+export async function weekTable(
+  runtime: Runtime,
+  who: Principal | null,
+  weekRunId: unknown,
+  category: unknown,
+  search: unknown,
+  sort: unknown,
+): Promise<WeekTableDto> {
+  const principal = requireCapability(who, 'view:incidents');
+  const id = uuid(weekRunId, 'weekRunId');
+  const wantedSort =
+    sort === undefined || sort === null || sort === ''
+      ? 'posted_desc'
+      : enumOf(sort, WEEK_SORTS, 'sort');
+  const withText = holds(principal, 'view:source_text');
+  // A title search is a read of titles. A principal without source text is
+  // refused with a fixed code, before any query, so its result set can never
+  // vary with a hidden title (review of 22 October 2026, F1).
+  const wantedSearch = optionalText(search, 'search', WEEK_SEARCH);
+  if (wantedSearch !== null && !withText) {
+    throw new DashboardError(
+      'validation',
+      'search_requires_source_text',
+      'Searching titles needs the source-text capability.',
+    );
+  }
+  const packages = await workspace();
+  const { getWeekRun, listWeekRunChildren, listWeekIncidents, listLatestIssueSelections } =
+    packages.database;
+  try {
+    const week = await runtime.database.withClient((client) => getWeekRun(client, id));
+    if (week === null) {
+      throw new DashboardError('not_found', 'week_run_not_found', 'No week run with that id.');
+    }
+    const wantedCategory =
+      category === undefined || category === null || category === ''
+        ? week.categories[0]
+        : category;
+    if (typeof wantedCategory !== 'string' || !week.categories.includes(wantedCategory)) {
+      throw new DashboardError(
+        'validation',
+        'category_not_in_week',
+        'That category is not one this week covered.',
+      );
+    }
+    const children = await runtime.database.withClient((client) =>
+      listWeekRunChildren(client, week.id),
+    );
+    const clustering = children.find(
+      (child) => child.kind === 'clustering' && child.category === wantedCategory,
+    );
+    if (clustering === undefined || clustering.clusteringRunId === null) {
+      throw new DashboardError(
+        'not_found',
+        'week_category_not_clustered',
+        'This week has no completed clustering run for that category.',
+      );
+    }
+    const clusteringRunId = clustering.clusteringRunId;
+    const rows = await runtime.database.withClient((client) =>
+      listWeekIncidents(client, {
+        clusteringRunId,
+        windowStart: week.windowStart,
+        windowEnd: week.windowEnd,
+        withText,
+        search: wantedSearch,
+        sort: wantedSort,
+        limit: WEEK_TABLE,
+      }),
+    );
+    const selections = await runtime.database.withClient((client) =>
+      listLatestIssueSelections(client, week.id),
+    );
+    const accounts = new Map<string, string>();
+    for (const account of await runtime.stores.accounts.list())
+      accounts.set(account.id, account.username ?? account.normalizedEmail ?? account.id);
+    return {
+      week: weekRunDto(week),
+      category: wantedCategory,
+      clusteringRunId,
+      search: wantedSearch,
+      sort: wantedSort,
+      canSelect: holds(principal, 'select:stories'),
+      canSearch: withText,
+      rows: rows.map((row) => {
+        const selection = selections.get(row.incidentId) ?? null;
+        return {
+          incidentId: row.incidentId,
+          clusteringRunId,
+          kind: row.kind,
+          memberCount: row.memberCount,
+          reasonCodes: row.reasonCodes,
+          inWindow: row.inWindow,
+          carried: row.carried,
+          postedFrom: row.postedFrom,
+          postedTo: row.postedTo,
+          title: withText ? row.title : null,
+          selection:
+            selection === null
+              ? null
+              : {
+                  state: selection.state,
+                  revision: selection.revision,
+                  by: accounts.get(selection.actorAccountId) ?? 'unknown',
+                  at: selection.createdAt,
+                  note: holds(principal, 'view:notes') ? selection.note : null,
+                },
+        };
+      }),
+    };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
 }

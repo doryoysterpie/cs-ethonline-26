@@ -214,6 +214,134 @@ describe('cli configuration handling (no database)', () => {
     expect(r.err.join('\n')).not.toContain('DROP TABLE');
   });
 
+  it('refuses a week run without a window, outside the rule, or with an unregistered category before opening the workbook (review F3)', async () => {
+    const env = {
+      DATABASE_URL: 'postgresql://user:password@localhost:5432/db',
+      GOOGLE_SHEETS_SPREADSHEET_ID: 'not-a-real-id',
+      GOOGLE_APPLICATION_CREDENTIALS: '/nonexistent/key.json',
+    };
+    let opens = 0;
+    const connector: CliOptions['connectToWorkbook'] = async () => {
+      opens += 1;
+      throw new Error('the workbook must not be opened before the preflight');
+    };
+    const refusals = [
+      { argv: ['week', 'run'], code: 'window_required' },
+      {
+        argv: ['week', 'run', '--window', '2026-10-19T03:59:00.000Z..2026-10-26T03:59:00.000Z'],
+        code: 'window_outside_rule',
+      },
+      {
+        argv: [
+          'week',
+          'run',
+          '--window',
+          '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z',
+          '--categories',
+          'weather',
+        ],
+        code: 'category_invalid',
+      },
+      // An explicit list naming nothing is refused before the connector too
+      // (re-review of 22 October 2026, F3 reopened).
+      {
+        argv: [
+          'week',
+          'run',
+          '--window',
+          '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z',
+          '--categories',
+          ',',
+        ],
+        code: 'category_required',
+      },
+      {
+        argv: [
+          'week',
+          'run',
+          '--window',
+          '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z',
+          '--categories',
+          ' , ',
+        ],
+        code: 'category_required',
+      },
+    ];
+    for (const { argv, code } of refusals) {
+      const r = await exec(argv, env, undefined, connector);
+      expect(r.code, code).toBe(EXIT_CODES.configuration);
+      expect(r.err.join('\n')).toContain(code);
+    }
+    expect(opens).toBe(0);
+    // The command's preflight runs before the configured database URL is
+    // validated: a malformed URL cannot mask a refused window or category
+    // (third review of 22 October 2026, F3), and the same URL is still
+    // refused once the preflight passes, before any connection.
+    const malformed = { ...env, DATABASE_URL: 'not-a-postgresql-url' };
+    for (const { argv, code } of refusals) {
+      const r = await exec(argv, malformed, undefined, connector);
+      expect(r.code, `${code} with a malformed database URL`).toBe(EXIT_CODES.configuration);
+      expect(r.err.join('\n')).toContain(code);
+      expect(r.err.join('\n')).not.toContain('database:configuration');
+    }
+    const masked = await exec(
+      ['week', 'run', '--window', '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z'],
+      malformed,
+      undefined,
+      connector,
+    );
+    expect(masked.err).toEqual(['error[database:configuration]: DATABASE_URL rejected: not a URL']);
+    expect(opens).toBe(0);
+    // A valid preflight reaches the connector, and only then.
+    const reached = await exec(
+      ['week', 'run', '--window', '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z'],
+      env,
+      undefined,
+      connector,
+    );
+    expect(opens).toBe(1);
+    expect(reached.code).not.toBe(EXIT_CODES.ok);
+    expect(reached.err.join('\n')).not.toContain('password');
+  });
+
+  it('refuses a week run without a window, outside the rule, or with an unregistered category before any connection', async () => {
+    const env = { DATABASE_URL: 'postgresql://user:password@localhost:5432/db' };
+    const batch = '7b9d2f4e-5c1a-4e6b-9f3d-2a8c1e5b7d90';
+    const noWindow = await exec(['week', 'run', '--batch', batch], env);
+    expect(noWindow.code).toBe(EXIT_CODES.configuration);
+    expect(noWindow.err.join('\n')).toContain('window_required');
+    const outside = await exec(
+      [
+        'week',
+        'run',
+        '--batch',
+        batch,
+        '--window',
+        '2026-10-19T03:59:00.000Z..2026-10-26T03:59:00.000Z',
+      ],
+      env,
+    );
+    expect(outside.code).toBe(EXIT_CODES.configuration);
+    expect(outside.err.join('\n')).toContain('window_outside_rule');
+    const unregistered = await exec(
+      [
+        'week',
+        'run',
+        '--batch',
+        batch,
+        '--window',
+        '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z',
+        '--categories',
+        'cyberattack,weather',
+      ],
+      env,
+    );
+    expect(unregistered.code).toBe(EXIT_CODES.configuration);
+    expect(unregistered.err.join('\n')).toContain('category_invalid');
+    for (const r of [noWindow, outside, unregistered])
+      expect(r.err.join('\n')).not.toContain('password');
+  });
+
   it('rejects an unknown classification category before opening a connection', async () => {
     const batch = '7b9d2f4e-5c1a-4e6b-9f3d-2a8c1e5b7d90';
     const r = await exec(['classification', 'run', '--batch', batch, '--category', 'weather'], {

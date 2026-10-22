@@ -289,3 +289,59 @@ export interface AdministrationDto {
   readonly accounts: readonly AccountDto[];
   readonly audit: readonly AuditEventDto[];
 }
+
+// ------------------------------------------------------------ the editorial week (CAS-003)
+
+export interface WeekRunDto {
+  readonly id: string;
+  readonly dataOrigin: DataOrigin;
+  readonly status: 'running' | 'completed' | 'failed';
+  readonly failureCode: string | null;
+  readonly timeZone: string;
+  readonly windowStart: string;
+  readonly windowEnd: string;
+  readonly publicationCutoffAt: string;
+  readonly categories: readonly string[];
+  readonly batchId: string;
+  readonly startedAt: string;
+  readonly completedAt: string | null;
+}
+
+export interface WeekListDto {
+  readonly weeks: readonly WeekRunDto[];
+}
+
+export interface WeekSelectionDto {
+  readonly state: 'selected' | 'unselected';
+  readonly revision: number;
+  readonly by: string;
+  readonly at: string;
+  readonly note: string | null;
+}
+
+export interface WeekIncidentDto {
+  readonly incidentId: string;
+  readonly clusteringRunId: string;
+  readonly kind: string;
+  readonly memberCount: number;
+  readonly reasonCodes: readonly string[];
+  readonly inWindow: boolean;
+  readonly carried: boolean;
+  readonly postedFrom: string | null;
+  readonly postedTo: string | null;
+  /** The representative row's title, only for a principal with `view:source_text`. */
+  readonly title: string | null;
+  readonly selection: WeekSelectionDto | null;
+}
+
+export interface WeekTableDto {
+  readonly week: WeekRunDto;
+  readonly category: string;
+  readonly clusteringRunId: string;
+  readonly rows: readonly WeekIncidentDto[];
+  readonly search: string | null;
+  readonly sort: 'posted_desc' | 'members_desc';
+  readonly canSelect: boolean;
+  /** Only a principal who may read titles may search them. */
+  readonly canSearch: boolean;
+}

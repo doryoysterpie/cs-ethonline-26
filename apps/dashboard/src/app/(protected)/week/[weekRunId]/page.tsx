@@ -1,0 +1,162 @@
+import Link from 'next/link';
+
+import { Csrf, Instant, Notice, Origin, Text } from '../../../../components/ui.tsx';
+import { csrfFor, currentPrincipal } from '../../../../server/dal/principal.ts';
+import { weekTable } from '../../../../server/dal/read.ts';
+import { attempt, escalate, single, type SearchParams } from '../../../page-support.ts';
+import { selectAction } from './actions.ts';
+
+export const dynamic = 'force-dynamic';
+
+export default async function WeekTablePage({
+  params,
+  searchParams,
+}: {
+  readonly params: Promise<{ readonly weekRunId: string }>;
+  readonly searchParams: SearchParams;
+}) {
+  const { weekRunId } = await params;
+  const query = await searchParams;
+  const { runtime, principal } = await currentPrincipal();
+  const result = await attempt(() =>
+    weekTable(
+      runtime,
+      principal,
+      weekRunId,
+      single(query.category),
+      single(query.q),
+      single(query.sort),
+    ),
+  );
+  if (!result.ok) return <Notice code={escalate(result.error)} />;
+  const view = result.value;
+  const token = principal === null ? '' : csrfFor(principal);
+  const href = (category: string, sort: string): string =>
+    `/week/${view.week.id}?category=${encodeURIComponent(category)}&sort=${encodeURIComponent(sort)}`;
+  return (
+    <section>
+      <h2>
+        Sift table for week <span className="mono">{view.week.id}</span>{' '}
+        <Origin value={view.week.dataOrigin} />
+      </h2>
+      <Notice code={single(query.notice)} />
+      <p className="small">
+        Window <Instant value={view.week.windowStart} /> to <Instant value={view.week.windowEnd} />{' '}
+        · publication cutoff <Instant value={view.week.publicationCutoffAt} /> · clustering run{' '}
+        <span className="mono">{view.clusteringRunId}</span> · {view.rows.length} incidents shown
+      </p>
+      <p className="small">
+        Category:{' '}
+        {view.week.categories.map((category, index) => (
+          <span key={category}>
+            {index === 0 ? '' : ' · '}
+            {category === view.category ? (
+              <strong>{category}</strong>
+            ) : (
+              <Link href={href(category, view.sort)}>{category}</Link>
+            )}
+          </span>
+        ))}
+        {' · '}Sort:{' '}
+        {view.sort === 'posted_desc' ? (
+          <strong>newest</strong>
+        ) : (
+          <Link href={href(view.category, 'posted_desc')}>newest</Link>
+        )}
+        {' / '}
+        {view.sort === 'members_desc' ? (
+          <strong>most reports</strong>
+        ) : (
+          <Link href={href(view.category, 'members_desc')}>most reports</Link>
+        )}
+      </p>
+      {view.canSearch ? (
+        <form method="get" action={`/week/${view.week.id}`}>
+          <input type="hidden" name="category" value={view.category} />
+          <input type="hidden" name="sort" value={view.sort} />
+          <label>
+            Search titles{' '}
+            <input type="search" name="q" maxLength={200} defaultValue={view.search ?? ''} />
+          </label>{' '}
+          <button type="submit">Search</button>
+        </form>
+      ) : null}
+      <table>
+        <thead>
+          <tr>
+            <th>Incident</th>
+            <th>Kind</th>
+            <th>Reports</th>
+            <th>Title (stored text, escaped)</th>
+            <th>Posted</th>
+            <th>Week</th>
+            <th>Selection</th>
+            {view.canSelect ? <th>Decide</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((row) => (
+            <tr key={row.incidentId}>
+              <td>
+                <Link href={`/incidents/${row.clusteringRunId}/${row.incidentId}`} className="mono">
+                  {row.incidentId.slice(0, 8)}
+                </Link>
+              </td>
+              <td>{row.kind}</td>
+              <td>{row.memberCount}</td>
+              <td>
+                <Text value={row.title} max={200} />
+              </td>
+              <td>
+                <Instant value={row.postedFrom} />
+                {row.postedTo === row.postedFrom ? null : (
+                  <>
+                    {' to '}
+                    <Instant value={row.postedTo} />
+                  </>
+                )}
+              </td>
+              <td>{row.carried && !row.inWindow ? 'carried' : 'in window'}</td>
+              <td>
+                {row.selection === null ? (
+                  <span className="small">undecided</span>
+                ) : (
+                  <p className="small">
+                    {row.selection.state} · {row.selection.by} ·{' '}
+                    <Instant value={row.selection.at} /> · revision {row.selection.revision}
+                    {row.selection.note === null ? null : (
+                      <>
+                        {' '}
+                        · <Text value={row.selection.note} max={200} />
+                      </>
+                    )}
+                  </p>
+                )}
+              </td>
+              {view.canSelect ? (
+                <td>
+                  <form action={selectAction}>
+                    <Csrf token={token} />
+                    <input type="hidden" name="weekRunId" value={view.week.id} />
+                    <input type="hidden" name="clusteringRunId" value={row.clusteringRunId} />
+                    <input type="hidden" name="incidentId" value={row.incidentId} />
+                    <input type="hidden" name="category" value={view.category} />
+                    <input
+                      type="hidden"
+                      name="state"
+                      value={row.selection?.state === 'selected' ? 'unselected' : 'selected'}
+                    />
+                    <input type="text" name="note" maxLength={2000} placeholder="note (optional)" />{' '}
+                    <button type="submit">
+                      {row.selection?.state === 'selected' ? 'Set aside' : 'Select'}
+                    </button>
+                  </form>
+                </td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}

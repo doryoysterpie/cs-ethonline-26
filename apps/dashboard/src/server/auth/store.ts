@@ -67,6 +67,7 @@ export const AUDIT_EVENT_KINDS = [
   'incident_split',
   'evidence_decided',
   'draft_revision_saved',
+  'story_selected',
   'otp_requested',
 ] as const;
 export type AuditEventKind = (typeof AUDIT_EVENT_KINDS)[number];
@@ -205,6 +206,8 @@ export interface QueueDecisionStore {
 }
 
 export interface Stores {
+  /** Which backing the stores have; a selection needs persistent accounts (CAS-003). */
+  readonly kind: 'memory' | 'postgres';
   readonly accounts: AccountStore;
   readonly sessions: SessionStore;
   readonly audit: AuditStore;
