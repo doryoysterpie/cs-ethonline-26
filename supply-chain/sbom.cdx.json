@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "9e98ba34ef8934351f98bfce1afb7a196bbaba1054d69393f5633a54d9e0e77f"
+        "value": "728896b26eb0b3886f4ff2af04dc663acc76755086ccc578b9843dddc4fc903b"
       },
       {
         "name": "cas:lockfile:version",
@@ -46,6 +46,29 @@
     ]
   },
   "components": [
+    {
+      "type": "library",
+      "bom-ref": "workspace:@cas/article",
+      "name": "@cas/article",
+      "version": "0.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:workspace:path",
+          "value": "packages/article"
+        },
+        {
+          "name": "cas:license:source",
+          "value": "workspace-manifest"
+        }
+      ]
+    },
     {
       "type": "library",
       "bom-ref": "workspace:@cas/classification",
@@ -11663,6 +11686,15 @@
       "dependsOn": []
     },
     {
+      "ref": "workspace:@cas/article",
+      "dependsOn": [
+        "pkg:npm/%40types/node@24.13.3",
+        "pkg:npm/typescript@6.0.3",
+        "pkg:npm/vitest@4.1.12",
+        "pkg:npm/zod@4.5.4"
+      ]
+    },
+    {
       "ref": "workspace:@cas/classification",
       "dependsOn": [
         "pkg:npm/%40types/node@24.13.3",
@@ -11709,11 +11741,13 @@
         "pkg:npm/server-only@0.0.1",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
+        "workspace:@cas/article",
         "workspace:@cas/contracts",
         "workspace:@cas/database",
         "workspace:@cas/drafting",
         "workspace:@cas/evidence",
         "workspace:@cas/roundup",
+        "workspace:@cas/source-reader",
         "workspace:@cas/worker"
       ]
     },
@@ -11853,6 +11887,7 @@
         "pkg:npm/typescript-eslint@8.69.0",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
+        "workspace:@cas/article",
         "workspace:@cas/classification",
         "workspace:@cas/clustering",
         "workspace:@cas/contracts",

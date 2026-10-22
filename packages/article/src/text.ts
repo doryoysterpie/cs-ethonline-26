@@ -5,7 +5,7 @@
 
 /** Words: runs of letters or digits, apostrophes and hyphens inside them allowed. */
 export function countWords(text: string): number {
-  const matches = text.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu);
+  const matches = text.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu);
   return matches === null ? 0 : matches.length;
 }
 

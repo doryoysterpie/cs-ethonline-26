@@ -75,7 +75,7 @@ function plainText(text: string): string {
   const lines = text
     .replace(/\r\n?/gu, '\n')
     .split('\n')
-    .map((line) => line.replace(/[ \t\f\v ]+/gu, ' ').trim())
+    .map((line) => line.replace(/[ \t\f\v\u00a0]+/gu, ' ').trim())
     .filter((line) => line.length > 0);
   return lines.join('\n').normalize('NFC');
 }
