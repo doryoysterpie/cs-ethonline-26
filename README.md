@@ -54,23 +54,28 @@ fixture or replay only; live evidence comes from the Graph client, never from a 
 is a record, not a UUID. Migrations 0001 to 0015 are applied by the deploy step before the
 dashboard serves traffic.
 
-**What is on `main`, and what is in review.** CAS-001, the living feed imported from the
-authorized Google Sheets workbook, merged on 22 October 2026 at `9c03a35` after an independent
-PASS at `2ad714d`; its first real import into the hosted database follows the deploy into the
-database recreated after the Railway platform incident of 21 to 22 October
-(`docs/INCIDENT_RESPONSE.md`, section 7). CAS-002, one classification run per category with
-the category recorded beside the run and bound to a policy registry (migration 0013), merged
-the same day at `b4c8270`; its first review returned two findings, corrected at `aeeccf4`, and
-that corrected head awaits the reviewer's verdict, so it is not called audited
-(`docs/CAS-002-REPORT.md`, section 7). CAS-006's release-blocker corrections merged the same day:
-pull request 17 at `355e773`, whose first review returned one finding, corrected at `e19449e`
-and awaiting the reviewer's verdict on that head; pull request 18 at `c32c963`, passed at
-`32e1357` (`docs/CAS-006-REPORT.md`). Nothing merged today is called audited until a verdict
-names its merged head. CAS-003, the editorial week as one command with its manifest and the
-sift table where the owner selects stories per incident (migration 0014, `week run`,
-`select:stories`), is in review on pull request 23 (`docs/CAS-003-REPORT.md`). CAS-004, the round-up
-generated through the rundown template and edited by the owner (migration 0015, `@cas/roundup`,
-the `owner` role), is in review on pull request 24, stacked on pull request 23 (`docs/CAS-004-REPORT.md`).
+**What is on `main`, and what is in review.** Four post-event units merged on 22 October
+2026, each at a head an independent review passed. CAS-001, the living feed imported from the
+authorized Google Sheets workbook, at `9c03a35` after a PASS at `2ad714d`; its first real
+import into the hosted database follows the deploy into the database recreated after the
+Railway platform incident of 21 to 22 October (`docs/INCIDENT_RESPONSE.md`, section 7).
+CAS-002, one classification run per category bound to a policy registry (migration 0013), at
+`b4c8270`, with its second correction at `592d3bc` after a PASS at `2c87946`
+(`docs/CAS-002-REPORT.md`, section 7). CAS-006's release-blocker corrections: pull request 17
+at `355e773`, passed at `e19449e`; pull request 18 at `c32c963`, passed at `32e1357`
+(`docs/CAS-006-REPORT.md`). CAS-003, the editorial week as one command with its manifest and
+the sift table where the owner selects stories per incident (migration 0014, `week run`,
+`select:stories`), at `bda4303` after four review rounds and a PASS at `048e673`
+(`docs/CAS-003-REPORT.md`). The Next.js advisories of the same day closed at `5d583f4`
+(pull request 25). Every verdict names its head in `docs/AUDIT-LEDGER.md`.
+
+In review, stacked in order: CAS-004, the round-up generated through the rundown template and
+edited by the owner (migration 0015, `@cas/roundup`, the `owner` role), on pull request 24
+(`docs/CAS-004-REPORT.md`); CAS-005, the article written from the full sources behind the
+system's first outbound fetch under the fetch policy adopted as D36 (migration 0016,
+`@cas/source-reader`, `@cas/article`), on pull request 26 (`docs/CAS-005-REPORT.md`); CAS-007,
+reader sign-up with owner approval, the `reader` role in place of `judge`, the published mark
+and scrape protection (migration 0017), on pull request 27 (`docs/CAS-007-REPORT.md`).
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up
