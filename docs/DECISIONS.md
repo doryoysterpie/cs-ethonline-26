@@ -60,7 +60,9 @@ Decided by, Supersedes.
 ## D4 Victim naming
 
 - **Date:** 2026-09-04
-- **Status:** PROVISIONAL
+- **Status:** PROVISIONAL; amended on 2026-10-22 (see the D4 amendment appended below): the
+  two-source bar applies to victim naming in the article; round-up entries name as their
+  selected sources name
 - **Decision:** A victim may be named after a primary statement from the victim, or after
   two independent credible reports. Otherwise the draft uses a generic description. Human
   confirmation is required before drafting work begins.
@@ -1550,3 +1552,25 @@ only.
   version of the file and a reviewed commit.
 - **Decided by:** Project owner.
 - **Supersedes:** none.
+
+### D4 amendment, 2026-10-22: the two-source bar is scoped to the article
+
+Decided by the owner on 22 October 2026 (CAS-004, the question the design note raised in its
+report, section 1.10).
+
+- **Decision.** The two-source or primary-statement bar of D4 applies to victim naming in the
+  article (CAS-005). A round-up entry names the organization as its selected sources name it;
+  one selected source is enough.
+- **Grounds.** A round-up entry restates published reporting, and its attribution is the URL
+  directly beneath it: the name is the source's claim, carried with the source, and the tool
+  asserts nothing in its own voice. The article is where the tool synthesizes and attributes in
+  its own voice, which is the case D4 was written for. Applying the bar to round-ups would break
+  the entry format, since the summary must name the organization for audio listeners, and would
+  anonymize a large share of legitimate entries: a victim's own disclosure, a regulator's filing
+  and a single outlet's scoop are each one source.
+- **Consequences.** The round-up prompt contract's rule, "name organizations as the recorded
+  fields name them", stands unchanged, and no validation on naming is added to the round-up.
+  The article's prompt contract and validation (CAS-005) carry the bar. D4's human confirmation
+  before drafting work begins is unchanged for the article.
+- **Decided by:** Project owner.
+- **Supersedes:** nothing; it scopes D4 and leaves its bar for the article as written.

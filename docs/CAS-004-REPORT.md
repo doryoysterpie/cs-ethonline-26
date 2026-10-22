@@ -125,7 +125,7 @@ the control on the week page; tests; `README.md`, `docs/ARCHITECTURE.md`, `docs/
 Not touched: the classifier, clustering, the week run, the selection record, every applied
 migration, the drafts of Sprint 5.
 
-### 1.10 Decisions this design takes within the contract, and one it raises
+### 1.10 Decisions this design takes within the contract, and one it raised
 
 - The deterministic revision 0 is rendered from the same snapshot: headline from the
   representative title, summary from the recorded summary text (or the title when none),
@@ -134,8 +134,10 @@ migration, the drafts of Sprint 5.
 - D4, the victim-naming rule, is provisional and asks for human confirmation before drafting
   work begins. The owner's template puts the organization name in the summary body, which the
   recorded sources already name. This design applies the template's rule, naming as the
-  sources name, and raises D4's two-source bar as a question for the owner; changing the
-  answer is one line of the prompt contract and one validation.
+  sources name, and raised D4's two-source bar as a question for the owner. Resolved on
+  22 October 2026: the bar is scoped to the article, and a round-up entry names as its
+  selected sources name (the D4 amendment in `docs/DECISIONS.md`). The prompt contract's rule
+  stands as written; nothing changed in code.
 
 ### 1.11 Verification plan
 
@@ -276,5 +278,9 @@ On the branch at the head that carries the documentation, 22 October 2026, from 
 275), 31 tool tests; `test:db` exit 0, 301 (database 104, worker 119, dashboard 29, mcp-server
 49). The counts against `main` as of pull request 23's corrected head are 1,078 and 296; the
 differences are this unit's ten package tests, the two database tests for migration 0015 and
-the three dashboard data-access tests. The clean clone and the CI run are recorded below as they
-complete.
+the three dashboard data-access tests.
+
+At `a0e594a`, 22 October 2026: a fresh clone from the remote, install from the lockfile,
+`verify` (1,088 offline, 31 tool) and `test:db` (301) all exit 0; CI run 39818786370 green on
+every job (Verify, PostgreSQL integration, Supply chain), with CodeQL and its analysis green
+beside it.
