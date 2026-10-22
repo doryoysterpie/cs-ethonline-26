@@ -199,9 +199,10 @@ to change without code changes.
 ## D10 Editorial week boundary
 
 - **Date:** 2026-09-04
-- **Status:** PROVISIONAL (timezone); UNRESOLVED (timestamps)
+- **Status:** RESOLVED on 2026-10-22; see the D10 resolution appended below (CAS-003, step 1)
 - **Decision:** The editorial timezone is provisionally `America/Toronto`. The exact start,
-  freeze and publication timestamps of the editorial week remain unresolved.
+  freeze and publication timestamps of the editorial week remain unresolved. _Resolved on
+  22 October 2026: see the D10 resolution at the end of this file._
 - **Rationale:** The weekly snapshot sheets are cut on a weekly window; the pipeline must
   agree with the editor on where that window starts and ends.
 - **Consequences:** Every stored timestamp keeps its raw value and its UTC interpretation
@@ -1440,3 +1441,52 @@ Cyberattack calibration against CS79 and CS86 was repeated on 22 October 2026 un
 category contract and reproduced the Sprint 3 figures exactly (`docs/CAS-002-REPORT.md`,
 section 6). Everything the Sprint 3 clarification above says about what those figures are
 evidence of, and are not, stands unchanged.
+
+### D10 resolution, 2026-10-22: the editorial week
+
+Decided by the owner on 22 October 2026 (CAS-003, step 1). The editorial timezone is
+`America/Toronto`, no longer provisional.
+
+- **Window.** An editorial week runs from one Saturday at 23:59 to the next Saturday at 23:59,
+  America/Toronto. The window close is the freeze: Saturday 23:59.
+- **Publication cutoff.** Sunday 23:59, America/Toronto, the day after the freeze.
+- **Late arrivals.** A story whose posted time falls inside a window but which is first seen
+  after that window's freeze carries to the next week, flagged as carried; it is never dropped
+  and never silently folded into the week it missed. Ground, the owner's: this is consistent
+  with the standing rule that dedup counters reset weekly, because a carried story enters the
+  next week's set rather than being matched against the prior one.
+- **Where the boundary applies.** Unchanged from D10 as written: at query time, never at
+  import. Every stored timestamp keeps its raw value and its UTC interpretation; "first seen"
+  is the completion time of the earliest import read that contained the row.
+
+## D37 The weekly run is manual, from the owner's machine
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** The weekly command (`week run`, CAS-003) is run by the owner from the owner's
+  machine. No scheduled service runs it on Railway.
+- **Rationale:** The key-locality rule of CAS-001 decides this on its own: the Google
+  service-account key lives only on the owner's machine and never on the hosting platform. The
+  Railway platform incident of 21 to 22 October 2026 only adds weight to it.
+- **Consequences:** The runbook carries the weekly step; no cron service, no secret on Railway
+  for the workbook, no scheduled process to monitor. Revisit when the incident is closed and
+  the platform is trusted again; a scheduled run would be a new decision, not a status change.
+- **Decided by:** Project owner.
+- **Supersedes:** none.
+
+## D38 Issue selection is per incident, with member rows as provenance
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** The owner selects stories for an issue per incident. A selection record names
+  the clustering run and the incident, and carries the incident's member source rows as
+  provenance at the time of selection.
+- **Rationale:** The round-up and the article both work from incidents; a per-row selection
+  would have to be regrouped into incidents anyway, and the incident already carries its rows
+  with complete provenance (D22).
+- **Consequences:** The selection table is append-only and keyed to the clustering run and the
+  incident by the composite keys migration 0006 declared; unselecting is a new record, never a
+  deletion; the sift table reads the latest record per incident. Member rows are copied as
+  references, not text.
+- **Decided by:** Project owner, on the plan's recommendation.
+- **Supersedes:** none.
