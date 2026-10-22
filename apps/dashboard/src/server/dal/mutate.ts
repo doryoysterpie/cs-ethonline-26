@@ -711,3 +711,144 @@ export async function revokeAccountSessions(
 
 /** Bounded text helper re-exported for the action layer's own use. */
 export { boundedText };
+
+// ------------------------------------------------------------ the editorial week (CAS-003)
+
+export interface StorySelectionInput {
+  readonly weekRunId: unknown;
+  readonly clusteringRunId: unknown;
+  readonly incidentId: unknown;
+  readonly state: unknown;
+  readonly note: unknown;
+}
+
+const SELECTION_STATES = ['selected', 'unselected'] as const;
+const SELECTION_NOTE = { min: 1, max: 2000 } as const;
+
+/**
+ * Records the owner's decision on one incident for one week (D38): an
+ * append-only record with the next revision, carrying the incident's member
+ * rows as references. The capability is `select:stories`; the week must be
+ * completed; the clustering run must be the one the week recorded for its
+ * category (the database guard enforces it too). A concurrent record for the
+ * same incident is a conflict, never a silent overwrite.
+ */
+export async function selectStory(
+  runtime: Runtime,
+  who: Principal | null,
+  input: StorySelectionInput,
+): Promise<{ readonly selectionId: string; readonly revision: number }> {
+  const principal = requireCapability(who, 'select:stories');
+  // A selection names its actor by a foreign key to the accounts table, so it
+  // exists only where accounts are persistent. The memory account store of a
+  // local run cannot carry that provenance, and says so rather than failing
+  // opaquely.
+  if (runtime.stores.kind !== 'postgres') {
+    throw validation(
+      'persistent_accounts_required',
+      'Selecting stories needs the PostgreSQL account store.',
+    );
+  }
+  const weekRunId = uuid(input.weekRunId, 'weekRunId');
+  const clusteringRunId = uuid(input.clusteringRunId, 'clusteringRunId');
+  const incidentId = uuid(input.incidentId, 'incidentId');
+  const state = enumOf(input.state, SELECTION_STATES, 'state');
+  const note = optionalText(input.note, 'note', SELECTION_NOTE);
+  const packages = await workspace();
+  const {
+    getWeekRun,
+    insertIssueSelection,
+    isDatabaseError,
+    lastSelectionRevision,
+    listIncidentMemberRefs,
+    listWeekRunChildren,
+  } = packages.database;
+  try {
+    const week = await runtime.database.withClient((client) => getWeekRun(client, weekRunId));
+    if (week === null) {
+      throw new DashboardError('not_found', 'week_run_not_found', 'No week run with that id.');
+    }
+    if (week.status !== 'completed') {
+      throw validation('week_not_completed', 'Only a completed week can be selected from.');
+    }
+    const children = await runtime.database.withClient((client) =>
+      listWeekRunChildren(client, weekRunId),
+    );
+    const child = children.find(
+      (c) => c.kind === 'clustering' && c.clusteringRunId === clusteringRunId,
+    );
+    if (child === undefined || child.category === null) {
+      throw new DashboardError(
+        'not_found',
+        'clustering_run_not_in_week',
+        'That clustering run is not one this week recorded.',
+      );
+    }
+    const category = child.category;
+    const members = await runtime.database.withClient((client) =>
+      listIncidentMemberRefs(client, clusteringRunId, incidentId),
+    );
+    if (members.length === 0) {
+      throw new DashboardError(
+        'not_found',
+        'incident_not_found',
+        'No incident with that id in this run.',
+      );
+    }
+    const selectionId = randomUUID();
+    let revision = 0;
+    try {
+      revision = await runtime.database.withTransaction(async (tx) => {
+        const next = (await lastSelectionRevision(tx, weekRunId, incidentId)) + 1;
+        await insertIssueSelection(
+          tx,
+          {
+            id: selectionId,
+            weekRunId,
+            batchId: week.batchId,
+            clusteringRunId,
+            incidentId,
+            category,
+            state,
+            revision: next,
+            actorAccountId: principal.accountId,
+            note,
+            createdAt: new Date().toISOString(),
+          },
+          members,
+        );
+        return next;
+      });
+    } catch (error) {
+      if (isDatabaseError(error) && (error.code === '23505' || error.code === 'P0001')) {
+        await audit(runtime, {
+          kind: 'story_selected',
+          outcome: 'failure',
+          code: 'selection_conflict',
+          actorAccountId: principal.accountId,
+          subjectAccountId: null,
+          sessionId: principal.sessionId,
+          subjectId: incidentId,
+        });
+        throw new DashboardError(
+          'conflict',
+          'selection_conflict',
+          'The selection changed while you were working; reload and try again.',
+        );
+      }
+      throw error;
+    }
+    await audit(runtime, {
+      kind: 'story_selected',
+      outcome: 'success',
+      code: state,
+      actorAccountId: principal.accountId,
+      subjectAccountId: null,
+      sessionId: principal.sessionId,
+      subjectId: incidentId,
+    });
+    return { selectionId, revision };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}

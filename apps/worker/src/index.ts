@@ -155,6 +155,14 @@ export {
 } from './clustering/run.js';
 export { buildAnomalyFeed, type AnomalyRequest } from './evidence/anomaly.js';
 export {
+  computeWeekRunKey,
+  runWeek,
+  type WeekRunDependencies,
+  type WeekRunOutcome,
+  type WeekRunRequest,
+} from './week/run.js';
+export { EDITORIAL_TIME_ZONE, resolveWeekWindow, type WeekWindow } from './week/window.js';
+export {
   reportEvidenceRun,
   resolveEvidence,
   type EvidenceReport,

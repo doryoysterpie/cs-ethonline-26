@@ -9,6 +9,7 @@ import {
   ingestSnapshotFile,
   recordIncidentSubject,
   resolveEvidence,
+  runWeek,
 } from '@cas/worker';
 
 /**
@@ -245,5 +246,102 @@ export async function seedPipeline(db: Database): Promise<SeededPipeline> {
     incidentIds,
     hostileIncidentId,
     subjectIncidentId,
+  };
+}
+
+/** The window the week seed runs over: Saturday 17 to Saturday 24 October 2026, America/Toronto. */
+export const WEEK_WINDOW = {
+  startsAt: '2026-10-18T03:59:00.000Z',
+  endsAt: '2026-10-25T03:59:00.000Z',
+} as const;
+
+export interface SeededWeek {
+  readonly batchId: string;
+  readonly weekRunId: string;
+  readonly clusteringRunId: string;
+  readonly category: string;
+}
+
+/**
+ * One batch with explicit timestamps (completed inside the window, so first
+ * seen falls inside it), two incident-worthy rows inside the window and one
+ * posted before it (carried), classified and clustered by a week run over
+ * the window. Synthetic throughout.
+ */
+export async function seedWeek(db: Database): Promise<SeededWeek> {
+  const batchId = randomUUID();
+  const rows = [
+    {
+      title: 'Ransomware halts Harborline Port terminal operations',
+      summary: 'Harborline Port said terminal systems were encrypted overnight.',
+      group: 'a',
+      postedAt: '2026-10-20T10:00:00.000Z',
+    },
+    {
+      title: 'Harborline Port terminal operations disrupted by ransomware',
+      summary: 'The port confirmed the ransomware intrusion to its terminal systems.',
+      group: 'b',
+      postedAt: '2026-10-21T09:00:00.000Z',
+    },
+    {
+      title: 'Brightwater Utility confirms a data breach of customer accounts',
+      summary: 'Brightwater Utility said customer account data was exposed.',
+      group: 'c',
+      postedAt: '2026-10-12T08:00:00.000Z',
+    },
+  ];
+  await db.withTransaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO import_batches (
+         id, data_origin, source_kind, review_label, source_basename, file_sha256, byte_length,
+         header_cells, importer_version, idempotency_key, status, parsed_row_count,
+         accepted_row_count, quarantined_row_count, started_at, completed_at
+       ) VALUES ($1, 'replay', 'master', NULL, 'week.csv', $2, 10, '["ch"]'::jsonb,
+                 'editorial-csv-import@1', $3, 'completed', $4, $4, 0, $5::timestamptz, $5::timestamptz)`,
+      [
+        batchId,
+        hash('d'),
+        randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64),
+        rows.length,
+        '2026-10-22T12:00:00.000Z',
+      ],
+    );
+    for (const [index, spec] of rows.entries()) {
+      const groupId = randomUUID();
+      await tx.query(`INSERT INTO url_groups (id, canonical_url) VALUES ($1, $2)`, [
+        groupId,
+        `https://seed.example/${batchId}/${spec.group}`,
+      ]);
+      await tx.query(
+        `INSERT INTO source_rows (
+           id, batch_id, row_number, data_origin, status, raw_cells, raw_fields, raw_ch,
+           raw_url, raw_category, posted_at, normalized_title, derived_summary_text,
+           text_transform, canonical_url, url_group_id, row_hash
+         ) VALUES ($1, $2, $3, 'replay', 'accepted', '["TRUE"]'::jsonb, '{"ch":"TRUE"}'::jsonb,
+                   'TRUE', $4, 'Security', $5::timestamptz, $6, $7, 'html-to-text@1', $4, $8, $9)`,
+        [
+          randomUUID(),
+          batchId,
+          index + 1,
+          `https://seed.example/${batchId}/${spec.group}`,
+          spec.postedAt,
+          spec.title,
+          spec.summary,
+          groupId,
+          hash(String(index + 2)),
+        ],
+      );
+    }
+  });
+  const week = await runWeek(db, { window: WEEK_WINDOW, batchId, categories: ['cyberattack'] });
+  const clustering = week.children.find((c) => c.kind === 'clustering');
+  if (clustering?.clusteringRunId === undefined || clustering.clusteringRunId === null) {
+    throw new Error('the seeded week recorded no clustering run');
+  }
+  return {
+    batchId,
+    weekRunId: week.week.id,
+    clusteringRunId: clustering.clusteringRunId,
+    category: 'cyberattack',
   };
 }

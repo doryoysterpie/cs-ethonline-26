@@ -120,7 +120,10 @@ export async function getAccountById(client: Queryable, id: string): Promise<Acc
 
 export async function listAccounts(client: Queryable): Promise<AccountRow[]> {
   const result = await client.query<AccountRow>(
-    `SELECT ${ACCOUNT_COLUMNS} FROM accounts ORDER BY pg_catalog.coalesce(username, normalized_email)`,
+    // `coalesce` is a SQL construct, not a function in pg_catalog; the
+    // schema-qualified spelling raised 42883 and nothing listed accounts
+    // from PostgreSQL until the week table named its selectors (CAS-003).
+    `SELECT ${ACCOUNT_COLUMNS} FROM accounts ORDER BY coalesce(username, normalized_email), id`,
   );
   return result.rows;
 }

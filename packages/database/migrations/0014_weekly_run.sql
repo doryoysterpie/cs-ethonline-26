@@ -24,6 +24,9 @@
 --      `issue_selection_members` carries the incident's member rows at the
 --      time of selection as references, never text. Both append-only.
 --
+--   4. **One audit kind.** `audit_events.kind` gains `story_selected`, the
+--      event the selection writes, success or refusal, never content.
+--
 -- Migrations 0001 to 0013 are unchanged. Every function and trigger below is
 -- created through `pg_catalog.format` with quoted identifiers, bound to the
 -- schema being migrated, and stores `search_path = pg_catalog, <schema>,
@@ -279,6 +282,24 @@ BEGIN
     CREATE TRIGGER issue_selection_members_guard
       BEFORE INSERT OR UPDATE OR DELETE ON %1$I.issue_selection_members
       FOR EACH ROW EXECUTE FUNCTION %1$I.issue_selection_member_guard()
+  $fmt$, target);
+
+  -- 4. The audit event kind the selection writes. `audit_events.kind` is a
+  --    closed list; it gains exactly one value, `story_selected`, the way
+  --    migration 0011 added `otp_requested`.
+  EXECUTE pg_catalog.format(
+    'ALTER TABLE %1$I.audit_events DROP CONSTRAINT audit_events_kind_check', target);
+  EXECUTE pg_catalog.format($fmt$
+    ALTER TABLE %1$I.audit_events
+      ADD CONSTRAINT audit_events_kind_check CHECK (kind IN (
+        'login_succeeded', 'login_failed', 'login_throttled', 'login_busy',
+        'logout', 'session_rejected', 'session_rotated', 'sessions_revoked',
+        'account_provisioned', 'account_password_rotated', 'account_disabled',
+        'account_role_assigned', 'account_expiry_set', 'queue_reviewed',
+        'incident_merged', 'incident_split', 'evidence_decided',
+        'draft_revision_saved', 'otp_requested',
+        'story_selected'
+      ))
   $fmt$, target);
 END
 $migration$;

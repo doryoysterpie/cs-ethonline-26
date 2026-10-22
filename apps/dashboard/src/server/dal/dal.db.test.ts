@@ -7,10 +7,12 @@ import {
   HOSTILE_TITLE,
   seedPipeline,
   seedQueueRow,
+  seedWeek,
   type SeededPipeline,
 } from '../../test/seed-pipeline.ts';
 import { insertSynthetic, syntheticAccount } from '../../test/synthetic-accounts.ts';
 import { openMemoryStores } from '../auth/memory-store.ts';
+import { openPostgresStores } from '../auth/postgres-store.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
 import type { Principal } from '../auth/session.ts';
 import { isDashboardError } from '../errors.ts';
@@ -22,6 +24,7 @@ import {
   mergeIncidentsAction,
   reviewQueueEntry,
   saveDraftRevision,
+  selectStory,
   splitIncidentAction,
 } from './mutate.ts';
 import {
@@ -33,6 +36,8 @@ import {
   incidentDetail,
   incidentExplorer,
   reviewQueue,
+  weekList,
+  weekTable,
 } from './read.ts';
 
 /**
@@ -610,5 +615,199 @@ describe('data-access layer against PostgreSQL', () => {
       caught = error;
     }
     expect(isDashboardError(caught) && caught.code === 'revision_limit').toBe(true);
+  });
+
+  describe('the editorial week (CAS-003)', () => {
+    it('lists completed weeks to every role, and shows the sift table with titles only to a principal holding source text', async () => {
+      const week = await seedWeek(isolated.db);
+      for (const role of ROLES) {
+        const list = await weekList(runtime, principals[role]);
+        expect(list.weeks.some((w) => w.id === week.weekRunId && w.status === 'completed')).toBe(
+          true,
+        );
+      }
+      const editor = await weekTable(
+        runtime,
+        principals.editor,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      expect(editor.category).toBe('cyberattack');
+      expect(editor.clusteringRunId).toBe(week.clusteringRunId);
+      expect(editor.canSelect).toBe(true);
+      expect(editor.rows.length).toBeGreaterThan(0);
+      expect(
+        editor.rows.some(
+          (row) =>
+            row.title?.startsWith('Ransomware halts Harborline') ||
+            row.title?.startsWith('Harborline Port'),
+        ),
+      ).toBe(true);
+      const carried = editor.rows.find((row) => row.title?.startsWith('Brightwater'));
+      expect(carried).toMatchObject({ carried: true, inWindow: false, selection: null });
+      const judge = await weekTable(
+        runtime,
+        principals.judge,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      expect(judge.canSelect).toBe(false);
+      expect(judge.rows.length).toBe(editor.rows.length);
+      expect(judge.rows.every((row) => row.title === null)).toBe(true);
+      // Search is compared in the database; sort and category are whitelisted.
+      const searched = await weekTable(
+        runtime,
+        principals.editor,
+        week.weekRunId,
+        'cyberattack',
+        'brightwater',
+        'members_desc',
+      );
+      expect(searched.rows).toHaveLength(1);
+      expect(searched.search).toBe('brightwater');
+      expect(
+        await kindOf(
+          weekTable(runtime, principals.editor, week.weekRunId, 'crypto', undefined, undefined),
+        ),
+      ).toBe('validation');
+      expect(
+        await kindOf(
+          weekTable(runtime, principals.editor, week.weekRunId, 'cyberattack', undefined, 'random'),
+        ),
+      ).toBe('validation');
+      expect(
+        await kindOf(
+          weekTable(runtime, principals.editor, randomUUID(), 'cyberattack', undefined, undefined),
+        ),
+      ).toBe('not_found');
+    });
+
+    it('records a selection for an editor with the next revision, refuses a judge, and shows the latest state', async () => {
+      const week = await seedWeek(isolated.db);
+      // The seed itself writes machine rows (runs, incidents); the selections below must not.
+      const machineBefore = await fingerprint();
+      const table = await weekTable(
+        runtime,
+        principals.editor,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      const row = table.rows[0];
+      expect(row).toBeDefined();
+      const input = {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: row?.incidentId ?? '',
+        state: 'selected',
+        note: null,
+      };
+      // The selection carries its actor by foreign key, so it needs persistent
+      // accounts: the memory-store runtime refuses with a fixed code, and the
+      // PostgreSQL-store runtime below records it.
+      expect(await kindOf(selectStory(runtime, principals.editor, input))).toBe('validation');
+      const persistent = openPostgresStores(isolated.db);
+      const persistentRuntime = createRuntime(
+        {
+          environment: 'local',
+          accountStore: 'memory',
+          memorySeedPath: null,
+          databaseSchema: isolated.name,
+          trustForwardedFor: false,
+          trustedProxyHops: 1,
+        },
+        persistent,
+        isolated.db,
+      );
+      const persisted = {} as Record<Role, Principal>;
+      for (const role of ROLES) {
+        const account = await syntheticAccount(role);
+        await insertSynthetic(persistent, account);
+        // The audit event names its session by foreign key, so the session is real too.
+        const sessionId = randomUUID();
+        await persistent.sessions.insert({
+          id: sessionId,
+          accountId: account.record.id,
+          tokenHash: randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64),
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          absoluteExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          revokedAt: null,
+          revokedReason: null,
+        });
+        persisted[role] = {
+          accountId: account.record.id,
+          username: account.record.username,
+          normalizedEmail: null,
+          role,
+          sessionId,
+          sessionToken: 'b'.repeat(43),
+        };
+      }
+      expect(await kindOf(selectStory(persistentRuntime, persisted.judge, input))).toBe(
+        'authorization',
+      );
+      const first = await selectStory(persistentRuntime, persisted.editor, input);
+      expect(first.revision).toBe(1);
+      const second = await selectStory(persistentRuntime, persisted.admin, {
+        ...input,
+        state: 'unselected',
+        note: 'next week',
+      });
+      expect(second.revision).toBe(2);
+      const after = await weekTable(
+        persistentRuntime,
+        persisted.editor,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      const decided = after.rows.find((r) => r.incidentId === row?.incidentId);
+      expect(decided?.selection).toMatchObject({
+        state: 'unselected',
+        revision: 2,
+        note: 'next week',
+      });
+      expect(decided?.selection?.by).toBe(persisted.admin.username);
+      // A judge reads the state but never the note.
+      const judgeView = await weekTable(
+        persistentRuntime,
+        persisted.judge,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      expect(judgeView.rows.find((r) => r.incidentId === row?.incidentId)?.selection).toMatchObject(
+        { state: 'unselected', note: null },
+      );
+      // Wrong identifiers are refused before anything is written.
+      expect(
+        await kindOf(
+          selectStory(persistentRuntime, persisted.editor, { ...input, incidentId: randomUUID() }),
+        ),
+      ).toBe('not_found');
+      expect(
+        await kindOf(
+          selectStory(persistentRuntime, persisted.editor, {
+            ...input,
+            clusteringRunId: seeded.clusteringRunId,
+          }),
+        ),
+      ).toBe('not_found');
+      expect(
+        await kindOf(
+          selectStory(persistentRuntime, persisted.editor, { ...input, state: 'maybe' }),
+        ),
+      ).toBe('validation');
+      // The machine tables are untouched by selection.
+      expect(await fingerprint()).toBe(machineBefore);
+    });
   });
 });

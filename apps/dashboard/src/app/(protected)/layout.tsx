@@ -37,6 +37,9 @@ export default async function ProtectedLayout({ children }: { readonly children:
             <Link href="/incidents">Incident explorer</Link>
           </li>
           <li>
+            <Link href="/week">Editorial week</Link>
+          </li>
+          <li>
             <Link href="/evidence">Evidence states</Link>
           </li>
           <li>

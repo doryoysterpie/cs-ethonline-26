@@ -254,6 +254,17 @@ describe('the PostgreSQL store against a migrated schema', () => {
     ).rejects.toBeTruthy();
   });
 
+  it('lists the accounts it holds, ordered by their display identity (CAS-003 found the listing broken)', async () => {
+    const one = (await syntheticAccount('editor')).record;
+    const two = (await syntheticAccount('judge')).record;
+    await stores.accounts.insert(one);
+    await stores.accounts.insert(two);
+    const listed = await stores.accounts.list();
+    expect(listed.map((a) => a.id)).toEqual(expect.arrayContaining([one.id, two.id]));
+    const names = listed.map((a) => a.username ?? a.normalizedEmail ?? a.id);
+    expect([...names].sort()).toEqual(names);
+  });
+
   it('appends the 100th decision and refuses the 101st when two arrive together (CAS-006, blocker 7, Codex F1)', async () => {
     const account = (await syntheticAccount('editor')).record;
     await stores.accounts.insert(account);
