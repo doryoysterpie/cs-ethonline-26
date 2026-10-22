@@ -1,0 +1,60 @@
+{
+  "$comment": [
+    "The rundown template, version 1, structure only (CAS-004, D40). The owner",
+    "supplied it on 22 October 2026 from the standing Cyberattack Sunday rules.",
+    "One template serves the cyberattack and the crypto round-up: the lane",
+    "changes the category filter and the extras, never the entry shape. No",
+    "article text lives here. The generator fills the slots below from the",
+    "recorded fields of the selected stories and invents nothing; the owner",
+    "edits the result. The file is canonicalized and hashed at load; every",
+    "generated revision records the hash it was produced under."
+  ],
+  "version": "rundown-template@1",
+  "sections": [
+    {
+      "id": "rundown",
+      "title": "Rundown",
+      "rule": "One entry per selected incident, in selection order. The generator does not reorder; sequencing stays editorial."
+    },
+    {
+      "id": "extras",
+      "title": "Extras",
+      "manual": true,
+      "marker": "<!-- extras: Stories From This Week That Show The Bar Is Now In Hell; intro, outro and lead-story sequencing stay manual -->",
+      "rule": "No slot beyond the marker. The owner writes these by hand."
+    },
+    {
+      "id": "flagged",
+      "title": "Flagged, not published",
+      "rule": "Items omitted as non-cyber or out of lane with a one-line reason, and late arrivals carried to the next week per D10. Surfaced for owner override, never silently dropped."
+    }
+  ],
+  "entry": {
+    "headline": {
+      "style": "bold, title case",
+      "rule": "The organization name and every key detail sit in the summary body, not the headline."
+    },
+    "summary": {
+      "sentences": { "min": 1, "max": 2 },
+      "rules": [
+        "Written as a standalone audio script: the organization name and every key detail sit in the body.",
+        "A clickbait lead in the first one to four words.",
+        "Non-technical.",
+        "Canadian spelling.",
+        "US with no periods."
+      ]
+    },
+    "sources": {
+      "label": "Sources:",
+      "rule": "The label on its own line, then each full URL on its own line, no link text, no previews."
+    }
+  },
+  "deduplication": {
+    "rule": "One entry per incident; the summary draws on every member row; every member row's URL is listed under Sources in row order; no duplicate markers in the output; matching within the editorial week only, never across weeks."
+  },
+  "slots": {
+    "rundown": ["headline", "summary", "sources[]", "citations[]"],
+    "flagged": ["headline", "reason", "disposition: omit | carry"],
+    "extras": "marker only"
+  }
+}

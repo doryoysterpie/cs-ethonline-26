@@ -185,7 +185,8 @@ to change without code changes.
 ## D9 Model configuration
 
 - **Date:** 2026-09-04
-- **Status:** UNRESOLVED
+- **Status:** RESOLVED for the round-up on 2026-10-22 (see the D9 resolution appended below); not
+  used for classification, which D21 keeps deterministic
 - **Decision:** Anthropic is planned as the model provider for classification and drafting.
   The exact model, the deterministic structured-output settings and the spending cap remain
   unresolved.
@@ -1489,4 +1490,63 @@ Decided by the owner on 22 October 2026 (CAS-003, step 1). The editorial timezon
   deletion; the sift table reads the latest record per incident. Member rows are copied as
   references, not text.
 - **Decided by:** Project owner, on the plan's recommendation.
+- **Supersedes:** none.
+
+### D9 resolution, 2026-10-22: the round-up
+
+Decided by the owner on 22 October 2026 (CAS-004, step 2), from the current API reference and
+not from memory. Classification stays deterministic (D21 as amended), so D9 governs generation
+only.
+
+- **Model.** `claude-opus-5-5`, the current default; published rate USD 4.00 per million input
+  tokens and USD 20.00 per million output tokens. Thinking tokens bill as output.
+- **Settings.** Adaptive thinking at `effort: low`, which keeps thinking small for a
+  reformatting task; structured output against the template's slot schema; `max_tokens`
+  16,000; one request per generation, no retries beyond the client's own.
+- **Cap.** USD 25 per month, in the currency the API bills in. At cents per run the cap bounds
+  a retry loop or a misconfigured batch, not normal use. A generation whose estimated cost
+  would take the month over the cap is refused before any request is made, with a fixed code.
+- **Provenance.** Every generated revision records the model identifier, the prompt hash, the
+  template hash, the input digest, the token counts and the cost estimate; the audit log
+  records the request and its completion with the counts, never content.
+- **Decided by:** Project owner.
+
+## D39 The owner is a fourth role
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** `owner` joins the role table beside judge, editor and admin, holding the
+  editor's capabilities plus `generate:roundup`, `generate:article` (reserved for CAS-005) and
+  `edit:output`. Generation and the editing of a generated output belong to this role and to
+  no other; administration stays with admin.
+- **Rationale:** The plan's recommendation (CAS-004, step 3): a role is enumerable in the same
+  table the capability checks already read, so a refusal is a fixed code at the data-access
+  layer, and the judge-refusal tests can enumerate the new capabilities like every other.
+- **Consequences:** The accounts table's role check gains the value; the owner's account is
+  assigned the role by the existing administration path; D34 stands as written.
+- **Decided by:** Project owner, on the plan's recommendation.
+- **Supersedes:** none.
+
+## D40 The rundown template, version 1, structure only
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** `data/policy/rundown-template.json`, version `rundown-template@1`, is the
+  structure the round-up generator fills: a rundown section (one entry per selected incident,
+  in selection order, never reordered by the generator), an extras marker (the owner's manual
+  parts, no slot), and a flagged section (omitted items with a one-line reason, and late
+  arrivals carried per D10, surfaced for override and never silently dropped). An entry is a
+  bold, title-case headline; a one- to two-sentence summary written as a standalone audio
+  script with the organization name and every key detail in the body, a clickbait lead in the
+  first one to four words, non-technical, Canadian spelling, "US" without periods; and a
+  `Sources:` line followed by each full URL on its own line. One entry per incident, the
+  summary drawn from every member row, every member URL listed in row order, no duplicate
+  markers, matching within the week only. One template serves both lanes; the lane changes the
+  category filter and the extras, not the entry shape.
+- **Rationale:** The owner's standing Cyberattack Sunday rules, supplied as structure on
+  22 October 2026 (CAS-004, step 1). No article text enters the repository.
+- **Consequences:** The file is canonicalized and hashed at load; a generated revision records
+  the hash; a template hash mismatch at generation time refuses. Changing the template is a new
+  version of the file and a reviewed commit.
+- **Decided by:** Project owner.
 - **Supersedes:** none.
