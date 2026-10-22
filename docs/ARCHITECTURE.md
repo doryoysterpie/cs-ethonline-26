@@ -542,4 +542,6 @@ assembly and decision rules; the cyberattack contract reproduces Sprint 3's hash
 which a test asserts. Migration 0013 records the category beside the run in
 `classification_run_categories`, bound to the run's ruleset hash and origin by a guard, append
 only. Runs that predate it carry no category row and are reported as such; nothing is
-backfilled. The report is `docs/CAS-002-REPORT.md`.
+backfilled. The dashboard's queue pages read the category through the existing data-access
+functions and show one category at a time; no capability changed. The report is
+`docs/CAS-002-REPORT.md`.

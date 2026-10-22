@@ -170,7 +170,7 @@ every offline suite, the tool tests, the repository checks and the build), and
 | `@cas/classification` offline | 62 passed          |
 | `@cas/taxonomy` offline       | 7 passed           |
 | `@cas/worker` offline         | 270 passed (1 new) |
-| `@cas/database` PostgreSQL    | 95 passed (3 new)  |
+| `@cas/database` PostgreSQL    | 96 passed (4 new)  |
 | `@cas/worker` PostgreSQL      | 112 passed (2 new) |
 | `@cas/dashboard` PostgreSQL   | 20 passed          |
 | `@cas/mcp-server` PostgreSQL  | 49 passed          |
@@ -182,3 +182,21 @@ owner's two decisions (steps 1 and 2), the clean-clone verification and CI run (
 the independent review (step 12). Migration 0013 is applied nowhere outside test schemas: it
 reaches the production database only through Railway's deploy step after this unit merges,
 which in turn follows the merge of pull request 14.
+
+## 4. The dashboard read path, S5 (step 8)
+
+Built 22 October 2026. The command-center read (`commandCenter` in
+`apps/dashboard/src/server/dal/read.ts`) now joins the category rows of the runs it lists in
+one statement, through `listClassificationRunCategories`, bounded like the other paged reads;
+the per-run read (`reviewQueue`) reads its run's category row. Both DTOs carry
+`category: string | null`, `null` for a run that predates migration 0013. The queue index page
+shows a Category column, offers one filter link per category present in the listed runs, and
+filters the already bounded list on the server. The filter value is compared and never echoed;
+the only category names the page renders come from the database, where a check constraint
+bounds their alphabet. The per-run queue page prints the category in its header line. No
+capability changed: both pages read through the same `view:queue` guard as before. The
+command-center page is unchanged; its DTO carries the field for a later column.
+
+From the runner, the same day: `verify` exit 0; PostgreSQL suites database 96 (one new test for
+the batched read), worker 112, dashboard 20 (two assertions added to the existing
+command-center and queue tests), mcp-server 49.
