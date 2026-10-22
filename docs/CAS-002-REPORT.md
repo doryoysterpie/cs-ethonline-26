@@ -320,3 +320,11 @@ the dashboard. A real third category is therefore a policy in `@cas/taxonomy` an
 `test:db` exit 0: 281 (database 98, worker 114, dashboard 20, mcp-server 49). The merge train
 was simulated in a throwaway checkout: #14 then this pull request merge onto `main` without
 conflict, in either order relative to #17, #18 and #20.
+
+### 7.4 Merge
+
+The owner merged pull request 19 at `b4c8270` on 22 October 2026 with the corrected head
+`aeeccf4` not yet re-reviewed. Audit state therefore stays: not audited. The re-review request
+for `aeeccf4` stands; a verdict about that commit, which `main` now contains, is what closes
+step 12. Railway's next deploy of `main` applies migrations 0012 and 0013 to the recreated
+hosted database through the pre-deploy command.
