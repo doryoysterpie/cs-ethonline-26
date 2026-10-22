@@ -865,7 +865,8 @@ export async function roundupView(
   const principal = requireCapability(who, 'view:draft');
   const id = uuid(weekRunId, 'weekRunId');
   const packages = await workspace();
-  const { getWeekRun, listRoundupRevisions, listSelectedRows, spendBetween } = packages.database;
+  const { currentPublication, getWeekRun, listRoundupRevisions, listSelectedRows, spendBetween } =
+    packages.database;
   const { loadTemplate, MONTHLY_CAP_MICRODOLLARS } = packages.roundup;
   try {
     const week = await runtime.database.withClient((client) => getWeekRun(client, id));
@@ -931,6 +932,13 @@ export async function roundupView(
         week.status === 'completed' &&
         revisions.length === 0,
       canEdit: holds(principal, 'edit:output') && revisions.length > 0,
+      canPublish: holds(principal, 'publish:output') && revisions.length > 0,
+      publishedRevision:
+        (
+          await runtime.database.withClient((client) =>
+            currentPublication(client, week.id, wantedCategory, 'roundup'),
+          )
+        )?.revision ?? null,
     };
   } catch (error) {
     throw mapFailure(error, packages);
@@ -952,7 +960,8 @@ export async function articleView(
   const principal = requireCapability(who, 'view:draft');
   const id = uuid(weekRunId, 'weekRunId');
   const packages = await workspace();
-  const { getWeekRun, listArticleRevisions, listSelectedRows, spendBetween } = packages.database;
+  const { currentPublication, getWeekRun, listArticleRevisions, listSelectedRows, spendBetween } =
+    packages.database;
   const { MONTHLY_CAP_MICRODOLLARS } = packages.article;
   try {
     const week = await runtime.database.withClient((client) => getWeekRun(client, id));
@@ -1055,6 +1064,13 @@ export async function articleView(
       canRead: mayGenerate,
       canGenerate: mayGenerate && reading !== null,
       canEdit: holds(principal, 'edit:output') && revisions.length > 0,
+      canPublish: holds(principal, 'publish:output') && revisions.length > 0,
+      publishedRevision:
+        (
+          await runtime.database.withClient((client) =>
+            currentPublication(client, week.id, wantedCategory, 'article'),
+          )
+        )?.revision ?? null,
     };
   } catch (error) {
     throw mapFailure(error, packages);

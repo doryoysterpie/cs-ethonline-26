@@ -12,6 +12,16 @@ const NOTICES: Readonly<Record<string, string>> = {
   sources_read:
     'Sources read. Review what was read and what was not, then confirm to write the article.',
   article_generated: 'Article written; revision 1 recorded.',
+  signup_code_sent: 'If that address can request access, a code was sent. Enter it below.',
+  signup_recorded:
+    'Your request is recorded. The owner reviews requests; you will receive an email either way.',
+  signup_code_invalid: 'That code did not work.',
+  signup_locked: 'That code did not work.',
+  signup_expired: 'Enter your address again to request a new code.',
+  approved: 'Request approved; the reader account exists and the email was sent.',
+  denied: 'Request denied; the email was sent.',
+  published: 'Published. Readers now see this revision.',
+  unpublished: 'Unpublished. Readers no longer see this output.',
   unselected: 'Set aside for this issue.',
   already_recorded: 'Already recorded: an identical action existed.',
   revoked: 'Sessions revoked.',

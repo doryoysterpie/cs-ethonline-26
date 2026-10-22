@@ -21,7 +21,15 @@ import { NO_STORE, NONCE_HEADER, securityHeaders } from './server/http/headers.t
  * drivers.
  */
 
-const PUBLIC_PATHS = new Set(['/login', '/login/verify', '/api/me', '/api/logout']);
+const PUBLIC_PATHS = new Set([
+  '/login',
+  '/login/verify',
+  '/signup',
+  '/signup/verify',
+  '/robots.txt',
+  '/api/me',
+  '/api/logout',
+]);
 
 function nonce(): string {
   const bytes = new Uint8Array(16);
