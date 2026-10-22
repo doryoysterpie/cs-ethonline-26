@@ -1684,7 +1684,7 @@ describe('data-access layer against PostgreSQL', () => {
         (e) => e.kind === 'signup_requested',
       );
       expect(requested.map((e) => e.code).sort()).toEqual(['sent', 'silent', 'silent']);
-      expect(requested.every((e) => !JSON.stringify(e).includes('example.org'))).toBe(true);
+      expect(requested.every((e) => !/@|example\.org/u.test(JSON.stringify(e)))).toBe(true);
       // Wrong codes: four invalid, the fifth locks; the right code is then refused too.
       const wrong = codeIn(mail.sent[0]) === '000000' ? '000001' : '000000';
       for (let i = 0; i < 4; i += 1) {
@@ -1802,7 +1802,7 @@ describe('data-access layer against PostgreSQL', () => {
       expect(decisions.map((e) => e.kind).sort()).toEqual(['signup_approved', 'signup_denied']);
       expect(
         decisions.every(
-          (e) => e.actorAccountId === persisted.admin.accountId && !JSON.stringify(e).includes('@'),
+          (e) => e.actorAccountId === persisted.admin.accountId && !/@/u.test(JSON.stringify(e)),
         ),
       ).toBe(true);
     });
