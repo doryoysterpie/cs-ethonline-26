@@ -8,6 +8,8 @@ import {
 } from '@cas/sheets-intake';
 
 import { toSingleLine } from '../editorial/display.js';
+import { formatImportOutcome } from '../editorial/output.js';
+import type { SheetsImportOutcome } from './import.js';
 
 /**
  * Count-only, identifier-only output for the Sheets commands.
@@ -112,4 +114,17 @@ export function formatPin(pin: {
     'sheets:pin: paste the digest into data/policy/authorized-workbook.json as spreadsheetIdSha256, in its own commit',
     'sheets:pin: the spreadsheet identifier was read from the environment and is not printed here or anywhere',
   ];
+}
+
+/** The import command's output: the read, then the batch exactly as the CSV importer reports one. */
+export function formatSheetsImportOutcome(
+  outcome: SheetsImportOutcome,
+  redact: Redactor,
+): string[] {
+  const s = outcome.sheets;
+  const head =
+    `sheets:import: workbook=${s.workbookDigest} tab=${safeDisplay(s.tabTitle)} tabDigest=${s.tabDigest} ` +
+    `rowsRead=${s.rowsRead} pages=${s.pages} serials: converted=${s.serialsConverted} unconvertible=${s.serialsUnconvertible} ` +
+    `read=${s.readStartedAt}..${s.readCompletedAt}`;
+  return [line(head, redact), ...formatImportOutcome(outcome, redact)];
 }

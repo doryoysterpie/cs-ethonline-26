@@ -250,10 +250,13 @@ describe('the containment every document must keep stating', () => {
     expect(flat(decisions)).toContain('D29 amendment, 2026-09-10');
     expect(flat(decisions)).toContain('F1 to F16');
     // The amendment allocates no new decision number. The track's own number
-    // moved to D29 during integration, so the one that must stay unallocated
-    // is the next one after it.
+    // moved to D29 during integration. Decisions after D29 exist for other
+    // work (the post-event plan records D30 onward); none of them may be this
+    // track's, which is what keeps the track's status where the amendment
+    // left it.
     expect(flat(decisions)).toContain('No decision number is allocated');
-    expect(decisions).not.toMatch(/^## D30/mu);
+    const later = decisions.match(/^## D(?:3\d|[4-9]\d)\b[^\n]*$/gmu) ?? [];
+    for (const heading of later) expect(heading).not.toMatch(/mcp/iu);
   });
 
   it('says Sprint 5 has not passed its own audit', async () => {

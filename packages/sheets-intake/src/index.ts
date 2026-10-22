@@ -38,7 +38,6 @@ export {
 export {
   CREDENTIALS_VARIABLE,
   SPREADSHEET_ID_VARIABLE,
-  TAB_MAP_VARIABLE,
   configSecrets,
   parseSheetsConfig,
   type ParseConfigOptions,

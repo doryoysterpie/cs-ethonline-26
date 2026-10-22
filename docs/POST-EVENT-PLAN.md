@@ -10,7 +10,9 @@ Technical Capability Unit (TCU) is in this repository, the standard steps every 
 complete, and the nine units that turn the hackathon submission into the owner's weekly
 product. The GitHub issues created from `docs/tcu/CAS-00N.md`, numbers #3 to #11, hold live status,
 blockers and evidence, and link here; they do not restate contracts. A step is marked done on
-the issue; the tracker file is the normative step list. When a contract changes, this file and
+the issue; the tracker file is the normative step list.
+The sprint tracker is [SPRINT-P1](https://github.com/doryoysterpie/cs-ethonline-26/issues/13), where all nine units were admitted by the owner on
+21 October 2026. When a contract changes, this file and
 the affected tracker change together.
 
 Nothing in this document marks a test as passed, changes an audit status, or admits any unit to
@@ -92,9 +94,9 @@ section 15): blockers 1, 2 and 4 have correction commits on `main` (`67e3941`, `
 ## 3. Decisions taken on 16 September 2026
 
 These are the owner's decisions from the planning conversation, with their grounds. They are
-recorded here first and transcribed into `docs/DECISIONS.md` as the next free numbers by
-CAS-001 step 2, so that they exist where a third party can contest them. Numbers are reserved
-in `DECISIONS.md` at transcription, never assumed here.
+recorded here first and were transcribed into `docs/DECISIONS.md` as D30 to D36 on
+16 September 2026 (CAS-001 step 2), so that they exist where a third party can contest them.
+The decision log is authoritative from that date; this table is the summary.
 
 | Ref | Decision                                                                                                                                                                                                                                                                                                                                        | Ground                                                                                                                                                                                                 | Class              |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
@@ -178,7 +180,8 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
   one; `DATABASE_URL` and the spreadsheet identifier appear in no output; the database size
   after import is recorded and is under 5 GB with the headroom stated.
 - **Known seams.** No scheduler; the first real import runs from the owner's machine against
-  the Railway database. Scheduling is CAS-003's decision.
+  the Railway database, after the unit's merge has deployed migration 0012 (tracker amendment
+  of 22 October 2026). Scheduling is CAS-003's decision.
 
 ### CAS-002: Categories
 
@@ -407,8 +410,9 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 **Tracker:** `docs/tcu/CAS-009.md`. **Issue, live status:** [#11](https://github.com/doryoysterpie/cs-ethonline-26/issues/11).
 
 - **Objective.** A reader picks stories and receives a shareable card.
-- **Admitted when.** CAS-007 is Complete and the owner opens this unit. The owner designs the
-  creatives; this unit builds the functionality only.
+- **Admitted.** With the whole sprint, by the owner on 21 October 2026 (SPRINT-P1); it starts
+  when CAS-007 is Complete. The owner designs the creatives; this unit builds the functionality
+  only.
 - **Decisions before any build.** Which fields are public (D6's allowlist governs); how the
   card is rendered; whether third-party headlines may appear on a card; what is measured.
 - **Nothing else is specified here.** The unit is a placeholder with its decisions listed so

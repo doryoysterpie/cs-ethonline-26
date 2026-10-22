@@ -1,0 +1,25 @@
+{
+  "$comment": [
+    "The tab map: which tabs of the authorized workbook the Sheets importer may",
+    "read, and what each one is. A tab's editorial stage is never inferred from",
+    "its name or shape; it is declared here, and changing it is a reviewed commit.",
+    "",
+    "Only a tab whose stage is rss_source_corpus is intake. The weekly candidate",
+    "tabs are calibration data for classification and are deliberately absent.",
+    "",
+    "This file holds no identifier and no digest of one. Tab titles are the",
+    "owner's names for parts of the workbook and are already printed by the",
+    "inventory. firstDataRow and columns are one-based counts; timestampColumns",
+    "are the one-based columns whose serial-number cells become UTC instants."
+  ],
+  "tabs": [
+    {
+      "title": "Cyberattack Sundays",
+      "stage": "rss_source_corpus",
+      "sourceKind": "master",
+      "firstDataRow": 2,
+      "columns": 9,
+      "timestampColumns": [2, 3]
+    }
+  ]
+}

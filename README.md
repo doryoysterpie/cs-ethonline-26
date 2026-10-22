@@ -51,7 +51,7 @@ amendment of 22 October 2026).
 after its independent review and is not re-audited; no document may read as saying otherwise
 (`docs/SPRINT-5-REPORT.md`, section 16). Its rules stand as written: a file can be ingested as
 fixture or replay only; live evidence comes from the Graph client, never from a file; a claim
-is a record, not a UUID. Migrations 0001 to 0011 are applied by the deploy step before the
+is a record, not a UUID. Migrations 0001 to 0012 are applied by the deploy step before the
 dashboard serves traffic.
 
 **What is in review.** CAS-001, the living feed imported from the authorized Google Sheets
@@ -130,11 +130,16 @@ API, no user OAuth, no write scope, no Google SDK, and two allowed origins with
 no redirect ever followed. The workbook is a whitelist of one, pinned as a
 SHA-256 digest in a committed policy file that ships unpinned, so the connector
 fails closed until a human pins it. Nothing is written anywhere, and there is no
-database import path yet by design: the owner reviews an inventory report and
-approves a tab mapping first. The workbook's weekly tabs record candidate
+database import path on the hackathon branches by design. CAS-001 of the post-event
+plan adds one (`sheets import --tab`), gated by a committed tab map
+(`data/policy/sheets-tab-map.json`): a tab the map does not declare is refused
+(`docs/RUNBOOK-WEEKLY-IMPORT.md`). The workbook's weekly tabs record candidate
 selections, not published outcomes, and are not evaluation truth until each is
 paired with its published edition (`docs/SHEETS-INTAKE.md`). **This track has
-not been audited, and no live inventory has been run.**
+not been audited.** The service account exists and the workbook digest is pinned;
+live inventory, timestamp and dry-run reads were run on 16 September 2026, and the
+import command was run against the live workbook into a local database on 21 October
+2026 (`docs/CAS-001-REPORT.md`).
 
 ## Monorepo layout
 
@@ -152,7 +157,7 @@ not been audited, and no live inventory has been run.**
 | `packages/evidence`       | `@cas/evidence`       | implemented: correlation, evidence-state resolution and the anomaly feed (D25)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `packages/graph-evidence` | `@cas/graph-evidence` | implemented: live gateway client with streaming body and JSON shape limits, adapter, TVL delta, identity gate, probe                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `packages/mcp-server`     | `@cas/mcp-server`     | parallel MCP tooling track (D29): four read-only tools over local stdio; candidate rejected by audit, corrections integrated, pending re-audit; 208 offline tests, 49 PostgreSQL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `packages/sheets-intake`  | `@cas/sheets-intake`  | read-only, file-scoped Google Sheets intake; no Drive API, no write scope, no SDK; inactive until pinned                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `packages/sheets-intake`  | `@cas/sheets-intake`  | read-only, file-scoped Google Sheets intake; no Drive API, no write scope, no SDK; pinned, with an import command gated by a committed tab map                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `packages/drafting`       | `@cas/drafting`       | implemented: deterministic draft assembly and provenance sidecar (D25). No model is called                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `packages/feed-api`       | `@cas/feed-api`       | placeholder                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `data/taxonomy`           |                       | reserved, still empty; the signal policy lives in code, not here                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -452,7 +457,7 @@ audit and nothing in it is accepted.
 | `docs/DATA_INPUTS.md`                     | editorial data, schemas, human versus machine labels, ingestion rules                                                 |
 | `docs/PRIOR_INPUTS.md`                    | the pre-existing corpus, its permitted uses, and the submission disclosure                                            |
 | `docs/HACKATHON_REQUIREMENTS.md`          | requirement-to-evidence matrix per sponsor track and the official schedule                                            |
-| `docs/DECISIONS.md`                       | append-only decision log, D1 to D29                                                                                   |
+| `docs/DECISIONS.md`                       | append-only decision log, D1 to D36                                                                                   |
 | `docs/AUDIT-LEDGER.md`                    | one row per track and production commit: exact commit, reviewer, verdict in the reviewer's words, date, record        |
 | `docs/SPRINT-0-REPORT.md`                 | Sprint 0 report, audit remediation and final correction                                                               |
 | `docs/SPRINT-1-REPORT.md`                 | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                    |
@@ -466,6 +471,8 @@ audit and nothing in it is accepted.
 | `docs/SPRINT_BOARD.md`                    | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                                           |
 | `docs/SECURITY.md`                        | security policy                                                                                                       |
 | `docs/SHEETS-INTAKE.md`                   | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                           |
+| `docs/RUNBOOK-WEEKLY-IMPORT.md`           | the weekly Sheets import: the command, what it needs, what it prints, exit codes                                      |
+| `docs/CAS-001-REPORT.md`                  | CAS-001 report: design note, reference implementation, import path, local run                                         |
 | `docs/THREAT_MODEL.md`                    | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks |
 | `docs/RISK_REGISTER.md`                   | risks with owner, status, next action and review date                                                                 |
 | `docs/DATA_CLASSIFICATION_RETENTION.md`   | data classes, inventory, retention and removal                                                                        |

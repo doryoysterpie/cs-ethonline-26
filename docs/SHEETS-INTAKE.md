@@ -1,9 +1,11 @@
 # Google Sheets intake: a read-only, file-scoped connector
 
-Status: **built and verified within Claude sessions on the parallel track
-`parallel/google-sheets-intake`. Not merged, not deployed, and not audited by
-Codex Desktop.** No live inventory has been run: no service account exists yet.
-All times America/Toronto unless marked UTC.
+Status: **merged with the release integration; not audited by Codex Desktop.**
+The service account exists and the workbook digest is pinned. Live inventory,
+timestamp and dry-run reads were run on 16 September 2026; CAS-001 added the
+import command, `sheets import --tab`, run against the live workbook into a local
+database on 21 October 2026 (`docs/RUNBOOK-WEEKLY-IMPORT.md`,
+`docs/CAS-001-REPORT.md`). All times America/Toronto unless marked UTC.
 
 Count-only throughout: no cell, URL, headline, spreadsheet identifier or
 credential appears in this document.
@@ -262,11 +264,10 @@ To confirm the suite is genuinely offline rather than believed to be:
 sandbox-exec -f tools/offline-sandbox.sb corepack pnpm test --force
 ```
 
-## 12. The single outstanding human action
+## 12. The human action, done
 
-**Create the dedicated Google Cloud service account, enable only the Sheets
-API, and share `Cyberattack Sunday - RSS Intake` with its address as Viewer.**
-
-Nothing in this repository can do that step, and nothing should. Until it is
-done there are no credentials to run a live inventory with, and the connector
-refuses every operation because no workbook digest is pinned.
+The dedicated Google Cloud service account was created by the owner with only
+the Sheets API enabled, and `Cyberattack Sunday - RSS Intake` was shared with
+its address as Viewer (CAS-001, step 3, confirmed 16 September 2026). The
+workbook digest is pinned. What remains human is the first import into the
+production database (CAS-001, step 11).

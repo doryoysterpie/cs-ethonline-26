@@ -21,13 +21,10 @@ import { assertSpreadsheetIdShape } from './policy.js';
 export const SPREADSHEET_ID_VARIABLE = 'GOOGLE_SHEETS_SPREADSHEET_ID';
 /** Path to the service-account key. The Application Default Credentials name. */
 export const CREDENTIALS_VARIABLE = 'GOOGLE_APPLICATION_CREDENTIALS';
-/** Optional. Path to the reviewed tab mapping, once the owner has approved one. */
-export const TAB_MAP_VARIABLE = 'GOOGLE_SHEETS_TAB_MAP';
 
 export interface SheetsConfig {
   readonly spreadsheetId: string;
   readonly credentialsPath: string;
-  readonly tabMapPath: string | null;
   readonly limits: SheetsLimits;
 }
 
@@ -79,12 +76,9 @@ export function parseSheetsConfig(
     );
   }
 
-  const tabMapPath = readVariable(env, TAB_MAP_VARIABLE);
-
   return {
     spreadsheetId,
     credentialsPath: credentialsPath ?? '',
-    tabMapPath,
     limits: options.limits === undefined ? DEFAULT_LIMITS : withLimits(options.limits),
   };
 }
