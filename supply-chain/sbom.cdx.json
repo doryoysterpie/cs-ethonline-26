@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "13ce3371538de5dd6c93ca30ff07bfbae1d35aa5835800987139bcf53d22c0c3"
+        "value": "f2362fbc4f191bc6e00fd6a7078add29dedeaa864f1741a5bbe760343db089d2"
       },
       {
         "name": "cas:lockfile:version",
@@ -1760,14 +1760,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/env@16.3.8",
+      "bom-ref": "pkg:npm/%40next/env@16.4.2",
       "name": "@next/env",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/env@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/env@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "025f73a87555ed326fd1e16e394e14ecbbefef83d38a1e0287adec936c42229493904dee7459da39c9f33f69505729a22fbc92f428f68829545e5477110e6c13"
+          "content": "9d3513147ec6e7f27f7e6a648d52de80e92ac8a38fd0212c25c32cc8ee1409878dd6cbbe60c5bf31f69212b9c9b242fb5ccf940cae9a4efb25c6c442cb26bfb0"
         }
       ],
       "licenses": [
@@ -1786,14 +1786,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/swc-darwin-arm64@16.3.8",
+      "bom-ref": "pkg:npm/%40next/swc-darwin-arm64@16.4.2",
       "name": "@next/swc-darwin-arm64",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/swc-darwin-arm64@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/swc-darwin-arm64@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "d893d1321da79901b90a22fb71718bf401b09cf58943ffdc4ed014093fb0e75d501e4efd498cf72c6bffa5ce57eb8dc1fd610ed2bbeedd8c30d21ab0b7792078"
+          "content": "38d92116f64d15696c10738cffcd40b71772b893f629160a611d09c4fc2f72ed40b8f30c32070bfb05b696e95d26f32d6702ad531a12902c9c856e7021ea184b"
         }
       ],
       "properties": [
@@ -1813,14 +1813,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/swc-darwin-x64@16.3.8",
+      "bom-ref": "pkg:npm/%40next/swc-darwin-x64@16.4.2",
       "name": "@next/swc-darwin-x64",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/swc-darwin-x64@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/swc-darwin-x64@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "199b4208e04a27895e5484ff4e1d259562a10f571af769736d0892e51e4e37d424a221678a516c79b0da7b5254d9adc75a828c126119586b350062dabd533bd9"
+          "content": "96e3c231b3ac0a8685fa45c91148e68e6399835942dc17e586652ef99996e2d06edaf5bfe005da93c24116f78f8b31a4c5598d880c3fafdadafba52f8825ad59"
         }
       ],
       "properties": [
@@ -1840,14 +1840,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/swc-linux-arm64-gnu@16.3.8",
+      "bom-ref": "pkg:npm/%40next/swc-linux-arm64-gnu@16.4.2",
       "name": "@next/swc-linux-arm64-gnu",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/swc-linux-arm64-gnu@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/swc-linux-arm64-gnu@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "3bae7dca079062a9de2757c128ca45c4816a62462cc2ef08012d4e08a2bfe1fdd9809266d5d473e1f5496518bf90b2d68e704a9de6ce78f03858dbfeb15d6954"
+          "content": "c61c054c09dc272682372e4aa8a2ae29a208742cb5ff5655d6ce52d46d21853ef018c9034e57c9e9a41b7d1167206fecdff903af143c6b27157be7394273fca3"
         }
       ],
       "properties": [
@@ -1871,14 +1871,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/swc-linux-arm64-musl@16.3.8",
+      "bom-ref": "pkg:npm/%40next/swc-linux-arm64-musl@16.4.2",
       "name": "@next/swc-linux-arm64-musl",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/swc-linux-arm64-musl@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/swc-linux-arm64-musl@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "7528ca4b25a9cf1a0ed5ddc321965c3f85c970d68a78b9b140c14e898979bee051326c1e22a9c086dcbcb40991b2f4ecb3befd70ad45b589c3323e347b84d096"
+          "content": "4f53cd99f6cf731af99ddb5650bff7c10b4b5eccfcd3c96aeac7361ab353e64da8aae17b532a9975d1d2b807b01d5b16b065deea7b25f47a0dd5836b8958ee4a"
         }
       ],
       "properties": [
@@ -1902,14 +1902,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/swc-linux-x64-gnu@16.3.8",
+      "bom-ref": "pkg:npm/%40next/swc-linux-x64-gnu@16.4.2",
       "name": "@next/swc-linux-x64-gnu",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/swc-linux-x64-gnu@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/swc-linux-x64-gnu@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "95ba8ebb3dd13d172ffa8f66b0db09c39c78f98d59c0f4eceaf98be8309fee2d1f65fbe783f179f70c9e0f0a8722f57498afff441cbf8c9919fa708ab123178d"
+          "content": "37d70350e086b64246e4f34a0c5654177c579ddac925ca4ba75db5b801a3206bcefd4da9f6d7dd34e33d86d8fbfb97fbda5d26f2b330fdcbd869c509050a2e76"
         }
       ],
       "properties": [
@@ -1933,14 +1933,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/swc-linux-x64-musl@16.3.8",
+      "bom-ref": "pkg:npm/%40next/swc-linux-x64-musl@16.4.2",
       "name": "@next/swc-linux-x64-musl",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/swc-linux-x64-musl@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/swc-linux-x64-musl@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "fb7d7a5acc08f1271581979477ed4a19a5e41e16984330a3bc7ff4e53652a49f33062cdbd5ae06ec3b4eec5d768dc048a8c3adb33f638b5b78f1f98ab73aac18"
+          "content": "c98dae8756215fab9fb98cb61426f0d5da9b95b848e7b18b60025f0a4a83f5ab93bfaa4bac7ebb51c72373740c2817826001ba96482ed3c131997d5b6e37a38d"
         }
       ],
       "properties": [
@@ -1964,14 +1964,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/swc-win32-arm64-msvc@16.3.8",
+      "bom-ref": "pkg:npm/%40next/swc-win32-arm64-msvc@16.4.2",
       "name": "@next/swc-win32-arm64-msvc",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/swc-win32-arm64-msvc@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/swc-win32-arm64-msvc@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "8e2d2077890c614c4efb57c90486e20554428f31bf965a22c8271c9e579bbdbd59279a9708f66a620e099750ebae2c6758d30aca5ce0a66316c74c8d0d85e5cf"
+          "content": "8ff02b591207a4c301eb060b321af6a6e4e0b81b7bd25354fc29a397da7a7530c4f031a49d824c3fd3ddc0f93676aa4234bfca217f727e7803bc87acc493e6b2"
         }
       ],
       "properties": [
@@ -1991,14 +1991,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40next/swc-win32-x64-msvc@16.3.8",
+      "bom-ref": "pkg:npm/%40next/swc-win32-x64-msvc@16.4.2",
       "name": "@next/swc-win32-x64-msvc",
-      "version": "16.3.8",
-      "purl": "pkg:npm/%40next/swc-win32-x64-msvc@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/%40next/swc-win32-x64-msvc@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "59c4e568ab7f4d6921e64523749714981d57819fb573a7f3e18f5f0c72fbdd83527466945a371e796aeb9701749efd7d880058582e2202ad685f5c38067d2f7e"
+          "content": "000e1e7725870e4a373424a8d31e86a26b1d8056f4a11d49dcc5d4d5be71b7a151160e00b9cacc3d6dd2d2109effda275343b505ba46401b2aa35af41a77aed6"
         }
       ],
       "properties": [
@@ -7103,14 +7103,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/next@16.3.8",
+      "bom-ref": "pkg:npm/next@16.4.2",
       "name": "next",
-      "version": "16.3.8",
-      "purl": "pkg:npm/next@16.3.8",
+      "version": "16.4.2",
+      "purl": "pkg:npm/next@16.4.2",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "53b40465a4e29e2eb02ab6fc03c86a2cba9843209eb5e80a8c2a493b2c64eb8daf5a8328535c793f2642245be06208a9b40f317398fff716256453bbc3d4a39b"
+          "content": "afea012688df79f5233a25a40615e02d2fa28315ffec15b22b9f6e1e7c8eca994c48bb4167e40b3f7a24add6136eb7eb6eb98d4d558b04f6870d7f4a45a22ddf"
         }
       ],
       "licenses": [
@@ -9589,39 +9589,39 @@
       ]
     },
     {
-      "ref": "pkg:npm/%40next/env@16.3.8",
+      "ref": "pkg:npm/%40next/env@16.4.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/%40next/swc-darwin-arm64@16.3.8",
+      "ref": "pkg:npm/%40next/swc-darwin-arm64@16.4.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/%40next/swc-darwin-x64@16.3.8",
+      "ref": "pkg:npm/%40next/swc-darwin-x64@16.4.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/%40next/swc-linux-arm64-gnu@16.3.8",
+      "ref": "pkg:npm/%40next/swc-linux-arm64-gnu@16.4.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/%40next/swc-linux-arm64-musl@16.3.8",
+      "ref": "pkg:npm/%40next/swc-linux-arm64-musl@16.4.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/%40next/swc-linux-x64-gnu@16.3.8",
+      "ref": "pkg:npm/%40next/swc-linux-x64-gnu@16.4.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/%40next/swc-linux-x64-musl@16.3.8",
+      "ref": "pkg:npm/%40next/swc-linux-x64-musl@16.4.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/%40next/swc-win32-arm64-msvc@16.3.8",
+      "ref": "pkg:npm/%40next/swc-win32-arm64-msvc@16.4.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/%40next/swc-win32-x64-msvc@16.3.8",
+      "ref": "pkg:npm/%40next/swc-win32-x64-msvc@16.4.2",
       "dependsOn": []
     },
     {
@@ -10819,17 +10819,17 @@
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/next@16.3.8",
+      "ref": "pkg:npm/next@16.4.2",
       "dependsOn": [
-        "pkg:npm/%40next/env@16.3.8",
-        "pkg:npm/%40next/swc-darwin-arm64@16.3.8",
-        "pkg:npm/%40next/swc-darwin-x64@16.3.8",
-        "pkg:npm/%40next/swc-linux-arm64-gnu@16.3.8",
-        "pkg:npm/%40next/swc-linux-arm64-musl@16.3.8",
-        "pkg:npm/%40next/swc-linux-x64-gnu@16.3.8",
-        "pkg:npm/%40next/swc-linux-x64-musl@16.3.8",
-        "pkg:npm/%40next/swc-win32-arm64-msvc@16.3.8",
-        "pkg:npm/%40next/swc-win32-x64-msvc@16.3.8",
+        "pkg:npm/%40next/env@16.4.2",
+        "pkg:npm/%40next/swc-darwin-arm64@16.4.2",
+        "pkg:npm/%40next/swc-darwin-x64@16.4.2",
+        "pkg:npm/%40next/swc-linux-arm64-gnu@16.4.2",
+        "pkg:npm/%40next/swc-linux-arm64-musl@16.4.2",
+        "pkg:npm/%40next/swc-linux-x64-gnu@16.4.2",
+        "pkg:npm/%40next/swc-linux-x64-musl@16.4.2",
+        "pkg:npm/%40next/swc-win32-arm64-msvc@16.4.2",
+        "pkg:npm/%40next/swc-win32-x64-msvc@16.4.2",
         "pkg:npm/%40playwright/test@1.63.0",
         "pkg:npm/%40swc/helpers@0.5.23",
         "pkg:npm/baseline-browser-mapping@2.11.21",
@@ -11398,7 +11398,7 @@
         "pkg:npm/hast-util-to-jsx-runtime@2.3.6",
         "pkg:npm/mdast-util-from-markdown@2.0.3",
         "pkg:npm/mdast-util-to-hast@13.2.1",
-        "pkg:npm/next@16.3.8",
+        "pkg:npm/next@16.4.2",
         "pkg:npm/react-dom@19.2.8",
         "pkg:npm/react@19.2.8",
         "pkg:npm/server-only@0.0.1",

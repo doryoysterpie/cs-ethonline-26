@@ -30,7 +30,7 @@ catalog:
   htmlparser2: 12.0.0
   mdast-util-from-markdown: 2.0.3
   mdast-util-to-hast: 13.2.1
-  next: 16.3.8
+  next: 16.4.2
   pg: 8.23.0
   prettier: 3.9.6
   react: 19.2.8
