@@ -30,13 +30,13 @@ async function harness(options: { gate?: VerificationGate } = {}) {
   };
   const sessions = new SessionService(stores, { now: clock.get, gate: options.gate });
   const editor = await syntheticAccount('editor', { now: new Date(START) });
-  const judge = await syntheticAccount('judge', {
+  const reader = await syntheticAccount('reader', {
     now: new Date(START),
     expiresAt: new Date(START + 3600 * 1000).toISOString(),
   });
   await insertSynthetic(stores, editor);
-  await insertSynthetic(stores, judge);
-  return { stores, sessions, clock, editor, judge };
+  await insertSynthetic(stores, reader);
+  return { stores, sessions, clock, editor, reader };
 }
 
 describe('sign-in', () => {
@@ -103,7 +103,7 @@ describe('sign-in', () => {
   });
 
   it('refuses a disabled account and an expired account with the same generic failure', async () => {
-    const { stores, sessions, editor, judge, clock } = await harness();
+    const { stores, sessions, editor, reader, clock } = await harness();
     await stores.accounts.setDisabled(editor.record.id, clock.get().toISOString());
     const disabled = await sessions.login({
       username: editor.record.username,
@@ -113,8 +113,8 @@ describe('sign-in', () => {
     });
     clock.advance(3601);
     const expired = await sessions.login({
-      username: judge.record.username,
-      password: judge.password,
+      username: reader.record.username,
+      password: reader.password,
       networkKey: 'direct',
       presentedToken: null,
     });
@@ -298,18 +298,18 @@ describe('session validation', () => {
     expect(await sessions.authenticate(rotated.principal.sessionToken)).not.toBeNull();
   });
 
-  it('ends a session when the account is disabled or a judge account expires', async () => {
+  it('ends a session when the account is disabled or a reader account expires', async () => {
     const context = await harness();
-    const judge = await context.sessions.login({
-      username: context.judge.record.username,
-      password: context.judge.password,
+    const reader = await context.sessions.login({
+      username: context.reader.record.username,
+      password: context.reader.password,
       networkKey: 'direct',
       presentedToken: null,
     });
-    if (!judge.ok) throw new Error('judge sign-in failed');
-    expect(await context.sessions.authenticate(judge.principal.sessionToken)).not.toBeNull();
+    if (!reader.ok) throw new Error('reader sign-in failed');
+    expect(await context.sessions.authenticate(reader.principal.sessionToken)).not.toBeNull();
     context.clock.advance(3601);
-    expect(await context.sessions.authenticate(judge.principal.sessionToken)).toBeNull();
+    expect(await context.sessions.authenticate(reader.principal.sessionToken)).toBeNull();
 
     const editor = await context.sessions.login({
       username: context.editor.record.username,

@@ -30,7 +30,7 @@ export interface AccountRecord {
   readonly createdAt: string;
   readonly passwordChangedAt: string;
   readonly disabledAt: string | null;
-  /** Required for a judge; optional otherwise. Past this instant the account cannot sign in. */
+  /** Required for a reader; optional otherwise. Past this instant the account cannot sign in. */
   readonly expiresAt: string | null;
   /** Absent for a legacy username/password account. Exact, already normalized; see `email.ts`. */
   readonly normalizedEmail: string | null;
@@ -77,6 +77,14 @@ export const AUDIT_EVENT_KINDS = [
   'article_completed',
   'article_refused',
   'article_edited',
+  'signup_requested',
+  'signup_verified',
+  'signup_locked',
+  'signup_approved',
+  'signup_denied',
+  'limit_tripped',
+  'output_published',
+  'output_unpublished',
   'otp_requested',
 ] as const;
 export type AuditEventKind = (typeof AUDIT_EVENT_KINDS)[number];

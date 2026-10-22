@@ -39,7 +39,7 @@ import {
  * Authorization at the data-access layer, proven without a database.
  *
  * The runtime's database handle throws on any use, so a call that reaches it
- * fails the test. Every unauthenticated call, every judge attempt at a
+ * fails the test. Every unauthenticated call, every reader attempt at a
  * mutation and every editor attempt at administration must therefore be
  * refused before the store is consulted, and every refusal must be a fixed
  * authentication or authorization failure.
@@ -199,15 +199,15 @@ describe('data-access layer authorization without a database', () => {
     }
   });
 
-  it('refuses every mutation and every editorial or administrative read to a judge', async () => {
+  it('refuses every mutation and every editorial or administrative read to a reader', async () => {
     const { runtime, principals } = await runtimeFor();
     for (const [name, call] of Object.entries(MUTATIONS)) {
-      expect(await kindOf(call(runtime, principals.judge)), name).toBe('authorization');
+      expect(await kindOf(call(runtime, principals.reader)), name).toBe('authorization');
     }
     for (const name of [...ADMIN_ONLY, ...EDITOR_ONLY_READS]) {
       const call = READS[name];
       if (call === undefined) continue;
-      expect(await kindOf(call(runtime, principals.judge)), name).toBe('authorization');
+      expect(await kindOf(call(runtime, principals.reader)), name).toBe('authorization');
     }
   });
 
@@ -225,10 +225,10 @@ describe('data-access layer authorization without a database', () => {
     // A read that needs the database reaches it and fails there, proving the
     // gate opened; the failure is mapped to a generic unavailable, never a
     // stack or a driver message.
-    const kind = await kindOf(commandCenter(runtime, principals.judge));
+    const kind = await kindOf(commandCenter(runtime, principals.reader));
     expect(kind).toBe('unavailable');
     try {
-      await commandCenter(runtime, principals.judge);
+      await commandCenter(runtime, principals.reader);
     } catch (error) {
       expect((error as Error).message).not.toContain('must not be reached');
     }
@@ -276,14 +276,14 @@ describe('data-access layer authorization without a database', () => {
     ).toBe('validation');
   });
 
-  it('applies the account rules: judge expiry, self-disable, self-role change, rotation scope', async () => {
+  it('applies the account rules: reader expiry, self-disable, self-role change, rotation scope', async () => {
     const { runtime, principals } = await runtimeFor();
     const admin = principals.admin;
     expect(
       await kindOf(
         provisionAccount(runtime, admin, {
-          username: 'syn_judge_new',
-          role: 'judge',
+          username: 'syn_reader_new',
+          role: 'reader',
           expiresAt: null,
           password: 'synthetic-provision-passphrase',
           rotate: false,
@@ -293,8 +293,8 @@ describe('data-access layer authorization without a database', () => {
     expect(
       await kindOf(
         provisionAccount(runtime, admin, {
-          username: 'syn_judge_new',
-          role: 'judge',
+          username: 'syn_reader_new',
+          role: 'reader',
           expiresAt: '2020-01-01T00:00:00Z',
           password: 'synthetic-provision-passphrase',
           rotate: false,
@@ -304,8 +304,8 @@ describe('data-access layer authorization without a database', () => {
     expect(
       await kindOf(
         provisionAccount(runtime, admin, {
-          username: 'syn_judge_new',
-          role: 'judge',
+          username: 'syn_reader_new',
+          role: 'reader',
           expiresAt: '2030-01-01T00:00:00Z',
           password: 'short',
           rotate: false,
@@ -313,8 +313,8 @@ describe('data-access layer authorization without a database', () => {
       ),
     ).toBe('validation');
     const created = await provisionAccount(runtime, admin, {
-      username: 'syn_judge_new',
-      role: 'judge',
+      username: 'syn_reader_new',
+      role: 'reader',
       expiresAt: '2030-01-01T00:00:00Z',
       password: 'synthetic-provision-passphrase',
       rotate: false,
@@ -323,8 +323,8 @@ describe('data-access layer authorization without a database', () => {
     expect(
       await kindOf(
         provisionAccount(runtime, admin, {
-          username: 'syn_judge_new',
-          role: 'judge',
+          username: 'syn_reader_new',
+          role: 'reader',
           expiresAt: '2030-01-01T00:00:00Z',
           password: 'another-synthetic-passphrase',
           rotate: false,
@@ -332,8 +332,8 @@ describe('data-access layer authorization without a database', () => {
       ),
     ).toBe('conflict');
     const rotated = await provisionAccount(runtime, admin, {
-      username: 'syn_judge_new',
-      role: 'judge',
+      username: 'syn_reader_new',
+      role: 'reader',
       expiresAt: '2030-01-01T00:00:00Z',
       password: 'another-synthetic-passphrase',
       rotate: true,
@@ -344,7 +344,7 @@ describe('data-access layer authorization without a database', () => {
       await kindOf(
         assignRole(runtime, admin, {
           accountId: admin.accountId,
-          role: 'judge',
+          role: 'reader',
           expiresAt: '2030-01-01T00:00:00Z',
         }),
       ),
@@ -353,7 +353,7 @@ describe('data-access layer authorization without a database', () => {
       await kindOf(
         assignRole(runtime, admin, {
           accountId: created.accountId,
-          role: 'judge',
+          role: 'reader',
           expiresAt: null,
         }),
       ),

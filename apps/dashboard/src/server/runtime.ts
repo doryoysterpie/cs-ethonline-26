@@ -14,6 +14,7 @@ import { ReadingCache } from './dal/readings.ts';
 import { createAnthropicTransport } from './model/anthropic.ts';
 import { loadModelConfig } from './model/config.ts';
 import { createNodeReader, loadReaderConfig, type SourceReaderDeps } from './model/reader.ts';
+import { defaultLimits, type Limits } from './http/limits.ts';
 import { workspace } from './packages.ts';
 
 /**
@@ -49,6 +50,12 @@ export interface Runtime {
   readonly reader: SourceReaderDeps | null;
   /** The pending readings, in memory for ten minutes (O-1, R17). */
   readonly readings: ReadingCache;
+  /** The email provider the sign-up flow writes through (CAS-007); null when none is configured. */
+  readonly email: EmailProvider | null;
+  /** The pepper the sign-up code digest uses, the same one sign-in uses; null when none is configured. */
+  readonly otpPepper: string | null;
+  /** The fixed-window limits of CAS-007. */
+  readonly limits: Limits;
 }
 
 export function createRuntime(
@@ -59,9 +66,10 @@ export function createRuntime(
     readonly model?: RoundupTransport | null | undefined;
     readonly reader?: SourceReaderDeps | null | undefined;
     readonly readings?: ReadingCache | undefined;
+    readonly limits?: Limits | undefined;
   } = {},
 ): Runtime {
-  const { model, reader, readings, ...sessionOptions } = options;
+  const { model, reader, readings, limits, ...sessionOptions } = options;
   return {
     config,
     stores,
@@ -70,6 +78,9 @@ export function createRuntime(
     model: model ?? null,
     reader: reader ?? null,
     readings: readings ?? new ReadingCache(),
+    email: sessionOptions.emailProvider ?? null,
+    otpPepper: sessionOptions.otpPepper ?? null,
+    limits: limits ?? defaultLimits(),
   };
 }
 

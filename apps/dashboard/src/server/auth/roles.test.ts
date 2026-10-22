@@ -15,7 +15,13 @@ import {
  * rights shows up as a failing test rather than a surprise in production.
  */
 const MATRIX: Readonly<Record<(typeof ROLES)[number], readonly string[]>> = {
-  judge: ['view:command_center', 'view:incidents', 'view:anomaly', 'view:evidence'],
+  reader: [
+    'view:command_center',
+    'view:incidents',
+    'view:anomaly',
+    'view:evidence',
+    'view:published',
+  ],
   editor: [
     'view:command_center',
     'view:incidents',
@@ -66,6 +72,7 @@ const MATRIX: Readonly<Record<(typeof ROLES)[number], readonly string[]>> = {
     'generate:roundup',
     'generate:article',
     'edit:output',
+    'publish:output',
   ],
 };
 
@@ -88,19 +95,19 @@ describe('roles and capabilities', () => {
     expect(can(undefined, 'view:incidents')).toBe(false);
     expect(can('editor', undefined)).toBe(false);
     expect(can({ toString: () => 'admin' }, 'admin:accounts')).toBe(false);
-    expect(isRole('judge ')).toBe(false);
+    expect(isRole('reader ')).toBe(false);
   });
 
-  it('refuses every mutation to a judge and every administrative capability to an editor', () => {
-    for (const capability of MUTATION_CAPABILITIES) expect(can('judge', capability)).toBe(false);
+  it('refuses every mutation to a reader and every administrative capability to an editor', () => {
+    for (const capability of MUTATION_CAPABILITIES) expect(can('reader', capability)).toBe(false);
     for (const capability of ADMIN_CAPABILITIES) expect(can('editor', capability)).toBe(false);
-    expect(can('judge', 'view:source_text')).toBe(false);
-    expect(can('judge', 'view:notes')).toBe(false);
-    expect(can('judge', 'view:queue')).toBe(false);
+    expect(can('reader', 'view:source_text')).toBe(false);
+    expect(can('reader', 'view:notes')).toBe(false);
+    expect(can('reader', 'view:queue')).toBe(false);
   });
 
-  it('withdraws draft preview from the judge role entirely', () => {
-    expect(can('judge', 'view:draft')).toBe(false);
+  it('withdraws draft preview from the reader role entirely', () => {
+    expect(can('reader', 'view:draft')).toBe(false);
     expect(can('editor', 'view:draft')).toBe(true);
     expect(can('admin', 'view:draft')).toBe(true);
   });

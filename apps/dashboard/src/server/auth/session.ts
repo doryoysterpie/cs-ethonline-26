@@ -55,7 +55,7 @@ function dummyCodeDigest(pepper: string): string {
  *   - **Two expiries.** An absolute lifetime from creation and an idle
  *     lifetime from the last request; either alone ends the session.
  *   - **A disabled or expired account ends its sessions** at the next request,
- *     and a judge's account expiry is checked on every request.
+ *     and a reader's account expiry is checked on every request.
  *   - **Failure is generic.** Unknown username, wrong password, disabled or
  *     expired account and a throttled or busy verifier all return the same
  *     outcome, and the audit trail records the reason where the reason is

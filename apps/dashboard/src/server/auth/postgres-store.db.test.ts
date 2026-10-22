@@ -77,7 +77,7 @@ describe('the PostgreSQL store against a migrated schema', () => {
   });
 
   it('narrowly updates an account and refuses to change its identity or re-enable it', async () => {
-    const account = (await syntheticAccount('judge')).record;
+    const account = (await syntheticAccount('reader')).record;
     await stores.accounts.insert(account);
     await stores.accounts.setPasswordHash(
       account.id,
@@ -256,7 +256,7 @@ describe('the PostgreSQL store against a migrated schema', () => {
 
   it('lists the accounts it holds, ordered by their display identity (CAS-003 found the listing broken)', async () => {
     const one = (await syntheticAccount('editor')).record;
-    const two = (await syntheticAccount('judge')).record;
+    const two = (await syntheticAccount('reader')).record;
     await stores.accounts.insert(one);
     await stores.accounts.insert(two);
     const listed = await stores.accounts.list();

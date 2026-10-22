@@ -29,7 +29,7 @@ export default async function AccountsPage({
       <Notice code={single(query.notice)} />
       <p className="small">
         Store: <span className="mono">{runtime.config.accountStore}</span>. Passwords are stored
-        only as Argon2id hashes with a fresh salt each; nothing on this page can show one. A judge
+        only as Argon2id hashes with a fresh salt each; nothing on this page can show one. A reader
         account must carry an expiry.
       </p>
       <table>
@@ -89,13 +89,13 @@ export default async function AccountsPage({
                     <label>
                       Role
                       <select name="role" defaultValue={account.role}>
-                        <option value="judge">judge</option>
+                        <option value="reader">reader</option>
                         <option value="editor">editor</option>
                         <option value="admin">admin</option>
                       </select>
                     </label>
                     <label>
-                      Expiry (UTC; required for a judge)
+                      Expiry (UTC; required for a reader)
                       <input
                         name="expiresAt"
                         defaultValue={account.expiresAt ?? ''}
@@ -109,7 +109,7 @@ export default async function AccountsPage({
                   <Csrf token={token} />
                   <input type="hidden" name="accountId" value={account.id} />
                   <label>
-                    Set expiry only (UTC; empty clears it, except for a judge)
+                    Set expiry only (UTC; empty clears it, except for a reader)
                     <input
                       name="expiresAt"
                       defaultValue={account.expiresAt ?? ''}
@@ -147,14 +147,14 @@ export default async function AccountsPage({
         </label>
         <label>
           Role
-          <select name="role" defaultValue="judge">
-            <option value="judge">judge</option>
+          <select name="role" defaultValue="reader">
+            <option value="reader">reader</option>
             <option value="editor">editor</option>
             <option value="admin">admin</option>
           </select>
         </label>
         <label>
-          Expiry (UTC; required for a judge)
+          Expiry (UTC; required for a reader)
           <input name="expiresAt" placeholder="2026-09-14T00:00:00Z" />
         </label>
         <label>

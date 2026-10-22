@@ -33,7 +33,7 @@ export async function syntheticAccount(
   const password = syntheticPassword();
   const expiresAt =
     options.expiresAt === undefined
-      ? role === 'judge'
+      ? role === 'reader'
         ? new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
         : null
       : options.expiresAt;

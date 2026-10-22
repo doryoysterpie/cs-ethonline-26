@@ -10,7 +10,7 @@
  * Pure: no environment, no database, no clock.
  */
 
-export const ROLES = ['judge', 'editor', 'admin', 'owner'] as const;
+export const ROLES = ['reader', 'editor', 'admin', 'owner'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const CAPABILITIES = [
@@ -34,6 +34,9 @@ export const CAPABILITIES = [
   'generate:roundup',
   'generate:article',
   'edit:output',
+  // The published outputs (D42): readers see them; the owner alone marks them.
+  'view:published',
+  'publish:output',
   // Administration.
   'admin:accounts',
   'admin:sessions',
@@ -42,17 +45,18 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 /**
- * A judge holds no `view:draft`: the production-candidate owner decision of
- * 2026-09-12 withdraws draft-preview access from the judge role entirely. A
- * judge must not receive a source headline, a source link, source text, an
- * editor note or any other unsanitized draft content — only the sanitized,
- * aggregate views below.
+ * A reader (D43, in place of the judge role of 2026-09-12) holds no
+ * `view:draft`: a reader must not receive a source headline, a source link,
+ * source text, an editor note or any other unsanitized draft content; only the
+ * sanitized, aggregate views below, and the outputs the owner marks published
+ * (D42).
  */
-const JUDGE: readonly Capability[] = [
+const READER: readonly Capability[] = [
   'view:command_center',
   'view:incidents',
   'view:anomaly',
   'view:evidence',
+  'view:published',
 ];
 
 const EDITOR: readonly Capability[] = [
@@ -100,10 +104,11 @@ const OWNER: readonly Capability[] = [
   'generate:roundup',
   'generate:article',
   'edit:output',
+  'publish:output',
 ];
 
 const PERMISSIONS: Readonly<Record<Role, ReadonlySet<Capability>>> = {
-  judge: new Set(JUDGE),
+  reader: new Set(READER),
   editor: new Set(EDITOR),
   admin: new Set(ADMIN),
   owner: new Set(OWNER),
@@ -126,7 +131,7 @@ export function capabilitiesOf(role: Role): readonly Capability[] {
   return [...PERMISSIONS[role]];
 }
 
-/** Every mutation a judge must be refused: used by tests to enumerate. */
+/** Every mutation a reader must be refused: used by tests to enumerate. */
 export const MUTATION_CAPABILITIES: readonly Capability[] = [
   'review:queue',
   'review:incidents',
@@ -136,6 +141,7 @@ export const MUTATION_CAPABILITIES: readonly Capability[] = [
   'generate:roundup',
   'generate:article',
   'edit:output',
+  'publish:output',
   'admin:accounts',
   'admin:sessions',
 ];
@@ -152,4 +158,5 @@ export const OWNER_CAPABILITIES: readonly Capability[] = [
   'generate:roundup',
   'generate:article',
   'edit:output',
+  'publish:output',
 ];

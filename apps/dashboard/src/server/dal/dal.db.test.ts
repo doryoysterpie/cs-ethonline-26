@@ -55,7 +55,7 @@ import {
  * pipeline, with the memory stores for accounts, sessions, audit, drafts and
  * queue decisions.
  *
- * What is proven here and nowhere else: a judge receives no source text from
+ * What is proven here and nowhere else: a reader receives no source text from
  * the database; an identifier from another run reads nothing; every mutation
  * lands as a new row and the machine's records are byte-for-byte unchanged;
  * optimistic concurrency refuses a stale revision; and a direct SQL statement
@@ -153,21 +153,21 @@ describe('data-access layer against PostgreSQL', () => {
     }
   });
 
-  it('withholds source text from a judge and returns it to an editor', async () => {
-    const judge = await incidentDetail(
+  it('withholds source text from a reader and returns it to an editor', async () => {
+    const reader = await incidentDetail(
       runtime,
-      principals.judge,
+      principals.reader,
       seeded.clusteringRunId,
       seeded.hostileIncidentId,
     );
-    expect(judge.members.length).toBeGreaterThan(0);
-    for (const member of judge.members) {
+    expect(reader.members.length).toBeGreaterThan(0);
+    for (const member of reader.members) {
       expect(member.title).toBeNull();
       expect(member.publisher).toBeNull();
       expect(member.url).toBeNull();
     }
-    expect(judge.canReview).toBe(false);
-    expect(JSON.stringify(judge)).not.toContain('<script>');
+    expect(reader.canReview).toBe(false);
+    expect(JSON.stringify(reader)).not.toContain('<script>');
     const editor = await incidentDetail(
       runtime,
       principals.editor,
@@ -188,11 +188,11 @@ describe('data-access layer against PostgreSQL', () => {
     expect(await kindOf(incidentExplorer(runtime, principals.editor, randomUUID(), null))).toBe(
       'not_found',
     );
-    expect(await kindOf(evidenceView(runtime, principals.judge, randomUUID()))).toBe('not_found');
+    expect(await kindOf(evidenceView(runtime, principals.reader, randomUUID()))).toBe('not_found');
   });
 
   it('pages the incident explorer by identifier', async () => {
-    const view = await incidentExplorer(runtime, principals.judge, seeded.clusteringRunId, null);
+    const view = await incidentExplorer(runtime, principals.reader, seeded.clusteringRunId, null);
     expect(view.incidents.length).toBe(seeded.incidentIds.length);
     expect(view.incidents.map((incident) => incident.id)).toEqual(seeded.incidentIds);
     expect(
@@ -203,7 +203,7 @@ describe('data-access layer against PostgreSQL', () => {
 
   it('derives the queue for an editor only, and refuses a decision on a row outside the queue', async () => {
     expect(
-      await kindOf(reviewQueue(runtime, principals.judge, seeded.classificationRunId, 0)),
+      await kindOf(reviewQueue(runtime, principals.reader, seeded.classificationRunId, 0)),
     ).toBe('authorization');
     const view = await reviewQueue(runtime, principals.editor, seeded.classificationRunId, 0);
     expect(view.entries.length).toBe(view.run.reviewCount);
@@ -279,7 +279,7 @@ describe('data-access layer against PostgreSQL', () => {
     ).toBe('conflict');
     const explorer = await incidentExplorer(
       runtime,
-      principals.judge,
+      principals.reader,
       seeded.clusteringRunId,
       null,
     );
@@ -309,16 +309,16 @@ describe('data-access layer against PostgreSQL', () => {
   });
 
   it('shows evidence to every role, decisions with rationale to editors only, and records a decision', async () => {
-    const judge = await evidenceView(runtime, principals.judge, seeded.evidenceRunId);
-    expect(judge.states.length).toBe(seeded.incidentIds.length);
-    expect(judge.limitations.length).toBeGreaterThan(0);
-    expect(judge.canReview).toBe(false);
-    expect(judge.associations.length).toBeGreaterThan(0);
-    const association = judge.associations[0];
+    const reader = await evidenceView(runtime, principals.reader, seeded.evidenceRunId);
+    expect(reader.states.length).toBe(seeded.incidentIds.length);
+    expect(reader.limitations.length).toBeGreaterThan(0);
+    expect(reader.canReview).toBe(false);
+    expect(reader.associations.length).toBeGreaterThan(0);
+    const association = reader.associations[0];
     if (association === undefined) throw new Error('no association');
     expect(
       await kindOf(
-        decideEvidence(runtime, principals.judge, {
+        decideEvidence(runtime, principals.reader, {
           evidenceRunId: seeded.evidenceRunId,
           associationId: association.associationId,
           operation: 'accept',
@@ -359,14 +359,14 @@ describe('data-access layer against PostgreSQL', () => {
       editor.associations.find((entry) => entry.associationId === association.associationId)
         ?.effectiveStatus,
     ).toBe('accepted');
-    const judgeAgain = await evidenceView(runtime, principals.judge, seeded.evidenceRunId);
-    expect(judgeAgain.decisions[0]?.rationale).toBeNull();
-    expect(JSON.stringify(judgeAgain)).not.toContain('private rationale');
+    const readerAgain = await evidenceView(runtime, principals.reader, seeded.evidenceRunId);
+    expect(readerAgain.decisions[0]?.rationale).toBeNull();
+    expect(JSON.stringify(readerAgain)).not.toContain('private rationale');
   });
 
   it('builds the anomaly feed from stored signals with a limitation on every entry', async () => {
     const lastSignalRun = seeded.signalRunIds[seeded.signalRunIds.length - 1] ?? '';
-    const view = await anomalyView(runtime, principals.judge, {
+    const view = await anomalyView(runtime, principals.reader, {
       signalRunId: lastSignalRun,
       asOf: AS_OF,
       clusteringRunId: null,
@@ -379,7 +379,7 @@ describe('data-access layer against PostgreSQL', () => {
     }
     expect(
       await kindOf(
-        anomalyView(runtime, principals.judge, {
+        anomalyView(runtime, principals.reader, {
           signalRunId: lastSignalRun,
           asOf: AS_OF,
           clusteringRunId: seeded.clusteringRunId,
@@ -387,7 +387,7 @@ describe('data-access layer against PostgreSQL', () => {
         }),
       ),
     ).toBe('validation');
-    const withReporting = await anomalyView(runtime, principals.judge, {
+    const withReporting = await anomalyView(runtime, principals.reader, {
       signalRunId: lastSignalRun,
       asOf: AS_OF,
       clusteringRunId: seeded.clusteringRunId,
@@ -396,18 +396,18 @@ describe('data-access layer against PostgreSQL', () => {
     expect(withReporting.stats.reportingWindows).toBe(1);
   });
 
-  it('refuses draft preview to a judge entirely, and appends editor revisions with optimistic concurrency', async () => {
+  it('refuses draft preview to a reader entirely, and appends editor revisions with optimistic concurrency', async () => {
     // The owner decision of 2026-09-12 withdraws draft-preview access from
-    // the judge role: no headline, no source link, no source text, no
-    // editor note and no unsanitized draft content reaches a judge.
+    // the reader role: no headline, no source link, no source text, no
+    // editor note and no unsanitized draft content reaches a reader.
     expect(
       await kindOf(
-        draftView(runtime, principals.judge, seeded.evidenceRunId, PERIOD_START, PERIOD_END),
+        draftView(runtime, principals.reader, seeded.evidenceRunId, PERIOD_START, PERIOD_END),
       ),
     ).toBe('authorization');
     expect(
       await kindOf(
-        saveDraftRevision(runtime, principals.judge, {
+        saveDraftRevision(runtime, principals.reader, {
           evidenceRunId: seeded.evidenceRunId,
           periodStart: PERIOD_START,
           periodEnd: PERIOD_END,
@@ -657,25 +657,25 @@ describe('data-access layer against PostgreSQL', () => {
       ).toBe(true);
       const carried = editor.rows.find((row) => row.title?.startsWith('Brightwater'));
       expect(carried).toMatchObject({ carried: true, inWindow: false, selection: null });
-      const judge = await weekTable(
+      const reader = await weekTable(
         runtime,
-        principals.judge,
+        principals.reader,
         week.weekRunId,
         'cyberattack',
         undefined,
         undefined,
       );
-      expect(judge.canSelect).toBe(false);
-      expect(judge.canSearch).toBe(false);
+      expect(reader.canSelect).toBe(false);
+      expect(reader.canSearch).toBe(false);
       expect(editor.canSearch).toBe(true);
-      expect(judge.rows.length).toBe(editor.rows.length);
-      expect(judge.rows.every((row) => row.title === null)).toBe(true);
-      // A judge's result set cannot vary with a hidden title: a search is
+      expect(reader.rows.length).toBe(editor.rows.length);
+      expect(reader.rows.every((row) => row.title === null)).toBe(true);
+      // A reader's result set cannot vary with a hidden title: a search is
       // refused with a fixed code before any query (review F1).
       for (const term of ['harborline', 'brightwater', 'zzzz-no-such-title']) {
         expect(
           await kindOf(
-            weekTable(runtime, principals.judge, week.weekRunId, 'cyberattack', term, undefined),
+            weekTable(runtime, principals.reader, week.weekRunId, 'cyberattack', term, undefined),
           ),
         ).toBe('validation');
       }
@@ -707,7 +707,7 @@ describe('data-access layer against PostgreSQL', () => {
       ).toBe('not_found');
     });
 
-    it('records a selection for an editor with the next revision, refuses a judge, and shows the latest state', async () => {
+    it('records a selection for an editor with the next revision, refuses a reader, and shows the latest state', async () => {
       const week = await seedWeek(isolated.db);
       // The seed itself writes machine rows (runs, incidents); the selections below must not.
       const machineBefore = await fingerprint();
@@ -770,7 +770,7 @@ describe('data-access layer against PostgreSQL', () => {
           sessionToken: 'b'.repeat(43),
         };
       }
-      expect(await kindOf(selectStory(persistentRuntime, persisted.judge, input))).toBe(
+      expect(await kindOf(selectStory(persistentRuntime, persisted.reader, input))).toBe(
         'authorization',
       );
       // The refusal is audited with its fixed code and no content (review F4).
@@ -780,7 +780,7 @@ describe('data-access layer against PostgreSQL', () => {
       expect(
         refusals.some(
           (event) =>
-            event.actorAccountId === persisted.judge.accountId && event.code === 'select:stories',
+            event.actorAccountId === persisted.reader.accountId && event.code === 'select:stories',
         ),
       ).toBe(true);
       const first = await selectStory(persistentRuntime, persisted.editor, input);
@@ -806,18 +806,18 @@ describe('data-access layer against PostgreSQL', () => {
         note: 'next week',
       });
       expect(decided?.selection?.by).toBe(persisted.admin.username);
-      // A judge reads the state but never the note.
-      const judgeView = await weekTable(
+      // A reader reads the state but never the note.
+      const readerView = await weekTable(
         persistentRuntime,
-        persisted.judge,
+        persisted.reader,
         week.weekRunId,
         'cyberattack',
         undefined,
         undefined,
       );
-      expect(judgeView.rows.find((r) => r.incidentId === row?.incidentId)?.selection).toMatchObject(
-        { state: 'unselected', note: null },
-      );
+      expect(
+        readerView.rows.find((r) => r.incidentId === row?.incidentId)?.selection,
+      ).toMatchObject({ state: 'unselected', note: null });
       // Wrong identifiers are refused before anything is written.
       expect(
         await kindOf(
@@ -993,7 +993,7 @@ describe('data-access layer against PostgreSQL', () => {
         category: 'cyberattack',
         expectedTemplateHash: loaded.hash,
       };
-      for (const role of ['judge', 'editor', 'admin'] as const) {
+      for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(await kindOf(generateRoundup(rt, persisted[role], input))).toBe('authorization');
       }
       const before = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
@@ -1066,7 +1066,7 @@ describe('data-access layer against PostgreSQL', () => {
       ]);
       expect(refusedAtBoundary.every((e) => e.subjectId === week.weekRunId)).toBe(true);
       expect(refusedAtBoundary.map((e) => e.actorAccountId).sort()).toEqual(
-        [persisted.judge, persisted.editor, persisted.admin].map((p) => p.accountId).sort(),
+        [persisted.reader, persisted.editor, persisted.admin].map((p) => p.accountId).sort(),
       );
       expect(events.find((e) => e.kind === 'roundup_completed')?.code).toBe(
         'cost_9600_in_900_out_300',
@@ -1080,8 +1080,8 @@ describe('data-access layer against PostgreSQL', () => {
       );
       expect(again).toHaveLength(1);
       expect(again[0]?.actorAccountId).toBe(persisted.owner.accountId);
-      // A judge reads nothing here; an editor reads the page but cannot edit.
-      expect(await kindOf(roundupView(rt, persisted.judge, week.weekRunId, 'cyberattack'))).toBe(
+      // A reader reads nothing here; an editor reads the page but cannot edit.
+      expect(await kindOf(roundupView(rt, persisted.reader, week.weekRunId, 'cyberattack'))).toBe(
         'authorization',
       );
       expect((await roundupView(rt, persisted.editor, week.weekRunId, 'cyberattack')).canEdit).toBe(
@@ -1233,7 +1233,7 @@ describe('data-access layer against PostgreSQL', () => {
         expectedRevision: 1,
         markdown: '## Rundown\n\n**Edited**\n\nThe owner rewrote this.\n',
       };
-      for (const role of ['judge', 'editor', 'admin'] as const) {
+      for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(await kindOf(saveRoundupRevision(rt, persisted[role], edit))).toBe('authorization');
       }
       expect(await saveRoundupRevision(rt, persisted.owner, edit)).toEqual({ revision: 2 });
@@ -1378,7 +1378,7 @@ describe('data-access layer against PostgreSQL', () => {
         });
       }
       const input = { weekRunId: week.weekRunId, category: 'cyberattack' };
-      for (const role of ['judge', 'editor', 'admin'] as const) {
+      for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(await kindOf(readArticleSources(rt, persisted[role], input))).toBe('authorization');
       }
       const before = await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack');
@@ -1404,8 +1404,8 @@ describe('data-access layer against PostgreSQL', () => {
       expect(shown.reading).toMatchObject({ readingId: reading.readingId, read: 2, partlyRead: 0 });
       expect(shown.reading?.notRead).toEqual([{ publisher: HOST, code: 'robots_disallowed' }]);
       expect(shown.canGenerate).toBe(true);
-      // A judge sees nothing; an editor sees the page but no pending reading of someone else's.
-      expect(await kindOf(articleView(rt, persisted.judge, week.weekRunId, 'cyberattack'))).toBe(
+      // A reader sees nothing; an editor sees the page but no pending reading of someone else's.
+      expect(await kindOf(articleView(rt, persisted.reader, week.weekRunId, 'cyberattack'))).toBe(
         'authorization',
       );
       expect(
@@ -1423,7 +1423,7 @@ describe('data-access layer against PostgreSQL', () => {
       // A bogus or foreign reading identifier is refused; the owner's is accepted once.
       const generation = { ...input, readingId: 'f'.repeat(32) };
       expect(await kindOf(generateArticle(rt, persisted.owner, generation))).toBe('validation');
-      for (const role of ['judge', 'editor', 'admin'] as const) {
+      for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(
           await kindOf(
             generateArticle(rt, persisted[role], { ...input, readingId: reading.readingId }),
@@ -1516,7 +1516,7 @@ describe('data-access layer against PostgreSQL', () => {
         expectedRevision: 1,
         markdown: '# Edited\n\nThe owner rewrote this.\n',
       };
-      for (const role of ['judge', 'editor', 'admin'] as const) {
+      for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(await kindOf(saveArticleRevision(rt, persisted[role], edit))).toBe('authorization');
       }
       expect(await saveArticleRevision(rt, persisted.owner, edit)).toEqual({ revision: 2 });
