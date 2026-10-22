@@ -114,6 +114,69 @@ function toRunRecord(row: RunRow): ClassificationRunRecord {
   };
 }
 
+/** The category a run was classified under, recorded beside the run (migration 0013). */
+export interface ClassificationRunCategoryRecord {
+  readonly runId: string;
+  readonly batchId: string;
+  readonly dataOrigin: DataOrigin;
+  readonly category: string;
+  readonly policyVersion: string;
+  readonly policyHash: string;
+  readonly createdAt: string;
+}
+
+export async function insertClassificationRunCategory(
+  client: Queryable,
+  row: ClassificationRunCategoryRecord,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO classification_run_categories
+       (run_id, batch_id, data_origin, category, policy_version, policy_hash, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz)`,
+    [
+      row.runId,
+      row.batchId,
+      row.dataOrigin,
+      row.category,
+      row.policyVersion,
+      row.policyHash,
+      row.createdAt,
+    ],
+  );
+}
+
+/** `null` for a run that predates categories; nothing is inferred for it. */
+export async function getClassificationRunCategory(
+  client: Queryable,
+  runId: string,
+): Promise<ClassificationRunCategoryRecord | null> {
+  const result = await client.query<{
+    run_id: string;
+    batch_id: string;
+    data_origin: DataOrigin;
+    category: string;
+    policy_version: string;
+    policy_hash: string;
+    created_at: string;
+  }>(
+    `SELECT run_id, batch_id, data_origin, category, policy_version, policy_hash,
+            to_json(created_at) #>> '{}' AS created_at
+       FROM classification_run_categories WHERE run_id = $1`,
+    [runId],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  return {
+    runId: row.run_id,
+    batchId: row.batch_id,
+    dataOrigin: row.data_origin,
+    category: row.category,
+    policyVersion: row.policy_version,
+    policyHash: row.policy_hash,
+    createdAt: row.created_at,
+  };
+}
+
 export async function findClassificationRunByIdempotencyKey(
   client: Queryable,
   idempotencyKey: string,

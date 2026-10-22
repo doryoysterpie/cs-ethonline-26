@@ -1,6 +1,7 @@
 import { basename } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { CATEGORIES, isCategory, type Category } from '@cas/classification';
 import type { DataOrigin, EditorialSourceKind } from '@cas/contracts';
 import {
   connectionSecrets,
@@ -24,7 +25,7 @@ import {
   formatRunReport,
 } from './classification/output.js';
 import { calibrateRun, reportRun, reviewQueue } from './classification/report.js';
-import { classifyBatch } from './classification/run.js';
+import { classifyBatch, DEFAULT_CATEGORY } from './classification/run.js';
 import { assertReviewNote } from './clustering/note.js';
 import {
   formatClusteringReport,
@@ -94,7 +95,7 @@ import { validateCsvFile } from './editorial/validate.js';
  *   editorial validate --file F --kind K
  *   editorial import   --file F --kind K --origin O [--review-label L]
  *   editorial report   [--batch ID]
- *   classification run       --batch UUID
+ *   classification run       --batch UUID [--category C]
  *   classification report    --run UUID
  *   classification queue     --run UUID
  *   classification calibrate --run UUID
@@ -159,7 +160,7 @@ const USAGE = [
   '  editorial validate --file <path> --kind <master|weekly>',
   '  editorial import --file <path> --kind <master|weekly> --origin <live|fixture|replay> [--review-label <label>]',
   '  editorial report [--batch <id>]',
-  '  classification run --batch <uuid>',
+  '  classification run --batch <uuid> [--category <cyberattack|crypto>]',
   '  classification report --run <uuid>',
   '  classification queue --run <uuid>',
   '  classification calibrate --run <uuid>',
@@ -186,6 +187,22 @@ const USAGE = [
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `--category` on `classification run` (CAS-002): one of the declared
+ * categories, or absent for the cyberattack contract Sprint 3 shipped. An
+ * unknown value is a configuration error; nothing is guessed from it.
+ */
+function parseCategory(value: string | undefined): Category {
+  if (value === undefined) return DEFAULT_CATEGORY;
+  if (!isCategory(value)) {
+    throw configurationError(
+      'category_invalid',
+      `--category must be one of: ${CATEGORIES.join(', ')}`,
+    );
+  }
+  return value;
+}
 
 function configurationError(code: string, message: string): IngestionError {
   return new IngestionError('configuration', code, message);
@@ -377,8 +394,9 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
     }
     if (group === 'classification' && command === 'run') {
       const batchId = requireUuid(values.batch, 'batch');
+      const category = parseCategory(values.category);
       parseDatabaseConfig(options.env);
-      const outcome = await withDatabase(options, (db) => classifyBatch(db, { batchId }));
+      const outcome = await withDatabase(options, (db) => classifyBatch(db, { batchId, category }));
       for (const line of formatClassificationRun(outcome, redact)) emit(line);
       return EXIT_CODES.ok;
     }
@@ -927,6 +945,7 @@ const PARSE_OPTIONS = {
   origin: { type: 'string' },
   'review-label': { type: 'string' },
   batch: { type: 'string' },
+  category: { type: 'string' },
   run: { type: 'string' },
   'classification-run': { type: 'string' },
   incidents: { type: 'string' },
@@ -985,6 +1004,7 @@ interface ParsedValues {
   readonly id?: string | undefined;
   readonly window?: string[] | undefined;
   readonly batch?: string | undefined;
+  readonly category?: string | undefined;
   readonly run?: string | undefined;
   readonly 'classification-run'?: string | undefined;
   readonly incidents?: string | undefined;

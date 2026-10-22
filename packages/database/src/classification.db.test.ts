@@ -18,7 +18,9 @@ import {
   findBatchReviewSnapshot,
   findClassificationRunByIdempotencyKey,
   getClassificationRun,
+  getClassificationRunCategory,
   insertClassificationResults,
+  insertClassificationRunCategory,
   insertRunningClassificationRun,
   type NewClassificationResult,
   type NewClassificationRun,
@@ -926,6 +928,81 @@ describe('classification persistence (migrations 0003 to 0005)', () => {
         );
       });
       expect(code).toBe('P0001');
+    });
+  });
+
+  describe('run categories (migration 0013)', () => {
+    const categoryOf = (run: NewClassificationRun) => ({
+      runId: run.id,
+      batchId: run.batchId,
+      dataOrigin: run.dataOrigin,
+      category: 'cyberattack',
+      policyVersion: 'classification-signal-policy@1',
+      policyHash: run.rulesetHash,
+      createdAt: run.startedAt,
+    });
+
+    it('records one category beside a run and reads it back; a run without one reads null', async () => {
+      const run = await completeRun(isolated.db, batchA);
+      expect(
+        await isolated.db.withClient((c) => getClassificationRunCategory(c, run.id)),
+      ).toBeNull();
+      await isolated.db.withTransaction((tx) =>
+        insertClassificationRunCategory(tx, categoryOf(run)),
+      );
+      const stored = await isolated.db.withClient((c) => getClassificationRunCategory(c, run.id));
+      expect(stored).toMatchObject({
+        runId: run.id,
+        batchId: run.batchId,
+        dataOrigin: 'replay',
+        category: 'cyberattack',
+        policyVersion: 'classification-signal-policy@1',
+        policyHash: run.rulesetHash,
+      });
+      // One category per run: the primary key refuses a second row.
+      const twice = await expectRejected(isolated.db, (tx) =>
+        insertClassificationRunCategory(tx, { ...categoryOf(run), category: 'crypto' }),
+      );
+      expect(twice).toBe('23505');
+    });
+
+    it('refuses a category that disagrees with its run or names no run', async () => {
+      const run = await completeRun(isolated.db, batchA);
+      const wrongHash = await expectRejected(isolated.db, (tx) =>
+        insertClassificationRunCategory(tx, { ...categoryOf(run), policyHash: hash('0') }),
+      );
+      expect(wrongHash).toBe('P0001');
+      const wrongOrigin = await expectRejected(isolated.db, (tx) =>
+        insertClassificationRunCategory(tx, { ...categoryOf(run), dataOrigin: 'live' }),
+      );
+      expect(wrongOrigin).toBe('P0001');
+      const noRun = await expectRejected(isolated.db, (tx) =>
+        insertClassificationRunCategory(tx, { ...categoryOf(run), runId: randomUUID() }),
+      );
+      expect(noRun).toBe('P0001');
+      expect(
+        await isolated.db.withClient((c) => getClassificationRunCategory(c, run.id)),
+      ).toBeNull();
+    });
+
+    it('is append-only: a recorded category is neither updated nor deleted', async () => {
+      const run = await completeRun(isolated.db, batchB);
+      await isolated.db.withTransaction((tx) =>
+        insertClassificationRunCategory(tx, categoryOf(run)),
+      );
+      const update = await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE classification_run_categories SET category = 'crypto' WHERE run_id = $1`, [
+          run.id,
+        ]),
+      );
+      expect(update).toBe('P0001');
+      const remove = await expectRejected(isolated.db, (tx) =>
+        tx.query('DELETE FROM classification_run_categories WHERE run_id = $1', [run.id]),
+      );
+      expect(remove).toBe('P0001');
+      expect(
+        (await isolated.db.withClient((c) => getClassificationRunCategory(c, run.id)))?.category,
+      ).toBe('cyberattack');
     });
   });
 });

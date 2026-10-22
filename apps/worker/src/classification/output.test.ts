@@ -46,6 +46,7 @@ const run = {
 
 const outcome: ClassifyBatchOutcome = {
   outcome: 'classified',
+  category: 'cyberattack',
   run,
   batch: {
     id: BATCH_ID,
@@ -72,6 +73,15 @@ const outcome: ClassifyBatchOutcome = {
 
 const report: RunReport = {
   run,
+  category: {
+    runId: RUN_ID,
+    batchId: run.batchId,
+    dataOrigin: run.dataOrigin,
+    category: 'cyberattack',
+    policyVersion: 'classification-signal-policy@1',
+    policyHash: run.rulesetHash,
+    createdAt: run.startedAt,
+  },
   stored: { include: 120, exclude: 7, review: 30, total: 157 },
   reconciled: true,
   unclassifiedRows: 0,
@@ -112,6 +122,7 @@ describe('classification output', () => {
     assertSafe(lines);
     expect(lines[0]).toContain(`run=${RUN_ID}`);
     expect(lines[0]).toContain('mode=rules');
+    expect(lines[0]).toContain('category=cyberattack');
     expect(lines[1]).toContain('classifier=rules-classifier@1');
     expect(lines[1]).toContain(`rulesetHash=${'a'.repeat(64)}`);
     expect(lines[3]).toBe('decisions: include=120 exclude=7 review=30');
@@ -128,6 +139,8 @@ describe('classification output', () => {
     assertSafe(good);
     expect(good.join('\n')).toContain('reconciled=yes');
     expect(good.join('\n')).toContain('decisive_signal=120');
+    expect(good[1]).toBe('category: cyberattack policy=classification-signal-policy@1');
+    expect(formatRunReport({ ...report, category: null }, REDACT)[1]).toContain('none recorded');
     const bad = formatRunReport({ ...report, reconciled: false, unclassifiedRows: 4 }, REDACT);
     expect(bad.join('\n')).toContain('reconciled=NO');
     expect(bad.join('\n')).toContain('unclassifiedRows=4');

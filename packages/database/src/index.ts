@@ -49,6 +49,9 @@ export {
   type NewClassificationRun,
   type QueueEntry,
   type RationaleCodeCount,
+  getClassificationRunCategory,
+  insertClassificationRunCategory,
+  type ClassificationRunCategoryRecord,
 } from './classification.js';
 export {
   completeClusteringRun,

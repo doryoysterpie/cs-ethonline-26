@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { CLASSIFIER_VERSION, rulesetHash, RULESET_VERSION } from '@cas/classification';
+import {
+  categoryPolicy,
+  categoryRulesetHash,
+  CLASSIFIER_VERSION,
+  rulesetHash,
+  RULESET_VERSION,
+} from '@cas/classification';
 import type { ReviewState } from '@cas/contracts';
 import {
   countReviewState,
@@ -8,6 +14,7 @@ import {
   countUnclassifiedRows,
   deriveRunDecisionCounts,
   getClassificationRun,
+  getClassificationRunCategory,
   getImportBatch,
   isDatabaseError,
   openDatabase,
@@ -368,6 +375,61 @@ describe('classifyBatch against a migrated schema', () => {
   //
   // A second real connection is coordinated through seams that run at exact
   // points inside the classifier's transaction. No test sleeps.
+
+  describe('categories (CAS-002, migration 0013)', () => {
+    it('records the default run as cyberattack, hash for hash with Sprint 3', async () => {
+      const outcome = await classifyBatch(isolated.db, { batchId: batch.batchId });
+      expect(outcome.category).toBe('cyberattack');
+      expect(outcome.run.rulesetHash).toBe(rulesetHash());
+      expect(outcome.run.rulesetHash).toBe(categoryRulesetHash('cyberattack'));
+      const stored = await isolated.db.withClient((c) =>
+        getClassificationRunCategory(c, outcome.run.id),
+      );
+      expect(stored).toMatchObject({
+        runId: outcome.run.id,
+        batchId: batch.batchId,
+        category: 'cyberattack',
+        policyVersion: categoryPolicy('cyberattack').policyVersion,
+        policyHash: outcome.run.rulesetHash,
+      });
+      expect((await reportRun(isolated.db, outcome.run.id)).category?.category).toBe('cyberattack');
+    });
+
+    it('answers a second category on the same batch with a distinct, idempotent run', async () => {
+      const cyber = await classifyBatch(isolated.db, { batchId: batch.batchId });
+      const crypto = await classifyBatch(isolated.db, {
+        batchId: batch.batchId,
+        category: 'crypto',
+      });
+      expect(crypto.outcome).toBe('classified');
+      expect(crypto.category).toBe('crypto');
+      expect(crypto.run.id).not.toBe(cyber.run.id);
+      expect(crypto.run.rulesetVersion).toBe(RULESET_VERSION);
+      expect(crypto.run.rulesetHash).toBe(categoryRulesetHash('crypto'));
+      expect(crypto.run.rulesetHash).not.toBe(cyber.run.rulesetHash);
+      expect(crypto.run.expectedRowCount).toBe(ROWS.length);
+      expect(crypto.run.classifiedRowCount).toBe(ROWS.length);
+
+      const report = await reportRun(isolated.db, crypto.run.id);
+      expect(report.reconciled).toBe(true);
+      expect(report.category).toMatchObject({
+        category: 'crypto',
+        policyVersion: categoryPolicy('crypto').policyVersion,
+        policyHash: crypto.run.rulesetHash,
+      });
+      // Each category keeps its own run on the batch, and its own queue.
+      expect((await reportRun(isolated.db, cyber.run.id)).category?.category).toBe('cyberattack');
+      expect((await reviewQueue(isolated.db, crypto.run.id)).count).toBe(crypto.run.reviewCount);
+
+      const again = await classifyBatch(isolated.db, {
+        batchId: batch.batchId,
+        category: 'crypto',
+      });
+      expect(again.outcome).toBe('already_classified');
+      expect(again.category).toBe('crypto');
+      expect(again.run.id).toBe(crypto.run.id);
+    });
+  });
 
   describe('concurrent source-set mutation', () => {
     async function withRival<T>(fn: (rival: Database) => Promise<T>): Promise<T> {

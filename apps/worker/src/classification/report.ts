@@ -11,6 +11,8 @@ import {
   fetchCalibrationMatrix,
   findBatchReviewSnapshot,
   getClassificationRun,
+  getClassificationRunCategory,
+  type ClassificationRunCategoryRecord,
   type ClassificationRunRecord,
   type Database,
   type DecisionCounts,
@@ -27,6 +29,8 @@ import { IngestionError } from '../editorial/errors.js';
 
 export interface RunReport {
   readonly run: ClassificationRunRecord;
+  /** `null` for a run that predates migration 0013; never inferred from the hash. */
+  readonly category: ClassificationRunCategoryRecord | null;
   readonly stored: DecisionCounts;
   readonly reconciled: boolean;
   readonly unclassifiedRows: number;
@@ -50,8 +54,10 @@ export async function reportRun(db: Database, runId: string): Promise<RunReport>
   return db.withClient(async (client) => {
     const stored = await countRunDecisions(client, run.id);
     const unclassifiedRows = await countUnclassifiedRows(client, run.id, run.batchId);
+    const category = await getClassificationRunCategory(client, run.id);
     return {
       run,
+      category,
       stored,
       reconciled:
         stored.total === run.classifiedRowCount &&

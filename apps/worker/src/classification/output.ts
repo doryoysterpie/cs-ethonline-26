@@ -27,7 +27,7 @@ export function formatClassificationRun(outcome: ClassifyBatchOutcome, redact: R
       ? `classification:run: classified run=${run.id}`
       : `classification:run: already classified as run=${run.id}; no results written`;
   return [
-    `${head} batch=${run.batchId} origin=${run.dataOrigin} mode=${run.mode} status=${run.status}`,
+    `${head} category=${outcome.category} batch=${run.batchId} origin=${run.dataOrigin} mode=${run.mode} status=${run.status}`,
     `versions: classifier=${run.classifierVersion} ruleset=${run.rulesetVersion} rulesetHash=${run.rulesetHash}`,
     `rows: expected=${run.expectedRowCount} classified=${run.classifiedRowCount}`,
     `decisions: include=${run.includeCount} exclude=${run.excludeCount} review=${run.reviewCount}`,
@@ -43,6 +43,9 @@ export function formatRunReport(report: RunReport, redact: Redactor): string[] {
       : report.rationaleCodes.map((c) => `${c.code}=${c.count}`).join(' ');
   return [
     `classification:report: run=${run.id} batch=${run.batchId} origin=${run.dataOrigin} status=${run.status}`,
+    report.category === null
+      ? 'category: none recorded (the run predates categories; identify it by rulesetHash)'
+      : `category: ${report.category.category} policy=${report.category.policyVersion}`,
     `versions: classifier=${run.classifierVersion} ruleset=${run.rulesetVersion} rulesetHash=${run.rulesetHash}`,
     `counts: recorded expected=${run.expectedRowCount} classified=${run.classifiedRowCount} include=${run.includeCount} exclude=${run.excludeCount} review=${run.reviewCount}`,
     `stored: total=${report.stored.total} include=${report.stored.include} exclude=${report.stored.exclude} review=${report.stored.review}; unclassifiedRows=${report.unclassifiedRows}; reconciled=${report.reconciled ? 'yes' : 'NO'}`,
