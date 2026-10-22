@@ -656,8 +656,19 @@ describe('data-access layer against PostgreSQL', () => {
         undefined,
       );
       expect(judge.canSelect).toBe(false);
+      expect(judge.canSearch).toBe(false);
+      expect(editor.canSearch).toBe(true);
       expect(judge.rows.length).toBe(editor.rows.length);
       expect(judge.rows.every((row) => row.title === null)).toBe(true);
+      // A judge's result set cannot vary with a hidden title: a search is
+      // refused with a fixed code before any query (review F1).
+      for (const term of ['harborline', 'brightwater', 'zzzz-no-such-title']) {
+        expect(
+          await kindOf(
+            weekTable(runtime, principals.judge, week.weekRunId, 'cyberattack', term, undefined),
+          ),
+        ).toBe('validation');
+      }
       // Search is compared in the database; sort and category are whitelisted.
       const searched = await weekTable(
         runtime,
@@ -752,6 +763,16 @@ describe('data-access layer against PostgreSQL', () => {
       expect(await kindOf(selectStory(persistentRuntime, persisted.judge, input))).toBe(
         'authorization',
       );
+      // The refusal is audited with its fixed code and no content (review F4).
+      const refusals = (await persistent.audit.list(50)).filter(
+        (event) => event.kind === 'story_selected' && event.outcome === 'failure',
+      );
+      expect(
+        refusals.some(
+          (event) =>
+            event.actorAccountId === persisted.judge.accountId && event.code === 'select:stories',
+        ),
+      ).toBe(true);
       const first = await selectStory(persistentRuntime, persisted.editor, input);
       expect(first.revision).toBe(1);
       const second = await selectStory(persistentRuntime, persisted.admin, {
@@ -806,6 +827,15 @@ describe('data-access layer against PostgreSQL', () => {
           selectStory(persistentRuntime, persisted.editor, { ...input, state: 'maybe' }),
         ),
       ).toBe('validation');
+      const audited = (await persistent.audit.list(50)).filter(
+        (event) =>
+          event.kind === 'story_selected' &&
+          event.outcome === 'failure' &&
+          event.actorAccountId === persisted.editor.accountId,
+      );
+      expect(audited.map((event) => event.code).sort()).toEqual(
+        ['clustering_run_not_in_week', 'incident_not_found', 'state_invalid'].sort(),
+      );
       // The machine tables are untouched by selection.
       expect(await fingerprint()).toBe(machineBefore);
     });

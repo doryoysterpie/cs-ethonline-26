@@ -342,4 +342,6 @@ export interface WeekTableDto {
   readonly search: string | null;
   readonly sort: 'posted_desc' | 'members_desc';
   readonly canSelect: boolean;
+  /** Only a principal who may read titles may search them. */
+  readonly canSearch: boolean;
 }

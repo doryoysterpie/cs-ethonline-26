@@ -214,6 +214,53 @@ describe('cli configuration handling (no database)', () => {
     expect(r.err.join('\n')).not.toContain('DROP TABLE');
   });
 
+  it('refuses a week run without a window, outside the rule, or with an unregistered category before opening the workbook (review F3)', async () => {
+    const env = {
+      DATABASE_URL: 'postgresql://user:password@localhost:5432/db',
+      GOOGLE_SHEETS_SPREADSHEET_ID: 'not-a-real-id',
+      GOOGLE_APPLICATION_CREDENTIALS: '/nonexistent/key.json',
+    };
+    let opens = 0;
+    const connector: CliOptions['connectToWorkbook'] = async () => {
+      opens += 1;
+      throw new Error('the workbook must not be opened before the preflight');
+    };
+    const refusals = [
+      { argv: ['week', 'run'], code: 'window_required' },
+      {
+        argv: ['week', 'run', '--window', '2026-10-19T03:59:00.000Z..2026-10-26T03:59:00.000Z'],
+        code: 'window_outside_rule',
+      },
+      {
+        argv: [
+          'week',
+          'run',
+          '--window',
+          '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z',
+          '--categories',
+          'weather',
+        ],
+        code: 'category_invalid',
+      },
+    ];
+    for (const { argv, code } of refusals) {
+      const r = await exec(argv, env, undefined, connector);
+      expect(r.code, code).toBe(EXIT_CODES.configuration);
+      expect(r.err.join('\n')).toContain(code);
+    }
+    expect(opens).toBe(0);
+    // A valid preflight reaches the connector, and only then.
+    const reached = await exec(
+      ['week', 'run', '--window', '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z'],
+      env,
+      undefined,
+      connector,
+    );
+    expect(opens).toBe(1);
+    expect(reached.code).not.toBe(EXIT_CODES.ok);
+    expect(reached.err.join('\n')).not.toContain('password');
+  });
+
   it('refuses a week run without a window, outside the rule, or with an unregistered category before any connection', async () => {
     const env = { DATABASE_URL: 'postgresql://user:password@localhost:5432/db' };
     const batch = '7b9d2f4e-5c1a-4e6b-9f3d-2a8c1e5b7d90';

@@ -51,6 +51,14 @@ const ROWS: readonly {
     urlGroup: 'inc-b',
     postedAt: '2026-10-21T09:00:00.000Z',
   },
+  // A third Northwind report posted before the window: the incident is mixed,
+  // in the window by its other members, and must not also read as carried.
+  {
+    title: 'Ransomware halts Northwind Clinic radiology in Portland',
+    summary: 'The operator confirmed the outage across its radiology systems in Portland.',
+    urlGroup: 'inc-c',
+    postedAt: '2026-10-10T07:00:00.000Z',
+  },
   // Posted before the window, first seen inside it: carried.
   {
     title: 'Kestrelvale Water district confirms a ransomware breach of billing systems',
@@ -308,6 +316,27 @@ describe('the editorial week against a migrated schema', () => {
       inWindow: false,
       carried: true,
     });
+    // The mixed Northwind incident is in the window and not carried (review F6).
+    const northwind = rows
+      .filter((r) => r.title?.includes('Northwind'))
+      .find((r) => r.memberCount >= 2);
+    expect(northwind).toBeDefined();
+    expect(northwind).toMatchObject({ inWindow: true, carried: false });
+    expect(rows.every((r) => !(r.inWindow && r.carried))).toBe(true);
+    // Without text, a search is refused at the database (review F1).
+    await expect(
+      isolated.db.withClient((c) =>
+        listWeekIncidents(c, {
+          clusteringRunId: cyber?.clusteringRunId ?? '',
+          windowStart: week.week.windowStart,
+          windowEnd: week.week.windowEnd,
+          withText: false,
+          search: 'northwind',
+          sort: 'posted_desc',
+          limit: 100,
+        }),
+      ),
+    ).rejects.toThrowError('needs the text');
     expect(
       rows.every((r) => !r.title?.startsWith('Larkmere') && !r.title?.startsWith('A slow-cooker')),
     ).toBe(true);
@@ -434,6 +463,30 @@ describe('the editorial week against a migrated schema', () => {
       ]),
     );
     expect(wrongMember).toBe('23503');
+    // A real membership of another incident of the same run cannot be recorded
+    // under this incident, and a membership's own row tuple cannot be swapped
+    // (review F2): one relational identity binds selection, incident,
+    // membership and source row.
+    const other = rows.find((r) => r.incidentId !== incident?.incidentId);
+    expect(other).toBeDefined();
+    const otherMembers = await isolated.db.withClient((c) =>
+      listIncidentMemberRefs(c, clusteringRunId, other?.incidentId ?? ''),
+    );
+    const crossIncident = await expectRejected(isolated.db, (tx) =>
+      insertIssueSelection(tx, { ...base, id: randomUUID(), state: 'selected', revision: 3 }, [
+        otherMembers[0] as (typeof members)[number],
+      ]),
+    );
+    expect(crossIncident).toBe('23503');
+    const swappedRow = await expectRejected(isolated.db, (tx) =>
+      insertIssueSelection(tx, { ...base, id: randomUUID(), state: 'selected', revision: 3 }, [
+        { ...(members[0] as (typeof members)[number]), rowHash: hash('9') },
+      ]),
+    );
+    expect(swappedRow).toBe('23503');
+    expect(
+      await isolated.db.withClient((c) => lastSelectionRevision(c, week.week.id, base.incidentId)),
+    ).toBe(2);
     // Append-only.
     const edit = await expectRejected(isolated.db, (tx) =>
       tx.query(`UPDATE issue_selections SET state = 'selected' WHERE week_run_id = $1`, [

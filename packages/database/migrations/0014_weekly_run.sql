@@ -203,7 +203,7 @@ BEGIN
       note               text        CHECK (note IS NULL OR pg_catalog.length(note) BETWEEN 1 AND 2000),
       created_at         timestamptz NOT NULL,
       CONSTRAINT issue_selections_revision UNIQUE (week_run_id, incident_id, revision),
-      CONSTRAINT issue_selections_identity UNIQUE (id, clustering_run_id),
+      CONSTRAINT issue_selections_identity UNIQUE (id, incident_id, clustering_run_id),
       CONSTRAINT issue_selections_week_fk
         FOREIGN KEY (week_run_id, batch_id) REFERENCES %1$I.week_runs (id, batch_id),
       CONSTRAINT issue_selections_incident_fk
@@ -248,9 +248,19 @@ BEGIN
       FOR EACH ROW EXECUTE FUNCTION %1$I.issue_selection_guard()
   $fmt$, target);
 
+  -- A membership's full identity, so a selection member can reference the
+  -- membership, its incident and its source-row tuple as one key: no row
+  -- can be recorded under a selected incident it does not belong to
+  -- (review of 22 October 2026, F2).
+  EXECUTE pg_catalog.format($fmt$
+    ALTER TABLE %1$I.incident_memberships
+      ADD CONSTRAINT incident_memberships_provenance
+        UNIQUE (id, incident_cluster_id, clustering_run_id, source_row_id, batch_id, row_hash)
+  $fmt$, target);
   EXECUTE pg_catalog.format($fmt$
     CREATE TABLE %1$I.issue_selection_members (
       selection_id       uuid        NOT NULL,
+      incident_id        uuid        NOT NULL,
       clustering_run_id  uuid        NOT NULL,
       membership_id      uuid        NOT NULL,
       source_row_id      uuid        NOT NULL,
@@ -258,11 +268,11 @@ BEGIN
       row_hash           text        NOT NULL CHECK (row_hash ~ '^[0-9a-f]{64}$'),
       CONSTRAINT issue_selection_members_pkey PRIMARY KEY (selection_id, membership_id),
       CONSTRAINT issue_selection_members_selection_fk
-        FOREIGN KEY (selection_id, clustering_run_id) REFERENCES %1$I.issue_selections (id, clustering_run_id),
+        FOREIGN KEY (selection_id, incident_id, clustering_run_id)
+        REFERENCES %1$I.issue_selections (id, incident_id, clustering_run_id),
       CONSTRAINT issue_selection_members_membership_fk
-        FOREIGN KEY (membership_id, clustering_run_id) REFERENCES %1$I.incident_memberships (id, clustering_run_id),
-      CONSTRAINT issue_selection_members_row_fk
-        FOREIGN KEY (source_row_id, batch_id, row_hash) REFERENCES %1$I.source_rows (id, batch_id, row_hash)
+        FOREIGN KEY (membership_id, incident_id, clustering_run_id, source_row_id, batch_id, row_hash)
+        REFERENCES %1$I.incident_memberships (id, incident_cluster_id, clustering_run_id, source_row_id, batch_id, row_hash)
     )
   $fmt$, target);
   EXECUTE pg_catalog.format($fmt$
