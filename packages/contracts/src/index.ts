@@ -5,9 +5,10 @@
  * MCP server, the feed API and the dashboard. Sprint 0 defined the three
  * editorial contracts; Sprint 1 adds the minimal Graph evidence contracts
  * that `@cas/graph-evidence` produces for later consumers; Sprint 2 adds the
- * editorial source kind and the import status enums. No runtime
- * behaviour lives here beyond constant definitions. See docs/ARCHITECTURE.md
- * and docs/DATA_INPUTS.md.
+ * editorial source kind and the import status enums; CAS-005 adds the source
+ * reference policy, the one pure function here, shared by the MCP server and
+ * the source reader. No other runtime behaviour lives here beyond constant
+ * definitions. See docs/ARCHITECTURE.md and docs/DATA_INPUTS.md.
  */
 
 /**
@@ -289,3 +290,10 @@ export {
   type ImportLimits,
   type ResourceLimits,
 } from './limits.js';
+
+export {
+  REFERENCE_REJECTIONS,
+  classifySourceReference,
+  type ReferenceRejection,
+  type ReferenceVerdict,
+} from './source-reference.js';
