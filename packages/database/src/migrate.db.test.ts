@@ -38,10 +38,12 @@ const EXPECTED_TABLES = [
   'issue_selection_members',
   'issue_selections',
   'login_throttle_buckets',
+  'model_calls',
   'otp_challenges',
   'queue_decisions',
   'review_entries',
   'review_snapshots',
+  'roundup_revisions',
   'row_issues',
   'schema_migrations',
   'sessions',
@@ -151,21 +153,22 @@ describe('migration runner against a fresh schema', () => {
       '0012_sheets_import_provenance.sql',
       '0013_classification_categories.sql',
       '0014_weekly_run.sql',
+      '0015_roundup.sql',
     ]);
     expect(first.alreadyApplied).toBe(0);
-    expect(first.total).toBe(14);
+    expect(first.total).toBe(15);
     const tables = await isolated.base.withClient((c) => listTables(c, isolated.name));
     expect(tables).toEqual(EXPECTED_TABLES);
 
     const second = await runMigrations(isolated.db);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied).toBe(14);
+    expect(second.alreadyApplied).toBe(15);
 
     const status = await migrationStatus(isolated.db);
     expect(status.pending).toEqual([]);
     expect(status.drift).toEqual([]);
     expect(status.applied.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     ]);
     expect(status.applied[0]?.appliedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
@@ -189,6 +192,7 @@ describe('migration runner against a fresh schema', () => {
         '0012_sheets_import_provenance.sql',
         '0013_classification_categories.sql',
         '0014_weekly_run.sql',
+        '0015_roundup.sql',
       ]);
       expect(upgrade.alreadyApplied).toBe(10);
 
@@ -265,6 +269,7 @@ describe('migration runner against a fresh schema', () => {
         '0012_sheets_import_provenance.sql',
         '0013_classification_categories.sql',
         '0014_weekly_run.sql',
+        '0015_roundup.sql',
       ]);
       expect(upgrade.alreadyApplied).toBe(1);
       expect(await isolated.db.withClient(countAllRows)).toEqual(counts);
@@ -368,12 +373,12 @@ describe('migration runner against a fresh schema', () => {
       const [a, b] = await Promise.all([runMigrations(isolated.db), runMigrations(other)]);
       // Every migration is applied exactly once in total, whichever runner
       // won the lock; the loser finds nothing pending.
-      expect(a.applied.length + b.applied.length).toBe(14);
+      expect(a.applied.length + b.applied.length).toBe(15);
       expect(Math.min(a.applied.length, b.applied.length)).toBe(0);
       const rows = await isolated.db.withClient((c) =>
         c.query<{ count: string }>('SELECT count(*)::text AS count FROM schema_migrations'),
       );
-      expect(rows.rows[0]?.count).toBe('14');
+      expect(rows.rows[0]?.count).toBe('15');
     } finally {
       await other.end();
     }

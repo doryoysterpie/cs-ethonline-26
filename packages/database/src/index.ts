@@ -308,3 +308,19 @@ export {
   type WeekRunRecord,
   type WeekRunStatus,
 } from './week.js';
+export {
+  insertModelCall,
+  insertRoundupRevision,
+  latestRoundupRevision,
+  listOmittedIncidents,
+  listRoundupRevisions,
+  listSelectedRows,
+  spendBetween,
+  type ModelCallOutcome,
+  type NewModelCall,
+  type NewRoundupRevision,
+  type RoundupProvenanceColumns,
+  type RoundupRevisionKind,
+  type RoundupRevisionRecord,
+  type SelectedRowRecord,
+} from './roundup.js';

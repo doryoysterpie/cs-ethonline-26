@@ -7,6 +7,13 @@ import { isDatabaseError } from './errors.js';
 import { runMigrations } from './migrate.js';
 import { openIsolatedSchema, type IsolatedSchema } from './test-support.js';
 import {
+  insertModelCall,
+  insertRoundupRevision,
+  latestRoundupRevision,
+  listRoundupRevisions,
+  spendBetween,
+} from './roundup.js';
+import {
   completeWeekRun,
   findCompletedWeekRunByKey,
   getWeekRun,
@@ -275,5 +282,198 @@ describe('week runs and their children (migration 0014)', () => {
       }),
     );
     expect(twice).toBe('23505');
+  });
+});
+
+describe('round-up revisions, the model ledger and the owner role (migration 0015)', () => {
+  let isolated: IsolatedSchema;
+  let batchId: string;
+  let owner: string;
+  let weekRunId: string;
+
+  beforeAll(async () => {
+    isolated = await openIsolatedSchema();
+    await runMigrations(isolated.db);
+    batchId = await seedBatch(isolated.db);
+    owner = randomUUID();
+    // The role the migration admits (D39).
+    await isolated.db.withTransaction((tx) =>
+      tx.query(
+        `INSERT INTO accounts (id, username, role, password_hash, created_at, password_changed_at)
+         VALUES ($1, 'owner_account', 'owner', 'synthetic-not-a-credential', now(), now())`,
+        [owner],
+      ),
+    );
+    const run = newRun(batchId);
+    weekRunId = run.id;
+    await isolated.db.withTransaction((tx) => insertRunningWeekRun(tx, run));
+    await isolated.db.withTransaction((tx) =>
+      completeWeekRun(tx, run.id, 'completed', new Date().toISOString(), null),
+    );
+  });
+
+  afterAll(async () => {
+    await isolated.close();
+  });
+
+  const provenance = {
+    model: 'claude-opus-5-5',
+    promptVersion: 'roundup-prompt@1',
+    promptHash: hash('a'),
+    templateVersion: 'rundown-template@1',
+    templateHash: hash('b'),
+    inputDigest: hash('c'),
+    inputTokens: 1200,
+    outputTokens: 400,
+    costMicrodollars: 12_800,
+  };
+
+  it('keeps revisions in sequence with the kind bound to the number and provenance on the generated one', async () => {
+    const base = {
+      weekRunId,
+      category: 'cyberattack',
+      slots: { rundown: [] },
+      markdown: '# r',
+      savedByAccountId: owner,
+      createdAt: new Date().toISOString(),
+    };
+    // Revision 1 cannot come first; revision 0 must be deterministic; generated needs provenance.
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertRoundupRevision(tx, { ...base, revision: 1, kind: 'generated', provenance }),
+      ),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertRoundupRevision(tx, { ...base, revision: 0, kind: 'generated', provenance }),
+      ),
+    ).toBe('23514');
+    await isolated.db.withTransaction((tx) =>
+      insertRoundupRevision(tx, { ...base, revision: 0, kind: 'deterministic', provenance: null }),
+    );
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertRoundupRevision(tx, { ...base, revision: 1, kind: 'generated', provenance: null }),
+      ),
+    ).toBe('23514');
+    await isolated.db.withTransaction((tx) =>
+      insertRoundupRevision(tx, { ...base, revision: 1, kind: 'generated', provenance }),
+    );
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertRoundupRevision(tx, { ...base, revision: 3, kind: 'edited', provenance: null }),
+      ),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertRoundupRevision(tx, { ...base, revision: 2, kind: 'edited', provenance }),
+      ),
+    ).toBe('23514');
+    await isolated.db.withTransaction((tx) =>
+      insertRoundupRevision(tx, {
+        ...base,
+        revision: 2,
+        kind: 'edited',
+        provenance: null,
+        markdown: '# edited',
+      }),
+    );
+    const listed = await isolated.db.withClient((c) =>
+      listRoundupRevisions(c, weekRunId, 'cyberattack'),
+    );
+    expect(listed.map((r) => [r.revision, r.kind])).toEqual([
+      [0, 'deterministic'],
+      [1, 'generated'],
+      [2, 'edited'],
+    ]);
+    expect(listed[1]?.provenance).toMatchObject(provenance);
+    expect(
+      (await isolated.db.withClient((c) => latestRoundupRevision(c, weekRunId, 'cyberattack')))
+        ?.markdown,
+    ).toBe('# edited');
+    // Another category is its own sequence; a running week run takes none.
+    await isolated.db.withTransaction((tx) =>
+      insertRoundupRevision(tx, {
+        ...base,
+        category: 'crypto',
+        revision: 0,
+        kind: 'deterministic',
+        provenance: null,
+      }),
+    );
+    const running = newRun(batchId);
+    await isolated.db.withTransaction((tx) => insertRunningWeekRun(tx, running));
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertRoundupRevision(tx, {
+          ...base,
+          weekRunId: running.id,
+          revision: 0,
+          kind: 'deterministic',
+          provenance: null,
+        }),
+      ),
+    ).toBe('P0001');
+    // Append-only.
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE roundup_revisions SET markdown = 'x' WHERE week_run_id = $1`, [weekRunId]),
+      ),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`DELETE FROM roundup_revisions WHERE week_run_id = $1`, [weekRunId]),
+      ),
+    ).toBe('P0001');
+  });
+
+  it('sums the month’s completed calls only, and keeps the ledger append-only', async () => {
+    const call = (outcome: 'completed' | 'refused' | 'failed', cost: number, at: string) => ({
+      id: randomUUID(),
+      kind: 'roundup' as const,
+      weekRunId,
+      category: 'cyberattack',
+      model: 'claude-opus-5-5',
+      inputTokens: 100,
+      outputTokens: 10,
+      costMicrodollars: cost,
+      outcome,
+      code: outcome === 'completed' ? 'completed' : 'spend_cap_exceeded',
+      actorAccountId: owner,
+      createdAt: at,
+    });
+    await isolated.db.withTransaction(async (tx) => {
+      await insertModelCall(tx, call('completed', 600, '2026-10-05T00:00:00.000Z'));
+      await insertModelCall(tx, call('completed', 400, '2026-10-20T00:00:00.000Z'));
+      await insertModelCall(tx, call('refused', 999_999, '2026-10-21T00:00:00.000Z'));
+      await insertModelCall(tx, call('completed', 5_000, '2026-11-01T00:00:00.000Z'));
+    });
+    expect(
+      await isolated.db.withClient((c) =>
+        spendBetween(c, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z'),
+      ),
+    ).toBe(1_000);
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`DELETE FROM model_calls WHERE week_run_id = $1`, [weekRunId]),
+      ),
+    ).toBe('P0001');
+    // The audit kinds the round-up writes are admitted; an unknown kind is not.
+    await isolated.db.withTransaction((tx) =>
+      tx.query(
+        `INSERT INTO audit_events (id, at, kind, outcome, code, actor_account_id, subject_account_id, session_id, network_key, subject_id)
+         VALUES ($1, now(), 'roundup_completed', 'success', 'completed', $2, NULL, NULL, NULL, $3)`,
+        [randomUUID(), owner, weekRunId],
+      ),
+    );
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(
+          `INSERT INTO audit_events (id, at, kind, outcome, code, actor_account_id, subject_account_id, session_id, network_key, subject_id)
+           VALUES ($1, now(), 'roundup_unknown', 'success', 'x', $2, NULL, NULL, NULL, NULL)`,
+          [randomUUID(), owner],
+        ),
+      ),
+    ).toBe('23514');
   });
 });
