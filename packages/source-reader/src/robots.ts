@@ -23,7 +23,8 @@ export function parseRobots(text: string): RobotsRules {
   let current: { agents: string[]; rules: RobotsRule[] } | null = null;
   let lastWasAgent = false;
   for (const rawLine of text.split(/\r?\n/u)) {
-    const line = rawLine.replace(/#.*$/u, '').trim();
+    const comment = rawLine.indexOf('#');
+    const line = (comment < 0 ? rawLine : rawLine.slice(0, comment)).trim();
     if (line.length === 0) continue;
     const colon = line.indexOf(':');
     if (colon < 0) continue;

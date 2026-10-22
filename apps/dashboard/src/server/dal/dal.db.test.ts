@@ -1418,7 +1418,8 @@ describe('data-access layer against PostgreSQL', () => {
       expect(
         fetched.every((e) => /^bytes_\d+_ms_\d+_(?:read|robots_disallowed)$/u.test(e.code)),
       ).toBe(true);
-      expect(fetched.every((e) => e.subjectId !== null && !e.code.includes(HOST))).toBe(true);
+      // The fixed shape above admits no host, path or text; every event names its row.
+      expect(fetched.every((e) => e.subjectId !== null)).toBe(true);
       // A bogus or foreign reading identifier is refused; the owner's is accepted once.
       const generation = { ...input, readingId: 'f'.repeat(32) };
       expect(await kindOf(generateArticle(rt, persisted.owner, generation))).toBe('validation');

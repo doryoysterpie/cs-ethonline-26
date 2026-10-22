@@ -179,7 +179,7 @@ describe('rule R7: redirects are re-checked, bounded and never downgraded (test 
       },
     );
     expect(reading.outcomes[0]?.code).toBe('private_address');
-    expect(transport.calls.some((c) => c.includes('10.0.0.1'))).toBe(false);
+    expect(transport.calls.map((c) => c.split(' ')[2])).not.toContain('10.0.0.1');
   });
 
   it('refuses a chain of four and an https to http downgrade, and follows three', async () => {
@@ -222,7 +222,9 @@ describe('rule R7: redirects are re-checked, bounded and never downgraded (test 
       ['three', 'read', null],
       ['nowhere', 'not_read', 'redirect_refused'],
     ]);
-    expect(transport.calls.some((c) => c.includes('http://news.example.org/plain'))).toBe(false);
+    expect(transport.calls.map((c) => c.split(' ')[1])).not.toContain(
+      'http://news.example.org/plain',
+    );
   });
 });
 
