@@ -215,3 +215,47 @@ directory, Node 24.21.0, pnpm 11.10.0:
 
 CI on pull request 19 at the same commit: Verify, PostgreSQL integration, Supply chain,
 CodeQL and Analyze all pass. The diff is narrated in the hand-back that asks for the review.
+
+## 6. The owner's decisions, and calibration on real data (steps 1, 2 and 9)
+
+### 6.1 Decisions, 22 October 2026
+
+Step 1: deterministic per-category rules; D21 amended to read "per category"; D9 stays
+closed. Step 2: no labelled crypto weekly set is on record, so "crypto recall unmeasured in
+v0" is a named seam; a labelled tab, if one surfaces, flips it to a measured figure with
+nothing else changing. Step 9's source: local calibration against the CS79 and CS86 CSV
+exports, no change to CAS-001's policy file. Recorded in `docs/DECISIONS.md` (D21 amendment)
+and the plan's open-questions table.
+
+### 6.2 Calibration, cyberattack, from the runner
+
+A fresh local PostgreSQL 17 database, migrated through 0013 by `db:migrate` (then rerun as a
+no-op, 13 already applied). The two weekly exports imported as `replay` with their review
+labels, matching the Sprint 3 import evidence exactly: CS79 157 rows, 3 quarantined, 5 issue
+codes, snapshot 130 selected and 27 rejected; CS86 181 rows, no issues, 161 selected and 20
+rejected. Each batch classified under `--category cyberattack`, calibrated, and run again.
+
+| Batch | Rows | include | exclude | review | Selected retention | Strict include recall | Target met | Queue |
+| ----- | ---- | ------- | ------- | ------ | ------------------ | --------------------- | ---------- | ----- |
+| CS79  | 157  | 110     | 1       | 46     | 0.992307           | 0.8                   | yes        | 46    |
+| CS86  | 181  | 123     | 0       | 58     | 1                  | 0.726708              | yes        | 58    |
+
+Both runs record ruleset hash `c396ff1d…` and the category row `cyberattack`,
+`classification-signal-policy@1`. Every figure equals the Sprint 3 figure for the same file
+(`docs/SPRINT-3-REPORT.md`, section 7), which is the point: the category contract changed
+nothing about the cyberattack decision. Repeating either run answered `already classified`
+with the original run identifier and wrote nothing. What these figures are evidence of, and
+are not, is unchanged from D21: retention against the owner's intermediate candidate
+decisions, never editorial accuracy.
+
+### 6.3 Crypto on the same batches: counts, not a calibration
+
+CS79 and CS86 are cyberattack candidate cut-downs, so their review labels say nothing about
+crypto; `calibrate` was not run on the crypto runs and no recall figure is claimed. For the
+record, the uncalibrated crypto policy over the same rows: CS79 include 4, exclude 1, review
+152 (rationale: `decisive_signal` 4, `contextual_signal_single` 11, `no_signal_match` 139,
+`out_of_scope_signal` 1, `row_quarantined` 3); CS86 include 11, exclude 0, review 170
+(`decisive_signal` 11, `contextual_signal_single` 7, `no_signal_match` 163). Each crypto run
+is a distinct run on its batch with ruleset hash `4443e5c9…` and the category row `crypto`,
+`crypto-signal-policy@1`; a rerun answered `already classified`. A check across the database
+found no category row whose policy hash differs from its run's ruleset hash.

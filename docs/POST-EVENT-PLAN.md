@@ -440,15 +440,15 @@ walk-through in a Claude session, in this shape:
 
 ## 8. Open questions
 
-| Question                                                                                                                                        | Owner | Closed in |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
-| Model, settings and spend cap for the round-up (D9)                                                                                             | owner | CAS-004   |
-| The rundown template's first version, as structure                                                                                              | owner | CAS-004   |
-| Editorial week start, end and late-arrival rule (D10)                                                                                           | owner | CAS-003   |
-| Does a labelled crypto weekly set exist, or is crypto recall unmeasured in v0?                                                                  | owner | CAS-002   |
-| Scheduled run on Railway, or manual from the owner's machine?                                                                                   | owner | CAS-003   |
-| The reporter register (fetch-policy decisions O-1 to O-3 were taken on 16 September 2026)                                                       | owner | CAS-005   |
-| Disposition of each hackathon-only component                                                                                                    | owner | CAS-006   |
-| Stay public under Apache-2.0, or go private now that the hackathon rule no longer applies? Versions already published stay licensed either way. | owner | CAS-006   |
-| What a reader sees, page by page, within D6's allowlist; reader account expiry                                                                  | owner | CAS-007   |
-| The fiat payment provider; what the supporter tier grants; which chains and addresses accept donations                                          | owner | CAS-008   |
+| Question                                                                                                                                                               | Owner | Closed in |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| Model, settings and spend cap for the round-up (D9)                                                                                                                    | owner | CAS-004   |
+| The rundown template's first version, as structure                                                                                                                     | owner | CAS-004   |
+| Editorial week start, end and late-arrival rule (D10)                                                                                                                  | owner | CAS-003   |
+| Does a labelled crypto weekly set exist, or is crypto recall unmeasured in v0? Closed 22 October 2026: none on record; unmeasured in v0, a named seam (D21 amendment). | owner | CAS-002   |
+| Scheduled run on Railway, or manual from the owner's machine?                                                                                                          | owner | CAS-003   |
+| The reporter register (fetch-policy decisions O-1 to O-3 were taken on 16 September 2026)                                                                              | owner | CAS-005   |
+| Disposition of each hackathon-only component                                                                                                                           | owner | CAS-006   |
+| Stay public under Apache-2.0, or go private now that the hackathon rule no longer applies? Versions already published stay licensed either way.                        | owner | CAS-006   |
+| What a reader sees, page by page, within D6's allowlist; reader account expiry                                                                                         | owner | CAS-007   |
+| The fiat payment provider; what the supporter tier grants; which chains and addresses accept donations                                                                 | owner | CAS-008   |
