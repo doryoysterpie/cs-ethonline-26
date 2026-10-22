@@ -61,7 +61,32 @@ Not done here: steps 3, 4, 6, 11 and 12 are the owner's decisions; step 7 (block
 trusted proxy) needs the owner at Railway; step 8 (blocker 5) waits on the MCP server's
 disposition. Audit state: not audited.
 
-## 3. Independent review of steps 9 and 10, and the correction (step 14, first round)
+## 3. Release blocker 3, the trusted proxy hop: the code half (step 7)
+
+Written 22 October 2026, branch `cas-006/trusted-proxy`, stacked on `cas-006/release-blockers`.
+
+The release review found two things wrong with how sign-in throttling keyed a request: with
+`DASHBOARD_TRUST_FORWARDED_FOR` unset every client shared the single bucket `direct`, so one
+attacker could lock everyone out; with it set, the key was the first entry of
+`X-Forwarded-For`, which the client itself may have written. Both are closed in code:
+
+- `DASHBOARD_TRUSTED_PROXY_HOPS` (1 to 8, default 1) declares how many trusted proxies stand
+  between the client and the process. The key is the entry that many places from the right end
+  of the header, the address the outermost trusted proxy saw as its client, never the first
+  entry. A header with fewer entries than hops did not come through the declared chain and
+  keys as `malformed`. Railway's edge is one hop.
+- The configuration documents that `false` is a local-only setting because it puts every
+  client in one bucket. Tests cover one and two hops, a spoofed first entry, and a header
+  shorter than the chain; the configuration test covers the default and five refusals.
+
+The owner's half remains: set `DASHBOARD_TRUST_FORWARDED_FOR=true` and
+`DASHBOARD_TRUSTED_PROXY_HOPS=1` on the Railway service, then prove from two networks that a
+lockout on one does not lock the other. Until then the deployed instance keys as `direct`.
+
+Counts, from the runners: dashboard 84 unit and 21 PostgreSQL; verify loop green. Audit state:
+not audited.
+
+## 4. Independent review of steps 9 and 10, and the correction (step 14, first round)
 
 Codex reviewed pull request 17 at `2e77d2e` on 22 October 2026: CHANGES REQUIRED, one Medium
 finding, F1. The 100-decision bound was a count followed by a separate insert, so two reviews

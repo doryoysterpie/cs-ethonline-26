@@ -35,11 +35,20 @@ export interface DashboardConfig {
   /** The application schema the read side addresses; `public` by default. */
   readonly databaseSchema: string;
   /**
-   * Whether the first `X-Forwarded-For` hop may be used as the network key for
-   * login throttling. False unless a trusted reverse proxy sets the header;
-   * with it false the network key is `direct`.
+   * Whether `X-Forwarded-For` may be used as the network key for login
+   * throttling. False unless a trusted reverse proxy appends the header; with
+   * it false the network key is `direct`, which puts every client in one
+   * bucket, so it is a local-only setting.
    */
   readonly trustForwardedFor: boolean;
+  /**
+   * How many trusted proxies stand between the client and this process. The
+   * network key is the address the outermost trusted proxy saw as its client:
+   * the entry that many places from the right end of `X-Forwarded-For`, never
+   * the first entry, which the client itself may have written (CAS-006,
+   * release blocker 3). Railway's edge is one hop.
+   */
+  readonly trustedProxyHops: number;
 }
 
 export const ACCOUNT_STORE_VARIABLE = 'DASHBOARD_ACCOUNT_STORE';
@@ -55,6 +64,9 @@ const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/u;
 export const MEMORY_SEED_VARIABLE = 'DASHBOARD_MEMORY_STORE_SEED';
 export const DATABASE_SCHEMA_VARIABLE = 'DASHBOARD_DATABASE_SCHEMA';
 export const TRUST_FORWARDED_FOR_VARIABLE = 'DASHBOARD_TRUST_FORWARDED_FOR';
+export const TRUSTED_PROXY_HOPS_VARIABLE = 'DASHBOARD_TRUSTED_PROXY_HOPS';
+export const DEFAULT_TRUSTED_PROXY_HOPS = 1;
+const MAXIMUM_TRUSTED_PROXY_HOPS = 8;
 
 function configuration(code: string, message: string): DashboardError {
   return new DashboardError('configuration', code, message);
@@ -125,11 +137,24 @@ export function loadDashboardConfig(
     );
   }
 
+  const hopsText = read(env, TRUSTED_PROXY_HOPS_VARIABLE);
+  let trustedProxyHops = DEFAULT_TRUSTED_PROXY_HOPS;
+  if (hopsText !== null) {
+    if (!/^[1-9][0-9]?$/u.test(hopsText) || Number(hopsText) > MAXIMUM_TRUSTED_PROXY_HOPS) {
+      throw configuration(
+        'trusted_proxy_hops_invalid',
+        `${TRUSTED_PROXY_HOPS_VARIABLE} rejected: must be an integer from 1 to ${MAXIMUM_TRUSTED_PROXY_HOPS}`,
+      );
+    }
+    trustedProxyHops = Number(hopsText);
+  }
+
   return {
     environment: environment as DashboardEnvironment,
     accountStore: accountStore as AccountStoreKind,
     memorySeedPath,
     databaseSchema,
     trustForwardedFor: trust === 'true',
+    trustedProxyHops,
   };
 }

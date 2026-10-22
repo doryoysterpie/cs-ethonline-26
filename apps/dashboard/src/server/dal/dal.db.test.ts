@@ -97,6 +97,7 @@ describe('data-access layer against PostgreSQL', () => {
         memorySeedPath: null,
         databaseSchema: isolated.name,
         trustForwardedFor: false,
+        trustedProxyHops: 1,
       },
       stores,
       isolated.db,

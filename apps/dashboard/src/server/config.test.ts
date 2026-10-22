@@ -28,6 +28,7 @@ describe('dashboard configuration', () => {
       memorySeedPath: '/tmp/seed.json',
       databaseSchema: 'public',
       trustForwardedFor: false,
+      trustedProxyHops: 1,
     });
     expect(
       loadDashboardConfig({
@@ -35,7 +36,14 @@ describe('dashboard configuration', () => {
         DASHBOARD_DATABASE_SCHEMA: 'cas_test_ab',
         DASHBOARD_TRUST_FORWARDED_FOR: 'true',
       }),
-    ).toMatchObject({ databaseSchema: 'cas_test_ab', trustForwardedFor: true });
+    ).toMatchObject({
+      databaseSchema: 'cas_test_ab',
+      trustForwardedFor: true,
+      trustedProxyHops: 1,
+    });
+    expect(loadDashboardConfig({ ...base, DASHBOARD_TRUSTED_PROXY_HOPS: '2' })).toMatchObject({
+      trustedProxyHops: 2,
+    });
   });
 
   it('refuses every malformed or unsafe combination by rule, never by value', () => {
@@ -64,6 +72,11 @@ describe('dashboard configuration', () => {
     expect(codeOf({ ...base, DASHBOARD_TRUST_FORWARDED_FOR: 'yes' })).toBe(
       'trust_forwarded_for_invalid',
     );
+    for (const hops of ['0', '9', 'one', '-1', '1.5']) {
+      expect(codeOf({ ...base, DASHBOARD_TRUSTED_PROXY_HOPS: hops }), hops).toBe(
+        'trusted_proxy_hops_invalid',
+      );
+    }
     try {
       loadDashboardConfig({ ...base, DASHBOARD_DATABASE_SCHEMA: 'Public; DROP' });
     } catch (error) {
