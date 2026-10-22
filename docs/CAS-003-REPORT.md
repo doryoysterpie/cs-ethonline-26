@@ -250,6 +250,10 @@ CI on pull request 23 at the same commit: CodeQL, Analyze, PostgreSQL integratio
 chain pass; Verify was still running when this section was written and is read on the pull
 request. The diff is narrated in the hand-back that asks for the review.
 
+At the corrected head `ffbfb6b` (code at `44fc682`), 22 October 2026: a fresh clone from the
+remote, install from the lockfile, `verify` (1,078 offline, 31 tool) and `test:db` (296) all
+exit 0; CI run 39814933593 green on every job, Verify included, which closes review F5.
+
 ## 7. Independent review and correction (step 13, first round)
 
 Codex reviewed pull request 23 at `f49619f` (code at `50d5fd1`) on 22 October 2026:
