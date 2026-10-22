@@ -119,3 +119,11 @@ correction by merge. With both on `main`, the owner's halves of step 7 can be co
 recreated Railway service: `DASHBOARD_TRUST_FORWARDED_FOR=true`,
 `DASHBOARD_TRUSTED_PROXY_HOPS=1`, and the two-network proof that one lockout does not lock the
 other.
+
+## 6. Re-review of the correction (step 14, second round)
+
+Codex re-reviewed `e19449e` on 22 October 2026: **PASS**, no findings. The atomic
+`appendIfBelow` closes the race; both committed race tests finish with exactly 100 decisions.
+Record: `2026-10-22-cas-006-pr-17-correction-reaudit.md`. Steps 9 and 10 are therefore audited
+at the commit `main` carries. Pull request 18's delta was passed at `32e1357`; the owner's
+halves of step 7 remain, on the recreated Railway service.
