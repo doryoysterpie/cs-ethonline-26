@@ -112,7 +112,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     parsed = parseArguments(argv);
   } catch {
     stderr.write(
-      'usage: provision --username <name> --role <judge|editor|admin> [--expires-at <instant>] [--rotate]\n',
+      'usage: provision --username <name> --role <judge|editor|admin|owner> [--expires-at <instant>] [--rotate]\n',
     );
     return 2;
   }

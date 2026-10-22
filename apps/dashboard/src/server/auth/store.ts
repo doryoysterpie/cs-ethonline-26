@@ -68,6 +68,10 @@ export const AUDIT_EVENT_KINDS = [
   'evidence_decided',
   'draft_revision_saved',
   'story_selected',
+  'roundup_requested',
+  'roundup_completed',
+  'roundup_refused',
+  'roundup_edited',
   'otp_requested',
 ] as const;
 export type AuditEventKind = (typeof AUDIT_EVENT_KINDS)[number];

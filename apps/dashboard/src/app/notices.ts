@@ -7,6 +7,8 @@ const NOTICES: Readonly<Record<string, string>> = {
   saved: 'Saved.',
   recorded: 'Recorded.',
   selected: 'Selected for the issue.',
+  generated: 'Round-up generated; revisions 0 and 1 recorded.',
+  edited: 'Revision saved.',
   unselected: 'Set aside for this issue.',
   already_recorded: 'Already recorded: an identical action existed.',
   revoked: 'Sessions revoked.',

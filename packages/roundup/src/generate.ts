@@ -109,6 +109,15 @@ export async function generateRoundup(
     });
   } catch (error) {
     if (error instanceof RoundupError) throw error;
+    // A transport may be loaded as another module instance; its coded failure
+    // is honoured by code, never by class identity, and never by its text.
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code === 'model_refused' || code === 'response_invalid') {
+      throw new RoundupError(
+        code,
+        code === 'model_refused' ? 'the model declined the request' : 'the response was not JSON',
+      );
+    }
     throw new RoundupError('model_failed', 'the model request failed');
   }
   const slots = validateResponse(response.raw, input, loaded.template);

@@ -13,6 +13,7 @@ import {
 import { insertSynthetic, syntheticAccount } from '../../test/synthetic-accounts.ts';
 import { openMemoryStores } from '../auth/memory-store.ts';
 import { openPostgresStores } from '../auth/postgres-store.ts';
+import { recordedTransport, sectionOf, loadTemplate } from '@cas/roundup';
 import { ROLES, type Role } from '../auth/roles.ts';
 import type { Principal } from '../auth/session.ts';
 import { isDashboardError } from '../errors.ts';
@@ -23,7 +24,9 @@ import {
   MAX_QUEUE_DECISIONS_PER_ENTRY,
   mergeIncidentsAction,
   reviewQueueEntry,
+  generateRoundup,
   saveDraftRevision,
+  saveRoundupRevision,
   selectStory,
   splitIncidentAction,
 } from './mutate.ts';
@@ -36,6 +39,7 @@ import {
   incidentDetail,
   incidentExplorer,
   reviewQueue,
+  roundupView,
   weekList,
   weekTable,
 } from './read.ts';
@@ -808,6 +812,355 @@ describe('data-access layer against PostgreSQL', () => {
       ).toBe('validation');
       // The machine tables are untouched by selection.
       expect(await fingerprint()).toBe(machineBefore);
+    });
+  });
+
+  describe('the round-up (CAS-004)', () => {
+    async function persistentRuntime(
+      model: ReturnType<typeof recordedTransport> | null,
+      schema: IsolatedSchema = isolated,
+    ) {
+      const persistent = openPostgresStores(schema.db);
+      const rt = createRuntime(
+        {
+          environment: 'local',
+          accountStore: 'memory',
+          memorySeedPath: null,
+          databaseSchema: schema.name,
+          trustForwardedFor: false,
+          trustedProxyHops: 1,
+        },
+        persistent,
+        schema.db,
+        { model },
+      );
+      const persisted = {} as Record<Role, Principal>;
+      for (const role of ROLES) {
+        const account = await syntheticAccount(role);
+        await insertSynthetic(persistent, account);
+        const sessionId = randomUUID();
+        await persistent.sessions.insert({
+          id: sessionId,
+          accountId: account.record.id,
+          tokenHash: randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64),
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          absoluteExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          revokedAt: null,
+          revokedReason: null,
+        });
+        persisted[role] = {
+          accountId: account.record.id,
+          username: account.record.username,
+          normalizedEmail: null,
+          role,
+          sessionId,
+          sessionToken: 'c'.repeat(43),
+        };
+      }
+      return { rt, persisted, persistent };
+    }
+
+    /** A model answer that reformats the selection exactly as the contract demands. */
+    function goldenFor(snapshot: {
+      incidents: readonly { rows: readonly { url: string; sourceRowId: string }[] }[];
+      flagged: readonly { headline: string; reason: string; disposition: string }[];
+      extras: string;
+    }) {
+      return {
+        rundown: snapshot.incidents.map((incident, i) => ({
+          headline: `Reformatted Headline ${i + 1}`,
+          summary:
+            'Brace yourself: the organization named in the sources saw its systems disrupted.',
+          sources: incident.rows.map((row) => row.url),
+          citations: incident.rows.map((row) => row.sourceRowId),
+        })),
+        flagged: snapshot.flagged.map((entry) => ({
+          headline: entry.headline,
+          reason: entry.reason,
+          disposition: entry.disposition,
+        })),
+        extras: snapshot.extras,
+      };
+    }
+
+    it('generates for the owner only, records both revisions, the ledger and the audit events, and refuses a second generation', async () => {
+      const week = await seedWeek(isolated.db);
+      const loaded = await loadTemplate();
+      const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+      // The transport sees the request and answers from it, so its sources and
+      // citations are exactly the selection's.
+      type Seen = {
+        incidents: { rows: { url: string; sourceRowId: string }[] }[];
+        flagged: { headline: string; reason: string; disposition: string }[];
+        extras: string;
+      };
+      const captured: { request: Seen | null } = { request: null };
+      const transport = {
+        async generate(request: { user: string; model: string; maxOutputTokens: number }) {
+          const seen = JSON.parse(request.user) as Seen;
+          captured.request = seen;
+          expect(request.model).toBe('claude-opus-5-5');
+          expect(request.maxOutputTokens).toBe(16_000);
+          expect(request.user).not.toContain('next week');
+          return {
+            raw: goldenFor(seen),
+            usage: { inputTokens: 900, outputTokens: 300 },
+            model: request.model,
+          };
+        },
+      };
+      const { rt, persisted, persistent } = await persistentRuntime(transport);
+      // Select the first two incidents; set one aside with a note (the omitted entry).
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      const [first, second, third] = table.rows;
+      expect(first && second).toBeTruthy();
+      for (const row of [first, second]) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: row?.incidentId ?? '',
+          state: 'selected',
+          note: null,
+        });
+      }
+      if (third !== undefined) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: third.incidentId,
+          state: 'unselected',
+          note: 'not this week',
+        });
+      }
+      const input = {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedTemplateHash: loaded.hash,
+      };
+      for (const role of ['judge', 'editor', 'admin'] as const) {
+        expect(await kindOf(generateRoundup(rt, persisted[role], input))).toBe('authorization');
+      }
+      const before = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(before).toMatchObject({
+        canGenerate: true,
+        canEdit: false,
+        modelConfigured: true,
+        revisions: [],
+        latest: null,
+        selectedIncidents: 2,
+      });
+      const generated = await generateRoundup(rt, persisted.owner, input);
+      expect(generated).toMatchObject({
+        revision: 1,
+        inputTokens: 900,
+        outputTokens: 300,
+        costMicrodollars: 900 * 4 + 300 * 20,
+      });
+      expect(captured.request?.incidents).toHaveLength(2);
+      expect(captured.request?.extras).toBe(marker);
+      if (third !== undefined)
+        expect(
+          captured.request?.flagged.some(
+            (f) => f.reason === 'not this week' && f.disposition === 'omit',
+          ),
+        ).toBe(true);
+      const after = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(after.revisions.map((r) => [r.revision, r.kind])).toEqual([
+        [0, 'deterministic'],
+        [1, 'generated'],
+      ]);
+      expect(after.revisions[1]?.provenance).toMatchObject({
+        model: 'claude-opus-5-5',
+        inputTokens: 900,
+        outputTokens: 300,
+        costMicrodollars: 9_600,
+        templateVersion: 'rundown-template@1',
+      });
+      expect(after.latest?.revision).toBe(1);
+      expect(after.latest?.markdown).toContain('**Reformatted Headline 1**');
+      expect(after.canGenerate).toBe(false);
+      expect(after.canEdit).toBe(true);
+      expect(after.spendThisMonthMicrodollars).toBe(9_600);
+      // The ledger and the audit log carry counts and codes, never content.
+      const ledger = await isolated.db.withClient((c) =>
+        c.query<{ outcome: string; cost: string }>(
+          `SELECT outcome, cost_microdollars::text AS cost FROM model_calls WHERE week_run_id = $1`,
+          [week.weekRunId],
+        ),
+      );
+      expect(ledger.rows).toEqual([{ outcome: 'completed', cost: '9600' }]);
+      const events = (await persistent.audit.list(100)).filter((e) =>
+        e.kind.startsWith('roundup_'),
+      );
+      expect(events.map((e) => e.kind).sort()).toEqual(['roundup_completed', 'roundup_requested']);
+      expect(events.find((e) => e.kind === 'roundup_completed')?.code).toBe(
+        'cost_9600_in_900_out_300',
+      );
+      expect(events.every((e) => !e.code.includes('Headline'))).toBe(true);
+      // One generation per week and category; the owner edits instead.
+      expect(await kindOf(generateRoundup(rt, persisted.owner, input))).toBe('validation');
+      // A judge reads nothing here; an editor reads the page but cannot edit.
+      expect(await kindOf(roundupView(rt, persisted.judge, week.weekRunId, 'cyberattack'))).toBe(
+        'authorization',
+      );
+      expect((await roundupView(rt, persisted.editor, week.weekRunId, 'cyberattack')).canEdit).toBe(
+        false,
+      );
+    });
+
+    it('fails closed without a credential, refuses over the cap and on a template hash mismatch, and writes nothing', async () => {
+      // Its own schema: the ledger is append-only, so the cap row written here must
+      // not outlive the test.
+      const own = await openMigratedSchema();
+      const week = await seedWeek(own.db);
+      const loaded = await loadTemplate();
+      const { rt: noModel, persisted } = await persistentRuntime(null, own);
+      const table = await weekTable(
+        noModel,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      const row = table.rows[0];
+      await selectStory(noModel, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: row?.incidentId ?? '',
+        state: 'selected',
+        note: null,
+      });
+      const input = {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedTemplateHash: loaded.hash,
+      };
+      let caught: unknown;
+      try {
+        await generateRoundup(noModel, persisted.owner, input);
+      } catch (error) {
+        caught = error;
+      }
+      expect(
+        isDashboardError(caught) &&
+          caught.kind === 'unavailable' &&
+          caught.code === 'model_key_missing',
+      ).toBe(true);
+      expect(
+        (await roundupView(noModel, persisted.owner, week.weekRunId, 'cyberattack')).revisions,
+      ).toEqual([]);
+      // A transport that must not be reached when the cap or the template refuses.
+      let calls = 0;
+      const counting = {
+        async generate() {
+          calls += 1;
+          throw new Error('must not be called');
+        },
+      };
+      const { rt: withModel, persisted: owners } = await persistentRuntime(counting, own);
+      expect(
+        await kindOf(
+          generateRoundup(withModel, owners.owner, {
+            ...input,
+            expectedTemplateHash: 'f'.repeat(64),
+          }),
+        ),
+      ).toBe('validation');
+      await own.db.withTransaction((tx) =>
+        tx.query(
+          `INSERT INTO model_calls (id, kind, week_run_id, category, model, input_tokens, output_tokens, cost_microdollars, outcome, code, actor_account_id, created_at)
+           VALUES ($1, 'roundup', $2, 'cyberattack', 'claude-opus-5-5', 1, 1, 25000000, 'completed', 'completed', $3, now())`,
+          [randomUUID(), week.weekRunId, owners.owner.accountId],
+        ),
+      );
+      expect(await kindOf(generateRoundup(withModel, owners.owner, input))).toBe('validation');
+      expect(calls).toBe(0);
+      const refusals = await own.db.withClient((c) =>
+        c.query<{ outcome: string; code: string }>(
+          `SELECT outcome, code FROM model_calls WHERE week_run_id = $1 AND outcome <> 'completed' ORDER BY created_at`,
+          [week.weekRunId],
+        ),
+      );
+      expect(refusals.rows.map((r) => r.code)).toEqual([
+        'model_key_missing',
+        'template_hash_mismatch',
+        'spend_cap_exceeded',
+      ]);
+      expect(refusals.rows.every((r) => r.outcome === 'refused')).toBe(true);
+      await own.close();
+    });
+
+    it('lets the owner edit as the next revision under the expected one, and refuses everyone else', async () => {
+      const week = await seedWeek(isolated.db);
+      const loaded = await loadTemplate();
+      const transport = {
+        async generate(request: { user: string; model: string }) {
+          const seen = JSON.parse(request.user) as {
+            incidents: { rows: { url: string; sourceRowId: string }[] }[];
+            flagged: { headline: string; reason: string; disposition: string }[];
+            extras: string;
+          };
+          return {
+            raw: goldenFor(seen),
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: request.model,
+          };
+        },
+      };
+      const { rt, persisted } = await persistentRuntime(transport);
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: table.rows[0]?.incidentId ?? '',
+        state: 'selected',
+        note: null,
+      });
+      await generateRoundup(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedTemplateHash: loaded.hash,
+      });
+      const edit = {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedRevision: 1,
+        markdown: '## Rundown\n\n**Edited**\n\nThe owner rewrote this.\n',
+      };
+      for (const role of ['judge', 'editor', 'admin'] as const) {
+        expect(await kindOf(saveRoundupRevision(rt, persisted[role], edit))).toBe('authorization');
+      }
+      expect(await saveRoundupRevision(rt, persisted.owner, edit)).toEqual({ revision: 2 });
+      expect(await kindOf(saveRoundupRevision(rt, persisted.owner, edit))).toBe('conflict');
+      expect(
+        await kindOf(
+          saveRoundupRevision(rt, persisted.owner, {
+            ...edit,
+            expectedRevision: 2,
+            markdown: 'x\u0000y',
+          }),
+        ),
+      ).toBe('validation');
+      const view = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(view.latest).toEqual({ revision: 2, markdown: edit.markdown });
+      expect(view.revisions.map((r) => r.kind)).toEqual(['deterministic', 'generated', 'edited']);
+      expect(view.revisions[2]?.savedBy).toBe(persisted.owner.username);
     });
   });
 });

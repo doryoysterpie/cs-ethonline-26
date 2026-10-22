@@ -49,6 +49,24 @@ const MATRIX: Readonly<Record<(typeof ROLES)[number], readonly string[]>> = {
     'admin:sessions',
     'view:audit',
   ],
+  owner: [
+    'view:command_center',
+    'view:incidents',
+    'view:anomaly',
+    'view:evidence',
+    'view:draft',
+    'view:queue',
+    'view:source_text',
+    'view:notes',
+    'review:queue',
+    'review:incidents',
+    'review:evidence',
+    'edit:draft',
+    'select:stories',
+    'generate:roundup',
+    'generate:article',
+    'edit:output',
+  ],
 };
 
 describe('roles and capabilities', () => {

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type * as DatabaseModule from '@cas/database';
+import type * as RoundupModule from '@cas/roundup';
 import type * as WorkerModule from '@cas/worker';
 
 /**
@@ -21,6 +22,8 @@ import type * as WorkerModule from '@cas/worker';
 export interface WorkspacePackages {
   readonly database: typeof DatabaseModule;
   readonly worker: typeof WorkerModule;
+  /** Resolves its template from `import.meta.url`, so it loads the same way. */
+  readonly roundup: typeof RoundupModule;
 }
 
 let loaded: Promise<WorkspacePackages> | null = null;
@@ -30,7 +33,8 @@ export function workspace(): Promise<WorkspacePackages> {
     loaded = Promise.all([
       import(/* turbopackIgnore: true */ /* webpackIgnore: true */ '@cas/database'),
       import(/* turbopackIgnore: true */ /* webpackIgnore: true */ '@cas/worker'),
-    ]).then(([database, worker]) => ({ database, worker }));
+      import(/* turbopackIgnore: true */ /* webpackIgnore: true */ '@cas/roundup'),
+    ]).then(([database, worker, roundup]) => ({ database, worker, roundup }));
     loaded.catch(() => {
       loaded = null;
     });

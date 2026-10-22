@@ -27,6 +27,7 @@ import type {
   IncidentExplorerDto,
   PrincipalDto,
   ReviewQueueDto,
+  RoundupViewDto,
   WeekListDto,
   WeekRunDto,
   WeekTableDto,
@@ -788,6 +789,7 @@ export async function weekTable(
       search: wantedSearch,
       sort: wantedSort,
       canSelect: holds(principal, 'select:stories'),
+      canViewRoundup: holds(principal, 'view:draft'),
       rows: rows.map((row) => {
         const selection = selections.get(row.incidentId) ?? null;
         return {
@@ -813,6 +815,103 @@ export async function weekTable(
                 },
         };
       }),
+    };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}
+
+// ------------------------------------------------------------ the round-up (CAS-004)
+
+const SELECTION_ROWS = 10_000;
+
+/** The UTC month the cap sums over: [start, next month). */
+export function monthBounds(now: Date): { readonly from: string; readonly to: string } {
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
+/**
+ * The round-up page: the revisions of one week and category, the latest
+ * body, the month's spend against the cap, and what this principal may do.
+ * `view:draft` reads it; generation and editing are the owner's (D34, D39).
+ */
+export async function roundupView(
+  runtime: Runtime,
+  who: Principal | null,
+  weekRunId: unknown,
+  category: unknown,
+): Promise<RoundupViewDto> {
+  const principal = requireCapability(who, 'view:draft');
+  const id = uuid(weekRunId, 'weekRunId');
+  const packages = await workspace();
+  const { getWeekRun, listRoundupRevisions, listSelectedRows, spendBetween } = packages.database;
+  const { loadTemplate, MONTHLY_CAP_MICRODOLLARS } = packages.roundup;
+  try {
+    const week = await runtime.database.withClient((client) => getWeekRun(client, id));
+    if (week === null) {
+      throw new DashboardError('not_found', 'week_run_not_found', 'No week run with that id.');
+    }
+    const wantedCategory =
+      category === undefined || category === null || category === ''
+        ? week.categories[0]
+        : category;
+    if (typeof wantedCategory !== 'string' || !week.categories.includes(wantedCategory)) {
+      throw new DashboardError(
+        'validation',
+        'category_not_in_week',
+        'That category is not one this week covered.',
+      );
+    }
+    const loaded = await loadTemplate();
+    const revisions = await runtime.database.withClient((client) =>
+      listRoundupRevisions(client, week.id, wantedCategory),
+    );
+    const selected = await runtime.database.withClient((client) =>
+      listSelectedRows(client, week.id, wantedCategory, SELECTION_ROWS),
+    );
+    const bounds = monthBounds(new Date());
+    const spent = await runtime.database.withClient((client) =>
+      spendBetween(client, bounds.from, bounds.to),
+    );
+    const accounts = new Map<string, string>();
+    for (const account of await runtime.stores.accounts.list())
+      accounts.set(account.id, account.username ?? account.normalizedEmail ?? account.id);
+    const latest = revisions[revisions.length - 1] ?? null;
+    return {
+      week: weekRunDto(week),
+      category: wantedCategory,
+      templateVersion: loaded.template.version,
+      templateHash: loaded.hash,
+      selectedIncidents: new Set(selected.map((row) => row.incidentId)).size,
+      revisions: revisions.map((revision) => ({
+        revision: revision.revision,
+        kind: revision.kind,
+        savedBy: accounts.get(revision.savedByAccountId) ?? 'unknown',
+        savedAt: revision.createdAt,
+        provenance:
+          revision.provenance === null
+            ? null
+            : {
+                model: revision.provenance.model,
+                promptVersion: revision.provenance.promptVersion,
+                templateVersion: revision.provenance.templateVersion,
+                inputDigest: revision.provenance.inputDigest,
+                inputTokens: revision.provenance.inputTokens,
+                outputTokens: revision.provenance.outputTokens,
+                costMicrodollars: revision.provenance.costMicrodollars,
+              },
+      })),
+      latest: latest === null ? null : { revision: latest.revision, markdown: latest.markdown },
+      spendThisMonthMicrodollars: spent,
+      capMicrodollars: MONTHLY_CAP_MICRODOLLARS,
+      modelConfigured: runtime.model !== null,
+      canGenerate:
+        holds(principal, 'generate:roundup') &&
+        week.status === 'completed' &&
+        revisions.length === 0,
+      canEdit: holds(principal, 'edit:output') && revisions.length > 0,
     };
   } catch (error) {
     throw mapFailure(error, packages);

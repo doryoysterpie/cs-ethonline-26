@@ -34,7 +34,7 @@ export interface NewRoundupRevision {
   readonly createdAt: string;
 }
 
-export interface RoundupRevisionRecord extends NewRoundupRevision {}
+export type RoundupRevisionRecord = NewRoundupRevision;
 
 export interface NewModelCall {
   readonly id: string;
