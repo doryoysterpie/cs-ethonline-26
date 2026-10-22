@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, open, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, open, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -423,5 +423,38 @@ describe('the default test suite is offline by construction', () => {
       },
     );
     expect(called).toBe(true);
+  });
+});
+
+describe('the repository check resolves real paths (CAS-006, release blocker 6)', () => {
+  it('refuses a key reached through a directory link that lands inside the repository', async () => {
+    if (process.platform === 'win32') return;
+    const inside = path.join(directory, 'keys');
+    await mkdir(inside);
+    await writeKey(path.join(inside, 'key.json'), syntheticKeyFile());
+    const link = path.join(outside, 'linked-keys');
+    await symlink(inside, link, 'dir');
+    let caught: unknown = null;
+    try {
+      await loadServiceAccountCredential(path.join(link, 'key.json'), {
+        repositoryRoot: directory,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(code(caught)).toBe('credential_inside_repository');
+  });
+
+  it('accepts a key reached through a directory link that lands outside the repository', async () => {
+    if (process.platform === 'win32') return;
+    const real = path.join(outside, 'real-keys');
+    await mkdir(real);
+    await writeKey(path.join(real, 'key.json'), syntheticKeyFile());
+    const link = path.join(outside, 'link-keys');
+    await symlink(real, link, 'dir');
+    const credential = await loadServiceAccountCredential(path.join(link, 'key.json'), {
+      repositoryRoot: directory,
+    });
+    expect(credential.clientEmail).toContain('@');
   });
 });

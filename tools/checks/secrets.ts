@@ -43,6 +43,30 @@ export const SECRET_RULES: readonly SecretRule[] = [
     rule: 'hedera_ed25519_private_key',
     pattern: /\b302e020100300506032b657004220420[0-9a-f]{64}\b/iu,
   },
+  // Google Sheets intake (CAS-006, release blocker 6): the one authorized
+  // workbook is named by a digest, never by its identifier or its URL, and
+  // the service account's address and key never appear in a tracked file.
+  // Tests and the subprocess harness build synthetic ones on purpose.
+  {
+    rule: 'google_sheets_url',
+    pattern: /docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}/u,
+    skipTests: true,
+  },
+  {
+    rule: 'google_sheets_id_assignment',
+    pattern: /GOOGLE_SHEETS_SPREADSHEET_ID\s*[=:]\s*['"]?[A-Za-z0-9_-]{20,}/u,
+    skipTests: true,
+  },
+  {
+    rule: 'google_service_account_email',
+    pattern: /\b[a-z0-9._-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com\b/iu,
+    skipTests: true,
+  },
+  {
+    rule: 'google_service_account_json',
+    pattern: /"type"\s*:\s*"service_account"/u,
+    skipTests: true,
+  },
   {
     rule: 'credential_in_url',
     pattern: /\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@'"`]+:[^\s/@'"`]+@/iu,
@@ -62,14 +86,15 @@ export const SECRET_RULES: readonly SecretRule[] = [
  * Two rules — `credential_in_url` and `secret_assignment` — deliberately skip
  * these, because a URL with a synthetic password and a secret-shaped
  * assignment are the very things a credential-policy or output-safety test
- * constructs. The pattern covers `*.test.ts` and the support modules the tests
- * import, which every package's `tsconfig.build.json` excludes from its build
- * output: a value in one of them cannot reach a shipped artefact.
+ * constructs. The pattern covers `*.test.ts`, the support modules the tests
+ * import, and the `-harness.mjs` scripts a test spawns, none of which any
+ * package's `tsconfig.build.json` ships: a value in one of them cannot reach a
+ * shipped artefact.
  *
  * The high-precision token rules above are not skipped for any file. A real
  * GitHub, AWS, Stripe or Anthropic token is a finding wherever it appears.
  */
-const TEST_FILE = /(?:\.test\.ts|(?:^|\/)(?:test-support|db-support)\.ts)$/u;
+const TEST_FILE = /(?:\.test\.ts|(?:^|\/)(?:test-support|db-support)\.ts|-harness\.mjs)$/u;
 
 /**
  * Lines a test constructs as an attack input, allowed by SHA-256 of the exact
