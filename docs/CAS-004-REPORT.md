@@ -357,3 +357,8 @@ Counts at the corrected head, from the runner, 22 October 2026: `verify` exit 0,
 tests (round-up 15, dashboard 84, worker 275), 31 tool tests; `test:db` exit 0, 304 (database
 104, worker 119, dashboard 32, mcp-server 49). The clean-clone reproduction and the CI run at
 the corrected head are recorded on the tracker.
+CI at `9def38c` was green on every job; code scanning flagged one new alert in the
+correction's own code, a polynomial regular expression in `text.ts` (the URL detection over a
+model-written slot). Both URL scans are rewritten as single passes over the text (`includes`,
+`indexOf`, a fixed-width word-boundary pattern) in the commit that follows, with the same
+tests.
