@@ -14,8 +14,8 @@ allowBuilds:
 # reference these with "catalog:" so the lockfile records one exact version.
 catalog:
   '@eslint/js': 10.0.1
-  '@modelcontextprotocol/client': 2.0.0
-  '@modelcontextprotocol/server': 2.0.0
+  '@modelcontextprotocol/client': 2.3.1
+  '@modelcontextprotocol/server': 2.3.1
   '@playwright/test': 1.63.0
   '@types/hast': 3.0.5
   '@types/node': 24.13.3
@@ -24,13 +24,13 @@ catalog:
   '@types/react-dom': 19.2.7
   argon2: 0.45.1
   csv-parse: 7.0.2
-  eslint: 10.9.1
+  eslint: 10.13.0
   hast-util-sanitize: 5.0.2
   hast-util-to-jsx-runtime: 2.3.6
   htmlparser2: 12.0.0
   mdast-util-from-markdown: 2.0.3
   mdast-util-to-hast: 13.2.1
-  next: 16.3.4
+  next: 16.3.8
   pg: 8.23.0
   prettier: 3.9.6
   react: 19.2.8
@@ -39,7 +39,7 @@ catalog:
   turbo: 2.10.12
   typescript: 6.0.3
   typescript-eslint: 8.69.0
-  vitest: 4.1.11
+  vitest: 4.1.12
   zod: 4.5.4
 
 # Supply-chain control: refuse to resolve any version published less than
@@ -48,3 +48,13 @@ catalog:
 # docs/DECISIONS.md D13: exact package name, recorded before the dependency
 # lands, never a pattern and never pre-approved.
 minimumReleaseAge: 1440
+
+# Exact pins for transitive packages whose parents kept an old resolution
+# after their own update (advisories closed 2026-10-22, DECISIONS.md D29
+# amendment). One package, one exact version each; remove an entry once the
+# parent's own resolution reaches the patched version.
+overrides:
+  'brace-expansion@5': 5.0.12
+  'source-map-js@1': 1.2.2
+  'sharp@0.35': 0.35.5
+  'vite@8': 8.2.4
