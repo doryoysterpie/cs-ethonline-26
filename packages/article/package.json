@@ -1,0 +1,29 @@
+{
+  "name": "@cas/article",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The article contract (CAS-005): the input built from a reading of the selection's sources, the slot schema, the prompt contract for the reporter register (D41), the validation of a model response against the selection and the texts read, the Markdown export and the cost rules. Pure: no network, no model client, no database.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
