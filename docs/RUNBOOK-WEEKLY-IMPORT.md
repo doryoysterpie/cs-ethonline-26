@@ -139,3 +139,30 @@ without the store it refuses with `persistent_accounts_required`. A second gener
 same week and category is refused (`roundup_already_generated`); edit instead. When the month's
 recorded spend plus the request's worst case would pass the cap, the request is refused
 (`spend_cap_exceeded`) and recorded as such; the cap resets with the calendar month.
+
+## 9. The article (CAS-005: the owner, from the dashboard)
+
+The article page is linked from the sift table beside the round-up
+(`/week/<week run>/article?category=cyberattack`, or `crypto`). Two steps, both the `owner`
+role's alone.
+
+**Read sources.** The dashboard fetches each selected source's page under the fetch policy: only
+those URLs, each checked and resolved before any connection, redirects re-checked, bodies bounded
+at 2 MiB, 15 seconds per page and 5 minutes for the whole reading, four at a time, `robots.txt`
+obeyed. The page then shows what was read in full, partly and not, with the publisher and the
+reason code for each source not read. The text is held in memory for ten minutes; nothing is
+written and nothing is sent to the model yet. Read again if the reading expires or the selection
+changes.
+
+**Write the article.** The second control names the reading; the dashboard sends the selected
+stories' recorded fields and the texts read, and nothing else, to the model D9 resolved for the
+article, once, and records revision 1 with the token counts, the cost, the word count, the naming
+basis under D4 and the reading record. The page shows the Markdown with numbered sources and the
+sources not read; the owner edits in place and saves later revisions, then copies the text out by
+hand. Nothing is published by the dashboard.
+
+The reading needs `DASHBOARD_PUBLIC_URL`, the dashboard's own `https` address, which the user
+agent carries; without it the control reports `reader_not_configured`. Writing needs
+`ANTHROPIC_API_KEY` and the PostgreSQL account store, as the round-up does. The article's USD 25
+monthly cap is separate from the round-up's; a request whose worst case would pass it is refused
+(`spend_cap_exceeded`) and recorded.

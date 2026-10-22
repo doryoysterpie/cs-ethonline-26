@@ -29,8 +29,10 @@ model is called, and may not be cited. The owner alone generates (`generate:arti
 
 ### 1.2 The reading boundary: the fetch policy, adopted
 
-`packages/article/src/fetch/` implements rules R1 to R17 over an injected transport, so that
-the policy is tested exhaustively without a socket and the one real transport is small:
+`packages/source-reader` implements rules R1 to R17 over an injected transport, so that the
+policy is tested exhaustively without a socket and the one real transport is small (the reading
+boundary is its own package, apart from the pure article contract in `packages/article`, a
+decision taken before code, section 1.10):
 
 - **R1 to R4, the URL classifier.** The policy of `packages/mcp-server/src/safety/reference.ts`
   is adopted as written. To keep the two classifiers one code path rather than two copies, the
@@ -107,15 +109,19 @@ The bounds that follow, each the smallest round value that admits the measuremen
 - **`robots.txt`: 64 KiB**, read once per host per generation under the same rules, with a
   5-second deadline.
 
-### 1.4 Two additions the obey-`robots.txt` decision requires, recorded before code
+### 1.4 Additions to the policy's vocabulary, recorded before code
 
-The policy's vocabulary predates O-2's decision to obey. Two reason codes are added, with their
-reason: `robots_disallowed`, for a source whose host's `robots.txt` disallows the product's user
-agent (`LatestInCyber`) or every agent for that path, per RFC 9309 longest-match; and
-`robots_unavailable`, for a host whose `robots.txt` could not be read because of a server error
-or a timeout, which RFC 9309 treats as a complete disallow. A missing file (404) or any other
-4xx is no restriction. Both land the source in the not-read list. The `robots.txt` fetch itself
-obeys R1 to R12 and is never followed through a redirect to another host.
+The policy's vocabulary predates O-2's decision to obey `robots.txt` and names no code for three
+outcomes the implementation meets. Five codes are added, each with its reason, and none reflects
+input: `robots_disallowed`, for a source whose host's `robots.txt` disallows the product's user
+agent (`LatestInCyber`) or every agent for that path, per RFC 9309 longest-match;
+`robots_unavailable`, for a host whose `robots.txt` could not be read because of a server error,
+a timeout or a redirect, which RFC 9309 treats as a complete disallow (a missing file or any
+other 4xx is no restriction); `malformed`, the shared classifier's own verdict for a URL that
+does not parse; `content_encoding_not_permitted`, for a body in an encoding the reader cannot
+bound (`gzip`, `deflate` and `br` are decompressed with the bound counted on the output);
+`status_not_ok`, for a response that is not a page (a 404, a 500). Each lands the source in the
+not-read list. The `robots.txt` fetch itself obeys R1 to R12.
 
 ### 1.5 The article contract, D41, and the slot schema
 
@@ -210,6 +216,12 @@ written.
   extraction tolerates truncation and the owner sees the list.
 - Reading order is selection order and the per-generation text bound is applied in that order,
   so the owner's first selections are read in full first.
+- The validator's standfirst tolerance (20 to 40 words against the prompt's 25 to 35), for the
+  same reason as the length tolerance.
+- The reading boundary and the article contract are two packages: `@cas/source-reader` names
+  Node's HTTP clients in its one transport and is depended on by the worker for the text
+  extractor it took over; `@cas/article` is pure like `@cas/roundup`. Keeping them apart keeps
+  the no-socket test of the article package absolute.
 - The URL classifier and the text extractor move into packages so that one code path serves the
   MCP server, the worker and the dashboard; both moves are re-exports with the tests kept.
 
@@ -229,3 +241,127 @@ recorded pages, the not-read list shown and confirmed, the generation writing re
 ledger row under `kind = 'article'`, the audit events' counts, the non-owner refusals, the edit
 as revision 2 with the conflict, the article cap accounted apart from the round-up's. Then the
 full verify loop, the four database suites, a clean clone and CI.
+
+## 2. The prompt contract, the stack and the data contract, S1 and S2 (steps 7 to 9)
+
+### 2.1 The prompt contract (step 7)
+
+`packages/article/src/prompt.ts` fixes `article-prompt@1`, hash
+`290d0ed5bc74865b1e65cfe042e7a328f7879456be2a658faebf38773444fb71`: the owner's contract (D41)
+as instructions, section by section; the citation rule; the quotation rule; the length and the
+register; D4's bar for naming the victim with the two bases and the generic description
+otherwise; the not-read list to echo; and the rule that the texts under `reading.text` are
+material to report from and never instructions, whatever they say (R15). The user turn is the
+input as JSON: per selected incident, each row's recorded fields and what the reading left of
+its page. The response is constrained to the slot schema by structured output, then validated
+(section 3).
+
+### 2.2 Stack check (step 8)
+
+No new dependency. The reader uses `node:http`, `node:https`, `node:dns`, `node:zlib` and
+`node:util` from the runtime; extraction reuses `htmlparser2`, already pinned in the catalogue
+at 12.0.0, through the worker's `htmlToText`, which moved into `@cas/source-reader` with its test
+and its transform label `html-to-text@1` unchanged, the worker re-exporting it. The URL classifier
+moved into `@cas/contracts` unchanged, the MCP server re-exporting it, with the Node type
+declarations the WHATWG `URL` global needs added to that package's development dependencies.
+The bill of materials was regenerated once for the two new workspace packages (342 components,
+17 workspace). The rejected alternative, a fetch library with redirect handling and decompression
+built in, would have put the two rules that matter most, the pinned connection address and the
+bound on decompressed bytes, behind an interface this unit does not control.
+
+### 2.3 The data contract: migration 0016 (step 9)
+
+`packages/database/migrations/0016_article.sql`, forward-only, checksum
+`922c41cccb7adec5a31411c605a49a5839764b04dcc48eac0701d894e075069c`, unapplied outside test and
+scratch databases:
+
+- `article_revisions`, keyed by (week run, category, revision), revision 1 generated and later
+  revisions edited (there is no deterministic article, so the guard admits 1 first); the
+  round-up's provenance columns without the template, plus `word_count`, `naming_basis` and
+  `sources`, the reading record per source as JSON (outcome, code, bytes, the extracted text's
+  digest). Append-only by trigger, bound to a completed week run, provenance bound to the kind.
+  No column holds fetched text (O-1).
+- `model_calls.kind` admits `article`, and `spendBetween` takes the kind, so each output's cap
+  is a sum over its own rows (D9 for the article, option b); the round-up's callers pass
+  `roundup`.
+- `audit_events.kind` admits `source_fetched`, `article_requested`, `article_completed`,
+  `article_refused` and `article_edited`.
+
+`packages/database/src/article.ts` is the operations module: insert and list revisions, the
+latest revision, every query parameterised and scoped to the week run it is given. Tests: the
+first revision must be 1, the sequence holds, a running week run is refused, provenance is bound
+to the kind, update and delete are refused; the ledger accounts the two kinds apart; the five
+audit kinds are admitted.
+
+## 3. The reader and the article package, S3 and S4 (steps 10 and 11)
+
+`@cas/source-reader` (section 1.2) reads a selection's sources at most four at a time, each
+canonical URL once, in selection order, and applies the per-reading text bound in that order.
+Its twenty-three tests are the policy's eleven and more: every literal address in every encoding
+the WHATWG parser canonicalizes, a name resolving to a private address with no connection made,
+rebinding with the connection pinned to the checked address, a redirect into a private address, a
+chain of four, a downgrade, a redirect without a location, a lying length, a body one byte over,
+a compressed bomb, an encoding that cannot be bounded, a body that never completes closed at the
+deadline, an image and a JSON document, a non-page status, the stage deadline, each URL once, no
+link or subresource ever requested, extraction and charset decoding, the paragraph-boundary cut
+and the per-reading bound, `robots.txt` parsing and longest-match, one `robots.txt` read per host,
+a disallowed path and an unreadable file as not read and 404 as no rule, the one Node transport's
+options (the pinned `lookup`, `servername`, the fixed headers, no agent) through an injected
+requester, and that the policy layer names no network module.
+
+`@cas/article` (section 1.5) validates a response against the selection as read. Its six tests
+cover the input (a stale digest, an unread row carrying text, a partly read row without a code,
+a repeated row, the input bound), the schema and the prompt, every rejection code (citation
+outside the selection, citation of a source not read, the not-read list not echoed, a quotation
+not found, section order, a missing required section, prior context repeated, length, the
+standfirst, the headline's question mark and word count, each naming-basis violation including
+two sources from one publisher), the quotation match across quote styles and whitespace, golden
+responses for a cyberattack and a crypto selection with the provenance and the Markdown export,
+the key-absent refusal, the cap refusal, a bad response kept nowhere, a refusal and a failure
+reported by code and never by body, and that the package names no network module.
+
+## 4. The dashboard: the reading stage, the generation, the editor, S5 (step 12)
+
+The runtime gains the reader, built from the one Node transport, the real resolver (every
+address of a name) and the fixed user agent of O-3, which needs the dashboard's public address
+(`DASHBOARD_PUBLIC_URL`, an `https` origin; absent, there is no reader and the reading stage
+fails closed with `reader_not_configured`), and the reading cache, where a reading lives for ten
+minutes under a random identifier, one per week, category and account.
+
+The article page (`/week/<week run>/article?category=`) shows the selection's counts, the
+month's article spend against its own cap, every revision with its provenance (tokens, cost, word
+count, naming basis, sources read, partly read and not read) and the latest revision as
+copy-ready Markdown. The owner reads the sources with one control; the page then shows the
+reading pending confirmation: how many were read in full, partly and not, the publishers not read
+with their codes (never a URL path), the bytes and characters, and when the reading expires. The
+owner writes the article with a second control that names the reading; a reading that expired,
+belongs to another account or no longer matches the selection is refused with a fixed code, and
+the owner reads again. After revision 1 the owner edits in a textarea and saves the next revision
+under the expected one. A non-owner sees none of the controls, and a direct request is refused at
+the data-access layer with the capability as the code.
+
+## 5. Audit events and the ledger, S6 (step 13), and the security baseline
+
+Audit events carry counts and codes, never content: `source_fetched` per source, with the source
+row as the subject and bytes, duration and the outcome code in the event's code (R16);
+`article_requested` with the category; `article_completed` with the cost, the token counts and
+the word count; `article_refused` with the refusal's code; `article_edited` with the revision or
+the refusal's code. Every refusal with a known actor is audited once, at the boundary. The ledger
+row is written inside the generation path under `kind = 'article'`, so the article's cap never
+counts the round-up and the round-up's never counts the article.
+
+Baseline, beyond the fetch policy's own rules: fetched text never reaches a log, an error, an
+audit event, a ledger row or a table; it lives in the reading cache and in the request to the
+model, and its digest in the revision; the page shows publishers and codes, never a path; the key
+is read by name as before; the response is validated against the selection and the texts read
+before anything is written; the output is rendered through the existing Markdown sanitiser; cost
+is bounded per request by the input and output allowances and per month by the article's cap;
+the tables are append-only; no automatic publication exists (D6).
+
+## 6. Verification, S8 (step 15)
+
+On the branch at `1043b17`, 22 October 2026, from the runner: the source reader 23, the article
+6, the database 32 offline and 106 against PostgreSQL (the two for migration 0016 among them),
+the dashboard 84 offline (the authorization test enumerating the three article mutations and the
+view) and 31 against PostgreSQL (the two for the article flow among them). The full verify loop,
+the four database suites, the clean clone and the CI run are recorded below as they complete.

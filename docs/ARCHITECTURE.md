@@ -582,3 +582,24 @@ package, and writes the revisions and the ledger row in one transaction under th
 `generate:roundup` and `edit:output` capabilities (D39). The dependency direction is unchanged:
 `@cas/roundup` depends on nothing in the workspace; the dashboard depends on it and on
 `@cas/database`. The report is `docs/CAS-004-REPORT.md`.
+
+## 20. CAS-005 boundary: the source reader and the article
+
+Two packages. `@cas/source-reader` is the system's first outbound boundary: the fetch policy of
+`docs/FETCH-POLICY.md` (D36), rules R1 to R17 over an injected transport and resolver, with the
+shared URL classifier (now in `@cas/contracts`, re-exported by the MCP server), resolve-then-
+connect with the connection pinned to the checked address, re-checked redirects, bounded bodies
+counted on the decompressed side, deadlines per fetch and per stage, four in flight, each URL
+once, `robots.txt` obeyed, and the HTML-to-text transform the worker now re-exports from it. Its
+one Node transport (`node-transport.ts`) is the only module that names `node:http` and
+`node:https`. `@cas/article` is pure like `@cas/roundup`: the input built from a reading, the
+slot schema in the owner's contract (D41), the prompt contract with D4's bar, the validator that
+holds a response to the selection and the texts read (citations, quotations, sections, bounds,
+naming basis), the Markdown export and the cost rules D9 resolved for the article. Migration 0016
+adds `article_revisions` and the article's place in the ledger. The dashboard's runtime holds the
+reader and a ten-minute in-memory reading cache (O-1, R17); its data-access layer reads the
+selection's sources, shows the reading, and on the owner's confirmation calls the package and
+writes revision 1 and the ledger row in one transaction. Dependency edges added: `@cas/worker`
+depends on `@cas/source-reader`; the dashboard depends on both packages; `@cas/source-reader`
+depends on `@cas/contracts` and `htmlparser2`; `@cas/article` depends on nothing in the
+workspace. The report is `docs/CAS-005-REPORT.md`.
