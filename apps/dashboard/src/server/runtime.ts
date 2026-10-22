@@ -10,8 +10,10 @@ import { openStores } from './auth/stores.ts';
 import type { RoundupTransport } from '@cas/roundup';
 
 import { loadDashboardConfig, type DashboardConfig } from './config.ts';
+import { ReadingCache } from './dal/readings.ts';
 import { createAnthropicTransport } from './model/anthropic.ts';
 import { loadModelConfig } from './model/config.ts';
+import { createNodeReader, loadReaderConfig, type SourceReaderDeps } from './model/reader.ts';
 import { workspace } from './packages.ts';
 
 /**
@@ -43,21 +45,31 @@ export interface Runtime {
   readonly database: Database;
   /** The one boundary to a model; null when no credential is configured, so generation fails closed. */
   readonly model: RoundupTransport | null;
+  /** The source-reading boundary (CAS-005); null when the dashboard's public address is not configured. */
+  readonly reader: SourceReaderDeps | null;
+  /** The pending readings, in memory for ten minutes (O-1, R17). */
+  readonly readings: ReadingCache;
 }
 
 export function createRuntime(
   config: DashboardConfig,
   stores: Stores,
   database: Database,
-  options: SessionServiceOptions & { readonly model?: RoundupTransport | null | undefined } = {},
+  options: SessionServiceOptions & {
+    readonly model?: RoundupTransport | null | undefined;
+    readonly reader?: SourceReaderDeps | null | undefined;
+    readonly readings?: ReadingCache | undefined;
+  } = {},
 ): Runtime {
-  const { model, ...sessionOptions } = options;
+  const { model, reader, readings, ...sessionOptions } = options;
   return {
     config,
     stores,
     sessions: new SessionService(stores, sessionOptions),
     database,
     model: model ?? null,
+    reader: reader ?? null,
+    readings: readings ?? new ReadingCache(),
   };
 }
 
@@ -88,7 +100,7 @@ export function getRuntime(): Promise<Runtime> {
   if (state.shared === null) {
     state.shared = (async () => {
       const config = loadDashboardConfig(process.env);
-      const { database: databasePackage } = await workspace();
+      const { database: databasePackage, sourceReader } = await workspace();
       const database = databasePackage.openDatabase(
         databasePackage.parseDatabaseConfig(process.env, { schema: config.databaseSchema }),
         { maxConnections: 4 },
@@ -97,10 +109,12 @@ export function getRuntime(): Promise<Runtime> {
       const otp =
         config.accountStore === 'memory' ? localOtpEmailConfig() : loadOtpEmailConfig(process.env);
       const modelConfig = loadModelConfig(process.env);
+      const readerConfig = loadReaderConfig(process.env);
       return createRuntime(config, stores, database, {
         emailProvider: otp.provider,
         otpPepper: otp.pepper,
         model: modelConfig === null ? null : createAnthropicTransport(modelConfig),
+        reader: readerConfig === null ? null : createNodeReader(readerConfig, sourceReader),
       });
     })();
     // A failed start is not cached: the next request tries again and reports

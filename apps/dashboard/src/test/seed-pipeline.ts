@@ -268,7 +268,13 @@ export interface SeededWeek {
  * posted before it (carried), classified and clustered by a week run over
  * the window. Synthetic throughout.
  */
-export async function seedWeek(db: Database): Promise<SeededWeek> {
+export async function seedWeek(
+  db: Database,
+  options: { readonly host?: string } = {},
+): Promise<SeededWeek> {
+  // `seed.example` is a reserved name the fetch policy refuses (R3), which is
+  // what the round-up tests want; the article tests name a public-looking host.
+  const host = options.host ?? 'seed.example';
   const batchId = randomUUID();
   const rows = [
     {
@@ -310,7 +316,7 @@ export async function seedWeek(db: Database): Promise<SeededWeek> {
       const groupId = randomUUID();
       await tx.query(`INSERT INTO url_groups (id, canonical_url) VALUES ($1, $2)`, [
         groupId,
-        `https://seed.example/${batchId}/${spec.group}`,
+        `https://${host}/${batchId}/${spec.group}`,
       ]);
       await tx.query(
         `INSERT INTO source_rows (
@@ -323,7 +329,7 @@ export async function seedWeek(db: Database): Promise<SeededWeek> {
           randomUUID(),
           batchId,
           index + 1,
-          `https://seed.example/${batchId}/${spec.group}`,
+          `https://${host}/${batchId}/${spec.group}`,
           spec.postedAt,
           spec.title,
           spec.summary,

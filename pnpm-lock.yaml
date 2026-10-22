@@ -134,6 +134,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: 'catalog:'
         version: 1.0.0(zod@4.5.4)
+      '@cas/article':
+        specifier: workspace:*
+        version: link:../../packages/article
       '@cas/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -149,6 +152,9 @@ importers:
       '@cas/roundup':
         specifier: workspace:*
         version: link:../../packages/roundup
+      '@cas/source-reader':
+        specifier: workspace:*
+        version: link:../../packages/source-reader
       '@cas/worker':
         specifier: workspace:*
         version: link:../worker
