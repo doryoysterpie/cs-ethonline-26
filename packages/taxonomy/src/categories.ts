@@ -28,8 +28,15 @@ import {
   type SignalTier,
 } from './signal-policy.js';
 
-export const CATEGORIES = ['cyberattack', 'crypto'] as const;
-export type Category = (typeof CATEGORIES)[number];
+/**
+ * A category identifier: lowercase, digits and underscores, 2 to 32
+ * characters, the alphabet migration 0013 checks. The type is a string
+ * because the vocabulary is a registry, not a compile-time union: a category
+ * is known once its policy is registered, and `isCategory` is the question.
+ */
+export type Category = string;
+export const CATEGORY_IDENTIFIER = /^[a-z][a-z0-9_]{1,31}$/u;
+export const POLICY_VERSION_PATTERN = /^[a-z][a-z0-9-]*@[0-9]+$/u;
 
 export interface PatternSignalDefinition {
   readonly id: string;
@@ -67,7 +74,7 @@ const GENERAL_OUT_OF_SCOPE: readonly SignalDefinition[] = CLASSIFICATION_SIGNALS
   (signal) => signal.tier === 'out_of_scope',
 );
 
-export const CYBERATTACK_POLICY: CategoryPolicy = {
+const CYBERATTACK: CategoryPolicy = {
   category: 'cyberattack',
   question: 'Is this a cybersecurity incident story?',
   policyVersion: CLASSIFICATION_SIGNAL_POLICY_VERSION,
@@ -164,7 +171,7 @@ const CRYPTO_CONTEXTUAL: readonly SignalDefinition[] = [
   { id: 'crypto_regulation', tier: 'contextual', terms: ['sec', 'etf', 'custody', 'custodian'] },
 ];
 
-export const CRYPTO_POLICY: CategoryPolicy = {
+const CRYPTO: CategoryPolicy = {
   category: 'crypto',
   question: 'Is this a crypto story?',
   policyVersion: CRYPTO_SIGNAL_POLICY_VERSION,
@@ -175,17 +182,115 @@ export const CRYPTO_POLICY: CategoryPolicy = {
   calibrated: false,
 };
 
-export const CATEGORY_POLICIES: Readonly<Record<Category, CategoryPolicy>> = Object.freeze({
-  cyberattack: CYBERATTACK_POLICY,
-  crypto: CRYPTO_POLICY,
-});
+export class CategoryPolicyError extends Error {
+  constructor(
+    readonly code:
+      | 'category_identifier_invalid'
+      | 'policy_version_invalid'
+      | 'policy_shape_invalid'
+      | 'category_policy_conflict'
+      | 'category_unknown',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'CategoryPolicyError';
+  }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== 'object') return value;
+  for (const key of Object.getOwnPropertyNames(value)) {
+    deepFreeze((value as Record<string, unknown>)[key]);
+  }
+  return Object.freeze(value);
+}
+
+function assertPolicyShape(policy: CategoryPolicy): void {
+  if (!CATEGORY_IDENTIFIER.test(policy.category)) {
+    throw new CategoryPolicyError(
+      'category_identifier_invalid',
+      'a category identifier is 2 to 32 lowercase letters, digits or underscores',
+    );
+  }
+  if (!POLICY_VERSION_PATTERN.test(policy.policyVersion)) {
+    throw new CategoryPolicyError(
+      'policy_version_invalid',
+      'a policy version reads <name>@<integer>',
+    );
+  }
+  const positiveInteger = (n: number): boolean => Number.isInteger(n) && n >= 1;
+  const weight = (n: number): boolean => Number.isFinite(n) && n >= 0;
+  if (
+    typeof policy.question !== 'string' ||
+    policy.question.length === 0 ||
+    policy.signals.length === 0 ||
+    !positiveInteger(policy.thresholds.decisiveHitsForInclude) ||
+    !positiveInteger(policy.thresholds.distinctContextualHitsForInclude) ||
+    !weight(policy.weights.decisive) ||
+    !weight(policy.weights.contextual) ||
+    !weight(policy.weights.out_of_scope) ||
+    typeof policy.calibrated !== 'boolean'
+  ) {
+    throw new CategoryPolicyError(
+      'policy_shape_invalid',
+      'a category policy needs a question, at least one signal, positive integer thresholds and non-negative weights',
+    );
+  }
+}
+
+/**
+ * The registry: one frozen policy per category, append-only for the life of
+ * the process. The two policies this file declares are registered at load.
+ * Registering the same category again with an identical policy is a no-op;
+ * with a different one it is refused, because a category's policy changes
+ * only through a new version in this file, never by replacement at run time.
+ * Nothing outside code can reach this function: no input, no file, no
+ * request registers a category.
+ */
+const REGISTRY = new Map<Category, CategoryPolicy>();
+
+/** Every field of a policy, in canonical form: two policies are the same only if this is. */
+function policyIdentity(policy: CategoryPolicy): string {
+  return JSON.stringify({
+    canonical: canonicalCategoryPolicy(policy),
+    question: policy.question,
+    calibrated: policy.calibrated,
+  });
+}
+
+export function registerCategoryPolicy(policy: CategoryPolicy): CategoryPolicy {
+  assertPolicyShape(policy);
+  const existing = REGISTRY.get(policy.category);
+  if (existing !== undefined) {
+    if (policyIdentity(existing) === policyIdentity(policy)) return existing;
+    throw new CategoryPolicyError(
+      'category_policy_conflict',
+      'that category is registered with a different policy; a change is a new policy version',
+    );
+  }
+  const frozen = deepFreeze({ ...policy });
+  REGISTRY.set(frozen.category, frozen);
+  return frozen;
+}
+
+export const CYBERATTACK_POLICY: CategoryPolicy = registerCategoryPolicy(CYBERATTACK);
+export const CRYPTO_POLICY: CategoryPolicy = registerCategoryPolicy(CRYPTO);
+
+/** The registered categories, in registration order. */
+export function categories(): readonly Category[] {
+  return Object.freeze([...REGISTRY.keys()]);
+}
 
 export function isCategory(value: unknown): value is Category {
-  return typeof value === 'string' && (CATEGORIES as readonly string[]).includes(value);
+  return typeof value === 'string' && REGISTRY.has(value);
 }
 
 export function categoryPolicy(category: Category): CategoryPolicy {
-  return CATEGORY_POLICIES[category];
+  const policy = REGISTRY.get(category);
+  if (policy === undefined) {
+    throw new CategoryPolicyError('category_unknown', 'no policy is registered for that category');
+  }
+  return policy;
 }
 
 /** The canonical JSON of one policy: the same form `canonicalSignalPolicy` uses, plus the category. */

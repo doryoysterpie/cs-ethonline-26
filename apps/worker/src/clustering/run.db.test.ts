@@ -1307,6 +1307,7 @@ async function classifyBeforeCategories(
         mode: CLASSIFIER_MODE,
         idempotencyKey: computeRunIdempotencyKey({
           batchId,
+          category: 'cyberattack',
           classifierVersion: CLASSIFIER_VERSION,
           rulesetVersion: RULESET_VERSION,
           rulesetHash: hash,

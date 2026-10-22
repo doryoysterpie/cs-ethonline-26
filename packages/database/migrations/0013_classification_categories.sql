@@ -1,21 +1,31 @@
 -- 0013_classification_categories
 --
--- CAS-002 (post-event plan, decision D33's direction and the categories of
--- section 1): a classification run now answers one category's question, and
--- the category is recorded beside the run rather than assumed from it.
+-- CAS-002 (post-event plan, decision D21 as amended on 22 October 2026): a
+-- classification run answers one category's question, and the category is
+-- recorded beside the run rather than assumed from it.
 --
---   1. **One category row per run.** `classification_run_categories` names the
---      category, the policy version it was classified under and the policy's
---      hash, bound to the run and its batch by the composite key migration
---      0003 declared, and to the batch's origin by the key migration 0002
---      declared.
+--   1. **A policy registry.** `classification_policies` holds one row per
+--      (category, policy version) with the ruleset hash that policy builds
+--      to. A policy version maps to exactly one hash (the primary key), and a
+--      hash belongs to exactly one category (a unique constraint), so a hash
+--      names one category and one only. The worker registers a policy before
+--      its first run; a changed policy under an old version is refused.
 --
---   2. **The row cannot disagree with its run.** A guard refuses a category
+--   2. **One category row per run.** `classification_run_categories` names
+--      the category, the policy version and the policy hash of a run, bound to
+--      the run and its batch by the composite key migration 0003 declared, to
+--      the batch's origin by the key migration 0002 declared, and to the
+--      registry by the triple (category, policy version, policy hash), so a
+--      row can only name a category whose registered policy produced that
+--      hash.
+--
+--   3. **The row cannot disagree with its run.** A guard refuses a category
 --      row whose policy hash is not the ruleset hash the run recorded, or
---      whose origin is not the run's. The category is therefore a name for
---      the hash the run already carries, never a second claim about it.
+--      whose origin is not the run's. With the registry key above, the
+--      category is therefore the registered name of the hash the run already
+--      carries, never a second claim about it.
 --
---   3. **Runs that predate categories are left exactly as they are.** No row
+--   4. **Runs that predate categories are left exactly as they are.** No row
 --      is written for them and nothing is backfilled: the cyberattack policy
 --      builds, hash for hash, to the contract those runs recorded, so a reader
 --      who needs to know what they were compares hashes rather than trusting
@@ -46,6 +56,38 @@ BEGIN
   END IF;
 
   EXECUTE pg_catalog.format($fmt$
+    CREATE TABLE %1$I.classification_policies (
+      category       text        NOT NULL CHECK (category ~ '^[a-z][a-z0-9_]{1,31}$'),
+      policy_version text        NOT NULL CHECK (policy_version ~ '^[a-z][a-z0-9-]*@[0-9]+$'),
+      policy_hash    text        NOT NULL CHECK (policy_hash ~ '^[0-9a-f]{64}$'),
+      registered_at  timestamptz NOT NULL,
+      CONSTRAINT classification_policies_pkey PRIMARY KEY (category, policy_version),
+      CONSTRAINT classification_policies_hash_owner UNIQUE (policy_hash),
+      CONSTRAINT classification_policies_identity UNIQUE (category, policy_version, policy_hash)
+    )
+  $fmt$, target);
+
+  EXECUTE pg_catalog.format($fmt$
+    CREATE FUNCTION %1$I.classification_policy_guard() RETURNS trigger
+      LANGUAGE plpgsql
+      SET search_path = pg_catalog, %1$I, pg_temp
+    AS $guard$
+    BEGIN
+      IF TG_OP <> 'INSERT' THEN
+        RAISE EXCEPTION 'a registered classification policy is append-only; a change is a new version'
+          USING ERRCODE = 'raise_exception';
+      END IF;
+      RETURN NEW;
+    END;
+    $guard$
+  $fmt$, target);
+  EXECUTE pg_catalog.format($fmt$
+    CREATE TRIGGER classification_policies_guard
+      BEFORE INSERT OR UPDATE OR DELETE ON %1$I.classification_policies
+      FOR EACH ROW EXECUTE FUNCTION %1$I.classification_policy_guard()
+  $fmt$, target);
+
+  EXECUTE pg_catalog.format($fmt$
     CREATE TABLE %1$I.classification_run_categories (
       run_id         uuid        PRIMARY KEY,
       batch_id       uuid        NOT NULL,
@@ -57,7 +99,10 @@ BEGIN
       CONSTRAINT classification_run_categories_run_fk
         FOREIGN KEY (run_id, batch_id) REFERENCES %1$I.classification_runs (id, batch_id),
       CONSTRAINT classification_run_categories_batch_fk
-        FOREIGN KEY (batch_id, data_origin) REFERENCES %1$I.import_batches (id, data_origin)
+        FOREIGN KEY (batch_id, data_origin) REFERENCES %1$I.import_batches (id, data_origin),
+      CONSTRAINT classification_run_categories_policy_fk
+        FOREIGN KEY (category, policy_version, policy_hash)
+        REFERENCES %1$I.classification_policies (category, policy_version, policy_hash)
     )
   $fmt$, target);
 

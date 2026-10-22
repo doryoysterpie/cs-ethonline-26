@@ -16,6 +16,7 @@ import { migrationsUpTo, openIsolatedSchema, type IsolatedSchema } from './test-
 const EXPECTED_TABLES = [
   'accounts',
   'audit_events',
+  'classification_policies',
   'classification_results',
   'classification_run_categories',
   'classification_runs',

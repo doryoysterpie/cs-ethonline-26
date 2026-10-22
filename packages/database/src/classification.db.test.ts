@@ -18,11 +18,13 @@ import {
   findBatchReviewSnapshot,
   findClassificationRunByIdempotencyKey,
   getClassificationRun,
+  getClassificationPolicy,
   getClassificationRunCategory,
   insertClassificationResults,
   insertClassificationRunCategory,
   insertRunningClassificationRun,
   listClassificationRunCategories,
+  registerClassificationPolicy,
   type NewClassificationResult,
   type NewClassificationRun,
 } from './classification.js';
@@ -941,6 +943,82 @@ describe('classification persistence (migrations 0003 to 0005)', () => {
       policyVersion: 'classification-signal-policy@1',
       policyHash: run.rulesetHash,
       createdAt: run.startedAt,
+    });
+    // Every test run here shares newRun's hash('f'); the registry binds it to
+    // the cyberattack policy once, for the whole describe.
+    beforeAll(async () => {
+      await isolated.db.withTransaction((tx) =>
+        registerClassificationPolicy(tx, {
+          category: 'cyberattack',
+          policyVersion: 'classification-signal-policy@1',
+          policyHash: hash('f'),
+          registeredAt: new Date().toISOString(),
+        }),
+      );
+    });
+
+    it('registers a policy once, refuses a changed hash under the same version and a shared hash under another category', async () => {
+      const again = {
+        category: 'cyberattack',
+        policyVersion: 'classification-signal-policy@1',
+        policyHash: hash('f'),
+        registeredAt: new Date().toISOString(),
+      };
+      await isolated.db.withTransaction((tx) => registerClassificationPolicy(tx, again));
+      expect(
+        (
+          await isolated.db.withClient((c) =>
+            getClassificationPolicy(c, 'cyberattack', 'classification-signal-policy@1'),
+          )
+        )?.policyHash,
+      ).toBe(hash('f'));
+      const changedHash = await expectRejected(isolated.db, (tx) =>
+        registerClassificationPolicy(tx, { ...again, policyHash: hash('1') }),
+      );
+      expect(changedHash).toBe('23505');
+      const sharedHash = await expectRejected(isolated.db, (tx) =>
+        registerClassificationPolicy(tx, {
+          ...again,
+          category: 'crypto',
+          policyVersion: 'crypto-signal-policy@1',
+        }),
+      );
+      expect(sharedHash).toBe('23505');
+      const update = await expectRejected(isolated.db, (tx) =>
+        tx.query(
+          `UPDATE classification_policies SET policy_hash = $1 WHERE category = 'cyberattack'`,
+          [hash('2')],
+        ),
+      );
+      expect(update).toBe('P0001');
+      const remove = await expectRejected(isolated.db, (tx) =>
+        tx.query(`DELETE FROM classification_policies WHERE category = 'cyberattack'`),
+      );
+      expect(remove).toBe('P0001');
+      expect(
+        await isolated.db.withClient((c) =>
+          getClassificationPolicy(c, 'crypto', 'crypto-signal-policy@1'),
+        ),
+      ).toBeNull();
+    });
+
+    it('refuses a category or a policy version the registry does not bind to the run’s hash', async () => {
+      const run = await completeRun(isolated.db, batchA);
+      // The run's hash is real and registered, but to cyberattack, not crypto.
+      const wrongCategory = await expectRejected(isolated.db, (tx) =>
+        insertClassificationRunCategory(tx, { ...categoryOf(run), category: 'crypto' }),
+      );
+      expect(wrongCategory).toBe('23503');
+      const wrongVersion = await expectRejected(isolated.db, (tx) =>
+        insertClassificationRunCategory(tx, {
+          ...categoryOf(run),
+          policyVersion: 'classification-signal-policy@2',
+        }),
+      );
+      expect(wrongVersion).toBe('23503');
+      expect(
+        await isolated.db.withClient((c) => getClassificationRunCategory(c, run.id)),
+      ).toBeNull();
     });
 
     it('records one category beside a run and reads it back; a run without one reads null', async () => {

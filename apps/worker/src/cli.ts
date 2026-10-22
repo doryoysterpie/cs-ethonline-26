@@ -1,7 +1,7 @@
 import { basename } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { CATEGORIES, isCategory, type Category } from '@cas/classification';
+import { categories, isCategory, type Category } from '@cas/classification';
 import type { DataOrigin, EditorialSourceKind } from '@cas/contracts';
 import {
   connectionSecrets,
@@ -160,7 +160,7 @@ const USAGE = [
   '  editorial validate --file <path> --kind <master|weekly>',
   '  editorial import --file <path> --kind <master|weekly> --origin <live|fixture|replay> [--review-label <label>]',
   '  editorial report [--batch <id>]',
-  '  classification run --batch <uuid> [--category <cyberattack|crypto>]',
+  `  classification run --batch <uuid> [--category <${categories().join('|')}>]`,
   '  classification report --run <uuid>',
   '  classification queue --run <uuid>',
   '  classification calibrate --run <uuid>',
@@ -198,7 +198,7 @@ function parseCategory(value: string | undefined): Category {
   if (!isCategory(value)) {
     throw configurationError(
       'category_invalid',
-      `--category must be one of: ${CATEGORIES.join(', ')}`,
+      `--category must be one of: ${categories().join(', ')}`,
     );
   }
   return value;

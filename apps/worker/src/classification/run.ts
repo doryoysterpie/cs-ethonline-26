@@ -23,6 +23,7 @@ import {
   insertClassificationResults,
   insertClassificationRunCategory,
   insertRunningClassificationRun,
+  registerClassificationPolicy,
   isDatabaseError,
   MAX_ROWS_PER_INSERT,
   type ClassificationRunRecord,
@@ -108,6 +109,8 @@ export interface ClassifyBatchOutcome {
 
 export interface IdempotencyInputs {
   readonly batchId: string;
+  /** The category the run answers: part of the run's identity (CAS-002, review F1). */
+  readonly category: Category;
   readonly classifierVersion: string;
   readonly rulesetVersion: string;
   readonly rulesetHash: string;
@@ -125,6 +128,7 @@ export function computeRunIdempotencyKey(inputs: IdempotencyInputs): string {
     .update(
       JSON.stringify({
         batchId: inputs.batchId,
+        category: inputs.category,
         classifierVersion: inputs.classifierVersion,
         rulesetVersion: inputs.rulesetVersion,
         rulesetHash: inputs.rulesetHash,
@@ -198,6 +202,7 @@ export async function classifyBatch(
   const hash = categoryRulesetHash(category);
   const idempotencyKey = computeRunIdempotencyKey({
     batchId: batch.id,
+    category,
     classifierVersion: CLASSIFIER_VERSION,
     rulesetVersion: RULESET_VERSION,
     rulesetHash: hash,
@@ -236,6 +241,28 @@ export async function classifyBatch(
         // the batch behind it: a later mutation is refused by migration 0005,
         // and a mutation that commits while this waits makes it fail.
         frozenAt = (await freezeBatchSourceSet(tx, batch.id)).frozenAt;
+
+        // Step 2a. The policy identity is registered before any run can name
+        // it: one hash per (category, version), one category per hash. A
+        // changed policy under an old version, or a hash another category
+        // owns, is refused here (23505) and no run is written.
+        try {
+          await registerClassificationPolicy(tx, {
+            category,
+            policyVersion: contract.policyVersion,
+            policyHash: hash,
+            registeredAt: startedAt.toISOString(),
+          });
+        } catch (error) {
+          if (isDatabaseError(error) && error.code === '23505') {
+            throw new IngestionError(
+              'configuration',
+              'policy_identity_conflict',
+              'the category policy identity is already registered to a different hash or category',
+            );
+          }
+          throw error;
+        }
 
         // Step 2. The unique idempotency key serializes concurrent callers: the
         // loser blocks here until the winner commits, then fails with 23505.

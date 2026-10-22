@@ -157,6 +157,7 @@ describe('search-path capture (migration 0005)', () => {
       'accounts_guard',
       'append_only_guard',
       'association_append_only_guard',
+      'classification_policy_guard',
       'classification_result_guard',
       'classification_run_category_guard',
       'classification_run_guard',

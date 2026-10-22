@@ -114,6 +114,58 @@ function toRunRecord(row: RunRow): ClassificationRunRecord {
   };
 }
 
+/** One registered policy: a category and version, and the ruleset hash they build to (migration 0013). */
+export interface ClassificationPolicyRecord {
+  readonly category: string;
+  readonly policyVersion: string;
+  readonly policyHash: string;
+  readonly registeredAt: string;
+}
+
+/**
+ * Registers a policy identity, or does nothing if that exact triple is already
+ * registered. A different hash under a registered (category, version), or a
+ * registered hash under another category, is a unique violation (23505): the
+ * caller reports it as a policy identity conflict and writes no run.
+ */
+export async function registerClassificationPolicy(
+  client: Queryable,
+  policy: ClassificationPolicyRecord,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO classification_policies (category, policy_version, policy_hash, registered_at)
+     VALUES ($1, $2, $3, $4::timestamptz)
+     ON CONFLICT ON CONSTRAINT classification_policies_identity DO NOTHING`,
+    [policy.category, policy.policyVersion, policy.policyHash, policy.registeredAt],
+  );
+}
+
+export async function getClassificationPolicy(
+  client: Queryable,
+  category: string,
+  policyVersion: string,
+): Promise<ClassificationPolicyRecord | null> {
+  const result = await client.query<{
+    category: string;
+    policy_version: string;
+    policy_hash: string;
+    registered_at: string;
+  }>(
+    `SELECT category, policy_version, policy_hash, to_json(registered_at) #>> '{}' AS registered_at
+       FROM classification_policies WHERE category = $1 AND policy_version = $2`,
+    [category, policyVersion],
+  );
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : {
+        category: row.category,
+        policyVersion: row.policy_version,
+        policyHash: row.policy_hash,
+        registeredAt: row.registered_at,
+      };
+}
+
 /** The category a run was classified under, recorded beside the run (migration 0013). */
 export interface ClassificationRunCategoryRecord {
   readonly runId: string;

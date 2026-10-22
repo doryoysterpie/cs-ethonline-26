@@ -49,9 +49,12 @@ export {
   type NewClassificationRun,
   type QueueEntry,
   type RationaleCodeCount,
+  getClassificationPolicy,
   getClassificationRunCategory,
   insertClassificationRunCategory,
   listClassificationRunCategories,
+  registerClassificationPolicy,
+  type ClassificationPolicyRecord,
   type ClassificationRunCategoryRecord,
 } from './classification.js';
 export {
