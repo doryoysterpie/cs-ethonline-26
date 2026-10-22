@@ -1,8 +1,10 @@
 # Source fetch policy
 
-Version 0.1. Written 16 September 2026. Status: **PROPOSED, not implemented**. This is the
-contract CAS-005 (`docs/POST-EVENT-PLAN.md`, section 5) implements before any code fetches a
-source. All three owner decisions in section 6 were taken on 16 September 2026; nothing in sections 2 to 5 depends on them.
+Version 0.1. Written 16 September 2026. Status: **ADOPTED at CAS-005's S0 on 22 October 2026**,
+rules R1 to R17 as written, with the numeric bounds fixed from a measurement and two
+`robots.txt` reason codes added (`docs/CAS-005-REPORT.md`, sections 1.3 and 1.4); implementation
+in progress on `cas-005/article`. This is the contract CAS-005 (`docs/POST-EVENT-PLAN.md`,
+section 5) implements before any code fetches a source. All three owner decisions in section 6 were taken on 16 September 2026; nothing in sections 2 to 5 depends on them.
 
 ## 1. Why this document exists
 
