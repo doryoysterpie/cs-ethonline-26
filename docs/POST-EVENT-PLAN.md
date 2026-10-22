@@ -180,7 +180,8 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
   one; `DATABASE_URL` and the spreadsheet identifier appear in no output; the database size
   after import is recorded and is under 5 GB with the headroom stated.
 - **Known seams.** No scheduler; the first real import runs from the owner's machine against
-  the Railway database. Scheduling is CAS-003's decision.
+  the Railway database, after the unit's merge has deployed migration 0012 (tracker amendment
+  of 22 October 2026). Scheduling is CAS-003's decision.
 
 ### CAS-002: Categories
 

@@ -297,3 +297,26 @@ all 28,596 as they are. Second, exactly one row carries a `Date Posted` in the f
 
 Step 11, the first real import into the Railway database, is the owner's decision: it adds a
 batch the size of the ledger to the production database. Steps 12 to 14 follow it.
+
+## 4. Independent review and correction (step 13)
+
+Codex Desktop reviewed pull request #14 at `2c33e09` on 21 October 2026 and returned
+**CHANGES REQUIRED** with five findings (three High, two Medium); the report is in the
+engineering vault as `03_Audits/cs-ethonline-26/2026-10-21-cas-001-pr-14.md`. The reviewer
+reproduced the claimed suites exactly (1,053 default, 271 PostgreSQL, 30 tools) and
+reproduced F1 with its own probe. Each finding and its correction, 22 October 2026:
+
+| Finding | Severity | What was wrong                                                                                                                                                               | Correction                                                                                                                                                                                                                                                                                                                                          |
+| ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1      | High     | The batch digest covered the cells but not the inputs that change their evaluation: the workbook zone and the timestamp declaration. The same key for different evaluations. | `computeBatchDigest` takes an `EvaluationContext` (serial rule, zone, stage, kind, first row, width, timestamp columns); `prepareSheetsBatch` supplies it. A test proves that a different zone, an empty timestamp declaration and a different width each yield a different key while the evaluations differ.                                       |
+| F2      | High     | `GOOGLE_SHEETS_TAB_MAP` could replace the committed tab map at run time, which contradicted the reviewed-commit contract.                                                    | The override is gone: `sheets import` loads the committed file only; the variable, its connector configuration field and its `.env.example` entry are removed. A command-line test proves an environment tab map is ignored and an undeclared tab is refused, and that the database configuration is checked before any credential.                 |
+| F3      | High     | The required Supply chain check fails on 25 inherited advisories (1 critical in `next`, 9 high).                                                                             | Not corrected on this branch: the advisories predate it and belong to every branch. A separate change from `main` updates the pins under D13 and is reviewed on its own; this branch takes `main` afterwards so its check is green on the re-review head.                                                                                           |
+| F4      | Medium   | The read collected the whole tab without enforcing the retained-byte limit the design note cites.                                                                            | `readFeedTab` keeps rows itself through the connector's streaming callback and counts UTF-8 bytes as it goes; a row that would cross `RESOURCE_LIMITS.import.retainedBytes` is refused before it is kept, with a fixed code and nothing written. Tests cover the exact boundary, one byte under, a bound smaller than the first row, and two pages. |
+| F5      | Medium   | The tracker's step order still required the Railway import and green CI before review, contradicting the order the owner approved.                                           | The tracker is amended with the owner's decision of 22 October 2026 and its ground: the first real import is now step 14, after the merge has deployed migration 0012; CI green is required on the exact commit under review.                                                                                                                       |
+
+Counts after the corrections, from the runners: workspace default suite 1,059 tests in 102
+files (worker 269, sheets-intake 130); PostgreSQL suites 271 (database 92, worker 110,
+dashboard 20, MCP 49); tools 30; `corepack pnpm verify` green on every step. The Supply chain
+check stays red until the dependency change lands on `main`.
+
+Audit state: not audited. The corrected head is pending Codex Desktop's re-review.
