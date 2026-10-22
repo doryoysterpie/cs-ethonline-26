@@ -79,15 +79,17 @@ export default async function WeekTablePage({
           </Link>
         </p>
       ) : null}
-      <form method="get" action={`/week/${view.week.id}`}>
-        <input type="hidden" name="category" value={view.category} />
-        <input type="hidden" name="sort" value={view.sort} />
-        <label>
-          Search titles{' '}
-          <input type="search" name="q" maxLength={200} defaultValue={view.search ?? ''} />
-        </label>{' '}
-        <button type="submit">Search</button>
-      </form>
+      {view.canSearch ? (
+        <form method="get" action={`/week/${view.week.id}`}>
+          <input type="hidden" name="category" value={view.category} />
+          <input type="hidden" name="sort" value={view.sort} />
+          <label>
+            Search titles{' '}
+            <input type="search" name="q" maxLength={200} defaultValue={view.search ?? ''} />
+          </label>{' '}
+          <button type="submit">Search</button>
+        </form>
+      ) : null}
       <table>
         <thead>
           <tr>

@@ -76,6 +76,7 @@ import { assertSheetsImportMapping, importSheetsTab } from './sheets/import.js';
 import { loadTabMapPolicy, mappingForTab } from './sheets/tab-map.js';
 import { formatSheetsImportOutcome } from './sheets/output.js';
 import { runWeek } from './week/run.js';
+import { resolveWeekWindow } from './week/window.js';
 import { formatWeekRunOutcome } from './week/output.js';
 import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
@@ -614,6 +615,18 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
               .filter((name) => name.length > 0);
       const providedBatch =
         values.batch === undefined ? undefined : requireUuid(values.batch, 'batch');
+      // The preflight the orchestrator repeats: the D10 window and the
+      // registered categories, refused here before any credential is read or
+      // any connection opened (review of 22 October 2026, F3).
+      resolveWeekWindow(windows?.[0]);
+      for (const name of categoriesRequested ?? []) {
+        if (!isCategory(name)) {
+          throw configurationError(
+            'category_invalid',
+            `--categories must name registered categories: ${categories().join(', ')}`,
+          );
+        }
+      }
       parseDatabaseConfig(options.env);
       let importFeed: (() => Promise<ImportOutcome>) | undefined;
       let connection: Awaited<ReturnType<typeof openWorkbook>> | undefined;

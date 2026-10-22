@@ -730,8 +730,18 @@ export async function weekTable(
     sort === undefined || sort === null || sort === ''
       ? 'posted_desc'
       : enumOf(sort, WEEK_SORTS, 'sort');
-  const wantedSearch = optionalText(search, 'search', WEEK_SEARCH);
   const withText = holds(principal, 'view:source_text');
+  // A title search is a read of titles. A principal without source text is
+  // refused with a fixed code, before any query, so its result set can never
+  // vary with a hidden title (review of 22 October 2026, F1).
+  const wantedSearch = optionalText(search, 'search', WEEK_SEARCH);
+  if (wantedSearch !== null && !withText) {
+    throw new DashboardError(
+      'validation',
+      'search_requires_source_text',
+      'Searching titles needs the source-text capability.',
+    );
+  }
   const packages = await workspace();
   const { getWeekRun, listWeekRunChildren, listWeekIncidents, listLatestIssueSelections } =
     packages.database;
@@ -789,6 +799,7 @@ export async function weekTable(
       search: wantedSearch,
       sort: wantedSort,
       canSelect: holds(principal, 'select:stories'),
+      canSearch: withText,
       canViewRoundup: holds(principal, 'view:draft'),
       rows: rows.map((row) => {
         const selection = selections.get(row.incidentId) ?? null;

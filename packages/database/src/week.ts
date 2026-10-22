@@ -325,10 +325,11 @@ export async function insertIssueSelection(
   );
   for (const member of members) {
     await client.query(
-      `INSERT INTO issue_selection_members (selection_id, clustering_run_id, membership_id, source_row_id, batch_id, row_hash)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO issue_selection_members (selection_id, incident_id, clustering_run_id, membership_id, source_row_id, batch_id, row_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         selection.id,
+        selection.incidentId,
         selection.clusteringRunId,
         member.membershipId,
         member.sourceRowId,
@@ -384,8 +385,9 @@ export async function listLatestIssueSelections(
 /**
  * The sift table for one clustering run and one window (D10 resolution).
  * An incident is in the week when a member row was posted inside the window
- * and first seen by the freeze; it is carried when no member was posted
- * inside the window but one posted before it was first seen inside it. First
+ * and first seen by the freeze; it is carried only when no member qualifies
+ * for the window and one posted before it was first seen inside it, so the
+ * two flags never hold together (review of 22 October 2026, F6). First
  * seen is the completion of the earliest import read holding the row's hash,
  * or the batch's completion for a batch without a Sheets read. A row with no
  * posted time belongs to no week. Text is selected only when asked for, and
@@ -408,6 +410,12 @@ export async function listWeekIncidents(
   }
   if (input.search !== null && (input.search.length === 0 || input.search.length > 200)) {
     throw new DatabaseError('query', 'week table search length out of range');
+  }
+  // A search over titles is a read of titles: without text, no search. The
+  // data-access layer refuses earlier with a fixed code; this is the floor
+  // (review of 22 October 2026, F1).
+  if (!input.withText && input.search !== null) {
+    throw new DatabaseError('query', 'a title search needs the text it searches');
   }
   const order =
     input.sort === 'members_desc'
@@ -448,7 +456,7 @@ export async function listWeekIncidents(
         GROUP BY mm.incident_id
      )
      SELECT c.id AS incident_id, c.kind, c.member_count, c.reason_codes,
-            p.in_window, p.carried,
+            p.in_window, (p.carried AND NOT p.in_window) AS carried,
             to_json(p.posted_from) #>> '{}' AS posted_from,
             to_json(p.posted_to) #>> '{}' AS posted_to,
             CASE WHEN $4::boolean THEN rs.normalized_title ELSE NULL END AS title

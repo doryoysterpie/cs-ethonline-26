@@ -9,7 +9,7 @@ import { assertPassword, hashPassword } from '../auth/password.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
 import { displayIdentity, type Principal } from '../auth/session.ts';
 import { isUsernameShaped, type AccountRecord, type AuditEvent } from '../auth/store.ts';
-import { DashboardError, validation } from '../errors.ts';
+import { DashboardError, isDashboardError, validation } from '../errors.ts';
 import {
   boundedText,
   enumOf,
@@ -734,6 +734,43 @@ const SELECTION_NOTE = { min: 1, max: 2000 } as const;
  * same incident is a conflict, never a silent overwrite.
  */
 export async function selectStory(
+  runtime: Runtime,
+  who: Principal | null,
+  input: StorySelectionInput,
+): Promise<{ readonly selectionId: string; readonly revision: number }> {
+  try {
+    return await selectStoryUnaudited(runtime, who, input);
+  } catch (error) {
+    // Every refusal with a known actor is audited with its fixed code and the
+    // incident it named when that is a well-formed identifier, never content
+    // (review of 22 October 2026, F4). An unauthenticated caller has no actor
+    // to record; the conflict path records itself.
+    if (
+      who !== null &&
+      isDashboardError(error) &&
+      error.kind !== 'unavailable' &&
+      error.code !== 'selection_conflict'
+    ) {
+      await audit(runtime, {
+        kind: 'story_selected',
+        outcome: 'failure',
+        code: error.code,
+        actorAccountId: who.accountId,
+        subjectAccountId: null,
+        sessionId: who.sessionId,
+        subjectId:
+          typeof input.incidentId === 'string' && UUID_SHAPE.test(input.incidentId)
+            ? input.incidentId
+            : null,
+      });
+    }
+    throw error;
+  }
+}
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+async function selectStoryUnaudited(
   runtime: Runtime,
   who: Principal | null,
   input: StorySelectionInput,
