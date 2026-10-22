@@ -1030,13 +1030,38 @@ describe('data-access layer against PostgreSQL', () => {
       const events = (await persistent.audit.list(100)).filter((e) =>
         e.kind.startsWith('roundup_'),
       );
-      expect(events.map((e) => e.kind).sort()).toEqual(['roundup_completed', 'roundup_requested']);
+      expect(events.map((e) => e.kind).sort()).toEqual([
+        'roundup_completed',
+        'roundup_refused',
+        'roundup_refused',
+        'roundup_refused',
+        'roundup_requested',
+      ]);
+      // The three non-owner refusals are audited at the boundary with the
+      // capability as the code and the week as the subject, never content.
+      const refusedAtBoundary = events.filter((e) => e.kind === 'roundup_refused');
+      expect(refusedAtBoundary.every((e) => e.outcome === 'failure')).toBe(true);
+      expect(refusedAtBoundary.map((e) => e.code)).toEqual([
+        'generate:roundup',
+        'generate:roundup',
+        'generate:roundup',
+      ]);
+      expect(refusedAtBoundary.every((e) => e.subjectId === week.weekRunId)).toBe(true);
+      expect(refusedAtBoundary.map((e) => e.actorAccountId).sort()).toEqual(
+        [persisted.judge, persisted.editor, persisted.admin].map((p) => p.accountId).sort(),
+      );
       expect(events.find((e) => e.kind === 'roundup_completed')?.code).toBe(
         'cost_9600_in_900_out_300',
       );
       expect(events.every((e) => !e.code.includes('Headline'))).toBe(true);
-      // One generation per week and category; the owner edits instead.
+      // One generation per week and category; the owner edits instead. That
+      // refusal is audited too.
       expect(await kindOf(generateRoundup(rt, persisted.owner, input))).toBe('validation');
+      const again = (await persistent.audit.list(100)).filter(
+        (e) => e.kind === 'roundup_refused' && e.code === 'roundup_already_generated',
+      );
+      expect(again).toHaveLength(1);
+      expect(again[0]?.actorAccountId).toBe(persisted.owner.accountId);
       // A judge reads nothing here; an editor reads the page but cannot edit.
       expect(await kindOf(roundupView(rt, persisted.judge, week.weekRunId, 'cyberattack'))).toBe(
         'authorization',
@@ -1096,7 +1121,11 @@ describe('data-access layer against PostgreSQL', () => {
           throw new Error('must not be called');
         },
       };
-      const { rt: withModel, persisted: owners } = await persistentRuntime(counting, own);
+      const {
+        rt: withModel,
+        persisted: owners,
+        persistent: withModelStores,
+      } = await persistentRuntime(counting, own);
       expect(
         await kindOf(
           generateRoundup(withModel, owners.owner, {
@@ -1126,6 +1155,19 @@ describe('data-access layer against PostgreSQL', () => {
         'spend_cap_exceeded',
       ]);
       expect(refusals.rows.every((r) => r.outcome === 'refused')).toBe(true);
+      // Each refusal is audited exactly once, at the boundary, by its code. Both
+      // runtimes write the same schema's audit table, so one read sees all three.
+      const audited = (await withModelStores.audit.list(100)).filter(
+        (e) => e.kind === 'roundup_refused',
+      );
+      expect(audited.map((e) => e.code).sort()).toEqual([
+        'model_key_missing',
+        'spend_cap_exceeded',
+        'template_hash_mismatch',
+      ]);
+      expect(audited.every((e) => e.outcome === 'failure' && e.subjectId === week.weekRunId)).toBe(
+        true,
+      );
       await own.close();
     });
 
@@ -1146,7 +1188,7 @@ describe('data-access layer against PostgreSQL', () => {
           };
         },
       };
-      const { rt, persisted } = await persistentRuntime(transport);
+      const { rt, persisted, persistent } = await persistentRuntime(transport);
       const table = await weekTable(
         rt,
         persisted.owner,
@@ -1191,6 +1233,19 @@ describe('data-access layer against PostgreSQL', () => {
       expect(view.latest).toEqual({ revision: 2, markdown: edit.markdown });
       expect(view.revisions.map((r) => r.kind)).toEqual(['deterministic', 'generated', 'edited']);
       expect(view.revisions[2]?.savedBy).toBe(persisted.owner.username);
+      // Three authorization refusals, one conflict, one validation refusal and
+      // one success, each audited once with its code and no content.
+      const edits = (await persistent.audit.list(100)).filter((e) => e.kind === 'roundup_edited');
+      expect(edits.map((e) => `${e.outcome}:${e.code}`).sort()).toEqual([
+        'failure:edit:output',
+        'failure:edit:output',
+        'failure:edit:output',
+        'failure:markdown_control',
+        'failure:roundup_revision_conflict',
+        'success:revision_2',
+      ]);
+      expect(edits.every((e) => e.subjectId === week.weekRunId)).toBe(true);
+      expect(edits.every((e) => !e.code.includes('Edited'))).toBe(true);
     });
   });
 });

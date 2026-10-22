@@ -933,12 +933,50 @@ export async function generateRoundup(
   runtime: Runtime,
   who: Principal | null,
   input: RoundupGenerationInput,
-): Promise<{
+): Promise<RoundupGenerationResult> {
+  try {
+    return await generateRoundupUnaudited(runtime, who, input);
+  } catch (error) {
+    // Every refusal with a known actor is audited once, at this boundary, with
+    // its fixed code and the week it named when well formed, never content
+    // (the rule review F4 set for selections). A database outage is not a
+    // refusal and is not audited; a model-side failure is, by its code.
+    if (
+      who !== null &&
+      isDashboardError(error) &&
+      (error.kind !== 'unavailable' || MODEL_FAILURE_CODE.test(error.code))
+    ) {
+      await audit(runtime, {
+        kind: 'roundup_refused',
+        outcome: 'failure',
+        code: error.code,
+        actorAccountId: who.accountId,
+        subjectAccountId: null,
+        sessionId: who.sessionId,
+        subjectId:
+          typeof input.weekRunId === 'string' && UUID_SHAPE.test(input.weekRunId)
+            ? input.weekRunId
+            : null,
+      });
+    }
+    throw error;
+  }
+}
+
+const MODEL_FAILURE_CODE = /^(?:model_|response_)/u;
+
+interface RoundupGenerationResult {
   readonly revision: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly costMicrodollars: number;
-}> {
+}
+
+async function generateRoundupUnaudited(
+  runtime: Runtime,
+  who: Principal | null,
+  input: RoundupGenerationInput,
+): Promise<RoundupGenerationResult> {
   const principal = requireCapability(who, 'generate:roundup');
   if (runtime.stores.kind !== 'postgres') {
     throw validation(
@@ -1132,15 +1170,6 @@ export async function generateRoundup(
         { inputTokens: 0, outputTokens: 0, costMicrodollars: 0 },
         MODEL_ID,
       );
-      await audit(runtime, {
-        kind: 'roundup_refused',
-        outcome: 'failure',
-        code: error.code,
-        actorAccountId: principal.accountId,
-        subjectAccountId: null,
-        sessionId: principal.sessionId,
-        subjectId: weekRunId,
-      });
       if (
         error.code === 'model_key_missing' ||
         error.code === 'model_failed' ||
@@ -1222,6 +1251,34 @@ export async function generateRoundup(
 
 /** The owner's edit: the next revision, under the expected one, like a draft revision. */
 export async function saveRoundupRevision(
+  runtime: Runtime,
+  who: Principal | null,
+  input: RoundupEditInput,
+): Promise<{ readonly revision: number }> {
+  try {
+    return await saveRoundupRevisionUnaudited(runtime, who, input);
+  } catch (error) {
+    // As for the generation: every refusal with a known actor, including a
+    // revision conflict, is audited once here with its fixed code.
+    if (who !== null && isDashboardError(error) && error.kind !== 'unavailable') {
+      await audit(runtime, {
+        kind: 'roundup_edited',
+        outcome: 'failure',
+        code: error.code,
+        actorAccountId: who.accountId,
+        subjectAccountId: null,
+        sessionId: who.sessionId,
+        subjectId:
+          typeof input.weekRunId === 'string' && UUID_SHAPE.test(input.weekRunId)
+            ? input.weekRunId
+            : null,
+      });
+    }
+    throw error;
+  }
+}
+
+async function saveRoundupRevisionUnaudited(
   runtime: Runtime,
   who: Principal | null,
   input: RoundupEditInput,
