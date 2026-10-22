@@ -26,12 +26,21 @@ export async function POST(request: Request): Promise<Response> {
       { status: statusFor(error), headers: { 'Cache-Control': NO_STORE } },
     );
   }
-  await runtime.sessions.logout(principal);
+  const clearing = clearingCookieHeader(runtime.config.environment);
+  try {
+    await runtime.sessions.logout(principal);
+  } catch (error) {
+    // The cookie is cleared either way; the failure is reported, not hidden.
+    return Response.json(
+      { error: publicMessage(error) },
+      { status: statusFor(error), headers: { 'Cache-Control': NO_STORE, 'Set-Cookie': clearing } },
+    );
+  }
   return new Response(null, {
     status: 204,
     headers: {
       'Cache-Control': NO_STORE,
-      'Set-Cookie': clearingCookieHeader(runtime.config.environment),
+      'Set-Cookie': clearing,
     },
   });
 }

@@ -164,9 +164,9 @@ class PostgresSessions implements SessionStore {
     await this.db.withClient((client) => database.touchSession(client, id, lastSeenAt));
   }
 
-  async revoke(id: string, at: string, reason: string): Promise<void> {
+  async revoke(id: string, at: string, reason: string): Promise<boolean> {
     const { database } = await workspace();
-    await this.db.withClient((client) => database.revokeSession(client, id, at, reason));
+    return this.db.withClient((client) => database.revokeSession(client, id, at, reason));
   }
 
   async revokeAllForAccount(
@@ -240,6 +240,13 @@ class PostgresQueueDecisions implements QueueDecisionStore {
   async append(decision: QueueDecision): Promise<void> {
     const { database } = await workspace();
     await this.db.withClient((client) => database.appendQueueDecision(client, decision));
+  }
+
+  async countForEntry(classificationRunId: string, sourceRowId: string): Promise<number> {
+    const { database } = await workspace();
+    return this.db.withClient((client) =>
+      database.countQueueDecisionsForEntry(client, classificationRunId, sourceRowId),
+    );
   }
 
   async listForRun(classificationRunId: string): Promise<QueueDecision[]> {

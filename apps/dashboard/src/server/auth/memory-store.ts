@@ -289,11 +289,13 @@ class MemorySessions implements SessionStore {
     if (current !== undefined) this.byId.set(id, { ...current, lastSeenAt });
   }
 
-  async revoke(id: string, at: string, reason: string): Promise<void> {
+  async revoke(id: string, at: string, reason: string): Promise<boolean> {
     const current = this.byId.get(id);
     if (current !== undefined && current.revokedAt === null) {
       this.byId.set(id, { ...current, revokedAt: at, revokedReason: reason });
+      return true;
     }
+    return false;
   }
 
   async revokeAllForAccount(
@@ -363,6 +365,12 @@ class MemoryQueueDecisions implements QueueDecisionStore {
 
   async append(decision: QueueDecision): Promise<void> {
     this.decisions.push(Object.freeze({ ...decision }));
+  }
+
+  async countForEntry(classificationRunId: string, sourceRowId: string): Promise<number> {
+    return this.decisions.filter(
+      (d) => d.classificationRunId === classificationRunId && d.sourceRowId === sourceRowId,
+    ).length;
   }
 
   async listForRun(classificationRunId: string): Promise<QueueDecision[]> {

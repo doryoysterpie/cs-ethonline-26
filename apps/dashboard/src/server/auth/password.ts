@@ -135,6 +135,9 @@ export function isVerifiableHash(stored: string): boolean {
 /** Verifies a raw password against a stored hash. Never throws on a bad hash: that is `false`. */
 export async function verifyPassword(stored: string, raw: string): Promise<boolean> {
   if (!isVerifiableHash(stored)) return false;
+  // Capped before any hashing work, whatever the caller validated
+  // (CAS-006, release blocker 7).
+  if ([...raw].length > PASSWORD_MAX_LENGTH) return false;
   try {
     return await argon2.verify(stored, raw.normalize('NFKC'));
   } catch {

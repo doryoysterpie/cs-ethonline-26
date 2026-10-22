@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { insertSynthetic, syntheticAccount } from '../../test/synthetic-accounts.ts';
+import { isDashboardError } from '../errors.ts';
 import { openMemoryStores } from './memory-store.ts';
 import { VerificationGate } from './password.ts';
 import {
@@ -248,6 +249,21 @@ describe('session validation', () => {
     const { sessions, token, principal } = await signedIn();
     await sessions.logout(principal);
     expect(await sessions.authenticate(token)).toBeNull();
+  });
+
+  it('reports a sign-out that revoked nothing and records the failure (CAS-006, blocker 7)', async () => {
+    const { sessions, stores, principal } = await signedIn();
+    await sessions.logout(principal);
+    let caught: unknown = null;
+    try {
+      await sessions.logout(principal);
+    } catch (error) {
+      caught = error;
+    }
+    expect(isDashboardError(caught) && caught.code === 'session_not_revoked').toBe(true);
+    const events = await stores.audit.list(5);
+    const failed = events.find((event) => event.kind === 'logout' && event.outcome === 'failure');
+    expect(failed?.code).toBe('session_not_revoked');
   });
 
   it('revokes every session of an account, optionally keeping one', async () => {
