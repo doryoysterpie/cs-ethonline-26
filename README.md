@@ -30,65 +30,43 @@ is never committed, and is disclosed in the submission (`docs/PRIOR_INPUTS.md`).
 
 ## Current status
 
-**Sprint 5 in progress: the Graph evidence, anomaly and drafting layer, corrected after an
-independent audit and pending re-audit.** Sprint 4's deferred work is built — correlation on
-recorded chain and protocol identity, the four evidence states, the chain-and-reporting anomaly
-feed — together with the deterministic drafting pipeline (decision D25, migration 0008).
-Correlation reads no text of any kind, a machine suggestion is never evidence until a named
-person accepts it, and the absence of a signal never counts against a claim. Nothing is
-model-generated: there is no SDK, no model path and no credential read.
+**`main` holds the hackathon submission plus the post-event plan.** The weekly product is being
+built as nine Technical Capability Units, CAS-001 to CAS-009, admitted to the sprint tracker
+SPRINT-P1 (issue 13) on 21 October 2026 (`docs/POST-EVENT-PLAN.md`; one tracker per unit under
+`docs/tcu/`; live status on the units' issues). The audit state of every track and production
+commit is recorded in `docs/AUDIT-LEDGER.md`, and the short version is this: Sprints 0 to 4
+were accepted by an independent reviewer; everything after Sprint 4, including the code the
+deployed dashboard runs, is **not audited** in those words until a reviewer says otherwise.
 
-Codex Desktop audited candidate `6fad82c3b03325101940d9ca25575d94550e7d25` on 10 September
-2026 and returned CHANGES REQUIRED with five findings: a replay file could be ingested as live,
-a corroboration could name an unverified UUID as its claim, the draft writer followed a
-symbolic link and accepted traversal, the snapshot validator invoked accessors, and the hygiene
-test never proved detection. All five are corrected on the branch (decision D26, migration
-0009): a file can be ingested as fixture or replay only; live evidence comes from the Graph
-client, never from a file; an evidence run's origin is bound to its signal and clustering runs
-by foreign key; a claim is a record, not a UUID, proven a member of its incident by the
-database; a draft is published under one authorised root, never through a symbolic link, and
-never overwritten. **Sprint 5 has not passed re-audit**, and no part of this repository may be
-read as saying otherwise until Codex Desktop issues a result (`docs/SPRINT-5-REPORT.md`,
-section 16).
+**What runs on `main`.** Editorial ingestion from CSV (Sprint 2), a deterministic high-recall
+classifier (Sprint 3, D21), deterministic clustering into provisional incidents with a human
+merge-and-split layer (Sprint 4, D22), the Graph evidence, anomaly and deterministic drafting
+layer (Sprint 5, corrected under D26 and not re-audited), the passwordless dashboard with
+PostgreSQL persistence (migrations 0010 and 0011), the read-only Sheets connector, the MCP
+tooling, and the security foundation's limits, CI jobs and supply-chain checks. The
+dependency advisories the supply-chain gate reported on 21 October 2026 are closed (D29
+amendment of 22 October 2026).
 
-**Sprint 4 accepted by Codex Desktop at `4a0a847748b1ff73c424934547c8e6ccd8a1cd6b`
-(9 September 2026): eligible classified sources become provisional canonical incidents.** A deterministic, model-free clustering engine
-(decision D22) consolidates exact URL duplicates, detects syndication and groups separate
-reports into provisional incidents. Recomputed on 9 September 2026 for all three accepted
-Sprint 3 classification runs at the corrected contract hash: 24,193 eligible results became
-23,596 provisional incidents, every eligible result covered exactly once, no excluded result
-covered at all, no cluster larger than the 500-member bound, and every run reconciled. A human
-can merge and split incidents through an append-only review layer that never rewrites what the
-machine produced. These are structural counts, not clustering accuracy: no machine-readable
-record of the final editorial outcome exists yet (`docs/SPRINT-4-REPORT.md`).
+**Sprint 5, stated exactly.** The evidence, anomaly and drafting layer was corrected under D26
+after its independent review and is not re-audited; no document may read as saying otherwise
+(`docs/SPRINT-5-REPORT.md`, section 16). Its rules stand as written: a file can be ingested as
+fixture or replay only; live evidence comes from the Graph client, never from a file; a claim
+is a record, not a UUID. Migrations 0001 to 0012 are applied by the deploy step before the
+dashboard serves traffic.
 
-The first Sprint 4 candidate was rejected on 9 September 2026 with seven findings, and an
-eighth followed on re-audit: a cluster bound that did not hold over a whole component, a
-membership that could name another classification run of the same batch, review idempotency
-that accepted a changed payload, review notes validated only at the command line, a default
-test that opened a socket, a contradictory check-in status, an inaccurate complexity claim and
-a stale test count in the reproduction instructions. All eight were corrected, and Codex
-Desktop accepted the result. Section 13 of the Sprint 4 report records each one.
+**What is in review.** CAS-001, the living feed imported from the authorized Google Sheets
+workbook, is on pull request 14: one command, a committed tab map, migration 0012 for its
+provenance, a runbook, and decisions D30 to D36. Its first independent review returned five
+findings; four are corrected on the branch and the fifth was the dependency gate. The
+corrected head awaits re-review. The first real import into the production database follows
+the merge (`docs/CAS-001-REPORT.md`).
 
-**Graph scope, decided 8 September 2026 (D23).** Seven protocol identities are proven live on
-the standardized TVL lane, and that lane is the project's live Graph capability. Plan 2.0's
-separate ten-protocol administrative-event watchlist was planned and is not delivered: the live
-query reads protocol identity, total value locked and daily financial snapshots, and reads no
-administrative event. The project owner has removed that watchlist from hackathon scope by an
-explicit deviation and moved it to the post-event roadmap, to protect the 10 September Graph
-release gate. The two are different capabilities, and neither is presented as the other.
-
-**Sprint 3 accepted at `71394c9b8e732bc7508b6276eafcbbac414c3a07`**, after two independent
-Codex Desktop audits and two correction passes. A deterministic, versioned rule-based
-classifier (decision D21) classified all 24,248 imported rows across the three batches: 13,015
-include, 55 exclude, 11,178 needs-review, one result per row, every run reconciled against its
-batch. Candidate-retention is 0.992307 on CS79 and 1.0 on CS86 against a 0.98 target: those
-two files are weekly **candidate** cut-downs, so the figures measure retention against the
-owner's intermediate candidate decisions, not agreement with the final published selection.
-They are calibration evidence for a high-recall filter, not end-to-end editorial accuracy,
-publication recall or validated incident truth. The weekly candidate decisions never reach the
-classifier, and nothing in it is fitted or weighted from them. No model is called and no
-Anthropic credential is read, because D9 is unresolved.
+**What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
+story classified by category, a sift table where the owner selects stories, a round-up
+generated through the rundown template, edited by the owner and pasted into Substack by the
+owner. Then an article written from the full sources, reader access with owner approval, a
+supporter tier with crypto donations, and shareable story cards, in that order. The hackathon
+sections below are kept as the record of how the code came to exist.
 
 ## The vertical slice
 
@@ -480,6 +458,7 @@ audit and nothing in it is accepted.
 | `docs/PRIOR_INPUTS.md`                    | the pre-existing corpus, its permitted uses, and the submission disclosure                                            |
 | `docs/HACKATHON_REQUIREMENTS.md`          | requirement-to-evidence matrix per sponsor track and the official schedule                                            |
 | `docs/DECISIONS.md`                       | append-only decision log, D1 to D36                                                                                   |
+| `docs/AUDIT-LEDGER.md`                    | one row per track and production commit: exact commit, reviewer, verdict in the reviewer's words, date, record        |
 | `docs/SPRINT-0-REPORT.md`                 | Sprint 0 report, audit remediation and final correction                                                               |
 | `docs/SPRINT-1-REPORT.md`                 | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                    |
 | `docs/SPRINT-2-REPORT.md`                 | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                                            |
