@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "96cc4eb82e6b03c07cce1d6addee367ff14f7bbc13853c75611b0c9b66709ba3"
+        "value": "9e98ba34ef8934351f98bfce1afb7a196bbaba1054d69393f5633a54d9e0e77f"
       },
       {
         "name": "cas:lockfile:version",
@@ -338,6 +338,29 @@
         {
           "name": "cas:workspace:path",
           "value": "packages/sheets-intake"
+        },
+        {
+          "name": "cas:license:source",
+          "value": "workspace-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "workspace:@cas/source-reader",
+      "name": "@cas/source-reader",
+      "version": "0.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:workspace:path",
+          "value": "packages/source-reader"
         },
         {
           "name": "cas:license:source",
@@ -11661,6 +11684,7 @@
     {
       "ref": "workspace:@cas/contracts",
       "dependsOn": [
+        "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12"
       ]
@@ -11778,6 +11802,16 @@
       ]
     },
     {
+      "ref": "workspace:@cas/source-reader",
+      "dependsOn": [
+        "pkg:npm/%40types/node@24.13.3",
+        "pkg:npm/htmlparser2@12.0.0",
+        "pkg:npm/typescript@6.0.3",
+        "pkg:npm/vitest@4.1.12",
+        "workspace:@cas/contracts"
+      ]
+    },
+    {
       "ref": "workspace:@cas/sunday-agent",
       "dependsOn": [
         "pkg:npm/typescript@6.0.3"
@@ -11804,7 +11838,8 @@
         "workspace:@cas/database",
         "workspace:@cas/drafting",
         "workspace:@cas/evidence",
-        "workspace:@cas/sheets-intake"
+        "workspace:@cas/sheets-intake",
+        "workspace:@cas/source-reader"
       ]
     },
     {
@@ -11831,6 +11866,7 @@
         "workspace:@cas/payer-agent",
         "workspace:@cas/roundup",
         "workspace:@cas/sheets-intake",
+        "workspace:@cas/source-reader",
         "workspace:@cas/sunday-agent",
         "workspace:@cas/taxonomy",
         "workspace:@cas/worker"
