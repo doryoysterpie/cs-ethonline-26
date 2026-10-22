@@ -165,11 +165,25 @@ describe('adding a category', () => {
     }
   });
 
-  it('refuses a second category whose policy builds to a hash another category owns', () => {
-    // Identical vocabulary, thresholds, weights and version under another name
-    // would build the cyberattack contract byte for byte: one hash, one owner.
-    registerCategoryPolicy({ ...CYBERATTACK_POLICY, category: 'cyberattack_twin' });
-    expect(() => contractFor('cyberattack_twin')).toThrow(CategoryContractError);
+  it('refuses a category that reuses another category’s policy version at registration, whatever the order', () => {
+    // The probe of the second review: a duplicate of the cyberattack policy
+    // under another name, registered before anything is built. It is refused
+    // at registration, so no contract, no hash and no run can ever name it,
+    // and the cyberattack hash stays with cyberattack.
+    expect(() =>
+      registerCategoryPolicy({ ...CYBERATTACK_POLICY, category: 'cyberattack_twin' }),
+    ).toThrow(CategoryPolicyError);
+    expect(isCategory('cyberattack_twin')).toBe(false);
     expect(categoryRulesetHash('cyberattack')).toBe(CYBERATTACK_CONTRACT_HASH);
+    // Identical vocabulary under a distinct version is a distinct hash: the
+    // version is part of the contract, so no two categories share one.
+    registerCategoryPolicy({
+      ...CYBERATTACK_POLICY,
+      category: 'cyberattack_twin',
+      policyVersion: 'twin-policy@1',
+    });
+    expect(categoryRulesetHash('cyberattack_twin')).not.toBe(CYBERATTACK_CONTRACT_HASH);
+    expect(categoryRulesetHash('cyberattack')).toBe(CYBERATTACK_CONTRACT_HASH);
+    expect(() => contractFor('cyberattack_twin')).not.toThrow(CategoryContractError);
   });
 });
