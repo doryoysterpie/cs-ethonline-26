@@ -193,6 +193,12 @@ export interface DraftStore {
 
 export interface QueueDecisionStore {
   append(decision: QueueDecision): Promise<void>;
+  /**
+   * Appends only while the entry holds fewer than `limit` decisions, as one
+   * atomic operation: the count and the append cannot interleave with another
+   * caller's. `'limit'` means nothing was written.
+   */
+  appendIfBelow(decision: QueueDecision, limit: number): Promise<'appended' | 'limit'>;
   listForRun(classificationRunId: string): Promise<QueueDecision[]>;
   /** How many decisions one queue row of one run already holds. */
   countForEntry(classificationRunId: string, sourceRowId: string): Promise<number>;

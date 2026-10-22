@@ -369,6 +369,23 @@ export async function appendQueueDecision(
   );
 }
 
+/**
+ * Serializes writers of one queue entry for the rest of the transaction.
+ * Two reviews of the same (run, row) therefore count and append one after the
+ * other, so a bound checked inside the transaction holds under concurrency.
+ * The lock is transaction-scoped and released at commit or rollback.
+ */
+export async function lockQueueEntry(
+  client: Queryable,
+  classificationRunId: string,
+  sourceRowId: string,
+): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))', [
+    classificationRunId,
+    sourceRowId,
+  ]);
+}
+
 export async function countQueueDecisionsForEntry(
   client: Queryable,
   classificationRunId: string,

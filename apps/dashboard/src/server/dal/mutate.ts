@@ -120,16 +120,28 @@ export async function reviewQueueEntry(
       );
     }
     const decisionId = randomUUID();
-    await runtime.stores.queueDecisions.append({
-      id: decisionId,
-      classificationRunId: runId,
-      sourceRowId,
-      reviewState,
-      reasonCode: reason,
-      note,
-      actorAccountId: principal.accountId,
-      createdAt: new Date().toISOString(),
-    });
+    // The bound is enforced where the write happens, atomically with it: the
+    // early check above is a fast refusal, this is the one that holds when two
+    // reviews of the same row arrive together (Codex review of 22 October 2026).
+    const appended = await runtime.stores.queueDecisions.appendIfBelow(
+      {
+        id: decisionId,
+        classificationRunId: runId,
+        sourceRowId,
+        reviewState,
+        reasonCode: reason,
+        note,
+        actorAccountId: principal.accountId,
+        createdAt: new Date().toISOString(),
+      },
+      MAX_QUEUE_DECISIONS_PER_ENTRY,
+    );
+    if (appended === 'limit') {
+      throw validation(
+        'decision_limit',
+        `A queue row keeps at most ${MAX_QUEUE_DECISIONS_PER_ENTRY} decisions.`,
+      );
+    }
     await audit(runtime, {
       kind: 'queue_reviewed',
       outcome: 'success',

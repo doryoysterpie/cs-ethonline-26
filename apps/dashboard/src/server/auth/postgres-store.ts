@@ -242,6 +242,24 @@ class PostgresQueueDecisions implements QueueDecisionStore {
     await this.db.withClient((client) => database.appendQueueDecision(client, decision));
   }
 
+  async appendIfBelow(decision: QueueDecision, limit: number): Promise<'appended' | 'limit'> {
+    const { database } = await workspace();
+    // One transaction per append: the advisory lock on the entry serializes
+    // concurrent reviews of the same row, so the count below is the count the
+    // append will be judged against, whatever another request is doing.
+    return this.db.withTransaction(async (tx) => {
+      await database.lockQueueEntry(tx, decision.classificationRunId, decision.sourceRowId);
+      const held = await database.countQueueDecisionsForEntry(
+        tx,
+        decision.classificationRunId,
+        decision.sourceRowId,
+      );
+      if (held >= limit) return 'limit';
+      await database.appendQueueDecision(tx, decision);
+      return 'appended';
+    });
+  }
+
   async countForEntry(classificationRunId: string, sourceRowId: string): Promise<number> {
     const { database } = await workspace();
     return this.db.withClient((client) =>

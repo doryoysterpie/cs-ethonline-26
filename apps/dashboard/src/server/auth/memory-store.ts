@@ -367,6 +367,19 @@ class MemoryQueueDecisions implements QueueDecisionStore {
     this.decisions.push(Object.freeze({ ...decision }));
   }
 
+  async appendIfBelow(decision: QueueDecision, limit: number): Promise<'appended' | 'limit'> {
+    // No await between the count and the push: on one event loop the two are
+    // one step, so a second caller sees either none or all of this append.
+    const held = this.decisions.filter(
+      (d) =>
+        d.classificationRunId === decision.classificationRunId &&
+        d.sourceRowId === decision.sourceRowId,
+    ).length;
+    if (held >= limit) return 'limit';
+    this.decisions.push(Object.freeze({ ...decision }));
+    return 'appended';
+  }
+
   async countForEntry(classificationRunId: string, sourceRowId: string): Promise<number> {
     return this.decisions.filter(
       (d) => d.classificationRunId === classificationRunId && d.sourceRowId === sourceRowId,

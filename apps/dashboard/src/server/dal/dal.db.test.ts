@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { openMigratedSchema, type IsolatedSchema } from '../../test/isolated-schema.ts';
-import { HOSTILE_TITLE, seedPipeline, type SeededPipeline } from '../../test/seed-pipeline.ts';
+import {
+  HOSTILE_TITLE,
+  seedPipeline,
+  seedQueueRow,
+  type SeededPipeline,
+} from '../../test/seed-pipeline.ts';
 import { insertSynthetic, syntheticAccount } from '../../test/synthetic-accounts.ts';
 import { openMemoryStores } from '../auth/memory-store.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
@@ -498,6 +503,45 @@ describe('data-access layer against PostgreSQL', () => {
     ).rejects.toSatisfy(raised);
     expect(await fingerprint()).toBe(machineFingerprint);
   });
+  it('refuses the 101st decision when two reviews of one row arrive together (CAS-006, blocker 7, Codex F1)', async () => {
+    const queueRow = await seedQueueRow(isolated.db);
+    for (let n = 0; n < MAX_QUEUE_DECISIONS_PER_ENTRY - 1; n += 1) {
+      await runtime.stores.queueDecisions.append({
+        id: randomUUID(),
+        classificationRunId: queueRow.classificationRunId,
+        sourceRowId: queueRow.sourceRowId,
+        reviewState: 'rejected',
+        reasonCode: 'editorial_judgement',
+        note: null,
+        actorAccountId: principals.editor.accountId,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    const review = () =>
+      reviewQueueEntry(runtime, principals.editor, {
+        classificationRunId: queueRow.classificationRunId,
+        sourceRowId: queueRow.sourceRowId,
+        reviewState: 'selected',
+        reasonCode: 'editorial_judgement',
+        note: null,
+      });
+    // Both start at 99 held decisions. Exactly one may land.
+    const settled = await Promise.allSettled([review(), review()]);
+    const landed = settled.filter((r) => r.status === 'fulfilled');
+    const refused = settled.filter(
+      (r) =>
+        r.status === 'rejected' && isDashboardError(r.reason) && r.reason.code === 'decision_limit',
+    );
+    expect(landed).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    expect(
+      await runtime.stores.queueDecisions.countForEntry(
+        queueRow.classificationRunId,
+        queueRow.sourceRowId,
+      ),
+    ).toBe(MAX_QUEUE_DECISIONS_PER_ENTRY);
+  });
+
   it('bounds the decisions one queue row keeps and the revisions one draft keeps (CAS-006, blocker 7)', async () => {
     // The seeded run has no review row, so the bound is exercised on a row
     // identifier whose decisions are appended through the store directly; the
