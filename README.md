@@ -70,7 +70,7 @@ names its merged head. CAS-003, the editorial week as one command with its manif
 sift table where the owner selects stories per incident (migration 0014, `week run`,
 `select:stories`), is in review on pull request 23 (`docs/CAS-003-REPORT.md`). CAS-004, the round-up
 generated through the rundown template and edited by the owner (migration 0015, `@cas/roundup`,
-the `owner` role), is on `cas-004/roundup`, stacked on that pull request (`docs/CAS-004-REPORT.md`).
+the `owner` role), is in review on pull request 24, stacked on pull request 23 (`docs/CAS-004-REPORT.md`).
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up
