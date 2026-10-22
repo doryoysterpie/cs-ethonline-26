@@ -108,3 +108,14 @@ In the same round Codex passed pull request 18 at `32e1357` (step 7's code half,
 its verdict independent of this one) and pull request 14 at `2ad714d` (CAS-001), and returned
 two findings on pull request 19 (CAS-002); the ledger carries all four. The corrected head of
 this pull request awaits re-review; nothing is called audited until it says so.
+
+## 5. Merges of 22 October 2026
+
+The owner merged pull request 17 at `355e773` and pull request 18 at `c32c963` on
+22 October 2026. Pull request 17's corrected head `e19449e` had not been re-reviewed; its
+audit state stays not audited until a verdict names that commit, and the re-review request
+stands. Pull request 18's delta was passed at `32e1357`; its merged head carries 17's
+correction by merge. With both on `main`, the owner's halves of step 7 can be completed on the
+recreated Railway service: `DASHBOARD_TRUST_FORWARDED_FOR=true`,
+`DASHBOARD_TRUSTED_PROXY_HOPS=1`, and the two-network proof that one lockout does not lock the
+other.
