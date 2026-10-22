@@ -29,7 +29,10 @@ export function contentSecurityPolicy(nonce: string): string {
     "img-src 'self'",
     "font-src 'self'",
     "connect-src 'self'",
-    "form-action 'self'",
+    // A form may submit here, and the checkout and portal actions redirect to
+    // Stripe's hosted pages after the submission, which Chrome also checks
+    // against this directive (CAS-008). Nothing else may be a form target.
+    "form-action 'self' https://checkout.stripe.com https://billing.stripe.com",
     "frame-ancestors 'none'",
     "base-uri 'none'",
     "object-src 'none'",

@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "728896b26eb0b3886f4ff2af04dc663acc76755086ccc578b9843dddc4fc903b"
+        "value": "37e79d8f4fb6eb62db94da2a193bdaa68bd3665586d2eb1b82c992719f4e0eda"
       },
       {
         "name": "cas:lockfile:version",
@@ -8262,6 +8262,32 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/qrcode-generator@2.0.4",
+      "name": "qrcode-generator",
+      "version": "2.0.4",
+      "purl": "pkg:npm/qrcode-generator@2.0.4",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "9994a23fa4676c7978c4bd80a791df9232e79b17ca70f5a959efdcfb95f10ae7ad11e9ea98d15fd451ff7ed5cf0ad146e7f4c3a1b8ec8f3eac48d2f44abf19f6"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/react-dom@19.2.8",
       "name": "react-dom",
       "version": "19.2.8",
@@ -11342,6 +11368,10 @@
       ]
     },
     {
+      "ref": "pkg:npm/qrcode-generator@2.0.4",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/react-dom@19.2.8",
       "dependsOn": [
         "pkg:npm/react@19.2.8",
@@ -11736,6 +11766,7 @@
         "pkg:npm/mdast-util-from-markdown@2.0.3",
         "pkg:npm/mdast-util-to-hast@13.2.1",
         "pkg:npm/next@16.4.2",
+        "pkg:npm/qrcode-generator@2.0.4",
         "pkg:npm/react-dom@19.2.8",
         "pkg:npm/react@19.2.8",
         "pkg:npm/server-only@0.0.1",

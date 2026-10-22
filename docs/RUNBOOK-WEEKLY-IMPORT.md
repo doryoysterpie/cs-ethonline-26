@@ -186,3 +186,29 @@ Sign-up needs `RESEND_API_KEY`, `AUTH_EMAIL_FROM` and `AUTH_OTP_PEPPER` as sign-
 `DASHBOARD_PUBLIC_URL` for the address the approval email names. The limits (three requests per
 address and ten per source in fifteen minutes, five wrong codes, six hundred reads per reader in
 fifteen minutes) are fixed in code; a trip is one audit event, never a page.
+
+## 11. Support and donations (CAS-008)
+
+Every signed-in account sees `/support` and `/donate`. "Become a supporter" sends the browser to
+Stripe's hosted Checkout for the configured monthly price and back to `/support`; the page
+shows the thank-you once Stripe's webhook has been recorded, usually within a minute. "Manage
+your support" opens Stripe's billing portal, where a supporter cancels or changes a card;
+nothing of that is handled here. Reading never depends on any of it (D45).
+
+Setting Stripe up, once, by you: confirm which entity owns the Stripe account (D44) before the
+first test-mode subscription; create the recurring price and put its identifier in
+`STRIPE_PRICE_ID`; create a restricted key with Checkout Sessions and Billing Portal write
+access and put it in `STRIPE_SECRET_KEY`; register a webhook endpoint at
+`<DASHBOARD_PUBLIC_URL>/api/stripe/webhook` subscribed to the six event types named in
+`.env.example`, and put its signing secret in `STRIPE_WEBHOOK_SECRET`; enable a billing portal
+configuration in Stripe's dashboard. All three variables are set together or not at all. A test
+key (`sk_test_` or `rk_test_`) makes the support page say Stripe is in test mode.
+
+The donation page shows the entries of `data/policy/donation-addresses.json` and nothing else.
+To add or change an address: put the entry in the file (a wallet dedicated to this product,
+verified by a small transfer on the date you record), run the dashboard tests: the one that
+reads the file fails and names, as its received value, the digest the entries now have; put that
+digest in `DONATION_ENTRIES_DIGEST` in `apps/dashboard/src/server/support/donations.ts`, and
+commit both in one reviewed change. An
+address that fails its own checksum fails the tests; a file that differs from the pinned
+digest makes the page refuse to render rather than show the wrong address.

@@ -58,11 +58,14 @@ export const LIMIT_WINDOW_SECONDS = 15 * 60;
 export const SIGNUP_PER_ADDRESS = 3;
 export const SIGNUP_PER_NETWORK = 10;
 export const READS_PER_READER = 600;
+/** Hosted-checkout hand-offs one account may start per window (CAS-008). */
+export const CHECKOUTS_PER_ACCOUNT = 5;
 
 export interface Limits {
   readonly signupAddress: WindowLimiter;
   readonly signupNetwork: WindowLimiter;
   readonly readerReads: WindowLimiter;
+  readonly checkoutAccount: WindowLimiter;
 }
 
 export function defaultLimits(): Limits {
@@ -70,5 +73,6 @@ export function defaultLimits(): Limits {
     signupAddress: new WindowLimiter(SIGNUP_PER_ADDRESS, LIMIT_WINDOW_SECONDS),
     signupNetwork: new WindowLimiter(SIGNUP_PER_NETWORK, LIMIT_WINDOW_SECONDS),
     readerReads: new WindowLimiter(READS_PER_READER, LIMIT_WINDOW_SECONDS),
+    checkoutAccount: new WindowLimiter(CHECKOUTS_PER_ACCOUNT, LIMIT_WINDOW_SECONDS),
   };
 }

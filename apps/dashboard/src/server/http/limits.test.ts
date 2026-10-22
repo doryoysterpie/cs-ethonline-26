@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CHECKOUTS_PER_ACCOUNT,
   defaultLimits,
   READS_PER_READER,
   SIGNUP_PER_ADDRESS,
@@ -40,6 +41,8 @@ describe('the fixed-window limiter (CAS-007)', () => {
   it('carries the limits fixed at S0', () => {
     const limits = defaultLimits();
     expect([SIGNUP_PER_ADDRESS, SIGNUP_PER_NETWORK, READS_PER_READER]).toEqual([3, 10, 600]);
+    expect(CHECKOUTS_PER_ACCOUNT).toBe(5);
+    expect(limits.checkoutAccount.check('account:a', 0).allowed).toBe(true);
     expect(limits.signupAddress.limit).toBe(3);
     expect(limits.signupNetwork.windowSeconds).toBe(900);
     expect(limits.readerReads.limit).toBe(600);

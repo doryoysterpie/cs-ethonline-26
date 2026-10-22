@@ -50,6 +50,13 @@ file drifts from the digest the code pins.
   `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`. The status
   derived: `active` while the latest subscription event says `active` or `trialing`;
   `past_due` when it says so; `none` after `canceled`, `unpaid` or a deletion.
+- **Note added at S3, 22 October 2026.** Stripe's documentation, read the same day, says
+  that `created` has one-second precision and advises against using it to order events,
+  recommending instead that the object be retrieved from the API. The handler never calls
+  Stripe back (above), so the design stands: events are ordered by `created`, ties within a
+  second by arrival. For a mark that grants a thank-you and nothing else (D45) that is
+  accepted and recorded as residual risk RR14; it is to be reopened if the mark ever gates
+  anything.
 - **Managing a subscription.** The support page offers Stripe's hosted billing portal
   (`POST /v1/billing_portal/sessions`) for a supporter to cancel or update a card; nothing of
   that is handled here.
@@ -125,3 +132,89 @@ the drift refusal, the empty file); the QR output for a known string; the Stripe
 request shape through an injected fetch (form encoding, headers, no key in a URL).
 PostgreSQL: the migration; a replayed event changes nothing; an event out of order; the status
 derived per account; the audit events. Then the loop, the four suites, a clean clone and CI.
+
+## 2. The stack check, S1 (step 5)
+
+Facts read from the installed tools and the registry on 22 October 2026. Stripe's server-side
+library, `stripe` 23.0.1 on npm (no dependencies, Node 20 or later), was weighed and
+**rejected**: the unit needs two form-encoded POSTs and one HMAC verification, which Node's
+own `crypto` and `fetch` cover in under two hundred lines that a reviewer reads whole; the
+library would add a large surface, its own API-version coupling and a release cadence to track
+for three calls. The alternative the plan named, raw verification with Node's crypto, is the
+one built (`apps/dashboard/src/server/support/signature.ts`), checked against the procedure
+Stripe documents for manual verification and against vectors built with the same HMAC. The one
+dependency added is `qrcode-generator` 2.0.4 (MIT, no dependencies, published 7 August 2025,
+ESM and CommonJS, typed), pinned in the workspace catalogue and admitted by the release-age
+gate; the page draws the SVG path itself from the module matrix, so the library produces
+booleans and nothing it produces is inserted as markup. EIP-55 needs Keccak-256, which Node's
+OpenSSL does not provide (SHA3-256 differs in its padding), so a sixty-line Keccak lives in
+`support/keccak.ts`, proven against the published vectors; the bech32, bech32m and Base58Check
+checks are in `support/addresses.ts` against the BIP-173, BIP-350 and well-known legacy
+vectors. The bill of materials was regenerated; `pnpm audit` reports no known vulnerability.
+
+## 3. The data contract, S2 (step 6)
+
+`packages/database/migrations/0018_support.sql`, forward-only, checksum
+`ddd6f136f760725fc58cc40906f0dfbdf88de4a85fd5937058b91dcd366843b7`, unapplied outside test and
+scratch databases: `checkout_sessions` (the Stripe session identifier, the account, the instant;
+append-only by guard); `supporter_events` (identifier, provider, the event identifier unique per
+provider, type, the event's own instant and the arrival instant, the resolved account, customer
+and subscription, the status the event carried, the SHA-256 of the raw body; append-only by
+guard; indexed by account, subscription and customer); the three audit kinds
+`checkout_started`, `webhook_received` and `supporter_changed`. `packages/database/src/support.ts`
+is the operations module: record a hand-off and resolve a session, record an event once (the
+unique conflict absorbed by the statement, so a replay inside a transaction leaves the
+transaction usable), resolve an account from a subscription or a customer, the customer of an
+account, the supporter status of an account (the latest status-carrying event by its own
+instant, then by arrival), the account's events. Tests: the provider shapes are enforced; a
+cancellation that arrives before an earlier activation leaves the status canceled; a replay of
+either identifier changes nothing, inside a transaction too; an event without a status binds
+the customer and changes no status; a later reactivation wins; nothing is rewritten or
+deleted; the three kinds are admitted. The migration lists in the runner's and the schema
+tests moved from seventeen to eighteen; the guard-function list gained its two guards.
+
+## 4. The reference implementation, S3 (step 7)
+
+`apps/dashboard/src/server/support/` holds the pure pieces: `config.ts` (the three variables,
+together or not at all, shape-checked, the mode read from the key's prefix, the API version
+pinned at `2026-09-30.endive`); `signature.ts` (the header parsed, every scheme but `v1`
+discarded, several `v1` accepted during a secret roll, HMAC-SHA256 over `timestamp.body`,
+constant-time comparison, the five-minute tolerance after the comparison as Stripe's own
+libraries order it); `events.ts` (the envelope and the six subscribed types parsed into the
+identifiers the record keeps, a deletion read as `canceled`, the invoice's subscription read
+under either placement, an unsubscribed type kept as unhandled); `status.ts` (the mark:
+`supporter` for active or trialing, `past_due`, else `none`); `stripe.ts` (the two POSTs over
+an injected transport, the key in one header, an idempotency key, a ten-second deadline, one
+fixed code for every failure, only an https `stripe.com` URL followed); `donations.ts` (the
+loader, the canonical digest, drift and malformation as two fixed codes); `addresses.ts` and
+`keccak.ts` (section 2); `qr.ts` (the module matrix and the path).
+
+`apps/dashboard/src/server/dal/support.ts` is the data-access layer: `supportView`,
+`startCheckout` (the limit of five hand-offs per account in fifteen minutes, the session
+recorded against the account before the redirect), `openBillingPortal` (the customer the
+account's events bound), `recordWebhook` (the bound, the configuration, the signature, the
+envelope, the account resolved from the session, the subscription, the customer or the
+reference in that order, the event recorded once, the mark re-derived in the same transaction,
+`supporter_changed` when it moved) and `donationsView`. Every function begins with the
+capability every role holds, so the check is a session check in the layer's usual shape, and
+no capability reads the mark (D45).
+
+## 5. The interface and the audit events, S5 and S6 (step 8)
+
+`/support` shows the mark as the webhooks last left it, the thank-you for a supporter, the
+Stripe test-mode notice when the key is a test key, "Become a supporter" (to hosted Checkout)
+or "Manage your support" (to the billing portal), each a form under the session-bound CSRF
+token; `success_url` and `cancel_url` return to `/support` with fixed notices. `/donate`
+renders each pinned entry as text and as an SVG path drawn from the module matrix, with the
+tokens accepted and the verified-on date; the empty list says so. `POST /api/stripe/webhook`
+answers a bare status. The navigation gains Support and Donate for every role. The content
+security policy's `form-action` admits `checkout.stripe.com` and `billing.stripe.com`, because
+Chrome checks the redirect that follows a form submission against it; nothing else changed in
+the headers. Audit events: `checkout_started` with `redirected`, `portal_redirected`,
+`limited`, `support_not_configured`, `checkout_unavailable`, `portal_unavailable` or
+`record_failed`; `webhook_received` with `webhook_recorded`, `webhook_ignored`,
+`webhook_replay`, `webhook_too_large`, `webhook_not_configured`,
+`webhook_signature_malformed`, `webhook_signature_mismatch`, `webhook_signature_stale` or
+`webhook_body_malformed`; `supporter_changed` with the new mark; `limit_tripped` with
+`checkout_account`, once per window. No event carries a body, an address or a key; the tests
+assert it.

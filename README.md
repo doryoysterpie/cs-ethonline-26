@@ -51,7 +51,7 @@ amendment of 22 October 2026).
 after its independent review and is not re-audited; no document may read as saying otherwise
 (`docs/SPRINT-5-REPORT.md`, section 16). Its rules stand as written: a file can be ingested as
 fixture or replay only; live evidence comes from the Graph client, never from a file; a claim
-is a record, not a UUID. Migrations 0001 to 0017 are applied by the deploy step before the
+is a record, not a UUID. Migrations 0001 to 0018 are applied by the deploy step before the
 dashboard serves traffic.
 
 **What is on `main`, and what is in review.** Four post-event units merged on 22 October
@@ -75,7 +75,9 @@ edited by the owner (migration 0015, `@cas/roundup`, the `owner` role), on pull 
 system's first outbound fetch under the fetch policy adopted as D36 (migration 0016,
 `@cas/source-reader`, `@cas/article`), on pull request 26 (`docs/CAS-005-REPORT.md`); CAS-007,
 reader sign-up with owner approval, the `reader` role in place of `judge`, the published mark
-and scrape protection (migration 0017), on pull request 27 (`docs/CAS-007-REPORT.md`).
+and scrape protection (migration 0017), on pull request 27 (`docs/CAS-007-REPORT.md`); CAS-008,
+the supporter tier through Stripe's hosted Checkout and signed webhooks, with the pinned
+donation page (migration 0018, `qrcode-generator`), on pull request 28 (`docs/CAS-008-REPORT.md`).
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up
@@ -161,7 +163,7 @@ import command was run against the live workbook into a local database on 21 Oct
 
 | Path                      | Package               | State after integration                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/dashboard`          | `@cas/dashboard`      | Next.js command center, built in Sprint 6, passwordless login; from CAS-003 the editorial week pages and the per-incident selection under `select:stories`; from CAS-004 the round-up page, generation and editing under the `owner` role, and the one model transport; from CAS-005 the article page with the reading stage and the one Node transport of the source reader; from CAS-007 reader sign-up with owner approval, the published pages and the limits                                                                                                                                                                                               |
+| `apps/dashboard`          | `@cas/dashboard`      | Next.js command center, built in Sprint 6, passwordless login; from CAS-003 the editorial week pages and the per-incident selection under `select:stories`; from CAS-004 the round-up page, generation and editing under the `owner` role, and the one model transport; from CAS-005 the article page with the reading stage and the one Node transport of the source reader; from CAS-007 reader sign-up with owner approval, the published pages and the limits; from CAS-008 the support and donation pages and the Stripe webhook endpoint                                                                                                                  |
 | `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering, evidence, claim, anomaly and drafting commands; import limits and a command deadline; `sheets import` (CAS-001) and `week run`, the editorial week as one command recording a manifest (CAS-003)                                                                                                                                                                                                                                                                                                                                                                                               |
 | `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -470,41 +472,42 @@ audit and nothing in it is accepted.
 
 ## Documentation
 
-| Document                                  | Content                                                                                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `docs/ARCHITECTURE.md`                    | components, runtime data flow, contract boundary, dependency rules                                                             |
-| `docs/DATA_INPUTS.md`                     | editorial data, schemas, human versus machine labels, ingestion rules                                                          |
-| `docs/PRIOR_INPUTS.md`                    | the pre-existing corpus, its permitted uses, and the submission disclosure                                                     |
-| `docs/HACKATHON_REQUIREMENTS.md`          | requirement-to-evidence matrix per sponsor track and the official schedule                                                     |
-| `docs/DECISIONS.md`                       | append-only decision log, D1 to D36                                                                                            |
-| `docs/AUDIT-LEDGER.md`                    | one row per track and production commit: exact commit, reviewer, verdict in the reviewer's words, date, record                 |
-| `docs/SPRINT-0-REPORT.md`                 | Sprint 0 report, audit remediation and final correction                                                                        |
-| `docs/SPRINT-1-REPORT.md`                 | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                             |
-| `docs/SPRINT-2-REPORT.md`                 | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                                                     |
-| `docs/SPRINT-3-REPORT.md`                 | Sprint 3 classification proof: classifier, migration, calibration, evidence                                                    |
-| `docs/SPRINT-4-REPORT.md`                 | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections                             |
-| `docs/SPRINT-5-REPORT.md`                 | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting, audit correction                                |
-| `docs/CHECKIN-1-DRAFT.md`                 | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                                               |
-| `docs/CHECKIN-2-DRAFT.md`                 | Project Check-in #2 draft, due Thursday 10 September; not submitted                                                            |
-| `docs/ACCOUNT_READINESS.md`               | secret-free account readiness matrix                                                                                           |
-| `docs/SPRINT_BOARD.md`                    | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                                                    |
-| `docs/SECURITY.md`                        | security policy                                                                                                                |
-| `docs/SHEETS-INTAKE.md`                   | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                                    |
-| `docs/RUNBOOK-WEEKLY-IMPORT.md`           | the weekly Sheets import: the command, what it needs, what it prints, exit codes                                               |
-| `docs/CAS-001-REPORT.md`                  | CAS-001 report: design note, reference implementation, import path, local run                                                  |
-| `docs/CAS-004-REPORT.md`                  | CAS-004 report: the round-up design note, prompt contract, migration 0015, the model boundary, tests, verification             |
-| `docs/CAS-005-REPORT.md`                  | CAS-005 report: the fetch policy adopted with measured bounds, the article contract, migration 0016, the reader, tests         |
-| `docs/CAS-007-REPORT.md`                  | CAS-007 report: reader sign-up with owner approval, the reader role, the published mark, limits and robots.txt, migration 0017 |
-| `docs/THREAT_MODEL.md`                    | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks          |
-| `docs/RISK_REGISTER.md`                   | risks with owner, status, next action and review date                                                                          |
-| `docs/DATA_CLASSIFICATION_RETENTION.md`   | data classes, inventory, retention and removal                                                                                 |
-| `docs/INCIDENT_RESPONSE.md`               | roles, severities, triggers and runbooks                                                                                       |
-| `docs/MCP-TOOLING-TRACK-REPORT.md`        | MCP tooling track: server, tests, read-only proof, clean-install evidence; pending audit                                       |
-| `docs/SECURITY-FOUNDATION-REPORT.md`      | security-foundation track: resource limits, CI database, toolchain pins, bill of materials; pending audit                      |
-| `docs/SPRINT-6-DASHBOARD-AUTH-HANDOFF.md` | dashboard and authentication track: design, interpretation choices, known limitations; pending audit                           |
-| `docs/VULNERABILITY_DISCLOSURE.md`        | how to report a vulnerability privately, scope and safe harbour                                                                |
-| `docs/RELEASE-INTEGRATION-REPORT.md`      | Latest in Cyber release integration: merges, reconciliation, verification, security review, production blockers                |
-| `docs/POST-EVENT-PLAN.md`                 | post-event plan: the product after the hackathon, the TCU definition and standard steps, nine units, open questions            |
-| `docs/FETCH-POLICY.md`                    | proposed contract for fetching source pages: rules, reason codes, threat-model rows, required tests, owner decisions           |
-| `docs/tcu/CAS-001.md` to `CAS-009.md`     | one tracker per unit: steps in order, standard steps, acceptance, evidence record, walk-through log                            |
-| `LICENSE`                                 | Apache License 2.0                                                                                                             |
+| Document                                  | Content                                                                                                                           |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/ARCHITECTURE.md`                    | components, runtime data flow, contract boundary, dependency rules                                                                |
+| `docs/DATA_INPUTS.md`                     | editorial data, schemas, human versus machine labels, ingestion rules                                                             |
+| `docs/PRIOR_INPUTS.md`                    | the pre-existing corpus, its permitted uses, and the submission disclosure                                                        |
+| `docs/HACKATHON_REQUIREMENTS.md`          | requirement-to-evidence matrix per sponsor track and the official schedule                                                        |
+| `docs/DECISIONS.md`                       | append-only decision log, D1 to D36                                                                                               |
+| `docs/AUDIT-LEDGER.md`                    | one row per track and production commit: exact commit, reviewer, verdict in the reviewer's words, date, record                    |
+| `docs/SPRINT-0-REPORT.md`                 | Sprint 0 report, audit remediation and final correction                                                                           |
+| `docs/SPRINT-1-REPORT.md`                 | Sprint 1 live Graph proof: discovery, selection, results, evidence                                                                |
+| `docs/SPRINT-2-REPORT.md`                 | Sprint 2 ingestion proof: schema, dependencies, synthetic and real imports                                                        |
+| `docs/SPRINT-3-REPORT.md`                 | Sprint 3 classification proof: classifier, migration, calibration, evidence                                                       |
+| `docs/SPRINT-4-REPORT.md`                 | Sprint 4 clustering proof: engine, migrations 0006 and 0007, human review layer, audit corrections                                |
+| `docs/SPRINT-5-REPORT.md`                 | Sprint 5 evidence proof: correlation, evidence states, anomaly feed, drafting, audit correction                                   |
+| `docs/CHECKIN-1-DRAFT.md`                 | Project Check-in #1, submitted; owner-confirmed 8 September 2026                                                                  |
+| `docs/CHECKIN-2-DRAFT.md`                 | Project Check-in #2 draft, due Thursday 10 September; not submitted                                                               |
+| `docs/ACCOUNT_READINESS.md`               | secret-free account readiness matrix                                                                                              |
+| `docs/SPRINT_BOARD.md`                    | Sprints 0 to 9 against the official schedule, the Graph gate, kill criteria                                                       |
+| `docs/SECURITY.md`                        | security policy                                                                                                                   |
+| `docs/SHEETS-INTAKE.md`                   | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                                       |
+| `docs/RUNBOOK-WEEKLY-IMPORT.md`           | the weekly Sheets import: the command, what it needs, what it prints, exit codes                                                  |
+| `docs/CAS-001-REPORT.md`                  | CAS-001 report: design note, reference implementation, import path, local run                                                     |
+| `docs/CAS-004-REPORT.md`                  | CAS-004 report: the round-up design note, prompt contract, migration 0015, the model boundary, tests, verification                |
+| `docs/CAS-005-REPORT.md`                  | CAS-005 report: the fetch policy adopted with measured bounds, the article contract, migration 0016, the reader, tests            |
+| `docs/CAS-007-REPORT.md`                  | CAS-007 report: reader sign-up with owner approval, the reader role, the published mark, limits and robots.txt, migration 0017    |
+| `docs/CAS-008-REPORT.md`                  | CAS-008 report: the supporter tier through Stripe's hosted Checkout and signed webhooks, the pinned donation page, migration 0018 |
+| `docs/THREAT_MODEL.md`                    | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks             |
+| `docs/RISK_REGISTER.md`                   | risks with owner, status, next action and review date                                                                             |
+| `docs/DATA_CLASSIFICATION_RETENTION.md`   | data classes, inventory, retention and removal                                                                                    |
+| `docs/INCIDENT_RESPONSE.md`               | roles, severities, triggers and runbooks                                                                                          |
+| `docs/MCP-TOOLING-TRACK-REPORT.md`        | MCP tooling track: server, tests, read-only proof, clean-install evidence; pending audit                                          |
+| `docs/SECURITY-FOUNDATION-REPORT.md`      | security-foundation track: resource limits, CI database, toolchain pins, bill of materials; pending audit                         |
+| `docs/SPRINT-6-DASHBOARD-AUTH-HANDOFF.md` | dashboard and authentication track: design, interpretation choices, known limitations; pending audit                              |
+| `docs/VULNERABILITY_DISCLOSURE.md`        | how to report a vulnerability privately, scope and safe harbour                                                                   |
+| `docs/RELEASE-INTEGRATION-REPORT.md`      | Latest in Cyber release integration: merges, reconciliation, verification, security review, production blockers                   |
+| `docs/POST-EVENT-PLAN.md`                 | post-event plan: the product after the hackathon, the TCU definition and standard steps, nine units, open questions               |
+| `docs/FETCH-POLICY.md`                    | proposed contract for fetching source pages: rules, reason codes, threat-model rows, required tests, owner decisions              |
+| `docs/tcu/CAS-001.md` to `CAS-009.md`     | one tracker per unit: steps in order, standard steps, acceptance, evidence record, walk-through log                               |
+| `LICENSE`                                 | Apache License 2.0                                                                                                                |

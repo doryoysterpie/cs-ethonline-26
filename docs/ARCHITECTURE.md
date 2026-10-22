@@ -620,3 +620,21 @@ sanitiser. Every reader-reachable read passes a per-account fixed-window limit, 
 `/robots.txt` serves a fixed, versioned list of AI crawlers to disallow. No new package; no new
 dependency; the data-access layer, the store interfaces and the session service are reused. The
 report is `docs/CAS-007-REPORT.md`.
+
+## 22. CAS-008 boundary: the supporter tier and donations
+
+Reading stays free (D45). The dashboard gains its first outbound boundary to a payment
+provider and its third unauthenticated entry point: `/support` hands a signed-in account to
+Stripe's hosted Checkout (`POST /v1/checkout/sessions`, form-encoded, the key in the
+`Authorization` header, the API version pinned in code) and, for a supporter, to the hosted
+billing portal; `POST /api/stripe/webhook` receives Stripe's events, the body read under a
+bound, the `v1` signature verified with Node's crypto (no provider SDK, D44), each event
+recorded once by its identifier. Migration 0018 adds `checkout_sessions` (the hand-off bound to
+its account) and `supporter_events` (append-only, `event_id` unique, the body's digest and never
+the body), plus three audit kinds. The supporter mark is derived from the recorded events by the
+event's own instant, then by arrival; it is a view, never a column and never a capability. The
+donation page (`/donate`) renders `data/policy/donation-addresses.json`, read at build time and
+checked at render time against a digest pinned in code, each address verified by its own
+checksum, the QR code drawn in-process (`qrcode-generator` 2.0.4, the one new dependency).
+No role or capability changes; the data-access layer, the audit store, the limiter and the
+public-address configuration are reused. The report is `docs/CAS-008-REPORT.md`.
