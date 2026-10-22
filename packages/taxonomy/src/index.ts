@@ -22,3 +22,18 @@ export {
   type SignalDefinition,
   type SignalTier,
 } from './signal-policy.js';
+export {
+  CATEGORIES,
+  CATEGORY_POLICIES,
+  canonicalCategoryPolicy,
+  categoryPolicy,
+  CRYPTO_POLICY,
+  CRYPTO_SIGNAL_POLICY_VERSION,
+  CYBERATTACK_POLICY,
+  isCategory,
+  type Category,
+  type CategoryPolicy,
+  type CategoryThresholds,
+  type CategoryWeights,
+  type PatternSignalDefinition,
+} from './categories.js';
