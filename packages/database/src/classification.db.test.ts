@@ -22,6 +22,7 @@ import {
   insertClassificationResults,
   insertClassificationRunCategory,
   insertRunningClassificationRun,
+  listClassificationRunCategories,
   type NewClassificationResult,
   type NewClassificationRun,
 } from './classification.js';
@@ -983,6 +984,30 @@ describe('classification persistence (migrations 0003 to 0005)', () => {
       expect(
         await isolated.db.withClient((c) => getClassificationRunCategory(c, run.id)),
       ).toBeNull();
+    });
+
+    it('lists the categories of several runs at once, leaving runs without one absent', async () => {
+      const withRow = await completeRun(isolated.db, batchA);
+      const without = await completeRun(isolated.db, batchA);
+      await isolated.db.withTransaction((tx) =>
+        insertClassificationRunCategory(tx, categoryOf(withRow)),
+      );
+      const listed = await isolated.db.withClient((c) =>
+        listClassificationRunCategories(c, [withRow.id, without.id, randomUUID()]),
+      );
+      expect([...listed.keys()]).toEqual([withRow.id]);
+      expect(listed.get(withRow.id)?.category).toBe('cyberattack');
+      expect(
+        (await isolated.db.withClient((c) => listClassificationRunCategories(c, []))).size,
+      ).toBe(0);
+      await expect(
+        isolated.db.withClient((c) =>
+          listClassificationRunCategories(
+            c,
+            Array.from({ length: 1001 }, () => randomUUID()),
+          ),
+        ),
+      ).rejects.toThrowError('out of range');
     });
 
     it('is append-only: a recorded category is neither updated nor deleted', async () => {

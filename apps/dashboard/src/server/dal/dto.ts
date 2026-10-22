@@ -65,6 +65,8 @@ export interface CommandCenterDto {
   })[];
   readonly classificationRuns: readonly (RunReference & {
     readonly batchId: string;
+    /** The category recorded beside the run (migration 0013); `null` for a run that predates it. */
+    readonly category: string | null;
     readonly reviewCount: number;
     readonly includeCount: number;
     readonly excludeCount: number;
@@ -133,7 +135,12 @@ export interface QueueEntryDto {
 }
 
 export interface ReviewQueueDto {
-  readonly run: RunReference & { readonly batchId: string; readonly reviewCount: number };
+  readonly run: RunReference & {
+    readonly batchId: string;
+    /** The category recorded beside the run (migration 0013); `null` for a run that predates it. */
+    readonly category: string | null;
+    readonly reviewCount: number;
+  };
   readonly entries: readonly QueueEntryDto[];
   readonly nextAfterRowNumber: number | null;
 }

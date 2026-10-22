@@ -51,6 +51,7 @@ export {
   type RationaleCodeCount,
   getClassificationRunCategory,
   insertClassificationRunCategory,
+  listClassificationRunCategories,
   type ClassificationRunCategoryRecord,
 } from './classification.js';
 export {

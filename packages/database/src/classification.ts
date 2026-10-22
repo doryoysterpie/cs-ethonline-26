@@ -145,27 +145,20 @@ export async function insertClassificationRunCategory(
   );
 }
 
-/** `null` for a run that predates categories; nothing is inferred for it. */
-export async function getClassificationRunCategory(
-  client: Queryable,
-  runId: string,
-): Promise<ClassificationRunCategoryRecord | null> {
-  const result = await client.query<{
-    run_id: string;
-    batch_id: string;
-    data_origin: DataOrigin;
-    category: string;
-    policy_version: string;
-    policy_hash: string;
-    created_at: string;
-  }>(
-    `SELECT run_id, batch_id, data_origin, category, policy_version, policy_hash,
-            to_json(created_at) #>> '{}' AS created_at
-       FROM classification_run_categories WHERE run_id = $1`,
-    [runId],
-  );
-  const row = result.rows[0];
-  if (row === undefined) return null;
+interface CategoryRow {
+  run_id: string;
+  batch_id: string;
+  data_origin: DataOrigin;
+  category: string;
+  policy_version: string;
+  policy_hash: string;
+  created_at: string;
+}
+
+const CATEGORY_COLUMNS = `run_id, batch_id, data_origin, category, policy_version, policy_hash,
+  to_json(created_at) #>> '{}' AS created_at`;
+
+function toCategoryRecord(row: CategoryRow): ClassificationRunCategoryRecord {
   return {
     runId: row.run_id,
     batchId: row.batch_id,
@@ -175,6 +168,41 @@ export async function getClassificationRunCategory(
     policyHash: row.policy_hash,
     createdAt: row.created_at,
   };
+}
+
+/** `null` for a run that predates categories; nothing is inferred for it. */
+export async function getClassificationRunCategory(
+  client: Queryable,
+  runId: string,
+): Promise<ClassificationRunCategoryRecord | null> {
+  const result = await client.query<CategoryRow>(
+    `SELECT ${CATEGORY_COLUMNS} FROM classification_run_categories WHERE run_id = $1`,
+    [runId],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : toCategoryRecord(row);
+}
+
+/**
+ * The category rows of several runs in one statement, keyed by run id. A run
+ * that predates categories is simply absent from the map. Bounded like the
+ * other paged reads.
+ */
+export async function listClassificationRunCategories(
+  client: Queryable,
+  runIds: readonly string[],
+): Promise<Map<string, ClassificationRunCategoryRecord>> {
+  if (runIds.length > 1000) {
+    throw new DatabaseError('query', 'classification run category list size out of range');
+  }
+  const found = new Map<string, ClassificationRunCategoryRecord>();
+  if (runIds.length === 0) return found;
+  const result = await client.query<CategoryRow>(
+    `SELECT ${CATEGORY_COLUMNS} FROM classification_run_categories WHERE run_id = ANY($1::uuid[])`,
+    [runIds],
+  );
+  for (const row of result.rows) found.set(row.run_id, toCategoryRecord(row));
+  return found;
 }
 
 export async function findClassificationRunByIdempotencyKey(

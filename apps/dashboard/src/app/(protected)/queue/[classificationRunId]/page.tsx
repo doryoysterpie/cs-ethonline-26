@@ -33,7 +33,8 @@ export default async function QueuePage({
       <Notice code={single(query.notice)} />
       <p className="small">
         {view.run.reviewCount} rows need review · batch{' '}
-        <span className="mono">{view.run.batchId}</span>
+        <span className="mono">{view.run.batchId}</span> · category{' '}
+        {view.run.category ?? 'none recorded (the run predates categories)'}
       </p>
       <table>
         <thead>
