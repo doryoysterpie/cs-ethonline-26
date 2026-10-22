@@ -17,7 +17,7 @@
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
 const LINE_BREAK = /[\r\n\u2028\u2029]/u;
 const BLOCK_START = /^\s*(?:[#>+\-*=~|`]|\d{1,9}[.)])/u;
-const URL_LIKE = /(?:[a-z][a-z0-9+.-]*:\/\/|www\.)/iu;
+const WWW = /\bwww\./iu;
 
 export type InlineTextIssue =
   | 'line_break'
@@ -38,7 +38,7 @@ export function inlineSlotTextIssue(value: string): InlineTextIssue | null {
   if (CONTROL.test(value)) return 'control_character';
   if (value.includes('<') || value.includes('>')) return 'html';
   if (value.includes('[') || value.includes(']') || value.includes('](')) return 'link';
-  if (URL_LIKE.test(value)) return 'url';
+  if (value.includes('://') || WWW.test(value)) return 'url';
   if (BLOCK_START.test(value)) return 'block_marker';
   if (value.includes('`')) return 'code';
   if (value.includes('|')) return 'table';
@@ -60,9 +60,29 @@ export function escapeInline(value: string): string {
   return BLOCK_START.test(escaped) ? `\\${escaped.trimStart()}` : escaped;
 }
 
-const URL_IN_MARKDOWN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>)\]]+/giu;
+const SCHEME_CHAR = /[a-z0-9+.-]/iu;
+const SCHEME = /^[a-z][a-z0-9+.-]*$/iu;
+const URL_STOP = /[\s<>)\]]/u;
 
-/** Every URL a renderer would see in the Markdown, in order of appearance. */
+/**
+ * Every URL a renderer would see in the Markdown, in order of appearance:
+ * each `://`, the scheme read back from it and the body read forward to the
+ * first stop character. One pass over the text, so a hostile string cannot
+ * make this scan slow (code scanning, polynomial regular expression).
+ */
 export function urlsIn(markdown: string): string[] {
-  return markdown.match(URL_IN_MARKDOWN) ?? [];
+  const found: string[] = [];
+  let from = 0;
+  for (;;) {
+    const at = markdown.indexOf('://', from);
+    if (at < 0) break;
+    let start = at;
+    while (start > 0 && SCHEME_CHAR.test(markdown[start - 1] ?? '')) start -= 1;
+    let end = at + 3;
+    while (end < markdown.length && !URL_STOP.test(markdown[end] ?? '')) end += 1;
+    if (SCHEME.test(markdown.slice(start, at)) && end > at + 3)
+      found.push(markdown.slice(start, end));
+    from = at + 3;
+  }
+  return found;
 }
