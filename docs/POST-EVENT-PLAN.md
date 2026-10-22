@@ -10,7 +10,9 @@ Technical Capability Unit (TCU) is in this repository, the standard steps every 
 complete, and the nine units that turn the hackathon submission into the owner's weekly
 product. The GitHub issues created from `docs/tcu/CAS-00N.md`, numbers #3 to #11, hold live status,
 blockers and evidence, and link here; they do not restate contracts. A step is marked done on
-the issue; the tracker file is the normative step list. When a contract changes, this file and
+the issue; the tracker file is the normative step list.
+The sprint tracker is [SPRINT-P1](https://github.com/doryoysterpie/cs-ethonline-26/issues/13), where all nine units were admitted by the owner on
+21 October 2026. When a contract changes, this file and
 the affected tracker change together.
 
 Nothing in this document marks a test as passed, changes an audit status, or admits any unit to
@@ -407,8 +409,9 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 **Tracker:** `docs/tcu/CAS-009.md`. **Issue, live status:** [#11](https://github.com/doryoysterpie/cs-ethonline-26/issues/11).
 
 - **Objective.** A reader picks stories and receives a shareable card.
-- **Admitted when.** CAS-007 is Complete and the owner opens this unit. The owner designs the
-  creatives; this unit builds the functionality only.
+- **Admitted.** With the whole sprint, by the owner on 21 October 2026 (SPRINT-P1); it starts
+  when CAS-007 is Complete. The owner designs the creatives; this unit builds the functionality
+  only.
 - **Decisions before any build.** Which fields are public (D6's allowlist governs); how the
   card is rendered; whether third-party headlines may appear on a card; what is measured.
 - **Nothing else is specified here.** The unit is a placeholder with its decisions listed so
