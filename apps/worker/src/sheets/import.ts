@@ -23,16 +23,41 @@
  *     order, so an unchanged tab yields the same key and writes nothing, and
  *     any change yields a new batch.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
-import type { EditorialSourceKind } from '@cas/contracts';
-import { serialToInstant, type NormalizedCell, type SourceRow } from '@cas/sheets-intake';
+import type { EditorialSourceKind, ImportBatchStatus } from '@cas/contracts';
+import {
+  findImportBatchByIdempotencyKey,
+  finalizeImportBatch,
+  insertImportBatch,
+  insertSheetsImportRead,
+  insertSheetsImportTimestamps,
+  listSourceRowIdentities,
+  MAX_ROWS_PER_INSERT,
+  type Database,
+  type NewSheetsImportTimestamp,
+} from '@cas/database';
+import {
+  buildRange,
+  normalizeCell,
+  readTab,
+  serialToInstant,
+  type EditorialStage,
+  type NormalizedCell,
+  type ReadStats,
+  type SheetsLimits,
+  type SheetsReadOnlyClient,
+  type SourceRow,
+} from '@cas/sheets-intake';
 
 import { IngestionError } from '../editorial/errors.js';
 import { resolveHeaderLayout, type HeaderLayout } from '../editorial/headers.js';
 import { TEXT_TRANSFORM } from '../editorial/html-text.js';
 import { computeIdempotencyKey } from '../editorial/import.js';
+import { DEFAULT_CHUNK_SIZE } from '../editorial/constants.js';
+import { describeBatch, writeEvaluations, type ImportOutcome } from '../editorial/import.js';
 import { evaluateRow, type RowEvaluation } from '../editorial/rows.js';
+import type { SheetsConnection } from './connect.js';
 
 /** Names the Sheets transport and the serial rule. Part of every Sheets batch's idempotency key. */
 export const SHEETS_IMPORTER_VERSION = 'editorial-sheets-import@1';
@@ -313,4 +338,266 @@ export function prepareSheetsBatch(input: PrepareInput): PreparedSheetsBatch {
       serialsUnconvertible,
     },
   };
+}
+
+/** What one read of the feed tab produced, before any evaluation. */
+export interface FeedRead {
+  readonly workbookDigest: string;
+  readonly tabDigest: string;
+  readonly tabTitle: string;
+  readonly timeZone: string | null;
+  readonly headerCells: readonly string[];
+  readonly rows: readonly SourceRow[];
+  readonly stats: ReadStats;
+  readonly warnings: readonly string[];
+  readonly readStartedAt: string;
+  readonly readCompletedAt: string;
+}
+
+export interface ReadFeedOptions {
+  readonly limits: SheetsLimits;
+  readonly workbookDigest: string;
+  readonly now?: (() => Date) | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/**
+ * Reads the declared feed tab exactly once: the workbook's structure, the
+ * header row, then every data row page by page, held in memory. Nothing is
+ * written. A tab that is not in the workbook, is not a grid, or holds no data
+ * row is a refusal, never an empty batch.
+ */
+export async function readFeedTab(
+  client: SheetsReadOnlyClient,
+  mapping: SheetsImportMapping,
+  options: ReadFeedOptions,
+): Promise<FeedRead> {
+  assertSheetsImportMapping(mapping);
+  const now = options.now ?? (() => new Date());
+  const readStartedAt = now().toISOString();
+  const metadata = await client.metadata();
+  const tab = metadata.tabs.find((candidate) => candidate.title === mapping.title);
+  if (tab === undefined) {
+    throw new IngestionError(
+      'configuration',
+      'tab_not_found',
+      'no tab of that exact name exists in the workbook',
+    );
+  }
+  if (tab.sheetType !== 'GRID') {
+    throw structural('tab_not_grid', 'the declared tab is not a grid and cannot be read as rows');
+  }
+  const header = await client.values(
+    buildRange({ title: tab.title, firstRow: 1, lastRow: 1, columns: mapping.columns }),
+  );
+  const headerCells = (header.values[0] ?? []).map(
+    (value) => normalizeCell(value, options.limits).raw,
+  );
+  const outcome = await readTab(
+    client,
+    tab,
+    {
+      title: tab.title,
+      stage: mapping.stage as EditorialStage,
+      firstDataRow: mapping.firstDataRow,
+      columns: mapping.columns,
+    },
+    {
+      limits: options.limits,
+      timeZone: metadata.timeZone,
+      workbookDigest: options.workbookDigest,
+      collectRows: true,
+      now,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    },
+  );
+  const first = outcome.rows[0];
+  if (first === undefined) {
+    throw structural('feed_empty', 'the declared tab holds no data row; nothing to import');
+  }
+  return {
+    workbookDigest: options.workbookDigest,
+    tabDigest: first.tabDigest,
+    tabTitle: tab.title,
+    timeZone: metadata.timeZone,
+    headerCells,
+    rows: outcome.rows,
+    stats: outcome.stats,
+    warnings: outcome.warnings,
+    readStartedAt,
+    readCompletedAt: now().toISOString(),
+  };
+}
+
+export interface SheetsImportOutcome extends ImportOutcome {
+  readonly sheets: {
+    readonly workbookDigest: string;
+    readonly tabDigest: string;
+    readonly tabTitle: string;
+    readonly rowsRead: number;
+    readonly pages: number;
+    readonly serialsConverted: number;
+    readonly serialsUnconvertible: number;
+    readonly readStartedAt: string;
+    readonly readCompletedAt: string;
+  };
+}
+
+export interface PersistOptions {
+  readonly now?: (() => Date) | undefined;
+  readonly makeId?: (() => string) | undefined;
+  readonly chunkSize?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/**
+ * Persists one prepared batch, or reports the batch an identical read
+ * already produced. One transaction: the batch record, every row through the
+ * importer's write path, the read record, every converted serial bound to its
+ * stored row, then the batch's completion. Any failure rolls all of it back.
+ */
+export async function persistSheetsBatch(
+  db: Database,
+  read: FeedRead,
+  prepared: PreparedSheetsBatch,
+  mapping: SheetsImportMapping,
+  options: PersistOptions = {},
+): Promise<SheetsImportOutcome> {
+  const now = options.now ?? (() => new Date());
+  const makeId = options.makeId ?? randomUUID;
+  const startedAt = now();
+  const sheets = {
+    workbookDigest: read.workbookDigest,
+    tabDigest: read.tabDigest,
+    tabTitle: read.tabTitle,
+    rowsRead: read.stats.rowsRead,
+    pages: read.stats.pages,
+    serialsConverted: prepared.counts.serialsConverted,
+    serialsUnconvertible: prepared.counts.serialsUnconvertible,
+    readStartedAt: read.readStartedAt,
+    readCompletedAt: read.readCompletedAt,
+  };
+  const existing = await db.withClient((client) =>
+    findImportBatchByIdempotencyKey(client, prepared.idempotencyKey),
+  );
+  if (existing !== null) {
+    const described = await describeBatch(db, existing.id);
+    return {
+      outcome: 'already_imported',
+      ...described,
+      durationMs: now().getTime() - startedAt.getTime(),
+      sheets,
+    };
+  }
+  const batchId = makeId();
+  await db.withTransaction(async (tx) => {
+    await insertImportBatch(tx, {
+      id: batchId,
+      dataOrigin: 'live',
+      sourceKind: mapping.sourceKind,
+      reviewLabel: null,
+      sourceBasename: read.tabTitle,
+      fileSha256: prepared.digest,
+      byteLength: prepared.byteLength,
+      headerCells: prepared.headerCells,
+      importerVersion: prepared.importerVersion,
+      idempotencyKey: prepared.idempotencyKey,
+      startedAt: startedAt.toISOString(),
+    });
+    const counts = await writeEvaluations(
+      { tx, batchId, snapshotId: null, origin: 'live', makeId },
+      prepared.rows.map((row) => row.evaluation),
+      options.chunkSize ?? DEFAULT_CHUNK_SIZE,
+    );
+    if (options.signal?.aborted === true) {
+      throw new IngestionError('aborted', 'interrupted', 'import interrupted; batch rolled back');
+    }
+    const identities = new Map(
+      (await listSourceRowIdentities(tx, batchId)).map((identity) => [
+        identity.rowNumber,
+        identity,
+      ]),
+    );
+    const timestamps: NewSheetsImportTimestamp[] = [];
+    for (const row of prepared.rows) {
+      const identity = identities.get(row.rowNumber);
+      if (identity === undefined || identity.rowHash !== row.evaluation.rowHash) {
+        throw new IngestionError(
+          'unexpected',
+          'row_identity_mismatch',
+          'a stored row does not match the row that was evaluated',
+          { rowNumber: row.rowNumber },
+        );
+      }
+      for (const serial of row.serials) {
+        timestamps.push({
+          id: makeId(),
+          batchId,
+          dataOrigin: 'live',
+          sourceRowId: identity.id,
+          rowHash: identity.rowHash,
+          columnIndex: serial.columnIndex,
+          serialText: serial.serialText,
+          instant: serial.instant,
+        });
+      }
+    }
+    await insertSheetsImportRead(tx, {
+      batchId,
+      dataOrigin: 'live',
+      workbookDigest: read.workbookDigest,
+      tabDigest: read.tabDigest,
+      tabTitle: read.tabTitle,
+      sheetTimeZone: read.timeZone,
+      serialTransform: prepared.serialTransform,
+      rowsRead: read.stats.rowsRead,
+      pages: read.stats.pages,
+      readStartedAt: read.readStartedAt,
+      readCompletedAt: read.readCompletedAt,
+    });
+    for (let index = 0; index < timestamps.length; index += MAX_ROWS_PER_INSERT) {
+      await insertSheetsImportTimestamps(tx, timestamps.slice(index, index + MAX_ROWS_PER_INSERT));
+    }
+    const status: ImportBatchStatus =
+      counts.quarantined > 0 ? 'completed_with_issues' : 'completed';
+    await finalizeImportBatch(tx, {
+      id: batchId,
+      status,
+      parsedRowCount: prepared.rows.length,
+      acceptedRowCount: counts.accepted,
+      quarantinedRowCount: counts.quarantined,
+      completedAt: now().toISOString(),
+    });
+  });
+  const described = await describeBatch(db, batchId);
+  return {
+    outcome: 'imported',
+    ...described,
+    durationMs: now().getTime() - startedAt.getTime(),
+    sheets,
+  };
+}
+
+/** Read once, prepare, persist: the whole `sheets import` command behind the command line. */
+export async function importSheetsTab(
+  db: Database,
+  connection: SheetsConnection,
+  mapping: SheetsImportMapping,
+  options: PersistOptions = {},
+): Promise<SheetsImportOutcome> {
+  const read = await readFeedTab(connection.client, mapping, {
+    limits: connection.config.limits,
+    workbookDigest: connection.workbookDigest,
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
+  const prepared = prepareSheetsBatch({
+    workbookDigest: read.workbookDigest,
+    tabDigest: read.tabDigest,
+    timeZone: read.timeZone,
+    headerCells: read.headerCells,
+    rows: read.rows,
+    mapping,
+  });
+  return persistSheetsBatch(db, read, prepared, mapping, options);
 }

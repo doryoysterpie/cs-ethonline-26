@@ -41,6 +41,8 @@ const EXPECTED_TABLES = [
   'row_issues',
   'schema_migrations',
   'sessions',
+  'sheets_import_reads',
+  'sheets_import_timestamps',
   'source_rows',
   'url_groups',
 ];
@@ -140,20 +142,21 @@ describe('migration runner against a fresh schema', () => {
       '0009_evidence_integrity.sql',
       '0010_dashboard_persistence.sql',
       '0011_passwordless_email_auth.sql',
+      '0012_sheets_import_provenance.sql',
     ]);
     expect(first.alreadyApplied).toBe(0);
-    expect(first.total).toBe(11);
+    expect(first.total).toBe(12);
     const tables = await isolated.base.withClient((c) => listTables(c, isolated.name));
     expect(tables).toEqual(EXPECTED_TABLES);
 
     const second = await runMigrations(isolated.db);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied).toBe(11);
+    expect(second.alreadyApplied).toBe(12);
 
     const status = await migrationStatus(isolated.db);
     expect(status.pending).toEqual([]);
     expect(status.drift).toEqual([]);
-    expect(status.applied.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(status.applied.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(status.applied[0]?.appliedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -171,7 +174,10 @@ describe('migration runner against a fresh schema', () => {
       );
 
       const upgrade = await runMigrations(isolated.db);
-      expect(upgrade.applied).toEqual(['0011_passwordless_email_auth.sql']);
+      expect(upgrade.applied).toEqual([
+        '0011_passwordless_email_auth.sql',
+        '0012_sheets_import_provenance.sql',
+      ]);
       expect(upgrade.alreadyApplied).toBe(10);
 
       const legacy = await isolated.db.withClient((c) =>
@@ -244,6 +250,7 @@ describe('migration runner against a fresh schema', () => {
         '0009_evidence_integrity.sql',
         '0010_dashboard_persistence.sql',
         '0011_passwordless_email_auth.sql',
+        '0012_sheets_import_provenance.sql',
       ]);
       expect(upgrade.alreadyApplied).toBe(1);
       expect(await isolated.db.withClient(countAllRows)).toEqual(counts);
@@ -347,12 +354,12 @@ describe('migration runner against a fresh schema', () => {
       const [a, b] = await Promise.all([runMigrations(isolated.db), runMigrations(other)]);
       // Every migration is applied exactly once in total, whichever runner
       // won the lock; the loser finds nothing pending.
-      expect(a.applied.length + b.applied.length).toBe(11);
+      expect(a.applied.length + b.applied.length).toBe(12);
       expect(Math.min(a.applied.length, b.applied.length)).toBe(0);
       const rows = await isolated.db.withClient((c) =>
         c.query<{ count: string }>('SELECT count(*)::text AS count FROM schema_migrations'),
       );
-      expect(rows.rows[0]?.count).toBe('11');
+      expect(rows.rows[0]?.count).toBe('12');
     } finally {
       await other.end();
     }

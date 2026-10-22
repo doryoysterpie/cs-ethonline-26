@@ -71,6 +71,9 @@ import {
   formatReadStats,
   formatTimestampRange,
 } from './sheets/output.js';
+import { assertSheetsImportMapping, importSheetsTab } from './sheets/import.js';
+import { loadTabMapPolicy, mappingForTab, resolveTabMapPath } from './sheets/tab-map.js';
+import { formatSheetsImportOutcome } from './sheets/output.js';
 import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
 import { assertImportRequest, importCsvFile } from './editorial/import.js';
@@ -546,6 +549,29 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       )) {
         emit(entry);
       }
+      return EXIT_CODES.ok;
+    }
+    if (group === 'sheets' && command === 'import') {
+      // The declaration and the database configuration are checked before any
+      // credential is touched and before any connection is opened.
+      const tabName = values.tab;
+      if (tabName === undefined || tabName.length === 0) {
+        throw configurationError('tab_required', '--tab is required');
+      }
+      const policy = await loadTabMapPolicy(resolveTabMapPath(options.env));
+      const mapping = mappingForTab(policy, tabName);
+      assertSheetsImportMapping(mapping);
+      parseDatabaseConfig(options.env);
+      const connection = await openWorkbook({
+        env: options.env,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      });
+      const outcome = await withDatabase(options, (db) =>
+        importSheetsTab(db, connection, mapping, {
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      );
+      for (const entry of formatSheetsImportOutcome(outcome, connection.redact)) emit(entry);
       return EXIT_CODES.ok;
     }
     if (group === 'evidence' && command === 'ingest') {

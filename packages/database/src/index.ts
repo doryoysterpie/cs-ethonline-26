@@ -249,6 +249,17 @@ export {
   type UrlGroupStats,
 } from './ingestion.js';
 export {
+  countSheetsImportTimestamps,
+  getSheetsImportRead,
+  insertSheetsImportRead,
+  insertSheetsImportTimestamps,
+  listSourceRowIdentities,
+  type NewSheetsImportRead,
+  type NewSheetsImportTimestamp,
+  type SheetsImportReadRecord,
+  type SourceRowIdentity,
+} from './sheets.js';
+export {
   loadMigrations,
   MIGRATIONS_DIRECTORY,
   migrationStatus,

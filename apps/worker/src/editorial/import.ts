@@ -193,7 +193,7 @@ function chunked<T>(items: readonly T[], size: number): T[][] {
   return out;
 }
 
-interface FlushContext {
+export interface FlushContext {
   readonly tx: Queryable;
   readonly batchId: string;
   readonly snapshotId: string | null;
@@ -284,7 +284,27 @@ async function flushChunk(
   return { accepted, quarantined };
 }
 
-async function describeBatch(
+/**
+ * Writes evaluated rows in chunks through the same path the CSV importer
+ * uses, so a second transport shares one write path rather than a copy of it.
+ */
+export async function writeEvaluations(
+  context: FlushContext,
+  evaluations: readonly RowEvaluation[],
+  chunkSize: number,
+): Promise<{ accepted: number; quarantined: number }> {
+  const size = Math.max(1, Math.min(chunkSize, MAX_ROWS_PER_INSERT));
+  let accepted = 0;
+  let quarantined = 0;
+  for (const part of chunked(evaluations, size)) {
+    const counts = await flushChunk(context, part);
+    accepted += counts.accepted;
+    quarantined += counts.quarantined;
+  }
+  return { accepted, quarantined };
+}
+
+export async function describeBatch(
   db: Database,
   batchId: string,
 ): Promise<Omit<ImportOutcome, 'outcome' | 'durationMs'>> {

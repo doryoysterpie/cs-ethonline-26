@@ -39,6 +39,7 @@
     "sheets:inventory": "pnpm -s --filter @cas/worker cli sheets inventory",
     "sheets:timestamps": "pnpm -s --filter @cas/worker cli sheets timestamps",
     "sheets:dry-run": "pnpm -s --filter @cas/worker cli sheets dry-run",
+    "sheets:import": "pnpm -s --filter @cas/worker cli sheets import",
     "mcp:setup": "pnpm install --frozen-lockfile && turbo run build --filter=@cas/mcp-server...",
     "mcp:build": "turbo run build --filter=@cas/mcp-server...",
     "mcp:start": "node packages/mcp-server/dist/bin.js",
