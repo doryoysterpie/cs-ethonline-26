@@ -62,6 +62,7 @@ async function runtimeFor(): Promise<{ runtime: Runtime; principals: Record<Role
       memorySeedPath: null,
       databaseSchema: 'public',
       trustForwardedFor: false,
+      trustedProxyHops: 1,
     },
     stores,
     untouchable,

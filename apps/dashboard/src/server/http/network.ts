@@ -12,10 +12,22 @@ import type { DashboardConfig } from '../config.ts';
  */
 const ADDRESS = /^[0-9A-Fa-f.:]{1,45}$/u;
 
+/**
+ * The throttling key for a request. With no trusted proxy declared every
+ * request is `direct`. Behind trusted proxies the key is the address the
+ * outermost trusted proxy saw as its client: counted from the right end of
+ * `X-Forwarded-For`, because each proxy appends what it saw and the left end
+ * is whatever the client chose to send (CAS-006, release blocker 3). A header
+ * with fewer entries than trusted hops did not pass through the declared
+ * chain and keys as `malformed`, as does an entry that is not an address.
+ */
 export function networkKey(headers: Headers, config: DashboardConfig): string {
   if (!config.trustForwardedFor) return 'direct';
   const forwarded = headers.get('x-forwarded-for');
   if (forwarded === null) return 'direct';
-  const first = forwarded.split(',')[0]?.trim() ?? '';
-  return ADDRESS.test(first) ? first.toLowerCase() : 'malformed';
+  const entries = forwarded.split(',').map((entry) => entry.trim());
+  const index = entries.length - config.trustedProxyHops;
+  if (index < 0) return 'malformed';
+  const chosen = entries[index] ?? '';
+  return ADDRESS.test(chosen) ? chosen.toLowerCase() : 'malformed';
 }
