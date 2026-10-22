@@ -57,6 +57,7 @@ export async function commandCenter(
   const packages = await workspace();
   const {
     countDashboardTotals,
+    listClassificationRunCategories,
     listClassificationRuns,
     listClusteringRuns,
     listEvidenceRuns,
@@ -71,6 +72,10 @@ export async function commandCenter(
       const classification = (await listClassificationRuns(client, null))
         .slice(-RUN_LIST)
         .reverse();
+      const categories = await listClassificationRunCategories(
+        client,
+        classification.map((run) => run.id),
+      );
       return {
         totals,
         clusteringRuns: clustering.map((run) => ({
@@ -117,6 +122,7 @@ export async function commandCenter(
           startedAt: run.startedAt,
           completedAt: run.completedAt,
           batchId: run.batchId,
+          category: categories.get(run.id)?.category ?? null,
           reviewCount: run.reviewCount,
           includeCount: run.includeCount,
           excludeCount: run.excludeCount,
@@ -274,7 +280,8 @@ export async function reviewQueue(
       : integer(afterRowNumber, 'after', { min: 0, max: 100_000_000 });
   const withText = holds(principal, 'view:source_text');
   const packages = await workspace();
-  const { getClassificationRun, listReviewQueueEntries } = packages.database;
+  const { getClassificationRun, getClassificationRunCategory, listReviewQueueEntries } =
+    packages.database;
   try {
     const run = await runtime.database.withClient((client) => getClassificationRun(client, runId));
     if (run === null)
@@ -283,6 +290,9 @@ export async function reviewQueue(
         'classification_run_not_found',
         'No classification run with that id.',
       );
+    const category = await runtime.database.withClient((client) =>
+      getClassificationRunCategory(client, runId),
+    );
     const entries = await runtime.database.withClient((client) =>
       listReviewQueueEntries(client, runId, {
         afterRowNumber: after,
@@ -305,6 +315,7 @@ export async function reviewQueue(
         startedAt: run.startedAt,
         completedAt: run.completedAt,
         batchId: run.batchId,
+        category: category?.category ?? null,
         reviewCount: run.reviewCount,
       },
       entries: entries.map((entry) => {

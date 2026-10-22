@@ -122,6 +122,10 @@ describe('data-access layer against PostgreSQL', () => {
       for (const run of [...view.clusteringRuns, ...view.evidenceRuns, ...view.signalRuns]) {
         expect(run.dataOrigin).toBe('replay');
       }
+      // The seeded run was classified under the default category (migration 0013).
+      expect(
+        view.classificationRuns.find((run) => run.id === seeded.classificationRunId)?.category,
+      ).toBe('cyberattack');
     }
   });
 
@@ -179,6 +183,7 @@ describe('data-access layer against PostgreSQL', () => {
     ).toBe('authorization');
     const view = await reviewQueue(runtime, principals.editor, seeded.classificationRunId, 0);
     expect(view.entries.length).toBe(view.run.reviewCount);
+    expect(view.run.category).toBe('cyberattack');
     const outside = await isolated.db.withClient((client) =>
       client.query<{ source_row_id: string }>(
         `SELECT source_row_id FROM classification_results WHERE run_id = $1 AND decision <> 'review' LIMIT 1`,

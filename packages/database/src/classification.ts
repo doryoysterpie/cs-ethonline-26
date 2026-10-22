@@ -114,6 +114,149 @@ function toRunRecord(row: RunRow): ClassificationRunRecord {
   };
 }
 
+/** One registered policy: a category and version, and the ruleset hash they build to (migration 0013). */
+export interface ClassificationPolicyRecord {
+  readonly category: string;
+  readonly policyVersion: string;
+  readonly policyHash: string;
+  readonly registeredAt: string;
+}
+
+/**
+ * Registers a policy identity, or does nothing if that exact triple is already
+ * registered. A different hash under a registered (category, version), or a
+ * registered hash under another category, is a unique violation (23505): the
+ * caller reports it as a policy identity conflict and writes no run.
+ */
+export async function registerClassificationPolicy(
+  client: Queryable,
+  policy: ClassificationPolicyRecord,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO classification_policies (category, policy_version, policy_hash, registered_at)
+     VALUES ($1, $2, $3, $4::timestamptz)
+     ON CONFLICT ON CONSTRAINT classification_policies_identity DO NOTHING`,
+    [policy.category, policy.policyVersion, policy.policyHash, policy.registeredAt],
+  );
+}
+
+export async function getClassificationPolicy(
+  client: Queryable,
+  category: string,
+  policyVersion: string,
+): Promise<ClassificationPolicyRecord | null> {
+  const result = await client.query<{
+    category: string;
+    policy_version: string;
+    policy_hash: string;
+    registered_at: string;
+  }>(
+    `SELECT category, policy_version, policy_hash, to_json(registered_at) #>> '{}' AS registered_at
+       FROM classification_policies WHERE category = $1 AND policy_version = $2`,
+    [category, policyVersion],
+  );
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : {
+        category: row.category,
+        policyVersion: row.policy_version,
+        policyHash: row.policy_hash,
+        registeredAt: row.registered_at,
+      };
+}
+
+/** The category a run was classified under, recorded beside the run (migration 0013). */
+export interface ClassificationRunCategoryRecord {
+  readonly runId: string;
+  readonly batchId: string;
+  readonly dataOrigin: DataOrigin;
+  readonly category: string;
+  readonly policyVersion: string;
+  readonly policyHash: string;
+  readonly createdAt: string;
+}
+
+export async function insertClassificationRunCategory(
+  client: Queryable,
+  row: ClassificationRunCategoryRecord,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO classification_run_categories
+       (run_id, batch_id, data_origin, category, policy_version, policy_hash, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz)`,
+    [
+      row.runId,
+      row.batchId,
+      row.dataOrigin,
+      row.category,
+      row.policyVersion,
+      row.policyHash,
+      row.createdAt,
+    ],
+  );
+}
+
+interface CategoryRow {
+  run_id: string;
+  batch_id: string;
+  data_origin: DataOrigin;
+  category: string;
+  policy_version: string;
+  policy_hash: string;
+  created_at: string;
+}
+
+const CATEGORY_COLUMNS = `run_id, batch_id, data_origin, category, policy_version, policy_hash,
+  to_json(created_at) #>> '{}' AS created_at`;
+
+function toCategoryRecord(row: CategoryRow): ClassificationRunCategoryRecord {
+  return {
+    runId: row.run_id,
+    batchId: row.batch_id,
+    dataOrigin: row.data_origin,
+    category: row.category,
+    policyVersion: row.policy_version,
+    policyHash: row.policy_hash,
+    createdAt: row.created_at,
+  };
+}
+
+/** `null` for a run that predates categories; nothing is inferred for it. */
+export async function getClassificationRunCategory(
+  client: Queryable,
+  runId: string,
+): Promise<ClassificationRunCategoryRecord | null> {
+  const result = await client.query<CategoryRow>(
+    `SELECT ${CATEGORY_COLUMNS} FROM classification_run_categories WHERE run_id = $1`,
+    [runId],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : toCategoryRecord(row);
+}
+
+/**
+ * The category rows of several runs in one statement, keyed by run id. A run
+ * that predates categories is simply absent from the map. Bounded like the
+ * other paged reads.
+ */
+export async function listClassificationRunCategories(
+  client: Queryable,
+  runIds: readonly string[],
+): Promise<Map<string, ClassificationRunCategoryRecord>> {
+  if (runIds.length > 1000) {
+    throw new DatabaseError('query', 'classification run category list size out of range');
+  }
+  const found = new Map<string, ClassificationRunCategoryRecord>();
+  if (runIds.length === 0) return found;
+  const result = await client.query<CategoryRow>(
+    `SELECT ${CATEGORY_COLUMNS} FROM classification_run_categories WHERE run_id = ANY($1::uuid[])`,
+    [runIds],
+  );
+  for (const row of result.rows) found.set(row.run_id, toCategoryRecord(row));
+  return found;
+}
+
 export async function findClassificationRunByIdempotencyKey(
   client: Queryable,
   idempotencyKey: string,

@@ -6,10 +6,25 @@ import {
   CONTRACT_VERSION,
   ENGINE_VERSION,
 } from '@cas/clustering';
+import {
+  classify,
+  CLASSIFIER_MODE,
+  CLASSIFIER_VERSION,
+  rulesetHash,
+  RULESET_VERSION,
+} from '@cas/classification';
 import type { ReviewState } from '@cas/contracts';
 import {
+  completeClassificationRun,
+  countBatchSourceRows,
   countReviewState,
+  deriveRunDecisionCounts,
+  fetchClassificationInputs,
+  freezeBatchSourceSet,
   getClusteringRun,
+  getImportBatch,
+  insertClassificationResults,
+  insertRunningClassificationRun,
   insertIncidentClusters,
   insertRunningClusteringRun,
   isDatabaseError,
@@ -20,7 +35,7 @@ import {
 } from '@cas/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { classifyBatch } from '../classification/run.js';
+import { classifyBatch, computeRunIdempotencyKey } from '../classification/run.js';
 import { EXIT_CODES, isIngestionError } from '../editorial/errors.js';
 import { openMigratedSchema, openSchemaMigratedTo, type IsolatedSchema } from '../test-support.js';
 import { reportClusteringRun } from './report.js';
@@ -1262,6 +1277,86 @@ describe('review idempotency covers the whole payload', () => {
   });
 });
 
+/**
+ * A completed classification run written as the worker wrote one before
+ * migration 0013, for a schema stopped at 0006 where the category table does
+ * not exist yet. The decisions come from the same pure classifier under the
+ * cyberattack contract; only the category record is absent, exactly as it is
+ * for every run that predates it. `classifyBatch` itself now records the
+ * category and therefore needs the current schema.
+ */
+async function classifyBeforeCategories(
+  db: Database,
+  batchId: string,
+): Promise<{ readonly run: { readonly id: string } }> {
+  const batch = await db.withClient((c) => getImportBatch(c, batchId));
+  if (batch === null) throw new Error('batch not seeded');
+  const runId = randomUUID();
+  const startedAt = new Date().toISOString();
+  const hash = rulesetHash();
+  await db.withTransaction(
+    async (tx) => {
+      await freezeBatchSourceSet(tx, batchId);
+      await insertRunningClassificationRun(tx, {
+        id: runId,
+        batchId,
+        dataOrigin: batch.dataOrigin,
+        classifierVersion: CLASSIFIER_VERSION,
+        rulesetVersion: RULESET_VERSION,
+        rulesetHash: hash,
+        mode: CLASSIFIER_MODE,
+        idempotencyKey: computeRunIdempotencyKey({
+          batchId,
+          category: 'cyberattack',
+          classifierVersion: CLASSIFIER_VERSION,
+          rulesetVersion: RULESET_VERSION,
+          rulesetHash: hash,
+          mode: CLASSIFIER_MODE,
+        }),
+        expectedRowCount: await countBatchSourceRows(tx, batchId),
+        startedAt,
+      });
+      const inputs = await fetchClassificationInputs(tx, batchId, {
+        afterRowNumber: 0,
+        limit: 1000,
+      });
+      await insertClassificationResults(
+        tx,
+        inputs.map((row) => {
+          const decided = classify({
+            sourceRowId: row.sourceRowId,
+            rowHash: row.rowHash,
+            status: row.status,
+            normalizedTitle: row.normalizedTitle,
+            derivedSummaryText: row.derivedSummaryText,
+            derivedDescriptionText: row.derivedDescriptionText,
+          });
+          return {
+            id: randomUUID(),
+            runId,
+            batchId,
+            sourceRowId: decided.sourceRowId,
+            decision: decided.decision,
+            rationaleCodes: decided.rationaleCodes,
+            matchedSignals: decided.matchedSignals,
+            signalScore: decided.signalScore,
+            rowHash: decided.rowHash,
+            createdAt: startedAt,
+          };
+        }),
+      );
+      await completeClassificationRun(
+        tx,
+        runId,
+        await deriveRunDecisionCounts(tx, runId),
+        new Date().toISOString(),
+      );
+    },
+    { isolationLevel: 'repeatable read' },
+  );
+  return { run: { id: runId } };
+}
+
 describe('migration 0007 refuses to apply over data that violates it', () => {
   /**
    * Both cases build a state migration 0007 forbids while only 0006 is
@@ -1306,7 +1401,7 @@ describe('migration 0007 refuses to apply over data that violates it', () => {
     const isolated = await openSchemaMigratedTo(6);
     try {
       const seeded = await seedBatch(isolated.db, 'CS50');
-      const classified = await classifyBatch(isolated.db, { batchId: seeded.batchId });
+      const classified = await classifyBeforeCategories(isolated.db, seeded.batchId);
       const other = await duplicateClassificationRun(isolated.db, classified.run.id);
       const results = await eligibleResults(isolated.db, classified.run.id);
       const sample = results[0] as ResultRow;
@@ -1373,7 +1468,7 @@ describe('migration 0007 refuses to apply over data that violates it', () => {
     const isolated = await openSchemaMigratedTo(6);
     try {
       const seeded = await seedBatch(isolated.db, 'CS51');
-      const classified = await classifyBatch(isolated.db, { batchId: seeded.batchId });
+      const classified = await classifyBeforeCategories(isolated.db, seeded.batchId);
       const completed = await clusterClassificationRun(isolated.db, {
         classificationRunId: classified.run.id,
       });

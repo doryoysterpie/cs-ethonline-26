@@ -8,10 +8,26 @@
  * package with `@cas/database`; this package never talks to PostgreSQL.
  */
 
+export {
+  CategoryContractError,
+  categoryRulesetHash,
+  contractFor,
+  listCategories,
+} from './categories.js';
+export {
+  CategoryPolicyError,
+  categories,
+  categoryPolicy,
+  isCategory,
+  registerCategoryPolicy,
+  type Category,
+  type CategoryPolicy,
+} from '@cas/taxonomy';
 export { classify, type ClassificationResult } from './classifier.js';
 export {
   ALLOWED_INPUT_KEYS,
   BEHAVIOR_CONTRACT,
+  buildContract,
   canonicalize,
   canonicalRuleset,
   CLASSIFIER_MODE,

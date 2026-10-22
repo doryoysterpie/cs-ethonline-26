@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
+  categoryRulesetHash,
   classify,
   CLASSIFIER_MODE,
   CLASSIFIER_VERSION,
-  rulesetHash,
+  contractFor,
   RULESET_VERSION,
+  type Category,
   type ClassificationInput,
 } from '@cas/classification';
 import {
@@ -19,7 +21,9 @@ import {
   getClassificationRun,
   getImportBatch,
   insertClassificationResults,
+  insertClassificationRunCategory,
   insertRunningClassificationRun,
+  registerClassificationPolicy,
   isDatabaseError,
   MAX_ROWS_PER_INSERT,
   type ClassificationRunRecord,
@@ -66,7 +70,14 @@ export const DEFAULT_PAGE_SIZE = 200;
 
 export interface ClassifyBatchRequest {
   readonly batchId: string;
+  /**
+   * The category whose question the run answers (CAS-002). Absent means
+   * `cyberattack`, the contract Sprint 3 shipped, hash for hash.
+   */
+  readonly category?: Category | undefined;
 }
+
+export const DEFAULT_CATEGORY: Category = 'cyberattack';
 
 export interface ClassifyBatchOptions {
   readonly now?: (() => Date) | undefined;
@@ -88,6 +99,7 @@ export interface ClassifyBatchOptions {
 
 export interface ClassifyBatchOutcome {
   readonly outcome: 'classified' | 'already_classified';
+  readonly category: Category;
   readonly run: ClassificationRunRecord;
   readonly batch: ImportBatchRecord;
   /** When this batch's source set became immutable. Never null after a run. */
@@ -97,6 +109,8 @@ export interface ClassifyBatchOutcome {
 
 export interface IdempotencyInputs {
   readonly batchId: string;
+  /** The category the run answers: part of the run's identity (CAS-002, review F1). */
+  readonly category: Category;
   readonly classifierVersion: string;
   readonly rulesetVersion: string;
   readonly rulesetHash: string;
@@ -114,6 +128,7 @@ export function computeRunIdempotencyKey(inputs: IdempotencyInputs): string {
     .update(
       JSON.stringify({
         batchId: inputs.batchId,
+        category: inputs.category,
         classifierVersion: inputs.classifierVersion,
         rulesetVersion: inputs.rulesetVersion,
         rulesetHash: inputs.rulesetHash,
@@ -182,9 +197,12 @@ export async function classifyBatch(
   const startedAt = now();
 
   const batch = await loadBatch(db, request.batchId);
-  const hash = rulesetHash();
+  const category = request.category ?? DEFAULT_CATEGORY;
+  const contract = contractFor(category);
+  const hash = categoryRulesetHash(category);
   const idempotencyKey = computeRunIdempotencyKey({
     batchId: batch.id,
+    category,
     classifierVersion: CLASSIFIER_VERSION,
     rulesetVersion: RULESET_VERSION,
     rulesetHash: hash,
@@ -200,6 +218,7 @@ export async function classifyBatch(
     const stored = await loadBatch(db, batch.id);
     return {
       outcome: 'already_classified',
+      category,
       run: found,
       batch: stored,
       sourceSetFrozenAt: stored.sourceSetFrozenAt ?? '',
@@ -223,6 +242,28 @@ export async function classifyBatch(
         // and a mutation that commits while this waits makes it fail.
         frozenAt = (await freezeBatchSourceSet(tx, batch.id)).frozenAt;
 
+        // Step 2a. The policy identity is registered before any run can name
+        // it: one hash per (category, version), one category per hash. A
+        // changed policy under an old version, or a hash another category
+        // owns, is refused here (23505) and no run is written.
+        try {
+          await registerClassificationPolicy(tx, {
+            category,
+            policyVersion: contract.policyVersion,
+            policyHash: hash,
+            registeredAt: startedAt.toISOString(),
+          });
+        } catch (error) {
+          if (isDatabaseError(error) && error.code === '23505') {
+            throw new IngestionError(
+              'configuration',
+              'policy_identity_conflict',
+              'the category policy identity is already registered to a different hash or category',
+            );
+          }
+          throw error;
+        }
+
         // Step 2. The unique idempotency key serializes concurrent callers: the
         // loser blocks here until the winner commits, then fails with 23505.
         await insertRunningClassificationRun(tx, {
@@ -236,6 +277,19 @@ export async function classifyBatch(
           idempotencyKey,
           expectedRowCount: await countBatchSourceRows(tx, batch.id),
           startedAt: startedAt.toISOString(),
+        });
+
+        // Step 2b. The category is a name for the hash the run just recorded.
+        // The guard of migration 0013 refuses any other hash or origin, so a
+        // category row can never disagree with its run.
+        await insertClassificationRunCategory(tx, {
+          runId,
+          batchId: batch.id,
+          dataOrigin: batch.dataOrigin,
+          category,
+          policyVersion: contract.policyVersion,
+          policyHash: hash,
+          createdAt: startedAt.toISOString(),
         });
 
         // Step 3. One repeatable-read snapshot, paged deterministically by the
@@ -266,7 +320,7 @@ export async function classifyBatch(
               derivedSummaryText: row.derivedSummaryText,
               derivedDescriptionText: row.derivedDescriptionText,
             };
-            const decided = classify(input);
+            const decided = classify(input, contract);
             buffer.push({
               id: makeId(),
               runId,
@@ -325,6 +379,7 @@ export async function classifyBatch(
 
   return {
     outcome: 'classified',
+    category,
     run: await loadCompletedRun(db, runId),
     batch: await loadBatch(db, batch.id),
     sourceSetFrozenAt: frozenAt,

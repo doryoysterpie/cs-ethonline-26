@@ -1411,3 +1411,32 @@ The SDK moved two minor versions for the MCP tooling track; its behaviour is pro
 track's own suites, which this change reran, and its catalogue digest is recomputed by the
 documentation test against the built value. The bill of materials is regenerated. The
 dashboard's framework moved four patch versions. Nothing else changed.
+
+### D21 amendment, 2026-10-22: classification is per category; crypto recall unmeasured in v0
+
+Not a new decision. D21 fixed deterministic rules, post-hoc calibration and the separation of
+machine decisions from human review for one question, the cyberattack question. CAS-002 adds
+categories, and the owner decided on 22 October 2026 (`docs/tcu/CAS-002.md`, steps 1 and 2):
+
+- **Per category, still deterministic.** D21 reads "per category": every category is a policy
+  in `@cas/taxonomy` (vocabulary, thresholds, weights), built into its own frozen contract
+  through the same engine, and a classification run answers one category's question over one
+  batch, recording the category beside the run (migration 0013). No model call enters
+  classification; D9 stays closed. Ground: the cyberattack rules exist and calibrate, and the
+  cyberattack contract builds to the Sprint 3 ruleset hash byte for byte, so every earlier run
+  keeps its meaning.
+- **Crypto recall is unmeasured in v0, as a named seam.** No labelled crypto weekly set is on
+  record: the crypto lane was deferred to post-hackathon configuration and never received a
+  calibration pass. `CRYPTO_POLICY.calibrated` is `false` in code and the report says
+  "unmeasured" in those words. If a labelled tab exists, naming it flips this to a measured
+  figure through the existing `classification calibrate` command with nothing else changing.
+
+After the independent review of the same day, the run's identity (its idempotency key)
+includes the category, and migration 0013's policy registry binds each category and policy
+version to the one ruleset hash it builds to, so a category row can only name the registered
+owner of its run's hash (`docs/CAS-002-REPORT.md`, section 7).
+
+Cyberattack calibration against CS79 and CS86 was repeated on 22 October 2026 under the
+category contract and reproduced the Sprint 3 figures exactly (`docs/CAS-002-REPORT.md`,
+section 6). Everything the Sprint 3 clarification above says about what those figures are
+evidence of, and are not, stands unchanged.

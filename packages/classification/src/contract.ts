@@ -1,15 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { ClassificationDecision } from '@cas/contracts';
-import {
-  CLASSIFICATION_SIGNALS,
-  CLASSIFICATION_SIGNAL_POLICY_VERSION,
-  CVE_IDENTIFIER_PATTERN,
-  CVE_SIGNAL_ID,
-  POLICY_THRESHOLDS,
-  SIGNAL_WEIGHTS,
-  type SignalTier,
-} from '@cas/taxonomy';
+import { CYBERATTACK_POLICY, type CategoryPolicy, type SignalTier } from '@cas/taxonomy';
 
 /**
  * The classifier's behaviour contract: the executable source of truth.
@@ -196,106 +188,136 @@ export interface BehaviorContract {
 }
 
 /** The signal policy, carried inline so the engine has no second source. */
-const TERM_SIGNALS: readonly TermSignalContract[] = CLASSIFICATION_SIGNALS.map((signal) => ({
-  id: signal.id,
-  tier: signal.tier,
-  terms: [...signal.terms].sort(),
-})).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-const CONTRACT: BehaviorContract = {
-  classifierVersion: CLASSIFIER_VERSION,
-  rulesetVersion: RULESET_VERSION,
-  engineVersion: ENGINE_VERSION,
-  policyVersion: CLASSIFICATION_SIGNAL_POLICY_VERSION,
-  mode: CLASSIFIER_MODE,
-  allowedInputKeys: ALLOWED_INPUT_KEYS,
-  textAssembly: {
-    fieldOrder: INPUT_FIELD_ORDER,
-    fieldSeparator: '\n',
-    nullHandling: 'skip',
-    emptyHandling: 'skip',
-    unicodeNormalizationForm: 'NFC',
-    caseNormalization: 'lowercase',
-    whitespaceNormalization: 'collapse',
-    maxInputCharacters: null,
-  },
-  matching: {
-    boundaryCharacterClass: '\\p{L}\\p{N}',
-    termOrdering: 'longest-first-then-lexicographic',
-    caseSensitive: false,
-    termSignals: TERM_SIGNALS,
-    patternSignals: [{ id: CVE_SIGNAL_ID, tier: 'decisive', pattern: CVE_IDENTIFIER_PATTERN }],
-  },
-  thresholds: {
-    decisiveHitsForInclude: POLICY_THRESHOLDS.decisiveHitsForInclude,
-    distinctContextualHitsForInclude: POLICY_THRESHOLDS.distinctContextualHitsForInclude,
-    outOfScopeHitsForExclude: 1,
-  },
-  decisionRules: [
-    {
-      id: 'quarantined_row',
-      when: 'status_quarantined',
-      decision: 'review',
-      emit: [{ code: RATIONALE_CODES.rowQuarantined, when: 'always' }],
-      score: 0,
-    },
-    {
-      id: 'no_usable_text',
-      when: 'text_absent',
-      decision: 'review',
-      emit: [{ code: RATIONALE_CODES.textAbsent, when: 'always' }],
-      score: 0,
-    },
-    {
-      id: 'in_scope_conflicting',
-      when: 'in_scope_and_out_of_scope',
-      decision: 'review',
-      emit: [
-        { code: RATIONALE_CODES.outOfScopeSignal, when: 'always' },
-        { code: RATIONALE_CODES.signalsConflicting, when: 'always' },
-        { code: RATIONALE_CODES.decisiveSignal, when: 'decisive_threshold_met' },
-        { code: RATIONALE_CODES.contextualSignals, when: 'contextual_threshold_met' },
-      ],
-      score: 'computed',
-    },
-    {
-      id: 'in_scope',
-      when: 'in_scope',
-      decision: 'include',
-      emit: [
-        { code: RATIONALE_CODES.decisiveSignal, when: 'decisive_threshold_met' },
-        { code: RATIONALE_CODES.contextualSignals, when: 'contextual_threshold_met' },
-      ],
-      score: 'computed',
-    },
-    {
-      id: 'out_of_scope_only',
-      when: 'out_of_scope_without_in_scope',
-      decision: 'exclude',
-      emit: [
-        { code: RATIONALE_CODES.outOfScopeSignal, when: 'always' },
-        { code: RATIONALE_CODES.noSignalMatch, when: 'always' },
-      ],
-      score: 'computed',
-    },
-    {
-      id: 'otherwise',
-      when: 'always',
-      decision: 'review',
-      emit: [
-        { code: RATIONALE_CODES.contextualSignalSingle, when: 'single_contextual_signal' },
-        { code: RATIONALE_CODES.outOfScopeSignal, when: 'any_out_of_scope_signal' },
-        { code: RATIONALE_CODES.noSignalMatch, when: 'no_other_code_emitted' },
-      ],
-      score: 'computed',
-    },
-  ],
-  scoring: {
-    weights: SIGNAL_WEIGHTS,
-    minimum: 0,
-    maximum: null,
-  },
+/** Shared by every category: how a row's text is assembled before matching. */
+const TEXT_ASSEMBLY: TextAssemblyContract = {
+  fieldOrder: INPUT_FIELD_ORDER,
+  fieldSeparator: '\n',
+  nullHandling: 'skip',
+  emptyHandling: 'skip',
+  unicodeNormalizationForm: 'NFC',
+  caseNormalization: 'lowercase',
+  whitespaceNormalization: 'collapse',
+  maxInputCharacters: null,
 };
+
+/** Shared by every category: the decision rules, in precedence order. */
+const DECISION_RULES: readonly DecisionRuleContract[] = [
+  {
+    id: 'quarantined_row',
+    when: 'status_quarantined',
+    decision: 'review',
+    emit: [{ code: RATIONALE_CODES.rowQuarantined, when: 'always' }],
+    score: 0,
+  },
+  {
+    id: 'no_usable_text',
+    when: 'text_absent',
+    decision: 'review',
+    emit: [{ code: RATIONALE_CODES.textAbsent, when: 'always' }],
+    score: 0,
+  },
+  {
+    id: 'in_scope_conflicting',
+    when: 'in_scope_and_out_of_scope',
+    decision: 'review',
+    emit: [
+      { code: RATIONALE_CODES.outOfScopeSignal, when: 'always' },
+      { code: RATIONALE_CODES.signalsConflicting, when: 'always' },
+      { code: RATIONALE_CODES.decisiveSignal, when: 'decisive_threshold_met' },
+      { code: RATIONALE_CODES.contextualSignals, when: 'contextual_threshold_met' },
+    ],
+    score: 'computed',
+  },
+  {
+    id: 'in_scope',
+    when: 'in_scope',
+    decision: 'include',
+    emit: [
+      { code: RATIONALE_CODES.decisiveSignal, when: 'decisive_threshold_met' },
+      { code: RATIONALE_CODES.contextualSignals, when: 'contextual_threshold_met' },
+    ],
+    score: 'computed',
+  },
+  {
+    id: 'out_of_scope_only',
+    when: 'out_of_scope_without_in_scope',
+    decision: 'exclude',
+    emit: [
+      { code: RATIONALE_CODES.outOfScopeSignal, when: 'always' },
+      { code: RATIONALE_CODES.noSignalMatch, when: 'always' },
+    ],
+    score: 'computed',
+  },
+  {
+    id: 'otherwise',
+    when: 'always',
+    decision: 'review',
+    emit: [
+      { code: RATIONALE_CODES.contextualSignalSingle, when: 'single_contextual_signal' },
+      { code: RATIONALE_CODES.outOfScopeSignal, when: 'any_out_of_scope_signal' },
+      { code: RATIONALE_CODES.noSignalMatch, when: 'no_other_code_emitted' },
+    ],
+    score: 'computed',
+  },
+];
+
+function termSignalsOf(policy: CategoryPolicy): readonly TermSignalContract[] {
+  return policy.signals
+    .map((signal) => ({
+      id: signal.id,
+      tier: signal.tier,
+      terms: [...signal.terms].sort(),
+    }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * Builds the executable contract for one category policy (CAS-002). The
+ * engine, the input allowlist, the text assembly, the matching rules and the
+ * decision rules are the same for every category; the policy supplies the
+ * vocabulary, the pattern signals, the thresholds and the weights. Built for
+ * the cyberattack policy this reproduces the contract Sprint 3 shipped,
+ * hash for hash, which a test asserts.
+ */
+export function buildContract(policy: CategoryPolicy): BehaviorContract {
+  return deepFreeze(contractFromPolicy(policy));
+}
+
+function contractFromPolicy(policy: CategoryPolicy): BehaviorContract {
+  return {
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesetVersion: RULESET_VERSION,
+    engineVersion: ENGINE_VERSION,
+    policyVersion: policy.policyVersion,
+    mode: CLASSIFIER_MODE,
+    allowedInputKeys: ALLOWED_INPUT_KEYS,
+    textAssembly: TEXT_ASSEMBLY,
+    matching: {
+      boundaryCharacterClass: '\\p{L}\\p{N}',
+      termOrdering: 'longest-first-then-lexicographic',
+      caseSensitive: false,
+      termSignals: termSignalsOf(policy),
+      patternSignals: policy.patternSignals.map((signal) => ({
+        id: signal.id,
+        tier: signal.tier,
+        pattern: signal.pattern,
+      })),
+    },
+    thresholds: {
+      decisiveHitsForInclude: policy.thresholds.decisiveHitsForInclude,
+      distinctContextualHitsForInclude: policy.thresholds.distinctContextualHitsForInclude,
+      outOfScopeHitsForExclude: 1,
+    },
+    decisionRules: DECISION_RULES,
+    scoring: {
+      weights: policy.weights,
+      minimum: 0,
+      maximum: null,
+    },
+  };
+}
+
+const CONTRACT: BehaviorContract = contractFromPolicy(CYBERATTACK_POLICY);
 
 /**
  * Freezes an object and everything reachable from it.

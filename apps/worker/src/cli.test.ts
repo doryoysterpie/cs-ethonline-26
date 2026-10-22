@@ -214,6 +214,17 @@ describe('cli configuration handling (no database)', () => {
     expect(r.err.join('\n')).not.toContain('DROP TABLE');
   });
 
+  it('rejects an unknown classification category before opening a connection', async () => {
+    const batch = '7b9d2f4e-5c1a-4e6b-9f3d-2a8c1e5b7d90';
+    const r = await exec(['classification', 'run', '--batch', batch, '--category', 'weather'], {
+      DATABASE_URL: 'postgresql://user:password@localhost:5432/db',
+    });
+    expect(r.code).toBe(EXIT_CODES.configuration);
+    expect(r.err.join('\n')).toContain('category_invalid');
+    expect(r.err.join('\n')).toContain('cyberattack, crypto');
+    expect(r.err.join('\n')).not.toContain('password');
+  });
+
   it('renders a hostile basename safely in validation mode, on one line, without rejecting it', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cas-cli-'));
     try {
