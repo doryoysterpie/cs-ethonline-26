@@ -212,6 +212,8 @@ export {
   type QueueDecisionRow,
   type SessionRow,
   type ThrottleBucket,
+  countQueueDecisionsForEntry,
+  lockQueueEntry,
 } from './dashboard-auth.js';
 export {
   classifyDriverError,

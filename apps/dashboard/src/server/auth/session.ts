@@ -582,17 +582,22 @@ export class SessionService {
   /** Revokes the principal's own session. */
   async logout(principal: Principal): Promise<void> {
     const at = this.now().toISOString();
-    await this.stores.sessions.revoke(principal.sessionId, at, 'logout');
+    const revoked = await this.stores.sessions.revoke(principal.sessionId, at, 'logout');
     await this.audit({
       kind: 'logout',
-      outcome: 'success',
-      code: 'session_revoked',
+      outcome: revoked ? 'success' : 'failure',
+      code: revoked ? 'session_revoked' : 'session_not_revoked',
       actorAccountId: principal.accountId,
       subjectAccountId: principal.accountId,
       sessionId: principal.sessionId,
       networkKey: null,
       subjectId: null,
     });
+    // A sign-out that revoked nothing is reported, never shown as success
+    // (CAS-006, release blocker 7).
+    if (!revoked) {
+      throw new DashboardError('conflict', 'session_not_revoked', 'The session was not revoked.');
+    }
   }
 
   /** Revokes every live session of an account. Used after a privilege change or by an administrator. */

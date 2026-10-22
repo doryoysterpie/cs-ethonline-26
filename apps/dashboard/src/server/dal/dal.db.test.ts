@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { openMigratedSchema, type IsolatedSchema } from '../../test/isolated-schema.ts';
-import { HOSTILE_TITLE, seedPipeline, type SeededPipeline } from '../../test/seed-pipeline.ts';
+import {
+  HOSTILE_TITLE,
+  seedPipeline,
+  seedQueueRow,
+  type SeededPipeline,
+} from '../../test/seed-pipeline.ts';
 import { insertSynthetic, syntheticAccount } from '../../test/synthetic-accounts.ts';
 import { openMemoryStores } from '../auth/memory-store.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
@@ -12,6 +17,8 @@ import { isDashboardError } from '../errors.ts';
 import { createRuntime, type Runtime } from '../runtime.ts';
 import {
   decideEvidence,
+  MAX_DRAFT_REVISIONS,
+  MAX_QUEUE_DECISIONS_PER_ENTRY,
   mergeIncidentsAction,
   reviewQueueEntry,
   saveDraftRevision,
@@ -20,6 +27,7 @@ import {
 import {
   anomalyView,
   commandCenter,
+  draftKeyOf,
   draftView,
   evidenceView,
   incidentDetail,
@@ -499,5 +507,107 @@ describe('data-access layer against PostgreSQL', () => {
       ),
     ).rejects.toSatisfy(raised);
     expect(await fingerprint()).toBe(machineFingerprint);
+  });
+  it('refuses the 101st decision when two reviews of one row arrive together (CAS-006, blocker 7, Codex F1)', async () => {
+    const queueRow = await seedQueueRow(isolated.db);
+    for (let n = 0; n < MAX_QUEUE_DECISIONS_PER_ENTRY - 1; n += 1) {
+      await runtime.stores.queueDecisions.append({
+        id: randomUUID(),
+        classificationRunId: queueRow.classificationRunId,
+        sourceRowId: queueRow.sourceRowId,
+        reviewState: 'rejected',
+        reasonCode: 'editorial_judgement',
+        note: null,
+        actorAccountId: principals.editor.accountId,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    const review = () =>
+      reviewQueueEntry(runtime, principals.editor, {
+        classificationRunId: queueRow.classificationRunId,
+        sourceRowId: queueRow.sourceRowId,
+        reviewState: 'selected',
+        reasonCode: 'editorial_judgement',
+        note: null,
+      });
+    // Both start at 99 held decisions. Exactly one may land.
+    const settled = await Promise.allSettled([review(), review()]);
+    const landed = settled.filter((r) => r.status === 'fulfilled');
+    const refused = settled.filter(
+      (r) =>
+        r.status === 'rejected' && isDashboardError(r.reason) && r.reason.code === 'decision_limit',
+    );
+    expect(landed).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    expect(
+      await runtime.stores.queueDecisions.countForEntry(
+        queueRow.classificationRunId,
+        queueRow.sourceRowId,
+      ),
+    ).toBe(MAX_QUEUE_DECISIONS_PER_ENTRY);
+  });
+
+  it('bounds the decisions one queue row keeps and the revisions one draft keeps (CAS-006, blocker 7)', async () => {
+    // The seeded run has no review row, so the bound is exercised on a row
+    // identifier whose decisions are appended through the store directly; the
+    // data-access layer checks the bound before the queue lookup.
+    const rowId = randomUUID();
+    expect(
+      await runtime.stores.queueDecisions.countForEntry(seeded.classificationRunId, rowId),
+    ).toBe(0);
+    for (let n = 0; n < MAX_QUEUE_DECISIONS_PER_ENTRY; n += 1) {
+      await runtime.stores.queueDecisions.append({
+        id: randomUUID(),
+        classificationRunId: seeded.classificationRunId,
+        sourceRowId: rowId,
+        reviewState: 'rejected',
+        reasonCode: 'editorial_judgement',
+        note: null,
+        actorAccountId: principals.editor.accountId,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    let caught: unknown = null;
+    try {
+      await reviewQueueEntry(runtime, principals.editor, {
+        classificationRunId: seeded.classificationRunId,
+        sourceRowId: rowId,
+        reviewState: 'selected',
+        reasonCode: 'editorial_judgement',
+        note: null,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isDashboardError(caught) && caught.code === 'decision_limit').toBe(true);
+
+    const key = draftKeyOf(seeded.evidenceRunId, PERIOD_START, PERIOD_END);
+    const latest = await runtime.stores.drafts.latest(key);
+    for (
+      let revision = (latest?.revision ?? 0) + 1;
+      revision <= MAX_DRAFT_REVISIONS;
+      revision += 1
+    ) {
+      await runtime.stores.drafts.append({
+        draftKey: key,
+        revision,
+        markdown: `# revision ${revision}`,
+        savedByAccountId: principals.editor.accountId,
+        savedAt: new Date().toISOString(),
+      });
+    }
+    caught = null;
+    try {
+      await saveDraftRevision(runtime, principals.editor, {
+        evidenceRunId: seeded.evidenceRunId,
+        periodStart: PERIOD_START,
+        periodEnd: PERIOD_END,
+        expectedRevision: MAX_DRAFT_REVISIONS,
+        markdown: '# one too many',
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isDashboardError(caught) && caught.code === 'revision_limit').toBe(true);
   });
 });

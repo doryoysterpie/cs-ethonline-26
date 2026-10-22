@@ -164,9 +164,9 @@ class PostgresSessions implements SessionStore {
     await this.db.withClient((client) => database.touchSession(client, id, lastSeenAt));
   }
 
-  async revoke(id: string, at: string, reason: string): Promise<void> {
+  async revoke(id: string, at: string, reason: string): Promise<boolean> {
     const { database } = await workspace();
-    await this.db.withClient((client) => database.revokeSession(client, id, at, reason));
+    return this.db.withClient((client) => database.revokeSession(client, id, at, reason));
   }
 
   async revokeAllForAccount(
@@ -240,6 +240,31 @@ class PostgresQueueDecisions implements QueueDecisionStore {
   async append(decision: QueueDecision): Promise<void> {
     const { database } = await workspace();
     await this.db.withClient((client) => database.appendQueueDecision(client, decision));
+  }
+
+  async appendIfBelow(decision: QueueDecision, limit: number): Promise<'appended' | 'limit'> {
+    const { database } = await workspace();
+    // One transaction per append: the advisory lock on the entry serializes
+    // concurrent reviews of the same row, so the count below is the count the
+    // append will be judged against, whatever another request is doing.
+    return this.db.withTransaction(async (tx) => {
+      await database.lockQueueEntry(tx, decision.classificationRunId, decision.sourceRowId);
+      const held = await database.countQueueDecisionsForEntry(
+        tx,
+        decision.classificationRunId,
+        decision.sourceRowId,
+      );
+      if (held >= limit) return 'limit';
+      await database.appendQueueDecision(tx, decision);
+      return 'appended';
+    });
+  }
+
+  async countForEntry(classificationRunId: string, sourceRowId: string): Promise<number> {
+    const { database } = await workspace();
+    return this.db.withClient((client) =>
+      database.countQueueDecisionsForEntry(client, classificationRunId, sourceRowId),
+    );
   }
 
   async listForRun(classificationRunId: string): Promise<QueueDecision[]> {

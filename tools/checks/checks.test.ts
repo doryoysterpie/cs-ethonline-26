@@ -195,6 +195,33 @@ describe('secrets', () => {
     }
   });
 
+  it('reports each planted Sheets identifier by rule, skips tests and harnesses, and never prints it', () => {
+    const url = ['https://docs.google.com/', 'spreadsheets/d/', 'S'.repeat(26), '/edit'].join('');
+    const assignment = ['GOOGLE_SHEETS_', 'SPREADSHEET_ID = "', 'T'.repeat(30), '"'].join('');
+    const email = ['planted-sa@', 'planted-project', '.iam.gserviceaccount.com'].join('');
+    const keyJson = ['{ "type"', ': "service_', 'account", "x": 1 }'].join('');
+    const root = disposableRepository({
+      'src/one.ts': `const sheet = "${url}";\n`,
+      'src/two.ts': `${assignment}\n`,
+      'src/three.ts': `const who = "${email}";\n${keyJson}\n`,
+      'src/three.test.ts': `const who = "${email}";\n${keyJson}\nconst sheet = "${url}";\n`,
+      'src/four-harness.mjs': `const who = '${email}';\n`,
+    });
+    const findings = scanSecrets(root).findings;
+    expect(findings.map(formatFinding).sort()).toEqual(
+      [
+        'src/one.ts:1: google_sheets_url',
+        'src/two.ts:1: google_sheets_id_assignment',
+        'src/three.ts:1: google_service_account_email',
+        'src/three.ts:2: google_service_account_json',
+      ].sort(),
+    );
+    const printed = findings.map(formatFinding).join('\n');
+    for (const secret of ['S'.repeat(26), 'T'.repeat(30), 'planted-sa@', 'planted-project']) {
+      expect(printed).not.toContain(secret);
+    }
+  });
+
   it('does not fire on hashes, integrity strings or the redaction marker', () => {
     const text = [
       'sha256=84df21781a490b4c3f25614f7ea985ff363d34729746b2c733ad4fd129e917a8',
