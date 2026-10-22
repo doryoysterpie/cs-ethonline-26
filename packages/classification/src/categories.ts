@@ -3,14 +3,18 @@ import { categories, categoryPolicy, CategoryPolicyError, type Category } from '
 import { buildContract, rulesetHash, type BehaviorContract } from './contract.js';
 
 /**
- * One built, frozen contract per registered category (CAS-002), built on
- * first use and kept for the life of the process, so the matcher cache keyed
- * on contract identity holds exactly as it does for the cyberattack contract.
+ * One built, frozen contract per registered category (CAS-002), kept for the
+ * life of the process, so the matcher cache keyed on contract identity holds
+ * exactly as it does for the cyberattack contract.
  *
- * A ruleset hash names one category and one category only: the first contract
- * to produce a hash owns it, and a later category whose policy builds to the
- * same hash is refused here, before any run could record an ambiguous hash.
- * Migration 0013 enforces the same one-to-one rule in the database.
+ * A ruleset hash names one category and one category only. The guarantee is
+ * the registry's: a policy version belongs to one category, decided at
+ * registration, and the hash includes the version, so distinct categories
+ * never build to one hash. The categories registered at load are built here
+ * at load, so their hashes are owned before any later registration; the
+ * ownership check in `contractFor` is a consistency assertion that no order
+ * of calls can turn against a registered category (review of 22 October
+ * 2026, second round). Migration 0013 enforces the same rule in the database.
  */
 const CONTRACTS = new Map<Category, BehaviorContract>();
 const OWNER_OF_HASH = new Map<string, Category>();
@@ -54,5 +58,8 @@ export function listCategories(): readonly Category[] {
   for (const name of names) contractFor(name);
   return names;
 }
+
+// The categories the taxonomy registers at load own their hashes from load.
+for (const name of categories()) contractFor(name);
 
 export { CategoryPolicyError };
