@@ -54,14 +54,19 @@ fixture or replay only; live evidence comes from the Graph client, never from a 
 is a record, not a UUID. Migrations 0001 to 0013 are applied by the deploy step before the
 dashboard serves traffic.
 
-**What is in review.** CAS-001, the living feed imported from the authorized Google Sheets
-workbook, is on pull request 14: one command, a committed tab map, migration 0012 for its
-provenance, a runbook, and decisions D30 to D36. Its first independent review returned five
-findings; four are corrected on the branch and the fifth was the dependency gate. The
-corrected head awaits re-review. The first real import into the production database follows
-the merge (`docs/CAS-001-REPORT.md`). CAS-002, one classification run per category with the
-category recorded beside the run (migration 0013, `--category` on `classification run`), is
-open as a pull request stacked on 14 and merges after it (`docs/CAS-002-REPORT.md`).
+**What is on `main`, and what is in review.** CAS-001, the living feed imported from the
+authorized Google Sheets workbook, merged on 22 October 2026 at `9c03a35` after an independent
+PASS at `2ad714d`; its first real import into the hosted database follows the deploy into the
+database recreated after the Railway platform incident of 21 to 22 October
+(`docs/INCIDENT_RESPONSE.md`, section 7). CAS-002, one classification run per category with
+the category recorded beside the run and bound to a policy registry (migration 0013), merged
+the same day at `b4c8270`; its first review returned two findings, corrected at `aeeccf4`, and
+that corrected head awaits the reviewer's verdict, so it is not called audited
+(`docs/CAS-002-REPORT.md`, section 7). CAS-006's release-blocker corrections merged the same day:
+pull request 17 at `355e773`, whose first review returned one finding, corrected at `e19449e`
+and awaiting the reviewer's verdict on that head; pull request 18 at `c32c963`, passed at
+`32e1357` (`docs/CAS-006-REPORT.md`). Nothing merged today is called audited until a verdict
+names its merged head.
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up

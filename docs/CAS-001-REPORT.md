@@ -2,7 +2,8 @@
 
 Unit tracker: `docs/tcu/CAS-001.md`; live status: issue #3. Branch `cas-001/sheets-intake`
 from `main` at `ce8e367`. This report grows one section per step. Nothing in it marks a test
-as passed until the runner's own counts are recorded here. Audit state: not audited.
+as passed until the runner's own counts are recorded here. Audit state: PASS at `2ad714d`,
+22 October 2026; merged the same day at `9c03a35`.
 
 ## 1. Design note, S0, written before code (step 6)
 
@@ -319,4 +320,8 @@ files (worker 269, sheets-intake 130); PostgreSQL suites 271 (database 92, worke
 dashboard 20, MCP 49); tools 30; `corepack pnpm verify` green on every step. The Supply chain
 check stays red until the dependency change lands on `main`.
 
-Audit state: not audited. The corrected head is pending Codex Desktop's re-review.
+Re-review, 22 October 2026: **PASS** at `2ad714d`, no findings; F1 to F5 corrected, the
+dependency remediation merged from `main`. Record: `2026-10-22-cas-001-pr-14-reaudit.md`. The
+owner merged pull request 14 the same day at `9c03a35`. Step 14, the first real import, follows
+Railway's deploy of migration 0012 into the hosted database, which is being recreated after the
+platform incident of 21 to 22 October (`docs/INCIDENT_RESPONSE.md`, section 7).
