@@ -1628,3 +1628,41 @@ disabled on this model, so effort is the only control.
   version and a reviewed commit.
 - **Decided by:** Project owner.
 - **Supersedes:** none.
+
+## D42 What a reader sees, and the published mark
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** A reader sees the four sanitized views a judge had (command centre, incidents,
+  anomaly, evidence: no source headline, no source link, no source text, no note, no draft) and
+  the latest revision of each round-up and article once the owner marks that revision
+  published. The mark is per revision and owner-only; a later regeneration or edit changes
+  nothing public until the owner marks the new revision; unmarking is owner-only and takes
+  effect at once. Nothing generated is visible without that act.
+- **Rationale:** The owner's choice (CAS-007, step 1), option (a) of the plan's two: readers
+  read what the owner publishes, and publication stays the owner's act, so D6 and D4 are
+  enforced at the same point, the mark.
+- **Consequences:** An append-only publications table whose latest row per output decides the
+  public revision; a `view:published` capability for readers and a `publish:output` capability
+  for the owner alone; public pages that render the published revision's Markdown through the
+  sanitiser and nothing else.
+- **Decided by:** Project owner.
+- **Supersedes:** nothing; D6 stands as the allowlist.
+
+## D43 The `judge` role is retired into `reader`; reader expiry per account
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** `judge` leaves the role table; `reader` takes its place with the judge's four
+  sanitized views and the published outputs (D42). Existing judge accounts become readers. A
+  reader account's expiry is a per-account value set at approval, one year after approval by
+  default, renewable by the owner; a future hackathon judge is a reader with a short expiry,
+  not a role to bring back.
+- **Rationale:** The owner's choice (CAS-007, step 2), option (a): the judges' purpose ended
+  with the hackathon; one role fewer to reason about; expiry as data rather than as a role.
+- **Consequences:** Migration 0017 changes the role check and every existing `judge` row, the
+  one data change a migration of this repository has made; the capability tables, the commands
+  and the tests name `reader`; a reader account requires an expiry as a judge account did.
+- **Decided by:** Project owner.
+- **Supersedes:** the judge role's definition of 2026-09-12 as a role; its sanitized read-only
+  set stands as the reader's.
