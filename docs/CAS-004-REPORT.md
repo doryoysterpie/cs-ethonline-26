@@ -268,3 +268,13 @@ is written; the output is rendered through the existing Markdown sanitiser, neve
 is bounded per request by the output allowance and per month by the cap, checked before the
 request against the worst case and recorded after it from the usage; the tables are append-only;
 no automatic publication exists, the owner copies the text out by hand (D6).
+
+## 6. Verification, S8 (step 14)
+
+On the branch at the head that carries the documentation, 22 October 2026, from the runner:
+`verify` exit 0, 1,088 offline tests (the round-up package 10, the dashboard 84, the worker
+275), 31 tool tests; `test:db` exit 0, 301 (database 104, worker 119, dashboard 29, mcp-server
+49). The counts against `main` as of pull request 23's corrected head are 1,078 and 296; the
+differences are this unit's ten package tests, the two database tests for migration 0015 and
+the three dashboard data-access tests. The clean clone and the CI run are recorded below as they
+complete.
