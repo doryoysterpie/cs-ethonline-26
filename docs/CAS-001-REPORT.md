@@ -216,3 +216,84 @@ hygiene, secrets and forbidden-file scans pass over the tree.
 Not done here, by design: no PostgreSQL test, no command, no migration, no policy file. Those
 are steps 8 and 9. The write path is still the CSV importer's private functions; step 9
 extracts the shared write function the design note names.
+
+## 3. The import path, S2 to S6, with its tests (steps 8 and 9)
+
+Written 21 October 2026. Everything below was run; counts are the runner's.
+
+### 3.1 What was built
+
+- `packages/database/migrations/0012_sheets_import_provenance.sql`: two additive, append-only
+  tables, `sheets_import_reads` (one per batch; digests, tab title, zone, serial rule, rows,
+  pages, read instants; origin constrained to `live`; bound to `import_batches (id, data_origin)`)
+  and `sheets_import_timestamps` (one per converted serial; bound to
+  `source_rows (id, batch_id, row_hash)` from migration 0004 and to the read record); one guard
+  function, `sheets_import_append_only_guard`, with the repository's search-path binding.
+  Migrations 0001 to 0011 are unchanged. Checksum recorded by the migration runner's test.
+- `packages/database/src/sheets.ts`: parameterized operations for the two tables and a lean
+  `listSourceRowIdentities` (id, row number, hash) so a serial can be bound to its stored row
+  without reading any cell.
+- `apps/worker/src/editorial/import.ts`: the CSV importer's chunked write path is now the
+  exported `writeEvaluations`, and `describeBatch` is exported. The CSV importer's own body is
+  unchanged; its tests pass unchanged.
+- `apps/worker/src/sheets/import.ts`: `readFeedTab` (structure, header row, every data row
+  once, in memory), `persistSheetsBatch` (one transaction: batch record, rows through the
+  shared write path, read record, serials bound to stored rows, completion) and
+  `importSheetsTab` (read, prepare, persist).
+- `apps/worker/src/sheets/tab-map.ts` and `data/policy/sheets-tab-map.json`: the committed
+  declaration of the feed tab, loaded and validated before any credential is touched; an
+  undeclared tab is refused.
+- `sheets import --tab` in the worker command line, root script `sheets:import`, and the
+  count-only formatter `formatSheetsImportOutcome`.
+
+### 3.2 Deviations from the design note, recorded
+
+- The connector's `TabMapping` type is untouched. The bridge converts timestamp columns itself,
+  so the connector's single `timestampColumn` is simply not used; nothing audited in
+  `@cas/sheets-intake` changed.
+- One test outside this unit changed: `packages/mcp-server/src/documentation.test.ts` asserted
+  that no decision D30 exists, as its way of proving the MCP amendments allocated no number.
+  D30 to D36 now exist for the post-event plan. The assertion now proves the same intent
+  directly: no decision after D29 names the MCP track.
+
+### 3.3 Tests, from the runner
+
+| Suite                                        | Count                                                |
+| -------------------------------------------- | ---------------------------------------------------- |
+| `apps/worker/src/sheets/import.test.ts`      | 17 (step 7)                                          |
+| `apps/worker/src/sheets/tab-map.test.ts`     | 6                                                    |
+| `apps/worker/src/sheets/import-read.test.ts` | 4, against a scripted transport that opens no socket |
+| `apps/worker/src/sheets/import.db.test.ts`   | 2, against an isolated migrated schema               |
+| Workspace default suite                      | 1,053 tests in 101 files, every package passing      |
+| PostgreSQL suites                            | database 92, worker 110, dashboard 20, MCP 49: 271   |
+| Tools                                        | 30                                                   |
+
+`corepack pnpm verify` passed every step: format, lint, typecheck, test, tools, repository
+checks, build. The hygiene scan caught one real defect on the way: the tool path that wrote the
+migration decoded U+2028 and U+2029 into the characters themselves; they were replaced
+with their escapes and the scan is clean.
+
+### 3.4 The local rung: the real workbook into a local database
+
+Before any run against Railway, the command ran against the live workbook into a fresh local
+database (`cas_cas001_tests`, migrated to 0012), 21 October 2026:
+
+| Measurement                   | Value                                 |
+| ----------------------------- | ------------------------------------- |
+| Rows read, pages              | 28,596 in 58 pages, 38 s              |
+| Rows written                  | 28,596 accepted, 0 quarantined, 29 s  |
+| URL groups                    | 28,228 distinct, 368 duplicate excess |
+| Bytes read                    | 134,922,672                           |
+| Second run                    | already imported, no rows written     |
+| Database size after one batch | 364 MB                                |
+| Serials converted             | 0                                     |
+
+Two findings. First, every timestamp cell in the live feed is text in strict ISO 8601 form,
+so the serial rule of section 1.4 is a guard, not the production path; the importer accepted
+all 28,596 as they are. Second, exactly one row carries a `Date Posted` in the future
+(3 December 2026); it is stored as read and matters only to the week boundary CAS-003 fixes.
+
+### 3.5 Not done here
+
+Step 11, the first real import into the Railway database, is the owner's decision: it adds a
+batch the size of the ledger to the production database. Steps 12 to 14 follow it.
