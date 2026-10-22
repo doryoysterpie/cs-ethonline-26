@@ -237,6 +237,9 @@ importers:
       '@cas/sheets-intake':
         specifier: workspace:*
         version: link:../../packages/sheets-intake
+      '@cas/source-reader':
+        specifier: workspace:*
+        version: link:../../packages/source-reader
       csv-parse:
         specifier: 'catalog:'
         version: 7.0.2
@@ -435,6 +438,25 @@ importers:
       '@cas/contracts':
         specifier: workspace:*
         version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+
+  packages/source-reader:
+    dependencies:
+      '@cas/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      htmlparser2:
+        specifier: 'catalog:'
+        version: 12.0.0
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

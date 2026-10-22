@@ -26,6 +26,7 @@
     "@cas/drafting": "workspace:*",
     "@cas/evidence": "workspace:*",
     "@cas/sheets-intake": "workspace:*",
+    "@cas/source-reader": "workspace:*",
     "csv-parse": "catalog:",
     "htmlparser2": "catalog:"
   },
