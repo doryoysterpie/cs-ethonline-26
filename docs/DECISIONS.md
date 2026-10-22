@@ -1666,3 +1666,59 @@ disabled on this model, so effort is the only control.
 - **Decided by:** Project owner.
 - **Supersedes:** the judge role's definition of 2026-09-12 as a role; its sanitized read-only
   set stands as the reader's.
+
+## D44 The fiat provider is Stripe, with hosted Checkout and signed webhooks
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** The supporter tier runs on Stripe: Checkout hosted by Stripe, so no card data
+  touches this service and the PCI scope stays at the hosted-page level; subscription state
+  learned through signed webhooks; payouts in Canada. The merchant-of-record alternatives
+  (Paddle, Lemon Squeezy, each 5% plus 50 cents) buy tax handling at roughly three times the
+  fee; Helcim adds S1 verification work for a difference of cents. Tax stays with the operating
+  entity: under the CA$30,000 small-supplier threshold no GST/HST registration is required; if
+  the entity is registered, Stripe Tax is turned on or HST is charged manually from the first
+  supporter. Which entity owns the Stripe account is confirmed by the owner before the first
+  real transaction (CAS-008, step 10).
+- **Rationale:** The owner's choice (CAS-008, step 1), on mature signed webhooks, hosted
+  Checkout, Canadian payouts, and Plan 2.0 already naming Stripe for post-event billing; the fee
+  (2.9% plus CA$0.30 domestic, 0.7% Billing) was not the deciding factor.
+- **Consequences:** No card, bank or tax identifier is ever read by this service; the webhook
+  endpoint verifies Stripe's signature and records every event once; the service never calls
+  Stripe except to create a Checkout Session or a billing-portal session.
+- **Decided by:** Project owner.
+- **Supersedes:** none.
+
+## D45 The supporter tier grants a thank-you and a mark, nothing else
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** A supporter receives a thank-you and a `supporter` mark. The mark is an account
+  attribute derived from the recorded subscription events; it enters no capability check, and
+  the role table stays as CAS-004 and CAS-007 left it. Readers and supporters see identical
+  content.
+- **Rationale:** The owner's choice (CAS-008, step 2): payment is a support mechanism, not
+  access control (`docs/SECURITY.md`, section 5).
+- **Consequences:** No capability named `supporter`; no page differs by the mark beyond the
+  thank-you; tests assert that a supporter and a free reader receive the same content.
+- **Decided by:** Project owner.
+- **Supersedes:** none.
+
+## D46 Crypto donations: three pinned entries, each verified by its own transfer
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** Three chain entries: Bitcoin, Ethereum mainnet, and Base, with USDC listed as
+  accepted on the two EVM entries so readers know which tokens are expected; Base is the
+  small-donation path, since mainnet gas makes a CA$5 gift pointless. Each entry gets its own
+  verification transfer and verified-on date, even where the EVM address is the same string.
+  Addresses come from a wallet dedicated to this product, not shared with any other venture's
+  treasury or any address already public under another identity. The page renders the text and
+  the QR code from the same pinned JSON record, with the verified-on date shown. Addresses
+  arrive by file at S0, not in chat; no contract, no third-party widget.
+- **Rationale:** The owner's choice (CAS-008, step 3), the plan's cost judgment.
+- **Consequences:** `data/policy/donation-addresses.json` holds the entries; its digest is
+  pinned in code and the page refuses to render on drift, so a change is a reviewed commit; the
+  QR code is generated in-process, never fetched.
+- **Decided by:** Project owner.
+- **Supersedes:** none.
