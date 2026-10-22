@@ -315,6 +315,7 @@ export {
   listOmittedIncidents,
   listRoundupRevisions,
   listSelectedRows,
+  SELECTION_PAGE_MAX,
   spendBetween,
   type ModelCallKind,
   type ModelCallOutcome,

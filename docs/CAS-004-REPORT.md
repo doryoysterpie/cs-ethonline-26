@@ -94,7 +94,8 @@ counts at D9's published rates.
 
 ### 1.7 The prompt contract
 
-A versioned, hashed system prompt (`roundup-prompt@1`) that instructs reformatting only: the
+A versioned, hashed system prompt (`roundup-prompt@1` at S0; `roundup-prompt@2` after the review
+of 22 October 2026, section 7, F1) that instructs reformatting only: the
 entry rules of D40 (headline, summary, sources), the deduplication rule, the selection order,
 the output shape, and that nothing may be added that the recorded fields do not say. The user
 turn is the selection snapshot as JSON. The prompt hash is recorded on the revision. Naming of
@@ -153,7 +154,7 @@ Then the full verify loop, the four database suites, a clean clone and CI.
 
 ### 2.1 The prompt contract (step 5)
 
-`packages/roundup/src/prompt.ts` fixes `roundup-prompt@1`. The system prompt is built from the
+`packages/roundup/src/prompt.ts` fixed `roundup-prompt@1` (now `roundup-prompt@2`, section 7). The system prompt is built from the
 template file alone and instructs reformatting only: one entry per incident in the given order,
 the headline in title case and bold, a summary of one or two sentences in the register the
 template describes, the sources exactly as given, a citation for every entry naming the source
@@ -284,3 +285,75 @@ At `a0e594a`, 22 October 2026: a fresh clone from the remote, install from the l
 `verify` (1,088 offline, 31 tool) and `test:db` (301) all exit 0; CI run 39818786370 green on
 every job (Verify, PostgreSQL integration, Supply chain), with CodeQL and its analysis green
 beside it.
+
+## 7. Independent review and correction (step 15, first round)
+
+Codex reviewed pull request 24 at `f2e985c` on 22 October 2026: CHANGES REQUIRED, three P1 and
+three P2. Record: `2026-10-22-CAS-004-roundup-pr24.md`. Every finding is corrected on the same
+branch the same day, each with a test at the point of its claim.
+
+- **F1, P1, editorial notes crossed the model boundary.** The user turn carried the flagged
+  entries with their reasons, and an omitted incident's reason is the owner's note; the design
+  note (section 1.4) said the model never sees them, and the committed test asserted the
+  opposite. Correction: the flagged section is out of the prompt contract in both directions.
+  `userPrompt` carries the selected incidents and the marker only; the model's schema
+  (`ModelSlotsSchema`, the structured output) has no `flagged`; `validateResponse` attaches the
+  section from records (`deterministicFlagged`) after the response passes; the prompt is
+  `roundup-prompt@2` and its hash changes with it. Tests: the request's keys are exactly
+  `weekRunId`, `category`, `window`, `incidents`, `extras`, and the exact note is absent from
+  the system and user turns (package and PostgreSQL); a response that carries a `flagged` key
+  is `response_invalid`; every stored revision holds the omitted incident and its note.
+- **F2, P1, a model response could place an unselected URL in the export.** The validator
+  checked the arrays and the renderer interpolated the headline and summary verbatim, so a
+  summary carrying a `Sources:` block and a URL passed and rendered. Correction, three layers:
+  `inlineSlotTextIssue` refuses a model-written headline or summary that is not plain inline
+  prose (line break, control character, HTML, link, URL or `www.`, Markdown block marker,
+  code, table bar, emphasis marker, empty) with `response_text_unsafe`; `escapeInline` is the
+  one path every slot text takes into the export, model-written or recorded, collapsing it to
+  one line, escaping the characters that open Markdown structure and breaking a bare URL
+  scheme; and `generateRoundup` checks that the rendered Markdown of both revisions carries
+  exactly the selection's URLs (`urlsIn`), refusing with `response_url_outside_selection`
+  otherwise. Tests: the reviewer's probe (a `Sources:` block and an unselected URL inside the
+  summary) is rejected and nothing is kept; thirteen unsafe shapes are each rejected in either
+  slot; a recorded title that is hostile Markdown renders without a heading, a link, a tag or
+  a URL off the selection; the escape and URL functions against fixed strings.
+- **F3, P1, a billed but rejected response was recorded at zero and did not count toward the
+  cap.** Correction: `RoundupError` carries `billed` (model and usage) for every failure after a
+  response; the ledger records such a failure at its real tokens and cost; `spendBetween` sums
+  every row of the month whatever its outcome (a refusal before any request carries zero).
+  Tests: a validation failure with 2,000 input and 500 output tokens is a failed row at
+  USD 0.018 (package: the error carries the usage; PostgreSQL: the ledger row), and a second
+  attempt is refused by the cap once that cost is what stands between the month and the
+  ceiling; the database's month sum includes a failed row.
+- **F4, P2, concurrent generation could make an unrecorded duplicate request.** The existence
+  check was a standalone read before the request. Correction: the claim, the cap check, the
+  request, the ledger row and the revisions run under a PostgreSQL advisory lock
+  (`withGenerationLock`, keyed by the schema, held on a connection of its own); the second of
+  two submissions waits, then finds the round-up generated and is refused without a request;
+  the completed ledger row is written in its own transaction before the revisions, so a billed
+  request keeps its record even if persistence fails after it. Test: two concurrent
+  submissions make exactly one transport call, one succeeds, one is refused, one ledger row.
+- **F5, P2, the selection query could silently truncate.** Correction: the generation fetches
+  the bound plus one row and refuses whole with `selection_too_large` when the page is full;
+  the database operations take any page size up to `SELECTION_PAGE_MAX` and never decide the
+  bound. Test: 201 incidents of 50 rows seeded through the real import, classification and
+  clustering (`seedLargeWeek`) and selected; the generation is refused with no request and no
+  revision; one incident set aside, exactly 10,000 rows generate with every row kept.
+- **F6, P2, 201 flagged entries passed preflight.** Correction: `INPUT_LIMITS.flagged` is 200,
+  `assertRoundupInput` refuses past it before any request, the generation fetches 201 omitted
+  incidents and refuses with `flagged_too_many`. Test: 200 accepted, 201 refused, no transport
+  call; the stored schema refuses 201.
+- **Found by the F5 boundary test, corrected with it.** A selection at the row bound rendered
+  past migration 0015's bound on a stored revision (400,000 characters), so a round-up that
+  passed every input check could be requested, billed and then refused by the database.
+  Correction: `MAX_MARKDOWN_CHARACTERS` (400,000) is pinned in the package beside the
+  migration's bound; `prepareGeneration` refuses with `input_too_long` before any request when
+  the deterministic rendering, the smallest a round-up of the selection can be, exceeds it; a
+  generated rendering past it is `response_too_long`, billed and recorded. Tests: a wide
+  selection is refused with no transport call; a long generated response is refused with its
+  usage; the database refuses the 400,001st character.
+
+Counts at the corrected head, from the runner, 22 October 2026: `verify` exit 0, 1,093 offline
+tests (round-up 15, dashboard 84, worker 275), 31 tool tests; `test:db` exit 0, 304 (database
+104, worker 119, dashboard 32, mcp-server 49). The clean-clone reproduction and the CI run at
+the corrected head are recorded on the tracker.

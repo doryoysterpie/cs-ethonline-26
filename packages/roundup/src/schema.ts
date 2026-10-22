@@ -32,6 +32,20 @@ export const FlaggedEntrySchema = z
   })
   .strict();
 
+/**
+ * What the model returns: the rundown and the echoed marker, nothing else.
+ * The flagged section never crosses the model boundary in either direction
+ * (review of pull request 24, F1): it is built from records after the
+ * response is validated.
+ */
+export const ModelSlotsSchema = z
+  .object({
+    rundown: z.array(RundownEntrySchema).min(1).max(SLOT_LIMITS.entries),
+    extras: z.string().min(1).max(600),
+  })
+  .strict();
+
+/** What a revision stores: the model's (or deterministic) rundown, the deterministic flagged section, the marker. */
 export const RoundupSlotsSchema = z
   .object({
     rundown: z.array(RundownEntrySchema).min(1).max(SLOT_LIMITS.entries),
@@ -42,9 +56,10 @@ export const RoundupSlotsSchema = z
 
 export type RundownEntry = z.infer<typeof RundownEntrySchema>;
 export type RoundupFlagged = z.infer<typeof FlaggedEntrySchema>;
+export type ModelSlots = z.infer<typeof ModelSlotsSchema>;
 export type RoundupSlots = z.infer<typeof RoundupSlotsSchema>;
 
-/** The JSON Schema the model is constrained to (structured output). */
+/** The JSON Schema the model is constrained to (structured output): the model slots, never the flagged section. */
 export function slotsJsonSchema(): Record<string, unknown> {
-  return z.toJSONSchema(RoundupSlotsSchema) as Record<string, unknown>;
+  return z.toJSONSchema(ModelSlotsSchema) as Record<string, unknown>;
 }

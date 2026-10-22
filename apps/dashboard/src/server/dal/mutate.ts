@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { Queryable } from '@cas/database';
+
 import { randomUUID } from 'node:crypto';
 
 import { REVIEW_STATES, type ReviewState } from '@cas/contracts';
@@ -909,7 +911,29 @@ export interface RoundupEditInput {
   readonly markdown: unknown;
 }
 
+/** The most selected rows a generation accepts; one more is fetched, and a full page refuses (review F5). */
 const SELECTION_ROWS_FOR_GENERATION = 10_000;
+/** The most flagged entries a revision can hold (the stored slot schema's bound; review F6). */
+const FLAGGED_FOR_GENERATION = 200;
+
+/**
+ * A PostgreSQL advisory lock held for the duration of one generation, on a
+ * connection of its own (review F4). Keyed by the schema, so every
+ * generation against one application schema is serialised: the second of
+ * two concurrent submissions waits, then finds the round-up generated and
+ * is refused without a model request. Released on every exit.
+ */
+async function withGenerationLock<T>(runtime: Runtime, work: () => Promise<T>): Promise<T> {
+  const key = `${runtime.database.schema}:roundup-generation`;
+  return runtime.database.withClient(async (holder) => {
+    await holder.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))', [key]);
+    try {
+      return await work();
+    } finally {
+      await holder.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))', [key]);
+    }
+  });
+}
 const CATEGORY_SHAPE = /^[a-z][a-z0-9_]{1,31}$/u;
 const HASH_SHAPE = /^[0-9a-f]{64}$/u;
 const CARRIED_REASON = 'first seen after the previous week’s freeze; carried per D10';
@@ -1013,6 +1037,7 @@ async function generateRoundupUnaudited(
     spendBetween,
   } = packages.database;
   const {
+    costMicrodollars,
     generateRoundup: runGeneration,
     isRoundupError,
     loadTemplate,
@@ -1027,15 +1052,16 @@ async function generateRoundupUnaudited(
     if (week.status !== 'completed' || !week.categories.includes(category)) {
       throw validation('week_not_ready', 'The week must be completed and cover that category.');
     }
-    const existing = await runtime.database.withClient((client) =>
-      listRoundupRevisions(client, weekRunId, category),
-    );
-    if (existing.length > 0) {
-      throw validation(
-        'roundup_already_generated',
-        'This round-up was generated; edit it instead.',
-      );
-    }
+    const assertNotGenerated = async (client: Queryable): Promise<void> => {
+      const existing = await listRoundupRevisions(client, weekRunId, category);
+      if (existing.length > 0) {
+        throw validation(
+          'roundup_already_generated',
+          'This round-up was generated; edit it instead.',
+        );
+      }
+    };
+    await runtime.database.withClient(assertNotGenerated);
     const children = await runtime.database.withClient((client) =>
       listWeekRunChildren(client, weekRunId),
     );
@@ -1052,8 +1078,15 @@ async function generateRoundupUnaudited(
     // The input: the selection snapshot in selection order, and the
     // deterministic flagged entries. Nothing else crosses to the model.
     const rows = await runtime.database.withClient((client) =>
-      listSelectedRows(client, weekRunId, category, SELECTION_ROWS_FOR_GENERATION),
+      listSelectedRows(client, weekRunId, category, SELECTION_ROWS_FOR_GENERATION + 1),
     );
+    if (rows.length > SELECTION_ROWS_FOR_GENERATION) {
+      // Never a prefix: a selection past the bound is refused whole (review F5).
+      throw validation(
+        'selection_too_large',
+        'The selection holds more rows than one round-up can carry.',
+      );
+    }
     const incidents: { incidentId: string; rows: SnapshotRow[] }[] = [];
     for (const row of rows) {
       let incident = incidents.find((i) => i.incidentId === row.incidentId);
@@ -1071,8 +1104,14 @@ async function generateRoundupUnaudited(
       });
     }
     const omitted = await runtime.database.withClient((client) =>
-      listOmittedIncidents(client, weekRunId, category, SELECTION_ROWS_FOR_GENERATION),
+      listOmittedIncidents(client, weekRunId, category, FLAGGED_FOR_GENERATION + 1),
     );
+    if (omitted.length > FLAGGED_FOR_GENERATION) {
+      throw validation(
+        'flagged_too_many',
+        'The week has more omitted incidents than one round-up can list.',
+      );
+    }
     const latestSelections = await runtime.database.withClient((client) =>
       listLatestIssueSelections(client, weekRunId),
     );
@@ -1117,11 +1156,13 @@ async function generateRoundupUnaudited(
       incidents,
       flagged,
     };
+    if (flagged.length > FLAGGED_FOR_GENERATION) {
+      throw validation(
+        'flagged_too_many',
+        'The week has more flagged incidents than one round-up can list.',
+      );
+    }
     const loaded = await loadTemplate();
-    const bounds = monthBounds(new Date());
-    const spentThisMonth = await runtime.database.withClient((client) =>
-      spendBetween(client, 'roundup', bounds.from, bounds.to),
-    );
     await audit(runtime, {
       kind: 'roundup_requested',
       outcome: 'success',
@@ -1153,84 +1194,104 @@ async function generateRoundupUnaudited(
           createdAt: new Date().toISOString(),
         }),
       );
-    let generation;
-    try {
-      generation = await runGeneration(snapshot, loaded, runtime.model, {
-        spentThisMonth,
-        expectedTemplateHash,
-      });
-    } catch (error) {
-      if (!isRoundupError(error)) throw error;
-      const refused =
-        error.code === 'spend_cap_exceeded' ||
-        error.code === 'template_hash_mismatch' ||
-        error.code === 'model_key_missing' ||
-        error.code === 'input_empty' ||
-        error.code === 'input_invalid';
-      await ledger(
-        refused ? 'refused' : 'failed',
-        error.code,
-        { inputTokens: 0, outputTokens: 0, costMicrodollars: 0 },
-        MODEL_ID,
+    // One generation at a time per schema (review F4): the claim, the cap
+    // check, the one request, the ledger row and the revisions happen under
+    // an advisory lock held on a dedicated connection, so two submissions
+    // cannot both observe an empty round-up and both call the model. The
+    // ledger row is written in its own transaction before the revisions, so
+    // a billed request keeps its record even if persistence fails after it.
+    const generation = await withGenerationLock(runtime, async () => {
+      await runtime.database.withClient(assertNotGenerated);
+      const bounds = monthBounds(new Date());
+      const spentThisMonth = await runtime.database.withClient((client) =>
+        spendBetween(client, 'roundup', bounds.from, bounds.to),
       );
-      if (
-        error.code === 'model_key_missing' ||
-        error.code === 'model_failed' ||
-        error.code === 'model_refused'
-      ) {
-        throw new DashboardError(
-          'unavailable',
+      let produced;
+      try {
+        produced = await runGeneration(snapshot, loaded, runtime.model, {
+          spentThisMonth,
+          expectedTemplateHash,
+        });
+      } catch (error) {
+        if (!isRoundupError(error)) throw error;
+        const refused =
+          error.code === 'spend_cap_exceeded' ||
+          error.code === 'template_hash_mismatch' ||
+          error.code === 'model_key_missing' ||
+          error.code === 'input_empty' ||
+          error.code === 'input_invalid' ||
+          error.code === 'input_too_long';
+        // A request the model answered is billed whatever the verdict on the
+        // answer (review F3): the ledger records its real usage and cost.
+        const billed = error.billed;
+        await ledger(
+          refused ? 'refused' : 'failed',
           error.code,
-          'The model request could not be completed; nothing was written.',
+          billed === null
+            ? { inputTokens: 0, outputTokens: 0, costMicrodollars: 0 }
+            : {
+                inputTokens: billed.inputTokens,
+                outputTokens: billed.outputTokens,
+                costMicrodollars: costMicrodollars(billed),
+              },
+          billed?.model ?? MODEL_ID,
         );
+        if (
+          error.code === 'model_key_missing' ||
+          error.code === 'model_failed' ||
+          error.code === 'model_refused'
+        ) {
+          throw new DashboardError(
+            'unavailable',
+            error.code,
+            'The model request could not be completed; nothing was written.',
+          );
+        }
+        if (error.code.startsWith('response_')) {
+          throw new DashboardError(
+            'unavailable',
+            error.code,
+            'The response was rejected; nothing was written.',
+          );
+        }
+        throw validation(error.code, error.message);
       }
-      if (error.code.startsWith('response_')) {
-        throw new DashboardError(
-          'unavailable',
-          error.code,
-          'The response was rejected; nothing was written.',
-        );
-      }
-      throw validation(error.code, error.message);
-    }
-    const now = new Date().toISOString();
-    await runtime.database.withTransaction(async (tx) => {
-      await insertRoundupRevision(tx, {
-        weekRunId,
-        category,
-        revision: 0,
-        kind: 'deterministic',
-        slots: generation.deterministic.slots,
-        markdown: generation.deterministic.markdown,
-        provenance: null,
-        savedByAccountId: principal.accountId,
-        createdAt: now,
+      await ledger(
+        'completed',
+        'completed',
+        {
+          inputTokens: produced.provenance.inputTokens,
+          outputTokens: produced.provenance.outputTokens,
+          costMicrodollars: produced.provenance.costMicrodollars,
+        },
+        produced.provenance.model,
+      );
+      const now = new Date().toISOString();
+      await runtime.database.withTransaction(async (tx) => {
+        await insertRoundupRevision(tx, {
+          weekRunId,
+          category,
+          revision: 0,
+          kind: 'deterministic',
+          slots: produced.deterministic.slots,
+          markdown: produced.deterministic.markdown,
+          provenance: null,
+          savedByAccountId: principal.accountId,
+          createdAt: now,
+        });
+        await insertRoundupRevision(tx, {
+          weekRunId,
+          category,
+          revision: 1,
+          kind: 'generated',
+          slots: produced.generated.slots,
+          markdown: produced.generated.markdown,
+          provenance: produced.provenance,
+          savedByAccountId: principal.accountId,
+          createdAt: now,
+        });
       });
-      await insertRoundupRevision(tx, {
-        weekRunId,
-        category,
-        revision: 1,
-        kind: 'generated',
-        slots: generation.generated.slots,
-        markdown: generation.generated.markdown,
-        provenance: generation.provenance,
-        savedByAccountId: principal.accountId,
-        createdAt: now,
-      });
-      await insertModelCall(tx, {
-        id: randomUUID(),
-        kind: 'roundup',
-        weekRunId,
-        category,
-        model: generation.provenance.model,
-        inputTokens: generation.provenance.inputTokens,
-        outputTokens: generation.provenance.outputTokens,
-        costMicrodollars: generation.provenance.costMicrodollars,
-        outcome: 'completed',
-        code: 'completed',
-        actorAccountId: principal.accountId,
-        createdAt: now,
-      });
+      return produced;
     });
     await audit(runtime, {
       kind: 'roundup_completed',
