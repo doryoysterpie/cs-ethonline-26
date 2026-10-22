@@ -540,8 +540,11 @@ thresholds, weights and a `calibrated` flag. `@cas/classification` builds one fr
 per policy (`buildContract`, `src/categories.ts`) through the same engine, allowlist, text
 assembly and decision rules; the cyberattack contract reproduces Sprint 3's hash byte for byte,
 which a test asserts. Migration 0013 records the category beside the run in
-`classification_run_categories`, bound to the run's ruleset hash and origin by a guard, append
-only. Runs that predate it carry no category row and are reported as such; nothing is
+`classification_run_categories`, bound to the run's ruleset hash and origin by a guard, and to
+an append-only policy registry (`classification_policies`) that binds each category and policy
+version to the one ruleset hash it builds to; the run's idempotency key includes the category.
+The category vocabulary is itself a registry in `@cas/taxonomy`, append-only within a process,
+from which the command line derives its accepted values. Runs that predate it carry no category row and are reported as such; nothing is
 backfilled. The dashboard's queue pages read the category through the existing data-access
 functions and show one category at a time; no capability changed. The report is
 `docs/CAS-002-REPORT.md`.

@@ -140,8 +140,7 @@ pass (6 of them new, in `categories.test.ts`), `@cas/taxonomy` 7 pass.
 
 ### 3.1 What was built
 
-Migration 0013 as designed in 1.6; checksum
-`0e46fd5280e2bedeebdddad4138cf455a1c110a89cab7efc975f34b4e46f5f5d`. Two database operations,
+Migration 0013 as designed in 1.6; checksum `0e46fd5280e2bedeebdddad4138cf455a1c110a89cab7efc975f34b4e46f5f5d` at this step, rewritten in the review correction of section 7 (new checksum there); neither form was applied outside test and scratch databases. Two database operations,
 insert and read. In the worker, `classifyBatch` takes `category` (default `cyberattack`),
 selects the contract and hash for it, and writes the category row immediately after the run
 row, inside the same repeatable-read transaction, so a run and its category commit or roll
@@ -259,3 +258,65 @@ record, the uncalibrated crypto policy over the same rows: CS79 include 4, exclu
 is a distinct run on its batch with ruleset hash `4443e5c9…` and the category row `crypto`,
 `crypto-signal-policy@1`; a rerun answered `already classified`. A check across the database
 found no category row whose policy hash differs from its run's ruleset hash.
+
+## 7. Independent review and correction (step 12, first round)
+
+Codex reviewed pull request 19 at `6229ff5` on 22 October 2026: CHANGES REQUIRED, two Medium
+findings. Record: `2026-10-22-cas-002-pr-19.md`. The review accepted the two recorded
+departures of section 1 (migration 0013 rather than 0012; one category record per run) as
+design choices.
+
+### 7.1 F1: the category and policy version were not bound to the hash; the run key had no category
+
+The guard bound a category row's hash and origin to its run, but nothing bound the row's
+category or policy version to that hash: a row naming `crypto` with the cyberattack run's
+real hash would have passed and become immutable. The run's idempotency key did not include
+the category either.
+
+Correction, same day. Migration 0013 is rewritten (it had been applied nowhere but test and
+scratch databases); checksum `8ca350bd9033399b31bd33d4dd9edfb4e28af4a80a0d740a4c88305cab763d3b`.
+It adds `classification_policies`, an append-only registry: primary key (category, policy
+version), a unique policy hash, and a unique triple; `classification_run_categories` now
+references the triple by foreign key, so a row can only name a category whose registered
+policy produced that hash, and the guard's hash and origin checks stand. The worker registers
+the policy identity inside the run's transaction before the run row; a changed policy under an
+old version, or a hash another category owns, is refused as `policy_identity_conflict` and no
+run is written. The run's idempotency key includes the category. In code, `contractFor`
+refuses a second category whose policy builds to a hash another category already owns.
+
+Tests at the point of each claim: a category row with the run's correct hash but the wrong
+category, and one with the wrong policy version, are refused by the foreign key (23503); the
+registry refuses a changed hash under a registered version and a registered hash under another
+category (23505) and every update or delete (P0001); the key differs by category alone with
+every other input equal; each run's registration is read back; a policy building to an owned
+hash throws `category_hash_shared`.
+
+Consequence recorded: a run written before this correction keeps its old key, so a rerun of
+its batch under the corrected code creates a new run with its category recorded, and nothing
+is reinterpreted. The hosted database is being recreated after the Railway incident and holds
+no run.
+
+### 7.2 F2: the third-category test reused `crypto`; the usage text hard-coded two names
+
+Correction, same day. The category vocabulary is a registry, not a compile-time union.
+`@cas/taxonomy` registers its two policies at load and exposes `registerCategoryPolicy`:
+append-only for the life of the process, shape-validated (identifier alphabet, version form,
+at least one signal, positive integer thresholds, non-negative weights), identical
+re-registration a no-op, a different policy under a registered name refused. `Category` is a
+string answered by `isCategory`; `categories()` lists the registry; the command line's usage
+text and its refusal message derive from it. Nothing outside code can register a category: no
+input, file or request reaches the function.
+
+The proof the acceptance criterion asks for: in the classification tests, a `weather` policy
+registered through the production registry builds a contract through the same engine and
+decision rules and classifies; in the worker's PostgreSQL tests, `classifyBatch` with
+`category: 'weather'` writes a run, its category row and its registry row, reports, queues and
+answers `already classified` on a rerun, with no change to the worker, the database package or
+the dashboard. A real third category is therefore a policy in `@cas/taxonomy` and its tests.
+
+### 7.3 Counts at the corrected head, from the runner
+
+`verify` exit 0: 1,068 offline tests (classification 64, worker 270), 30 tool tests.
+`test:db` exit 0: 281 (database 98, worker 114, dashboard 20, mcp-server 49). The merge train
+was simulated in a throwaway checkout: #14 then this pull request merge onto `main` without
+conflict, in either order relative to #17, #18 and #20.
