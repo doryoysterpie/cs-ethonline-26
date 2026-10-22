@@ -331,3 +331,12 @@ preflight is repeated with a malformed non-empty `DATABASE_URL` and must still n
 and open the injected connector zero times; a valid preflight with the same URL is refused with
 `database:configuration` and opens nothing. The reviewer's two probes at the corrected head
 answer `category_required` and `DATABASE_URL rejected: not a URL` respectively.
+
+### 7.3 Fourth round, at `048e673`: PASS
+
+The fourth review found no finding: F3 closed at the database-configuration boundary, the
+preflight codes preserved under a malformed database URL (window required, outside the rule,
+invalid, malformed; unregistered category; empty category list; non-UUID batch), the malformed
+URL refused once the preflight passes, the ordering change confined to `week run`, the hosted
+checks green. Pull request 23 merged at `bda4303` on 22 October 2026 at that audited head. The
+unit is Complete; its first real week run follows the deploy into the recreated database.
