@@ -363,5 +363,17 @@ the tables are append-only; no automatic publication exists (D6).
 On the branch at `1043b17`, 22 October 2026, from the runner: the source reader 23, the article
 6, the database 32 offline and 106 against PostgreSQL (the two for migration 0016 among them),
 the dashboard 84 offline (the authorization test enumerating the three article mutations and the
-view) and 31 against PostgreSQL (the two for the article flow among them). The full verify loop,
-the four database suites, the clean clone and the CI run are recorded below as they complete.
+view) and 31 against PostgreSQL (the two for the article flow among them).
+
+The first push to CI returned two lint findings and a stale bill of materials, corrected at
+`32c0adb`, then three code-scanning alerts (a substring check on a URL in two test assertions,
+a comment-stripping regular expression in the `robots.txt` parser), corrected at `3a34b3f`:
+the parser cuts comments without a regular expression, and the assertions compare exact URLs
+and the audit code's fixed shape. At `3a34b3f`, 22 October 2026: the working checkout and a fresh
+clone from the remote both pass install, `pnpm audit`, the bill-of-materials check, `verify`
+(exit 0, 1,111 offline tests, 31 tool tests: the source reader 23, the article 6, the worker 269
+after its six extractor tests moved, the dashboard 84) and `test:db` (exit 0, 305: database 106,
+worker 119, dashboard 31, mcp-server 49); CI green on every check, code scanning included. At
+`c06451c`, the branch having taken pull request 23's third correction through pull request 24,
+the loop and the four suites pass with the same counts, and CI run 39837895756 is green on every
+check.
