@@ -748,6 +748,39 @@ Sprint 5 evidence layer it reads is itself under correction.
   `GRAPH_GATEWAY_URL` and `CAS_MCP_MODE` and no other; a test proves it enumerates nothing and
   echoes no rejected value. stdout carries protocol messages only.
 
+## 19. The round-up and the model boundary (CAS-004)
+
+Rules the round-up generation implements (decisions D9 as resolved for this output, D39, D40).
+The unit is **in review and pending an independent audit**.
+
+- **The model sees recorded fields only.** The request is the selection snapshot: title, summary
+  text, publisher, URL, posting instant and incident grouping of the rows the owner selected,
+  with the deterministic flagged entries. Never an editor note, never a row outside the
+  selection, never a fetched page. The prompt instructs reformatting and is versioned and hashed
+  with the template.
+- **The response is validated before anything is written.** Structured output constrains the
+  shape; the validator constrains the truth: every citation names a row in the selection, every
+  source is one of the cited rows' URLs, the order and count are the selection's. One violation
+  rejects the whole response with a fixed code, and nothing is written.
+- **The key is read by name and goes nowhere.** `ANTHROPIC_API_KEY` is read when the runtime is
+  built and travels in the client only. Absent, the generation fails closed with
+  `model_key_missing` before any request; the dashboard serves everything else. No log, audit
+  event, ledger row, error message or page carries the key or any part of a response body.
+- **Cost is bounded twice and recorded.** The output allowance bounds a request; the monthly cap
+  (USD 25) is checked before the request against the worst case and the month's recorded spend,
+  and the usage is recorded after it in an append-only ledger with the cost in microdollars.
+  A refused request is a ledger row with zero tokens and its code.
+- **The owner alone generates and edits.** `generate:roundup` and `edit:output` belong to the
+  `owner` role only; a non-owner sees no control and a direct request is refused at the
+  data-access layer with the capability as the code, and audited.
+- **Every outcome is audited with counts and codes, never content.** Requested, completed with
+  tokens and cost, refused with the code, edited with the revision; every refusal with a known
+  actor once, at the boundary.
+- **Revisions are append-only.** Revision 0 is the deterministic draft, 1 the generation, each
+  edit the next integer under the expected revision; a stale expected revision is a conflict,
+  never an overwrite. The rendering goes through the existing Markdown sanitiser; no HTML string
+  is set. No automatic publication exists (section 6).
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,

@@ -565,3 +565,20 @@ reads the sift table through `@cas/database`'s `listWeekIncidents`, which applie
 and carried rules at query time, never at import, and records a selection through the
 `select:stories` capability under the existing action checks, with an audit event and no
 content. No scheduled service exists (D37). The report is `docs/CAS-003-REPORT.md`.
+
+## 19. CAS-004 boundary: the round-up and the model
+
+`packages/roundup` is a pure package: the rundown template (`data/policy/rundown-template.json`,
+versioned and hashed, D40), the slot schema, the prompt contract (`roundup-prompt@1`, hashed
+with the template), the deterministic rendering, the response validation against the selection,
+and the cost rules D9 resolved for this output. It never opens a socket; it takes a transport
+interface and returns coded results. The one transport implementation lives in the dashboard
+(`server/model/anthropic.ts`) over the official client, the only place the key exists. Migration
+0015 adds `roundup_revisions` (per week run and category; revision 0 deterministic, 1
+generated, later ones edited; append-only with a guarded sequence and provenance bound to the
+kind) and `model_calls`, the append-only ledger of every request made or refused. The dashboard's
+data-access layer assembles the snapshot from the selection record and the sift table, calls the
+package, and writes the revisions and the ledger row in one transaction under the owner's
+`generate:roundup` and `edit:output` capabilities (D39). The dependency direction is unchanged:
+`@cas/roundup` depends on nothing in the workspace; the dashboard depends on it and on
+`@cas/database`. The report is `docs/CAS-004-REPORT.md`.

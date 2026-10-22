@@ -121,3 +121,21 @@ The sift table is then at `/week` on the dashboard: one row per week run, the ta
 week and one category at a time, selection per incident for an account that holds
 `select:stories` (editor or admin). Selection needs the PostgreSQL account store, the deployed
 configuration; a local run with the memory store refuses it with `persistent_accounts_required`.
+
+## 8. The round-up (CAS-004: the owner, from the dashboard)
+
+After the selection for a week and a category is made, the round-up page is linked from the sift
+table (`/week/<week run>/roundup?category=cyberattack`, or `crypto`). It shows the template's
+version and hash, the month's model spend against the USD 25 cap, and the selected incident
+count. "Generate round-up" is shown to the `owner` role only and only while no revision exists;
+it sends the selected stories' recorded fields to the model D9 resolved and stores the
+deterministic draft as revision 0 and the generation as revision 1, with the cost. The page then
+shows the latest revision as copy-ready Markdown; the owner edits it in place and saves the next
+revision, then copies the text into Substack by hand. Nothing is published by the dashboard.
+
+The generation needs the PostgreSQL account store and `ANTHROPIC_API_KEY` in the dashboard's
+environment; without the key the control reports `model_key_missing` and writes nothing, and
+without the store it refuses with `persistent_accounts_required`. A second generation for the
+same week and category is refused (`roundup_already_generated`); edit instead. When the month's
+recorded spend plus the request's worst case would pass the cap, the request is refused
+(`spend_cap_exceeded`) and recorded as such; the cap resets with the calendar month.
