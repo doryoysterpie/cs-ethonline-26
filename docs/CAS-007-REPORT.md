@@ -242,5 +242,11 @@ On the branch at `ae5e7e3`, 22 October 2026, from the runner: the database 32 of
 against PostgreSQL (the three for migration 0017 among them), the dashboard 88 offline (the
 limiter, `robots.txt`, the roles and the authorization enumeration with the seven new functions
 among them) and 34 against PostgreSQL (the three for sign-up, the limits and the published mark
-among them). The full loop, the four suites, the clean clone and CI are recorded below as they
-complete.
+among them).
+
+At `76aaedc` and again at `38fb068` (one test assertion rewritten for a code-scanning alert that
+read a substring check on a domain as URL sanitisation), 22 October 2026: the working checkout
+and a fresh clone from the remote both pass install, `pnpm audit`, the bill-of-materials check,
+`verify` (exit 0, 1,115 offline tests, 31 tool tests) and `test:db` (exit 0, 311: database 109,
+worker 119, dashboard 34, mcp-server 49). CI run 39845792274 at `38fb068` is green on every
+check, code scanning included. Pull request 27 carries the unit, stacked on pull request 26.
