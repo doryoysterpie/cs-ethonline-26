@@ -233,3 +233,19 @@ tests. No scheduled service and no secret on the hosting platform (D37).
 Working checkout, 22 October 2026: `corepack pnpm verify` exit 0, 1,077 offline tests
 (worker 274, dashboard 84, database 32), 31 tool tests; `corepack pnpm test:db` exit 0, 296
 (database 102, worker 119, dashboard 26, mcp-server 49). Pull request 23.
+
+## 6. Verification in a clean clone and on CI, S8 (step 12)
+
+22 October 2026, commit `50d5fd1` (the head before this section was added; the commit that adds
+it changes documentation only). A fresh `git clone` of the branch into an empty directory,
+Node 24.21.0, pnpm 11.10.0:
+
+| Step                                                  | Result                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| `corepack pnpm install --frozen-lockfile`             | exit 0                                                                    |
+| `corepack pnpm verify`                                | exit 0; 1,077 offline tests, 31 tool tests                                |
+| `corepack pnpm test:db` against a local PostgreSQL 17 | exit 0; 296 tests (database 102, worker 119, dashboard 26, mcp-server 49) |
+
+CI on pull request 23 at the same commit: CodeQL, Analyze, PostgreSQL integration and Supply
+chain pass; Verify was still running when this section was written and is read on the pull
+request. The diff is narrated in the hand-back that asks for the review.
