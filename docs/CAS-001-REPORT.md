@@ -181,3 +181,38 @@ Step 7 proves the mechanism offline against a synthetic fixture with the feed's 
 adds the failure modes and the PostgreSQL tests. Step 11 runs the first real import against
 the Railway database and records counts, duration and `pg_database_size`. The acceptance list
 of the tracker is the falsification list; nothing here is marked done.
+
+## 2. Reference implementation, S3, and its first tests (step 7)
+
+Written 21 October 2026. Files: `apps/worker/src/sheets/import.ts` (the pure bridge) and
+`apps/worker/src/sheets/import.test.ts` (the synthetic fixture). No network, no database, no
+real text: the fixture is nine headers in the feed's exact order and four rows of invented
+values whose timestamps are serial numbers.
+
+What the module proves, each as a test that would fail if the design note were wrong:
+
+- A mapping is refused unless its stage is `rss_source_corpus` and its kind `master`; a
+  timestamp column outside the declared width, or repeated, is refused.
+- The feed's nine headers resolve through the importer's own resolver with nothing unknown
+  and nothing blank; a header wider than the mapping is refused.
+- A serial in the workbook's zone becomes the UTC instant the importer accepts: 46277.5 in
+  `America/New_York` evaluates to `2026-09-12T16:00:00.000Z` with no issue; without a zone the
+  same serial reads as 12:00 UTC; a strict ISO text passes through; a text value in a
+  timestamp column is left to the evaluator, which quarantines the row with
+  `timestamp_invalid`.
+- A boolean `ch` reaches the evaluator as `TRUE` or `FALSE` and raises no warning; a row
+  without a title is quarantined and counted; a short row is padded; a row wider than the
+  mapping is refused; the byte length is the UTF-8 length of every cell read.
+- The batch digest is the same for the same read twice, changes when one cell changes or two
+  rows swap, is computed over the connector-normalized cells before conversion, and is bound
+  to the workbook and tab digests; the idempotency key is the importer's own key over that
+  digest under `editorial-sheets-import@1`, and differs from the CSV importer's key for the
+  same digest.
+
+Runner counts, 21 October 2026: the new file is 17 tests; the worker's default suite is 253
+tests in 23 files, all passing. Typecheck, lint and formatting pass on the two files; the
+hygiene, secrets and forbidden-file scans pass over the tree.
+
+Not done here, by design: no PostgreSQL test, no command, no migration, no policy file. Those
+are steps 8 and 9. The write path is still the CSV importer's private functions; step 9
+extracts the shared write function the design note names.
