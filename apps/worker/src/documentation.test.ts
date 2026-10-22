@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -109,11 +109,14 @@ describe('current documentation agrees with itself', () => {
     expect(board).toContain('4a0a847748b1ff73c424934547c8e6ccd8a1cd6b');
   });
 
-  it('records Sprint 5 as in progress and not complete', async () => {
+  it('records Sprint 5 as corrected, not re-audited, and not complete', async () => {
     const board = await read('docs/SPRINT_BOARD.md');
     expect(board).toContain('IN PROGRESS');
+    // The README's status section describes `main` as it is (CAS-006, step 2)
+    // and must still state Sprint 5's containment in words a reader cannot
+    // misread: corrected, and not re-audited.
     const readme = await read('README.md');
-    expect(readme).toContain('**Sprint 5 in progress');
+    expect(readme).toMatch(/Sprint 5[^.]*not re-audited/u);
     for (const document of CURRENT_DOCUMENTS) {
       const text = await read(document);
       for (const premature of [/Sprint 5 (is )?complete/i, /Sprint 6 (has|had) begun/i]) {
@@ -196,7 +199,15 @@ describe('current documentation agrees with itself', () => {
     const security = await read('docs/SECURITY.md');
     const inputs = await read('docs/DATA_INPUTS.md');
     const decisions = await read('docs/DECISIONS.md');
-    expect(readme).toContain('nine migrations');
+    // The README names the applied migration range from the shipped files, so
+    // a new migration must update the sentence a reader acts on; the Sprint 5
+    // report keeps the count it recorded at the time.
+    const shipped = (await readdir(path.join(ROOT, 'packages/database/migrations')))
+      .filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/u.test(name))
+      .sort();
+    const last = shipped.at(-1)?.slice(0, 4);
+    expect(last).toBeDefined();
+    expect(readme).toContain(`Migrations 0001 to ${last}`);
     expect(report).toContain('(nine migrations)');
     expect(report).toContain('b553eac744dedfed97e5eb247d0f82781daeb03455fba7a34203caca1cdec13a');
     expect(decisions).toContain('b553eac744dedfed97e5eb247d0f82781daeb03455fba7a34203caca1cdec13a');
