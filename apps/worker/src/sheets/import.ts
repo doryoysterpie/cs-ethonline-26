@@ -25,7 +25,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 
-import type { EditorialSourceKind, ImportBatchStatus } from '@cas/contracts';
+import { RESOURCE_LIMITS, type EditorialSourceKind, type ImportBatchStatus } from '@cas/contracts';
 import {
   findImportBatchByIdempotencyKey,
   finalizeImportBatch,
@@ -231,12 +231,47 @@ export function rowContentDigest(cells: readonly NormalizedCell[]): string {
     .digest('hex');
 }
 
-/** Digest of the whole read: workbook, tab, header and every row in order. */
+/**
+ * Every input that changes how a read is evaluated, besides the cells
+ * themselves. Two reads of identical cells under different contexts produce
+ * different rows, so the context is part of the batch's identity (audit F1).
+ */
+export interface EvaluationContext {
+  readonly serialTransform: string;
+  readonly timeZone: string | null;
+  readonly stage: string;
+  readonly sourceKind: EditorialSourceKind;
+  readonly firstDataRow: number;
+  readonly columns: number;
+  readonly timestampColumns: readonly number[];
+}
+
+export function evaluationContextOf(
+  mapping: SheetsImportMapping,
+  timeZone: string | null,
+): EvaluationContext {
+  return {
+    serialTransform: SERIAL_TRANSFORM,
+    timeZone,
+    stage: mapping.stage,
+    sourceKind: mapping.sourceKind,
+    firstDataRow: mapping.firstDataRow,
+    columns: mapping.columns,
+    timestampColumns: [...mapping.timestampColumns],
+  };
+}
+
+/**
+ * Digest of the whole read: workbook, tab, header, every row in order, and
+ * the evaluation context. A changed zone, a changed timestamp declaration or
+ * a changed serial rule is a different batch, never a silent reuse.
+ */
 export function computeBatchDigest(input: {
   readonly workbookDigest: string;
   readonly tabDigest: string;
   readonly headerCells: readonly string[];
   readonly rowDigests: readonly string[];
+  readonly evaluation: EvaluationContext;
 }): string {
   return createHash('sha256')
     .update(
@@ -246,6 +281,15 @@ export function computeBatchDigest(input: {
         tabDigest: input.tabDigest,
         headerCells: input.headerCells,
         rowDigests: input.rowDigests,
+        evaluation: {
+          serialTransform: input.evaluation.serialTransform,
+          timeZone: input.evaluation.timeZone,
+          stage: input.evaluation.stage,
+          sourceKind: input.evaluation.sourceKind,
+          firstDataRow: input.evaluation.firstDataRow,
+          columns: input.evaluation.columns,
+          timestampColumns: input.evaluation.timestampColumns,
+        },
       }),
     )
     .digest('hex');
@@ -311,6 +355,7 @@ export function prepareSheetsBatch(input: PrepareInput): PreparedSheetsBatch {
     tabDigest: input.tabDigest,
     headerCells,
     rowDigests,
+    evaluation: evaluationContextOf(input.mapping, input.timeZone),
   });
   const idempotencyKey = computeIdempotencyKey({
     fileSha256: digest,
@@ -357,8 +402,20 @@ export interface FeedRead {
 export interface ReadFeedOptions {
   readonly limits: SheetsLimits;
   readonly workbookDigest: string;
+  /**
+   * The most UTF-8 bytes of header and cell text one read may hold in memory.
+   * Defaults to the versioned import limit; a read that would cross it is
+   * refused before the crossing row is kept (audit F4).
+   */
+  readonly retainedBytes?: number | undefined;
   readonly now?: (() => Date) | undefined;
   readonly signal?: AbortSignal | undefined;
+}
+
+function cellBytes(cells: readonly NormalizedCell[]): number {
+  let total = 0;
+  for (const cell of cells) total += Buffer.byteLength(cell.raw, 'utf8');
+  return total;
 }
 
 /**
@@ -393,6 +450,22 @@ export async function readFeedTab(
   const headerCells = (header.values[0] ?? []).map(
     (value) => normalizeCell(value, options.limits).raw,
   );
+  const retainedBound = options.retainedBytes ?? RESOURCE_LIMITS.import.retainedBytes;
+  let retained = 0;
+  for (const cell of headerCells) retained += Buffer.byteLength(cell, 'utf8');
+  const rows: SourceRow[] = [];
+  const keep = (row: SourceRow): void => {
+    const bytes = cellBytes(row.cells);
+    if (retained + bytes > retainedBound) {
+      throw structural(
+        'retained_bytes_exceeded',
+        'the read would hold more cell text in memory than the import limit permits; nothing was written',
+        { rowNumber: row.rowNumber, retained, maximum: retainedBound },
+      );
+    }
+    retained += bytes;
+    rows.push(row);
+  };
   const outcome = await readTab(
     client,
     tab,
@@ -406,12 +479,13 @@ export async function readFeedTab(
       limits: options.limits,
       timeZone: metadata.timeZone,
       workbookDigest: options.workbookDigest,
-      collectRows: true,
+      collectRows: false,
+      onRow: keep,
       now,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     },
   );
-  const first = outcome.rows[0];
+  const first = rows[0];
   if (first === undefined) {
     throw structural('feed_empty', 'the declared tab holds no data row; nothing to import');
   }
@@ -421,7 +495,7 @@ export async function readFeedTab(
     tabTitle: tab.title,
     timeZone: metadata.timeZone,
     headerCells,
-    rows: outcome.rows,
+    rows,
     stats: outcome.stats,
     warnings: outcome.warnings,
     readStartedAt,

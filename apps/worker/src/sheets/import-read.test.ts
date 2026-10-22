@@ -4,6 +4,8 @@ import {
   DEFAULT_LIMITS,
   SheetsReadOnlyClient,
   TokenSource,
+  withLimits,
+  type SheetsLimits,
   type TokenSourceOptions,
 } from '@cas/sheets-intake';
 import { describe, expect, it } from 'vitest';
@@ -94,7 +96,7 @@ interface Scripted {
 }
 
 /** A client whose every request is answered from the script, in order. */
-function scripted(bodies: readonly string[]): Scripted {
+function scripted(bodies: readonly string[], limits: SheetsLimits = DEFAULT_LIMITS): Scripted {
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
@@ -115,13 +117,13 @@ function scripted(bodies: readonly string[]): Scripted {
       privateKey,
       tokenUri: 'https://oauth2.googleapis.com/token',
     },
-    limits: DEFAULT_LIMITS,
+    limits,
     fetchImpl,
     sleep,
   });
   const client = new SheetsReadOnlyClient('SyntheticAuthorized_0000000000000000000001', {
     tokens,
-    limits: DEFAULT_LIMITS,
+    limits,
     fetchImpl,
     sleep,
   });
@@ -218,5 +220,73 @@ describe('readFeedTab', () => {
         }),
       ),
     ).toBe('header_required_missing');
+  });
+});
+
+describe('the retained-byte bound (audit F4)', () => {
+  const headerBytes = HEADERS.reduce(
+    (total, header) => total + Buffer.byteLength(header, 'utf8'),
+    0,
+  );
+  const rowBytes = ROWS.map((cellsOfRow) =>
+    cellsOfRow.reduce<number>((total, value) => {
+      const raw = typeof value === 'boolean' ? (value ? 'TRUE' : 'FALSE') : String(value);
+      return total + Buffer.byteLength(raw, 'utf8');
+    }, 0),
+  );
+  const exact = headerBytes + rowBytes.reduce((a, b) => a + b, 0);
+
+  function script(): string[] {
+    return [
+      TOKEN,
+      metadata('Synthetic feed', 5),
+      json({ range: "'Synthetic feed'!A1:I1", values: [HEADERS] }),
+      json({ range: "'Synthetic feed'!A2:I5", values: ROWS }),
+    ];
+  }
+
+  it('holds a read that fits the bound exactly, and refuses one byte less before keeping the crossing row', async () => {
+    const fits = await readFeedTab(scripted(script()).client, MAPPING, {
+      ...OPTIONS,
+      retainedBytes: exact,
+    });
+    expect(fits.rows).toHaveLength(3);
+    const { client } = scripted(script());
+    expect(
+      await codeOf(() => readFeedTab(client, MAPPING, { ...OPTIONS, retainedBytes: exact - 1 })),
+    ).toBe('retained_bytes_exceeded');
+  });
+
+  it('refuses a tiny bound before the first data row is kept, with no write possible', async () => {
+    const { client, requests } = scripted(script());
+    expect(
+      await codeOf(() => readFeedTab(client, MAPPING, { ...OPTIONS, retainedBytes: headerBytes })),
+    ).toBe('retained_bytes_exceeded');
+    // The refusal came from the read: no database handle exists in this path.
+    expect(requests).toHaveLength(4);
+  });
+
+  it('counts across pages', async () => {
+    const limits = withLimits({ rowsPerPage: 2 });
+    const twoPages = [
+      TOKEN,
+      metadata('Synthetic feed', 5),
+      json({ range: "'Synthetic feed'!A1:I1", values: [HEADERS] }),
+      json({ range: "'Synthetic feed'!A2:I3", values: ROWS.slice(0, 2) }),
+      json({ range: "'Synthetic feed'!A4:I5", values: ROWS.slice(2) }),
+    ];
+    const read = await readFeedTab(scripted(twoPages, limits).client, MAPPING, {
+      ...OPTIONS,
+      limits,
+      retainedBytes: exact,
+    });
+    expect(read.stats.pages).toBe(2);
+    expect(read.rows).toHaveLength(3);
+    const { client } = scripted(twoPages, limits);
+    expect(
+      await codeOf(() =>
+        readFeedTab(client, MAPPING, { ...OPTIONS, limits, retainedBytes: exact - 1 }),
+      ),
+    ).toBe('retained_bytes_exceeded');
   });
 });

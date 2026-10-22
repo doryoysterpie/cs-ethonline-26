@@ -297,7 +297,6 @@ describe('configuration is validated before anything reaches the network', () =>
     });
     expect(config.spreadsheetId).toBe(AUTHORIZED_ID);
     expect(config.credentialsPath).toBe('/secrets/key.json');
-    expect(config.tabMapPath).toBeNull();
     expect(config.limits.maximumTabs).toBeGreaterThan(0);
   });
 

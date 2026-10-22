@@ -72,7 +72,7 @@ import {
   formatTimestampRange,
 } from './sheets/output.js';
 import { assertSheetsImportMapping, importSheetsTab } from './sheets/import.js';
-import { loadTabMapPolicy, mappingForTab, resolveTabMapPath } from './sheets/tab-map.js';
+import { loadTabMapPolicy, mappingForTab } from './sheets/tab-map.js';
 import { formatSheetsImportOutcome } from './sheets/output.js';
 import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
@@ -558,7 +558,9 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       if (tabName === undefined || tabName.length === 0) {
         throw configurationError('tab_required', '--tab is required');
       }
-      const policy = await loadTabMapPolicy(resolveTabMapPath(options.env));
+      // The committed declaration only. No environment value may name another
+      // file (audit F2).
+      const policy = await loadTabMapPolicy();
       const mapping = mappingForTab(policy, tabName);
       assertSheetsImportMapping(mapping);
       parseDatabaseConfig(options.env);

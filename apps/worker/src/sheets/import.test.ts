@@ -13,6 +13,7 @@ import { computeIdempotencyKey } from '../editorial/import.js';
 import {
   assertSheetsImportMapping,
   computeBatchDigest,
+  evaluationContextOf,
   importerCellsOf,
   prepareSheetsBatch,
   rowContentDigest,
@@ -312,18 +313,50 @@ describe('batch identity', () => {
 
   it('binds the digest to the workbook and the tab', () => {
     const rowDigests = [rowContentDigest(cells(GOOD))];
+    const evaluation = evaluationContextOf(MAPPING, ZONE);
     const here = computeBatchDigest({
       workbookDigest: WORKBOOK,
       tabDigest: TAB,
       headerCells: [...HEADERS],
       rowDigests,
+      evaluation,
     });
     const otherTab = computeBatchDigest({
       workbookDigest: WORKBOOK,
       tabDigest: 'c'.repeat(64),
       headerCells: [...HEADERS],
       rowDigests,
+      evaluation,
     });
     expect(otherTab).not.toBe(here);
+  });
+
+  it('changes with the zone, the timestamp declaration and the width, which change the evaluation (audit F1)', () => {
+    const rows = [row(2, GOOD)];
+    const base = prepare(rows);
+    const utc = prepareSheetsBatch({
+      workbookDigest: WORKBOOK,
+      tabDigest: TAB,
+      timeZone: 'UTC',
+      headerCells: [...HEADERS],
+      rows,
+      mapping: MAPPING,
+    });
+    const noTimestamps = prepare(rows, { ...MAPPING, timestampColumns: [] });
+    const wider = prepareSheetsBatch({
+      workbookDigest: WORKBOOK,
+      tabDigest: TAB,
+      timeZone: ZONE,
+      headerCells: [...HEADERS, ''],
+      rows,
+      mapping: { ...MAPPING, columns: 10 },
+    });
+    // The evaluations really differ, so the identities must.
+    expect(utc.rows[0]?.evaluation.postedAt).toBe('2026-09-12T12:00:00.000Z');
+    expect(noTimestamps.rows[0]?.evaluation.status).toBe('quarantined');
+    for (const other of [utc, noTimestamps, wider]) {
+      expect(other.digest).not.toBe(base.digest);
+      expect(other.idempotencyKey).not.toBe(base.idempotencyKey);
+    }
   });
 });

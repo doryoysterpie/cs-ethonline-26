@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { isIngestionError } from '../editorial/errors.js';
 import { assertSheetsImportMapping } from './import.js';
-import { loadTabMapPolicy, mappingForTab, resolveTabMapPath, TAB_MAP_PATH } from './tab-map.js';
+import { loadTabMapPolicy, mappingForTab, TAB_MAP_PATH } from './tab-map.js';
 
 let temporary = '';
 
@@ -96,11 +96,5 @@ describe('loading a tab map', () => {
   it('refuses a tab the declaration does not name', async () => {
     const policy = await loadTabMapPolicy(await policyFile(JSON.stringify(VALID)));
     expect(await codeOf(() => mappingForTab(policy, 'CS90'))).toBe('tab_not_declared');
-  });
-
-  it('resolves the path from the environment, else the committed file', () => {
-    expect(resolveTabMapPath({})).toBe(TAB_MAP_PATH);
-    expect(resolveTabMapPath({ GOOGLE_SHEETS_TAB_MAP: '  ' })).toBe(TAB_MAP_PATH);
-    expect(resolveTabMapPath({ GOOGLE_SHEETS_TAB_MAP: '/tmp/x.json' })).toBe('/tmp/x.json');
   });
 });

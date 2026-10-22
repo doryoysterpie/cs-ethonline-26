@@ -17,11 +17,16 @@ import type { SheetsImportMapping } from './import.js';
  * by the inventory.
  */
 
+/**
+ * The committed declaration's path. The import command reads this file and no
+ * other: there is no environment override, because an override would let a
+ * stale shell or a hostile environment replace a reviewed declaration with an
+ * unreviewed one (audit F2). The path argument of `loadTabMapPolicy` exists
+ * for tests only.
+ */
 export const TAB_MAP_PATH = fileURLToPath(
   new URL('../../../../data/policy/sheets-tab-map.json', import.meta.url),
 );
-/** An environment override for the declaration's path. The default is the committed file. */
-export const TAB_MAP_VARIABLE = 'GOOGLE_SHEETS_TAB_MAP';
 
 const MAXIMUM_TITLE_LENGTH = 100;
 const SOURCE_KINDS = new Set(['master', 'weekly']);
@@ -116,12 +121,4 @@ export function mappingForTab(policy: TabMapPolicy, title: string): SheetsImport
     );
   }
   return mapping;
-}
-
-/** The declaration's path: the environment override when set, else the committed file. */
-export function resolveTabMapPath(env: Readonly<Record<string, string | undefined>>): string {
-  const value = env[TAB_MAP_VARIABLE];
-  if (typeof value !== 'string') return TAB_MAP_PATH;
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? TAB_MAP_PATH : trimmed;
 }
