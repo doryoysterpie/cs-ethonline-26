@@ -328,3 +328,24 @@ The owner merged pull request 19 at `b4c8270` on 22 October 2026 with the correc
 for `aeeccf4` stands; a verdict about that commit, which `main` now contains, is what closes
 step 12. Railway's next deploy of `main` applies migrations 0012 and 0013 to the recreated
 hosted database through the pre-deploy command.
+
+### 7.5 Second round: the hash ownership was decided by call order
+
+Codex re-reviewed `aeeccf4` on 22 October 2026: CHANGES REQUIRED, one Medium. `contractFor`
+assigned a shared hash to whichever category first built a contract, so a duplicate of the
+cyberattack policy registered under another name and built first would have claimed the
+historical hash and the real `cyberattack` would then have been refused; the committed test
+hid it by building `cyberattack` first. Record: `2026-10-22-cas-002-pr-19-correction-reaudit.md`.
+
+Correction, same day. The guarantee now lives where it is order-independent: in the registry.
+`registerCategoryPolicy` refuses a policy whose version string another category already holds
+(`policy_version_taken`), decided at registration. The contract hash includes the policy
+version, so two registered categories can never build to one hash, in any order. The
+categories registered at load are also built at load, so their hashes are owned before any
+later registration, and `contractFor`'s ownership check remains as a consistency assertion
+that cannot be turned against a registered category. The review's probe is the test: a
+duplicate of the cyberattack policy under another name, registered before anything is built,
+is refused at registration, `isCategory` answers false for it, and the cyberattack hash is
+unchanged; the same vocabulary under a distinct version registers and builds to a distinct
+hash. Counts at the corrected head, from the runner: `verify` exit 0, 1,073 offline tests,
+31 tool tests; `test:db` exit 0, 284 (database 98, worker 114, dashboard 23, mcp-server 49).
