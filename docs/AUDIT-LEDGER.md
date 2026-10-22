@@ -32,7 +32,10 @@ repository's own reports and the sprint board. CAS-006 step 1, 22 October 2026.
 | Post-event plan, PR #12                   | `ce8e367`              | none (documents only)          | not audited                               | 16 Sept 2026     | `docs/POST-EVENT-PLAN.md`                                |
 | Dependency advisories, PR #15             | `83bcb8e`              | none                           | not audited                               | 22 Oct 2026      | `docs/DECISIONS.md`, D29 amendment of 22 Oct 2026        |
 | CAS-001 candidate, PR #14                 | `2c33e09`              | Codex Desktop                  | CHANGES REQUIRED, F1 to F5                | 21 Oct 2026      | `2026-10-21-cas-001-pr-14.md`                            |
-| CAS-001 correction, PR #14                | `a942de5`              | pending Codex Desktop          | not audited                               |                  | `docs/CAS-001-REPORT.md` section 4                       |
+| CAS-001 correction, PR #14                | `2ad714d`              | Codex                          | PASS, F1 to F5 corrected                  | 22 Oct 2026      | `2026-10-22-cas-001-pr-14-reaudit.md`                    |
+| CAS-006 blockers 6 and 7, PR #17          | `2e77d2e`              | Codex                          | CHANGES REQUIRED, F1                      | 22 Oct 2026      | `2026-10-22-cas-006-pr-17-release-blockers.md`           |
+| CAS-006 blocker 3 code half, PR #18       | `32e1357`              | Codex                          | PASS, delta only                          | 22 Oct 2026      | `2026-10-22-cas-006-pr-18-trusted-proxy.md`              |
+| CAS-002 categories, PR #19                | `6229ff5`              | Codex                          | CHANGES REQUIRED, F1 and F2               | 22 Oct 2026      | `2026-10-22-cas-002-pr-19.md`                            |
 
 ## What this means for the deployed service
 
