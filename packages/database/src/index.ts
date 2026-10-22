@@ -281,3 +281,30 @@ export {
 } from './migrate.js';
 export { connectionSecrets, createRedactor, REDACTED, type Redactor } from './redact.js';
 export { createSchema, dropSchema, listTables, quoteIdentifier } from './schema.js';
+export {
+  completeWeekRun,
+  findCompletedWeekRunByKey,
+  getWeekRun,
+  insertIssueSelection,
+  insertRunningWeekRun,
+  insertWeekRunChild,
+  lastSelectionRevision,
+  listIncidentMemberRefs,
+  listLatestIssueSelections,
+  listWeekIncidents,
+  listWeekRunChildren,
+  listWeekRuns,
+  type IssueSelectionMemberRef,
+  type IssueSelectionRecord,
+  type NewIssueSelection,
+  type NewWeekRun,
+  type NewWeekRunChild,
+  type SelectionState,
+  type WeekChildKind,
+  type WeekChildOutcome,
+  type WeekIncidentRow,
+  type WeekIncidentSort,
+  type WeekRunChildRecord,
+  type WeekRunRecord,
+  type WeekRunStatus,
+} from './week.js';

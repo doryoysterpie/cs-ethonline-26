@@ -214,6 +214,44 @@ describe('cli configuration handling (no database)', () => {
     expect(r.err.join('\n')).not.toContain('DROP TABLE');
   });
 
+  it('refuses a week run without a window, outside the rule, or with an unregistered category before any connection', async () => {
+    const env = { DATABASE_URL: 'postgresql://user:password@localhost:5432/db' };
+    const batch = '7b9d2f4e-5c1a-4e6b-9f3d-2a8c1e5b7d90';
+    const noWindow = await exec(['week', 'run', '--batch', batch], env);
+    expect(noWindow.code).toBe(EXIT_CODES.configuration);
+    expect(noWindow.err.join('\n')).toContain('window_required');
+    const outside = await exec(
+      [
+        'week',
+        'run',
+        '--batch',
+        batch,
+        '--window',
+        '2026-10-19T03:59:00.000Z..2026-10-26T03:59:00.000Z',
+      ],
+      env,
+    );
+    expect(outside.code).toBe(EXIT_CODES.configuration);
+    expect(outside.err.join('\n')).toContain('window_outside_rule');
+    const unregistered = await exec(
+      [
+        'week',
+        'run',
+        '--batch',
+        batch,
+        '--window',
+        '2026-10-18T03:59:00.000Z..2026-10-25T03:59:00.000Z',
+        '--categories',
+        'cyberattack,weather',
+      ],
+      env,
+    );
+    expect(unregistered.code).toBe(EXIT_CODES.configuration);
+    expect(unregistered.err.join('\n')).toContain('category_invalid');
+    for (const r of [noWindow, outside, unregistered])
+      expect(r.err.join('\n')).not.toContain('password');
+  });
+
   it('rejects an unknown classification category before opening a connection', async () => {
     const batch = '7b9d2f4e-5c1a-4e6b-9f3d-2a8c1e5b7d90';
     const r = await exec(['classification', 'run', '--batch', batch, '--category', 'weather'], {

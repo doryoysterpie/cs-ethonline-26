@@ -75,9 +75,11 @@ import {
 import { assertSheetsImportMapping, importSheetsTab } from './sheets/import.js';
 import { loadTabMapPolicy, mappingForTab } from './sheets/tab-map.js';
 import { formatSheetsImportOutcome } from './sheets/output.js';
+import { runWeek } from './week/run.js';
+import { formatWeekRunOutcome } from './week/output.js';
 import { toSingleLine } from './editorial/display.js';
 import { EXIT_CODES, exitCodeFor, IngestionError } from './editorial/errors.js';
-import { assertImportRequest, importCsvFile } from './editorial/import.js';
+import { assertImportRequest, importCsvFile, type ImportOutcome } from './editorial/import.js';
 import {
   formatBatchReport,
   formatError,
@@ -184,6 +186,7 @@ const USAGE = [
   '  sheets inventory [--tabs <n>] [--no-headers]',
   '  sheets timestamps --tab <name> --column <n>',
   '  sheets dry-run --tab <name> --stage <stage> [--first-row <n>] [--columns <n>] [--timestamp-column <n>]',
+  '  week run --window <isoStart..isoEnd> [--batch <uuid>] [--categories <a,b>]',
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -594,6 +597,60 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       for (const entry of formatSheetsImportOutcome(outcome, connection.redact)) emit(entry);
       return EXIT_CODES.ok;
     }
+    if (group === 'week' && command === 'run') {
+      // The window and the categories are checked before any credential is
+      // touched and before any connection is opened; the feed import is
+      // composed here so the orchestrator itself never sees the workbook.
+      const windows = parseWindows(values.window);
+      if (windows !== undefined && windows.length !== 1) {
+        throw configurationError('window_invalid', 'week run takes exactly one --window');
+      }
+      const categoriesRequested =
+        values.categories === undefined
+          ? undefined
+          : values.categories
+              .split(',')
+              .map((name) => name.trim())
+              .filter((name) => name.length > 0);
+      const providedBatch =
+        values.batch === undefined ? undefined : requireUuid(values.batch, 'batch');
+      parseDatabaseConfig(options.env);
+      let importFeed: (() => Promise<ImportOutcome>) | undefined;
+      let connection: Awaited<ReturnType<typeof openWorkbook>> | undefined;
+      if (providedBatch === undefined) {
+        const policy = await loadTabMapPolicy();
+        const feed = policy.tabs.find((tab) => tab.stage === 'rss_source_corpus');
+        if (feed === undefined) {
+          throw configurationError(
+            'feed_tab_undeclared',
+            'the tab map declares no source corpus tab',
+          );
+        }
+        const mapping = mappingForTab(policy, feed.title);
+        assertSheetsImportMapping(mapping);
+        const opened = await openWorkbook({
+          env: options.env,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        });
+        connection = opened;
+        importFeed = () =>
+          withDatabase(options, (db) =>
+            importSheetsTab(db, opened, mapping, {
+              ...(options.signal === undefined ? {} : { signal: options.signal }),
+            }),
+          );
+      }
+      const outcome = await withDatabase(options, (db) =>
+        runWeek(
+          db,
+          { window: windows?.[0], categories: categoriesRequested, batchId: providedBatch },
+          importFeed === undefined ? {} : { importFeed },
+        ),
+      );
+      const lineRedactor = connection === undefined ? redact : connection.redact;
+      for (const entry of formatWeekRunOutcome(outcome, lineRedactor)) emit(entry);
+      return EXIT_CODES.ok;
+    }
     if (group === 'evidence' && command === 'ingest') {
       // Origin first: a `live` request is refused before the file is named,
       // before it is opened and before a database handle is opened.
@@ -945,6 +1002,7 @@ const PARSE_OPTIONS = {
   origin: { type: 'string' },
   'review-label': { type: 'string' },
   batch: { type: 'string' },
+  categories: { type: 'string' },
   category: { type: 'string' },
   run: { type: 'string' },
   'classification-run': { type: 'string' },
@@ -1004,6 +1062,7 @@ interface ParsedValues {
   readonly id?: string | undefined;
   readonly window?: string[] | undefined;
   readonly batch?: string | undefined;
+  readonly categories?: string | undefined;
   readonly category?: string | undefined;
   readonly run?: string | undefined;
   readonly 'classification-run'?: string | undefined;

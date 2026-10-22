@@ -30,6 +30,7 @@ describe('loadMigrations', () => {
       '0011_passwordless_email_auth.sql',
       '0012_sheets_import_provenance.sql',
       '0013_classification_categories.sql',
+      '0014_weekly_run.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));
