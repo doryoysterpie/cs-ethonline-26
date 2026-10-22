@@ -316,6 +316,7 @@ export {
   listRoundupRevisions,
   listSelectedRows,
   spendBetween,
+  type ModelCallKind,
   type ModelCallOutcome,
   type NewModelCall,
   type NewRoundupRevision,
@@ -324,3 +325,14 @@ export {
   type RoundupRevisionRecord,
   type SelectedRowRecord,
 } from './roundup.js';
+export {
+  insertArticleRevision,
+  latestArticleRevision,
+  listArticleRevisions,
+  type ArticleProvenanceColumns,
+  type ArticleRevisionKind,
+  type ArticleRevisionRecord,
+  type ArticleSourceRecord,
+  type NamingBasis,
+  type NewArticleRevision,
+} from './article.js';

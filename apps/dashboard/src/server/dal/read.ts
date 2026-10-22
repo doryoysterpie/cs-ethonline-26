@@ -884,7 +884,7 @@ export async function roundupView(
     );
     const bounds = monthBounds(new Date());
     const spent = await runtime.database.withClient((client) =>
-      spendBetween(client, bounds.from, bounds.to),
+      spendBetween(client, 'roundup', bounds.from, bounds.to),
     );
     const accounts = new Map<string, string>();
     for (const account of await runtime.stores.accounts.list())

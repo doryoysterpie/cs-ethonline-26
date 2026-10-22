@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { Database, Queryable } from './database.js';
+import { insertArticleRevision, latestArticleRevision, listArticleRevisions } from './article.js';
 import { isDatabaseError } from './errors.js';
 import { runMigrations } from './migrate.js';
 import { openIsolatedSchema, type IsolatedSchema } from './test-support.js';
@@ -450,7 +451,7 @@ describe('round-up revisions, the model ledger and the owner role (migration 001
     });
     expect(
       await isolated.db.withClient((c) =>
-        spendBetween(c, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z'),
+        spendBetween(c, 'roundup', '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z'),
       ),
     ).toBe(1_000);
     expect(
@@ -475,5 +476,181 @@ describe('round-up revisions, the model ledger and the owner role (migration 001
         ),
       ),
     ).toBe('23514');
+  });
+});
+
+describe('article revisions and the ledger kind (migration 0016)', () => {
+  let isolated: IsolatedSchema;
+  let owner: string;
+  let weekRunId: string;
+  let runningWeekRunId: string;
+
+  beforeAll(async () => {
+    isolated = await openIsolatedSchema();
+    await runMigrations(isolated.db);
+    const batchId = await seedBatch(isolated.db);
+    owner = randomUUID();
+    await isolated.db.withTransaction((tx) =>
+      tx.query(
+        `INSERT INTO accounts (id, username, role, password_hash, created_at, password_changed_at)
+         VALUES ($1, 'owner_account', 'owner', 'synthetic-not-a-credential', now(), now())`,
+        [owner],
+      ),
+    );
+    const run = newRun(batchId);
+    weekRunId = run.id;
+    await isolated.db.withTransaction((tx) => insertRunningWeekRun(tx, run));
+    await isolated.db.withTransaction((tx) =>
+      completeWeekRun(tx, run.id, 'completed', new Date().toISOString(), null),
+    );
+    // A second manifest over the same window, still running: an article may not belong to it.
+    const running = newRun(batchId);
+    runningWeekRunId = running.id;
+    await isolated.db.withTransaction((tx) => insertRunningWeekRun(tx, running));
+  });
+
+  afterAll(async () => {
+    await isolated.close();
+  });
+
+  const provenance = {
+    model: 'claude-opus-5-5',
+    promptVersion: 'article-prompt@1',
+    promptHash: hash('a'),
+    inputDigest: hash('b'),
+    inputTokens: 90_000,
+    outputTokens: 4_000,
+    costMicrodollars: 440_000,
+    wordCount: 612,
+    namingBasis: 'two_independent' as const,
+    sources: [
+      {
+        sourceRowId: randomUUID(),
+        status: 'read' as const,
+        code: null,
+        bytes: 190_491,
+        digest: hash('c'),
+      },
+      {
+        sourceRowId: randomUUID(),
+        status: 'not_read' as const,
+        code: 'robots_disallowed',
+        bytes: 0,
+        digest: null,
+      },
+    ],
+  };
+  const revision = (n: number, kind: 'generated' | 'edited', runId?: string) => ({
+    weekRunId: runId ?? weekRunId,
+    category: 'cyberattack',
+    revision: n,
+    kind,
+    slots: { headline: 'x' },
+    markdown: `# revision ${n}`,
+    provenance: kind === 'generated' ? provenance : null,
+    savedByAccountId: owner,
+    createdAt: new Date().toISOString(),
+  });
+
+  it('starts at the generated revision 1, keeps the sequence, binds provenance to the kind, and never rewrites', async () => {
+    expect(
+      await expectRejected(isolated.db, (tx) => insertArticleRevision(tx, revision(2, 'edited'))),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertArticleRevision(tx, revision(1, 'generated', runningWeekRunId)),
+      ),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertArticleRevision(tx, { ...revision(1, 'generated'), provenance: null }),
+      ),
+    ).toBe('23514');
+    await isolated.db.withTransaction((tx) => insertArticleRevision(tx, revision(1, 'generated')));
+    expect(
+      await expectRejected(isolated.db, (tx) => insertArticleRevision(tx, revision(3, 'edited'))),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        insertArticleRevision(tx, revision(2, 'generated')),
+      ),
+    ).toBe('23514');
+    await isolated.db.withTransaction((tx) => insertArticleRevision(tx, revision(2, 'edited')));
+    const listed = await isolated.db.withClient((c) =>
+      listArticleRevisions(c, weekRunId, 'cyberattack'),
+    );
+    expect(listed.map((r) => [r.revision, r.kind, r.provenance === null])).toEqual([
+      [1, 'generated', false],
+      [2, 'edited', true],
+    ]);
+    expect(listed[0]?.provenance).toEqual(provenance);
+    expect(
+      (await isolated.db.withClient((c) => latestArticleRevision(c, weekRunId, 'cyberattack')))
+        ?.revision,
+    ).toBe(2);
+    expect(
+      await isolated.db.withClient((c) => latestArticleRevision(c, weekRunId, 'crypto')),
+    ).toBeNull();
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE article_revisions SET markdown = 'x' WHERE week_run_id = $1`, [weekRunId]),
+      ),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`DELETE FROM article_revisions WHERE week_run_id = $1`, [weekRunId]),
+      ),
+    ).toBe('P0001');
+  });
+
+  it('accounts the article apart from the round-up in the ledger, and admits the five audit kinds', async () => {
+    const call = (kind: 'roundup' | 'article', cost: number) => ({
+      id: randomUUID(),
+      kind,
+      weekRunId,
+      category: 'cyberattack',
+      model: 'claude-opus-5-5',
+      inputTokens: 100,
+      outputTokens: 10,
+      costMicrodollars: cost,
+      outcome: 'completed' as const,
+      code: 'completed',
+      actorAccountId: owner,
+      createdAt: '2026-10-10T00:00:00.000Z',
+    });
+    await isolated.db.withTransaction(async (tx) => {
+      await insertModelCall(tx, call('roundup', 700));
+      await insertModelCall(tx, call('article', 1_450_000));
+    });
+    const from = '2026-10-01T00:00:00.000Z';
+    const to = '2026-11-01T00:00:00.000Z';
+    expect(await isolated.db.withClient((c) => spendBetween(c, 'roundup', from, to))).toBe(700);
+    expect(await isolated.db.withClient((c) => spendBetween(c, 'article', from, to))).toBe(
+      1_450_000,
+    );
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(
+          `INSERT INTO model_calls (id, kind, week_run_id, category, model, input_tokens, output_tokens, cost_microdollars, outcome, code, actor_account_id, created_at)
+           VALUES ($1, 'essay', $2, 'cyberattack', 'claude-opus-5-5', 1, 1, 1, 'completed', 'completed', $3, now())`,
+          [randomUUID(), weekRunId, owner],
+        ),
+      ),
+    ).toBe('23514');
+    for (const kind of [
+      'source_fetched',
+      'article_requested',
+      'article_completed',
+      'article_refused',
+      'article_edited',
+    ]) {
+      await isolated.db.withTransaction((tx) =>
+        tx.query(
+          `INSERT INTO audit_events (id, at, kind, outcome, code, actor_account_id, subject_account_id, session_id, network_key, subject_id)
+           VALUES ($1, now(), $2, 'success', 'bytes_190491_ms_311_read', $3, NULL, NULL, NULL, $4)`,
+          [randomUUID(), kind, owner, weekRunId],
+        ),
+      );
+    }
   });
 });

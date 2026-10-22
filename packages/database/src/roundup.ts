@@ -36,9 +36,11 @@ export interface NewRoundupRevision {
 
 export type RoundupRevisionRecord = NewRoundupRevision;
 
+export type ModelCallKind = 'roundup' | 'article';
+
 export interface NewModelCall {
   readonly id: string;
-  readonly kind: 'roundup';
+  readonly kind: ModelCallKind;
   readonly weekRunId: string | null;
   readonly category: string | null;
   readonly model: string;
@@ -194,8 +196,17 @@ export async function insertModelCall(client: Queryable, call: NewModelCall): Pr
   );
 }
 
-/** The month's spend in microdollars: completed calls between the two instants. */
-export async function spendBetween(client: Queryable, from: string, to: string): Promise<number> {
+/**
+ * The month's spend in microdollars for one kind of call: completed calls
+ * between the two instants. Each output has its own cap (D9 resolution for
+ * the article, option b), so the sum is never across kinds.
+ */
+export async function spendBetween(
+  client: Queryable,
+  kind: ModelCallKind,
+  from: string,
+  to: string,
+): Promise<number> {
   if (
     Number.isNaN(Date.parse(from)) ||
     Number.isNaN(Date.parse(to)) ||
@@ -205,8 +216,9 @@ export async function spendBetween(client: Queryable, from: string, to: string):
   }
   const result = await client.query<{ spent: string }>(
     `SELECT coalesce(sum(cost_microdollars), 0)::text AS spent FROM model_calls
-      WHERE outcome = 'completed' AND created_at >= $1::timestamptz AND created_at < $2::timestamptz`,
-    [from, to],
+      WHERE kind = $1 AND outcome = 'completed'
+        AND created_at >= $2::timestamptz AND created_at < $3::timestamptz`,
+    [kind, from, to],
   );
   return Number(result.rows[0]?.spent ?? '0');
 }

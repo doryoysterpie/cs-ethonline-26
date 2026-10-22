@@ -1117,7 +1117,7 @@ async function generateRoundupUnaudited(
     const loaded = await loadTemplate();
     const bounds = monthBounds(new Date());
     const spentThisMonth = await runtime.database.withClient((client) =>
-      spendBetween(client, bounds.from, bounds.to),
+      spendBetween(client, 'roundup', bounds.from, bounds.to),
     );
     await audit(runtime, {
       kind: 'roundup_requested',
