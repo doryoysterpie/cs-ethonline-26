@@ -200,3 +200,18 @@ command-center page is unchanged; its DTO carries the field for a later column.
 From the runner, the same day: `verify` exit 0; PostgreSQL suites database 96 (one new test for
 the batched read), worker 112, dashboard 20 (two assertions added to the existing
 command-center and queue tests), mcp-server 49.
+
+## 5. Verification in a clean clone and on CI, S8 (step 11)
+
+22 October 2026, commit `36c07ee` (the head before this section was added; the commit that
+adds it changes documentation only). A fresh `git clone` of the branch into an empty
+directory, Node 24.21.0, pnpm 11.10.0:
+
+| Step                                                  | Result                                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| `corepack pnpm install --frozen-lockfile`             | exit 0                                                                   |
+| `corepack pnpm verify`                                | exit 0; 1,066 offline tests, 30 tool tests                               |
+| `corepack pnpm test:db` against a local PostgreSQL 17 | exit 0; 277 tests (database 96, worker 112, dashboard 20, mcp-server 49) |
+
+CI on pull request 19 at the same commit: Verify, PostgreSQL integration, Supply chain,
+CodeQL and Analyze all pass. The diff is narrated in the hand-back that asks for the review.
