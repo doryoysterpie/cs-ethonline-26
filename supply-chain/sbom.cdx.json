@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "13ce3371538de5dd6c93ca30ff07bfbae1d35aa5835800987139bcf53d22c0c3"
+        "value": "69b49aecb4c80c15e9efc9d4804e29e7338c2a9e898a881c9dda47fbdaa9481f"
       },
       {
         "name": "cas:lockfile:version",
@@ -301,6 +301,29 @@
     },
     {
       "type": "library",
+      "bom-ref": "workspace:@cas/roundup",
+      "name": "@cas/roundup",
+      "version": "0.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:workspace:path",
+          "value": "packages/roundup"
+        },
+        {
+          "name": "cas:license:source",
+          "value": "workspace-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "workspace:@cas/sheets-intake",
       "name": "@cas/sheets-intake",
       "version": "0.0.0",
@@ -388,6 +411,62 @@
         {
           "name": "cas:license:source",
           "value": "workspace-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40anthropic-ai/sdk@1.0.0",
+      "name": "@anthropic-ai/sdk",
+      "version": "1.0.0",
+      "purl": "pkg:npm/%40anthropic-ai/sdk@1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "2352a20eda9197517d9998112714d888bc5e33f8e02ef7bff1805e36934190f46db4e1600012507039bbd111451a63abb93ba38816da080f95871d90f25d2a3c"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        },
+        {
+          "name": "cas:pnpm:hasBin",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40babel/runtime@7.29.10",
+      "name": "@babel/runtime",
+      "version": "7.29.10",
+      "purl": "pkg:npm/%40babel/runtime@7.29.10",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "369ba04f36ca806acd7b8e548b7d9c37cbc214533156d3fff6bb5fc2fd273f91510c08ef601c4970b569600f66af58f13fa727213ef1f4b533b834db59860d44"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
         }
       ]
     },
@@ -2018,6 +2097,32 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/%40opentelemetry/api@1.10.0",
+      "name": "@opentelemetry/api",
+      "version": "1.10.0",
+      "purl": "pkg:npm/%40opentelemetry/api@1.10.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "94c9327acf221eb1be9a4e961fb5fbd0c7422c8d914b41703416353f243c51e99a8a31369b99afe40d0d8b2dc7b5b61316b82450442314c5e64809368500ee3d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/%40oxc-project/types@0.148.0",
       "name": "@oxc-project/types",
       "version": "0.148.0",
@@ -2537,6 +2642,32 @@
         {
           "alg": "SHA-512",
           "content": "da3f5b1ade4987c863faf3ed8333ed97bda3d324711c0cae9a8a3a4cd7c08ec2c1d3852da52bcf6cf703701331cfb9fef42601d1cd46c501716118368e29aa1b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40stablelib/base64@1.0.1",
+      "name": "@stablelib/base64",
+      "version": "1.0.1",
+      "purl": "pkg:npm/%40stablelib/base64@1.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d5b9cf42a4b14ae737222e8c841caca160a0e7c8fdeda523b82499ac64a60f136ab72b488b493cbad51e9c0c1364de15e665d7606b15508f73781ab2fa304e49"
         }
       ],
       "licenses": [
@@ -5047,6 +5178,32 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/fast-sha256@1.3.0",
+      "name": "fast-sha256",
+      "version": "1.3.0",
+      "purl": "pkg:npm/fast-sha256@1.3.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "9f5d5118ffe5ad610523f6d677280bc6123ea557a8d59608570bef3e45bb6b397facecbe1771d8459d8ae73784f669a4850a69caff6c405c7424cf5469b9e93d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Unlicense"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/fdir@6.5.0",
       "name": "fdir",
       "version": "6.5.0",
@@ -5702,6 +5859,32 @@
         {
           "alg": "SHA-512",
           "content": "f4d88598911ec74b32d83939f23d94181487814b36ca917d7994aee0beaf8ce5f70e9f7a4b0d45dee2fe1fe0f5b31d368d965dcd44f41e0bc2cb9f42baf5dc5b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/json-schema-to-ts@3.1.1",
+      "name": "json-schema-to-ts",
+      "version": "3.1.1",
+      "purl": "pkg:npm/json-schema-to-ts@3.1.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "f835a0f230891b64c49e9cbb90e9bfeff031698a1a45b8d50782c564bc926655a7f1ec46b3703838b251f7ae9c56f536e8ded7f535b197e26cc3b77302a293ea"
         }
       ],
       "licenses": [
@@ -8405,6 +8588,32 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/standardwebhooks@1.1.1",
+      "name": "standardwebhooks",
+      "version": "1.1.1",
+      "purl": "pkg:npm/standardwebhooks@1.1.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "6c26d7f5913216458fb11cfb065dcdb90509a219b01927afff286beef85a18f95ce007c8aeca4845ae9c3d306e23522d9ab4c327877f4b6842b1f7b8faf4069d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/std-env@4.2.0",
       "name": "std-env",
       "version": "4.2.0",
@@ -8647,6 +8856,32 @@
         {
           "alg": "SHA-512",
           "content": "9118fc07e60764273d91061d59f241dbfa1497dac0f7da9ba3061806daf8ba2e26672010d89a6f54177fe94d989680137ea06105348c853a60047b54d0c7f746"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/ts-algebra@2.0.0",
+      "name": "ts-algebra",
+      "version": "2.0.0",
+      "purl": "pkg:npm/ts-algebra@2.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "14f02134f14cae4c33efa3fb71d8dd9a24a1c0cca765837a4a03ae8c3d6ead8e28366f343aef6831d99b478e4ba2d70a397a32ef04a61e444513a3316eb85e7f"
         }
       ],
       "licenses": [
@@ -9314,6 +9549,19 @@
   ],
   "dependencies": [
     {
+      "ref": "pkg:npm/%40anthropic-ai/sdk@1.0.0",
+      "dependsOn": [
+        "pkg:npm/%40opentelemetry/api@1.10.0",
+        "pkg:npm/json-schema-to-ts@3.1.1",
+        "pkg:npm/standardwebhooks@1.1.1",
+        "pkg:npm/zod@4.5.4"
+      ]
+    },
+    {
+      "ref": "pkg:npm/%40babel/runtime@7.29.10",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/%40cacheable/memory@2.2.0",
       "dependsOn": [
         "pkg:npm/%40cacheable/utils@2.5.0",
@@ -9625,6 +9873,10 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:npm/%40opentelemetry/api@1.10.0",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/%40oxc-project/types@0.148.0",
       "dependsOn": []
     },
@@ -9700,6 +9952,10 @@
     },
     {
       "ref": "pkg:npm/%40rolldown/pluginutils@1.0.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40stablelib/base64@1.0.1",
       "dependsOn": []
     },
     {
@@ -10282,6 +10538,10 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:npm/fast-sha256@1.3.0",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/fdir@6.5.0",
       "dependsOn": [
         "pkg:npm/picomatch@4.0.7"
@@ -10431,6 +10691,13 @@
     {
       "ref": "pkg:npm/jose@6.2.12",
       "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/json-schema-to-ts@3.1.1",
+      "dependsOn": [
+        "pkg:npm/%40babel/runtime@7.29.10",
+        "pkg:npm/ts-algebra@2.0.0"
+      ]
     },
     {
       "ref": "pkg:npm/json-schema-traverse@0.4.1",
@@ -10830,6 +11097,7 @@
         "pkg:npm/%40next/swc-linux-x64-musl@16.3.8",
         "pkg:npm/%40next/swc-win32-arm64-msvc@16.3.8",
         "pkg:npm/%40next/swc-win32-x64-msvc@16.3.8",
+        "pkg:npm/%40opentelemetry/api@1.10.0",
         "pkg:npm/%40playwright/test@1.63.0",
         "pkg:npm/%40swc/helpers@0.5.23",
         "pkg:npm/baseline-browser-mapping@2.11.21",
@@ -11137,6 +11405,13 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:npm/standardwebhooks@1.1.1",
+      "dependsOn": [
+        "pkg:npm/%40stablelib/base64@1.0.1",
+        "pkg:npm/fast-sha256@1.3.0"
+      ]
+    },
+    {
       "ref": "pkg:npm/std-env@4.2.0",
       "dependsOn": []
     },
@@ -11187,6 +11462,10 @@
     },
     {
       "ref": "pkg:npm/trim-lines@3.0.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/ts-algebra@2.0.0",
       "dependsOn": []
     },
     {
@@ -11303,6 +11582,7 @@
     {
       "ref": "pkg:npm/vitest@4.1.12",
       "dependsOn": [
+        "pkg:npm/%40opentelemetry/api@1.10.0",
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/%40vitest/expect@4.1.12",
         "pkg:npm/%40vitest/mocker@4.1.12",
@@ -11388,6 +11668,7 @@
     {
       "ref": "workspace:@cas/dashboard",
       "dependsOn": [
+        "pkg:npm/%40anthropic-ai/sdk@1.0.0",
         "pkg:npm/%40playwright/test@1.63.0",
         "pkg:npm/%40types/hast@3.0.5",
         "pkg:npm/%40types/node@24.13.3",
@@ -11408,6 +11689,7 @@
         "workspace:@cas/database",
         "workspace:@cas/drafting",
         "workspace:@cas/evidence",
+        "workspace:@cas/roundup",
         "workspace:@cas/worker"
       ]
     },
@@ -11478,6 +11760,15 @@
       ]
     },
     {
+      "ref": "workspace:@cas/roundup",
+      "dependsOn": [
+        "pkg:npm/%40types/node@24.13.3",
+        "pkg:npm/typescript@6.0.3",
+        "pkg:npm/vitest@4.1.12",
+        "pkg:npm/zod@4.5.4"
+      ]
+    },
+    {
       "ref": "workspace:@cas/sheets-intake",
       "dependsOn": [
         "pkg:npm/%40types/node@24.13.3",
@@ -11538,6 +11829,7 @@
         "workspace:@cas/graph-evidence",
         "workspace:@cas/mcp-server",
         "workspace:@cas/payer-agent",
+        "workspace:@cas/roundup",
         "workspace:@cas/sheets-intake",
         "workspace:@cas/sunday-agent",
         "workspace:@cas/taxonomy",
