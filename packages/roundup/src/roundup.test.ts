@@ -1,3 +1,6 @@
+import { readdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { canonicalize, sha256 } from './canonical.js';
@@ -402,6 +405,33 @@ describe('generation through the transport seam', () => {
     expect(prepared.worstCaseMicrodollars).toBe(
       worstCaseMicrodollars(prepared.system.length + prepared.user.length),
     );
+  });
+
+  it('opens no socket: the package names no network module, and a generation leaves no handle', async () => {
+    const here = fileURLToPath(new URL('.', import.meta.url));
+    const sources = (await readdir(here)).filter(
+      (name) => name.endsWith('.ts') && !name.endsWith('.test.ts'),
+    );
+    expect(sources.length).toBeGreaterThan(8);
+    const forbidden =
+      /\b(?:node:)?(?:net|http|https|tls|dgram|http2)\b|undici|@anthropic-ai\/sdk|\bfetch\s*\(/u;
+    for (const name of sources) {
+      const text = await readFile(new URL(name, import.meta.url), 'utf8');
+      expect(forbidden.test(text), name).toBe(false);
+    }
+    const loaded = await loadTemplate();
+    const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+    const input = cyberInput();
+    const transport = recordedTransport({
+      raw: goldenFor(input, marker),
+      usage: { inputTokens: 1_200, outputTokens: 400 },
+    });
+    await generateRoundup(input, loaded, transport, {
+      spentThisMonth: 0,
+      expectedTemplateHash: loaded.hash,
+    });
+    const handles = process.getActiveResourcesInfo().filter((kind) => /TCP|Pipe|TTY/u.test(kind));
+    expect(handles.filter((kind) => /TCP/u.test(kind))).toEqual([]);
   });
 });
 
