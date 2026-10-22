@@ -316,3 +316,18 @@ chain) and CodeQL workflow run 39814933608 (Analyze) with the CodeQL service che
 run. `main` at `592d3bc` (pull request 22 merged) is merged into the branch in the same push,
 so the ledger rows for pull request 22's PASS and this unit's two verdicts are recorded here
 in one place.
+
+### 7.2 Third round, at `3c1d253`: CHANGES REQUIRED, one Medium
+
+The third review found F3 open at a narrower boundary: the process-wide validation of a
+configured `DATABASE_URL` ran before command dispatch, so with a malformed database setting and
+`--categories ','` the command reported `database:configuration` instead of `category_required`;
+the committed test supplied a valid URL and could not see it. Correction: the `week run`
+preflight (the D10 window, the category list, the batch identifier) is one function,
+`preflightWeekRun`, run from the arguments alone before the configured database URL is
+validated; every other command keeps its order, and the database URL is still validated for
+`week run` once its preflight passes, before any connection. Tests: every refusal of the
+preflight is repeated with a malformed non-empty `DATABASE_URL` and must still name its own code
+and open the injected connector zero times; a valid preflight with the same URL is refused with
+`database:configuration` and opens nothing. The reviewer's two probes at the corrected head
+answer `category_required` and `DATABASE_URL rejected: not a URL` respectively.

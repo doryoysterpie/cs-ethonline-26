@@ -291,6 +291,58 @@ function baseRedactor(env: Readonly<Record<string, string | undefined>>): Redact
  * through and could reach the output of a command that never opens a
  * database.
  */
+/**
+ * The `week run` preflight: the D10 window and the categories, checked from
+ * the arguments alone, before any credential is read, before the configured
+ * database URL is validated, before any connection is opened (review of
+ * 22 October 2026, F3, and its two re-reviews). It runs ahead of the
+ * process-wide database validation below, so a malformed database setting
+ * cannot mask a refused window or category; every other command keeps its
+ * order.
+ */
+interface WeekRunPreflight {
+  readonly windows: ReturnType<typeof parseWindows>;
+  readonly categoriesRequested: readonly string[] | undefined;
+  readonly providedBatch: string | undefined;
+}
+
+function preflightWeekRun(values: {
+  readonly window?: string[] | undefined;
+  readonly categories?: string | undefined;
+  readonly batch?: string | undefined;
+}): WeekRunPreflight {
+  const windows = parseWindows(values.window);
+  if (windows !== undefined && windows.length !== 1) {
+    throw configurationError('window_invalid', 'week run takes exactly one --window');
+  }
+  const categoriesRequested =
+    values.categories === undefined
+      ? undefined
+      : values.categories
+          .split(',')
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0);
+  const providedBatch = values.batch === undefined ? undefined : requireUuid(values.batch, 'batch');
+  resolveWeekWindow(windows?.[0]);
+  // An explicit list that names nothing (`--categories ','`) is refused here
+  // too, so that no shape of the argument reaches anything later.
+  if (categoriesRequested !== undefined && categoriesRequested.length === 0) {
+    throw configurationError(
+      'category_required',
+      `--categories must name at least one registered category: ${categories().join(', ')}`,
+    );
+  }
+  for (const name of categoriesRequested ?? []) {
+    if (!isCategory(name)) {
+      throw configurationError(
+        'category_invalid',
+        `--categories must name registered categories: ${categories().join(', ')}`,
+      );
+    }
+  }
+  return { windows, categoriesRequested, providedBatch };
+}
+
 function assertConfiguredDatabaseUrl(env: Readonly<Record<string, string | undefined>>): void {
   const url = env[DATABASE_URL_VARIABLE];
   if (url === undefined || url.trim().length === 0) return;
@@ -333,6 +385,9 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
   }
   const [group, command] = positionals;
   try {
+    // A command's own argument preflight comes first, then the configured
+    // database URL is validated for every command, then the command runs.
+    const weekRun = group === 'week' && command === 'run' ? preflightWeekRun(values) : null;
     assertConfiguredDatabaseUrl(options.env);
     if (group === 'db' && command === 'migrate') {
       const result = await withDatabase(options, (db) => runMigrations(db));
@@ -598,44 +653,11 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
       for (const entry of formatSheetsImportOutcome(outcome, connection.redact)) emit(entry);
       return EXIT_CODES.ok;
     }
-    if (group === 'week' && command === 'run') {
-      // The window and the categories are checked before any credential is
-      // touched and before any connection is opened; the feed import is
-      // composed here so the orchestrator itself never sees the workbook.
-      const windows = parseWindows(values.window);
-      if (windows !== undefined && windows.length !== 1) {
-        throw configurationError('window_invalid', 'week run takes exactly one --window');
-      }
-      const categoriesRequested =
-        values.categories === undefined
-          ? undefined
-          : values.categories
-              .split(',')
-              .map((name) => name.trim())
-              .filter((name) => name.length > 0);
-      const providedBatch =
-        values.batch === undefined ? undefined : requireUuid(values.batch, 'batch');
-      // The preflight the orchestrator repeats: the D10 window and the
-      // registered categories, refused here before any credential is read or
-      // any connection opened (review of 22 October 2026, F3).
-      resolveWeekWindow(windows?.[0]);
-      // An explicit list that names nothing (`--categories ','`) is refused
-      // here too, so that no shape of the argument reaches the workbook
-      // before the orchestrator's own check (re-review of 22 October 2026, F3).
-      if (categoriesRequested !== undefined && categoriesRequested.length === 0) {
-        throw configurationError(
-          'category_required',
-          `--categories must name at least one registered category: ${categories().join(', ')}`,
-        );
-      }
-      for (const name of categoriesRequested ?? []) {
-        if (!isCategory(name)) {
-          throw configurationError(
-            'category_invalid',
-            `--categories must name registered categories: ${categories().join(', ')}`,
-          );
-        }
-      }
+    if (group === 'week' && command === 'run' && weekRun !== null) {
+      // The window and the categories were checked by `preflightWeekRun`
+      // before the database URL was validated; the feed import is composed
+      // here so the orchestrator itself never sees the workbook.
+      const { windows, categoriesRequested, providedBatch } = weekRun;
       parseDatabaseConfig(options.env);
       let importFeed: (() => Promise<ImportOutcome>) | undefined;
       let connection: Awaited<ReturnType<typeof openWorkbook>> | undefined;
