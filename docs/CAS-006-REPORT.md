@@ -43,13 +43,13 @@ what was already true, what changed, and the test that proves it.
 
 ### 2.2 Blocker 7, the dashboard's lower findings
 
-| Item                                          | State                                                                                                                                                                                                                                                                                                                           |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cap password length before Argon2             | Provisioning already capped at 128 characters through `assertPassword`. Closed here for verification too: `verifyPassword` refuses above the cap before any hashing, so the cap no longer depends on the caller. No route accepts a password since the passwordless login; the guard is structural. Test in `password.test.ts`. |
-| Bound the action body size                    | Closed here. `experimental.serverActions.bodySizeLimit` is declared at 1 MB in `next.config.ts` rather than defaulted, and `next-config.test.ts` proves the bound holds the largest legitimate action, a draft revision of 200,000 characters at four bytes each.                                                               |
-| Bound stored revisions and decisions          | Closed here. A draft keeps at most 1,000 revisions and a queue row of one run at most 100 decisions; both are refusals with fixed codes, never deletions, because the stores are append-only. The decision count is a new store operation on both stores and in the database package. Test in `dal.db.test.ts`.                 |
-| Report a failed sign-out                      | Closed here. Session revocation now reports whether it revoked a live session; a sign-out that revoked nothing records a failure audit event and answers 409 with the cookie still cleared. Test in `session.test.ts`.                                                                                                          |
-| Clear the cookie with its original attributes | Already closed on `main`: the clearing header carries `Path=/`, `HttpOnly`, `SameSite=Strict` and, outside `local`, `Secure`; `cookie.test.ts` asserts it.                                                                                                                                                                      |
+| Item                                          | State                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cap password length before Argon2             | Provisioning already capped at 128 characters through `assertPassword`. Closed here for verification too: `verifyPassword` refuses above the cap before any hashing, so the cap no longer depends on the caller. No route accepts a password since the passwordless login; the guard is structural. Test in `password.test.ts`.                                                                                                                                                                                                                                                                                                                              |
+| Bound the action body size                    | Closed here. `experimental.serverActions.bodySizeLimit` is declared at 1 MB in `next.config.ts` rather than defaulted, and `next-config.test.ts` proves the bound holds the largest legitimate action, a draft revision of 200,000 characters at four bytes each.                                                                                                                                                                                                                                                                                                                                                                                            |
+| Bound stored revisions and decisions          | Closed here, corrected after review. A draft keeps at most 1,000 revisions and a queue row of one run at most 100 decisions; both are refusals with fixed codes, never deletions, because the stores are append-only. The decision bound is enforced where the write happens, as one atomic store operation (`appendIfBelow`): in PostgreSQL, one transaction that takes an advisory lock on the entry, counts, then appends; in memory, a count and a push with no await between them. Tests in `dal.db.test.ts` (two reviews of one row together: one lands, one is refused, 100 remain) and `postgres-store.db.test.ts` (the store alone, the same race). |
+| Report a failed sign-out                      | Closed here. Session revocation now reports whether it revoked a live session; a sign-out that revoked nothing records a failure audit event and answers 409 with the cookie still cleared. Test in `session.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Clear the cookie with its original attributes | Already closed on `main`: the clearing header carries `Path=/`, `HttpOnly`, `SameSite=Strict` and, outside `local`, `Secure`; `cookie.test.ts` asserts it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ### 2.3 Counts, from the runners
 
@@ -85,3 +85,26 @@ lockout on one does not lock the other. Until then the deployed instance keys as
 
 Counts, from the runners: dashboard 84 unit and 21 PostgreSQL; verify loop green. Audit state:
 not audited.
+
+## 4. Independent review of steps 9 and 10, and the correction (step 14, first round)
+
+Codex reviewed pull request 17 at `2e77d2e` on 22 October 2026: CHANGES REQUIRED, one Medium
+finding, F1. The 100-decision bound was a count followed by a separate insert, so two reviews
+of the same queue row arriving together at 99 could both pass the check and leave 101; the
+committed test proved only the sequential case. Blocker 6 and the other blocker 7 items had no
+findings. Record: `2026-10-22-cas-006-pr-17-release-blockers.md`.
+
+Correction, same day: the bound is now enforced where the write happens. The store interface
+gains `appendIfBelow(decision, limit)`, one atomic operation. The PostgreSQL store runs it as
+one transaction that takes `pg_advisory_xact_lock` on the entry (run and row), counts, and
+appends only below the limit; the memory store counts and pushes with no await between the two.
+The data-access layer keeps its early refusal and now reads the atomic outcome, refusing
+`decision_limit` when the append reports the limit. Two tests reproduce the race the review
+named: the data-access layer with two concurrent reviews of one real queue row (a quarantined
+row classified to `review`, seeded for the purpose), and the PostgreSQL store on its own. Each
+asserts one success, one `decision_limit`, and a final count of exactly 100.
+
+In the same round Codex passed pull request 18 at `32e1357` (step 7's code half, no findings,
+its verdict independent of this one) and pull request 14 at `2ad714d` (CAS-001), and returned
+two findings on pull request 19 (CAS-002); the ledger carries all four. The corrected head of
+this pull request awaits re-review; nothing is called audited until it says so.

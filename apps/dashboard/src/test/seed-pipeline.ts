@@ -153,6 +153,40 @@ async function seedBatch(db: Database): Promise<{ batchId: string; hostileRowId:
   return { batchId, hostileRowId };
 }
 
+/**
+ * One batch with one quarantined row, classified: the quarantined row lands in
+ * the review queue, which gives a test a real queue entry to review.
+ */
+export async function seedQueueRow(
+  db: Database,
+): Promise<{ readonly classificationRunId: string; readonly sourceRowId: string }> {
+  const batchId = randomUUID();
+  const sourceRowId = randomUUID();
+  await db.withTransaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO import_batches (
+         id, data_origin, source_kind, review_label, source_basename, file_sha256, byte_length,
+         header_cells, importer_version, idempotency_key, status, parsed_row_count,
+         accepted_row_count, quarantined_row_count, started_at, completed_at
+       ) VALUES ($1, 'replay', 'weekly', 'CS91', 'queue.csv', $2, 10, '["ch"]'::jsonb,
+                 'editorial-csv-import@1', $3, 'completed_with_issues', 1, 0, 1, now(), now())`,
+      [batchId, hash('b'), randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64)],
+    );
+    await tx.query(
+      `INSERT INTO source_rows (
+         id, batch_id, row_number, data_origin, status, raw_cells, raw_fields,
+         raw_ch, raw_url, raw_category, normalized_title, derived_summary_text,
+         text_transform, row_hash
+       ) VALUES ($1, $2, 1, 'replay', 'quarantined', '["TRUE"]'::jsonb, '{"ch":"TRUE"}'::jsonb,
+                 'TRUE', 'https://seed.example/queue', 'Security', 'Incomplete row', NULL,
+                 'html-to-text@1', $3)`,
+      [sourceRowId, batchId, hash('c')],
+    );
+  });
+  const classified = await classifyBatch(db, { batchId });
+  return { classificationRunId: classified.run.id, sourceRowId };
+}
+
 export async function seedPipeline(db: Database): Promise<SeededPipeline> {
   const { batchId, hostileRowId } = await seedBatch(db);
   const classified = await classifyBatch(db, { batchId });
