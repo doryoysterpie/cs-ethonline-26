@@ -157,3 +157,79 @@ failing child (manifest `failed`, children recorded, exit code preserved, rerun 
 selection record and its member references, the latest-revision read, the capability
 refusals, the carried flag on a row first seen after a freeze. Then the full verify loop and
 the four database suites, a clean clone, and CI.
+
+## 2. The data contract, S2 (step 5)
+
+Built 22 October 2026. Migration `0014_weekly_run.sql`, checksum
+`5cec97eb0c28bcbba5bd030dcf1355041c204bd342e0dfbddc33be3953a67bf3`, as designed in sections 1.4
+and 1.6, plus one addition the build needed: `audit_events.kind` is a closed list, so the
+migration extends it with `story_selected` the way migration 0011 added `otp_requested`.
+Operations in `packages/database/src/week.ts`: the manifest's insert, its one transition, the
+completed-key lookup, the list; the children's insert and list; the selection's insert with its
+member references, the last revision and the latest-per-incident read; the incident's member
+references; and the sift-table read `listWeekIncidents`, which computes first seen as the
+earliest import read holding the row's hash (a batch's completion when no Sheets read exists),
+and the in-window and carried rules of section 1.7 in one statement. Guard tests in
+`week.db.test.ts`: the running-only insert, the one transition, append-only on both tables, the
+completed-key uniqueness with a failed attempt as history, and the child identity checks.
+
+## 3. The window, the orchestrator and the command, S3 to S5 (steps 6 to 8)
+
+`resolveWeekWindow` accepts `<isoStart>..<isoEnd>` and checks both bounds are a Saturday at
+23:59:00 in the zone and seven local days apart, then derives the freeze and the publication
+cutoff; the autumn clock change is a test (a 169-hour window passes, a 168-hour one is refused).
+`runWeek` runs the sequence of section 1.3, records every child, marks a failed manifest with
+the child's code and rethrows the child's error with the manifest's identifier, and reports
+`already ran` with the manifest when the completed key exists; a concurrent completion that
+loses the partial unique index reports the winner. The command `week run` composes the feed
+import from the committed tab map so the orchestrator never sees the workbook; `--batch` and
+`--categories` are checked, with the window, before any connection is opened. Root script
+`week:run`.
+
+PostgreSQL tests in `apps/worker/src/week/run.db.test.ts`: a complete week over a provided
+batch with two categories (five children in order), the same window again (reused, same
+manifest, the key independent of category order), the four refusals before any child, a
+failing child through a test seam (manifest `failed`, three children recorded, the rethrown
+code carrying the manifest id, a retry that reuses the classification and completes), the sift
+query (in window, carried, excluded after the freeze and without a posted time; search; sort;
+no title without text), and the selection record (revision sequence, latest read, the wrong
+clustering run and the wrong member refused, append-only, the run's hash the category's).
+Command-line tests: the three refusals before any connection, no credential echoed.
+
+## 4. The sift table and the selection, S5 (step 9)
+
+`/week` lists the manifests; `/week/<id>?category=<c>&q=<text>&sort=<order>` is the table of
+section 1.7, read through `weekTable` under `view:incidents`: the category must be one the week
+covered, the search is bounded text compared in the database and never echoed, the sort is one
+of two fixed orders, titles cross only with `view:source_text` and notes only with `view:notes`,
+and the latest selection per incident names who recorded it. `selectStory` under the new
+capability `select:stories` (editor and admin, in `roles.ts`) appends one record with the next
+revision and the incident's member references inside one transaction, reports a concurrent
+revision as a conflict, and writes `story_selected` to the audit log, success or refusal; the
+page's form passes the existing same-origin and session-bound token checks. Because the record
+names its actor by foreign key, selection needs the PostgreSQL account store; the memory store of
+a local run is refused with `persistent_accounts_required` rather than failing opaquely, and
+`Stores` now declares its kind.
+
+Found and fixed on the way: `listAccounts` in `@cas/database` ordered by `pg_catalog.coalesce`,
+which is not a function (`coalesce` is a SQL construct), so the PostgreSQL account store's
+`list` had raised `42883` since it was written and nothing had read it until the week table
+named its selectors. The ordering is now `coalesce(username, normalized_email), id`, and the
+store test lists accounts. Data-access tests: the list to every role; the table for editor and
+judge; search; the whitelisted sort and category; the selection through a PostgreSQL-store
+runtime with real accounts and sessions, its revisions, the judge's refusal, the three wrong
+identifiers; and that selection leaves the machine tables' fingerprint unchanged.
+
+## 5. Security baseline, S6, and the counts from the runner (step 11 in part)
+
+No new dependency. No new outbound boundary: the week reads the workbook through CAS-001's
+connector and nothing else. The window and the categories are refused before any connection;
+the command prints counts and identifiers only. The selection is append-only with its actor
+and session by foreign key and an audit event without content; the search never reaches a
+page or a log; the category and sort are whitelisted; the capability is held by editor and
+admin and by no one else, and `MUTATION_CAPABILITIES` enumerates it for the judge-refusal
+tests. No scheduled service and no secret on the hosting platform (D37).
+
+Working checkout, 22 October 2026: `corepack pnpm verify` exit 0, 1,077 offline tests
+(worker 274, dashboard 84, database 32), 31 tool tests; `corepack pnpm test:db` exit 0, 296
+(database 102, worker 119, dashboard 26, mcp-server 49). Pull request 23.
