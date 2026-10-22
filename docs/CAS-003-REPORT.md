@@ -249,3 +249,51 @@ Node 24.21.0, pnpm 11.10.0:
 CI on pull request 23 at the same commit: CodeQL, Analyze, PostgreSQL integration and Supply
 chain pass; Verify was still running when this section was written and is read on the pull
 request. The diff is narrated in the hand-back that asks for the review.
+
+## 7. Independent review and correction (step 13, first round)
+
+Codex reviewed pull request 23 at `f49619f` (code at `50d5fd1`) on 22 October 2026:
+CHANGES REQUIRED, one High, four Medium, one Low. Record:
+`2026-10-22-pr-22-pr-23-independent-review.md`. Every finding is corrected on the same branch
+the same day, each with a test at the point of its claim.
+
+- **F1, High, a judge could search hidden titles.** The table applied the title predicate for a
+  principal without `view:source_text`, which made a hit-or-miss oracle over confidential
+  headlines. Correction: `weekTable` refuses a search from such a principal with the fixed
+  code `search_requires_source_text` before any query; `listWeekIncidents` refuses a search
+  without text as the floor; the page renders the search form only when the principal may read
+  titles (`canSearch`). Tests: a judge's search returns `validation` for a matching term, a
+  non-matching term and a nonsense term alike; the database refuses the combination.
+- **F2, Medium, a selection member was not bound to its incident.** The member table's keys
+  bound the selection, a membership and a source row separately, so a membership of another
+  incident of the same run could be recorded under a selected incident. Correction: migration
+  0014 (unapplied outside test and scratch databases; new checksum
+  `e8d9656fb3fbc1f5e4111fe8a054865afdd1799745c86f09629fc74f58deb29c`) adds a provenance key on
+  `incident_memberships` over membership, incident, run, source row, batch and hash, and the
+  member table carries `incident_id` and references the selection by (selection, incident, run)
+  and the membership by that full key, one relational identity. Tests: a real membership of
+  another incident is refused (23503); a membership with its row hash swapped is refused.
+- **F3, Medium, the command opened the workbook before the semantic preflight.** Correction:
+  `week run` resolves the D10 window and checks every requested category against the registry
+  before any credential is read or connection opened. Test: with an injected connector that
+  counts opens, the three refusals open nothing and a valid preflight opens once.
+- **F4, Medium, refused selections wrote no audit event.** Correction: `selectStory` audits
+  every refusal with a known actor at its boundary, with the refusal's fixed code and the
+  incident identifier when well formed, never content; the conflict path still records itself.
+  Tests: a judge's refusal leaves a `story_selected` failure with code `select:stories`; the
+  not-found and validation refusals leave theirs.
+- **F5, Medium, S8 marked complete with the exact-head Verify job red.** The failure was the
+  pre-existing MCP cancellation-timing assertion, not this unit's code, but the gate was not
+  green and the record said otherwise. Correction: step 12 and S8 are unticked in the tracker
+  until the Verify run at the corrected head completes green, and the evidence then names that
+  run. The inherited flake is recorded as a follow-up for CAS-006.
+- **F6, Low, an incident could be both in the window and carried.** Correction: `carried`
+  holds only when `in_window` does not. Test: an incident with an in-window member and an
+  older member first seen inside the window reads in the window and not carried.
+
+Counts at the corrected head, from the runner: `verify` exit 0, 1,078 offline tests
+(worker 275, dashboard 84), 31 tool tests; `test:db` exit 0, 296 (database 102, worker 119,
+dashboard 26, mcp-server 49). One observation on the loop itself: under the parallel verify
+loop the dashboard's authorization test, which first loads three workspace packages, once
+exceeded its five-second limit; alone it passes in well under a second, and the rerun of the
+loop was green. It is noted for the follow-up on CI reliability, not changed here.
