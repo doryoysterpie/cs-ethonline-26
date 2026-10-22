@@ -218,3 +218,22 @@ the headers. Audit events: `checkout_started` with `redirected`, `portal_redirec
 `webhook_body_malformed`; `supporter_changed` with the new mark; `limit_tripped` with
 `checkout_account`, once per window. No event carries a body, an address or a key; the tests
 assert it.
+
+## 6. Verification, S8 (step 11)
+
+On the working tree before the commit, 22 October 2026, from the runner: the database 32
+offline and 111 against PostgreSQL (the two for migration 0018 among them), the dashboard 121
+offline (the seven support modules, the body bound, the limiter and the authorization
+enumeration with the five new functions among them) and 36 against PostgreSQL (the two for
+the supporter tier among them); `corepack pnpm verify` exit 0.
+
+At `b1ea768`, 22 October 2026: a fresh clone from the remote passes `install --frozen-lockfile`
+(exit 0), `pnpm audit` (no known vulnerability), the bill-of-materials check (343 components,
+`CHECK OK`), `verify` (exit 0, 1,148 offline tests, 31 tool tests) and `test:db` (exit 0, 315:
+database 111, worker 119, dashboard 36, mcp-server 49). Merge-order simulation of the stack onto
+`main` (24, then 26, then 27, then this branch) is clean at every step. Pull request 28 carries
+the unit, stacked on pull request 27; its CI run is recorded on the tracker.
+
+Not verified here, by design of the unit: a real hosted Checkout, a real webhook delivery and a
+real donation (step 10), which wait on the owner's Stripe entity confirmation, the three
+Stripe values and the donation addresses by file.
