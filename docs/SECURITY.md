@@ -755,13 +755,18 @@ The unit is **in review and pending an independent audit**.
 
 - **The model sees recorded fields only.** The request is the selection snapshot: title, summary
   text, publisher, URL, posting instant and incident grouping of the rows the owner selected,
-  with the deterministic flagged entries. Never an editor note, never a row outside the
-  selection, never a fetched page. The prompt instructs reformatting and is versioned and hashed
-  with the template.
+  and nothing else. The flagged entries, whose reasons are editorial notes, never cross in
+  either direction: they are attached from records after the response is validated (review of
+  22 October 2026, F1). Never an editor note, never a row outside the selection, never a fetched
+  page. The prompt instructs reformatting and is versioned and hashed with the template.
 - **The response is validated before anything is written.** Structured output constrains the
   shape; the validator constrains the truth: every citation names a row in the selection, every
-  source is one of the cited rows' URLs, the order and count are the selection's. One violation
-  rejects the whole response with a fixed code, and nothing is written.
+  source is one of the cited rows' URLs, the order and count are the selection's, and each
+  headline and summary is plain inline prose (no line break, HTML, link, URL, block marker or
+  code: review F2). One violation rejects the whole response with a fixed code, and nothing is
+  written. Every slot text, model-written or recorded, is escaped into one structureless line on
+  export, and the rendered Markdown is checked to carry exactly the selection's URLs before it is
+  kept.
 - **The key is read by name and goes nowhere.** `ANTHROPIC_API_KEY` is read when the runtime is
   built and travels in the client only. Absent, the generation fails closed with
   `model_key_missing` before any request; the dashboard serves everything else. No log, audit
@@ -769,7 +774,15 @@ The unit is **in review and pending an independent audit**.
 - **Cost is bounded twice and recorded.** The output allowance bounds a request; the monthly cap
   (USD 25) is checked before the request against the worst case and the month's recorded spend,
   and the usage is recorded after it in an append-only ledger with the cost in microdollars.
-  A refused request is a ledger row with zero tokens and its code.
+  A refused request is a ledger row with zero tokens and its code; a response the validator
+  rejected was billed all the same and is a failed row at its real cost (review F3); every row
+  of the month counts toward the cap. One generation runs at a time per schema, under an
+  advisory lock held from the claim through the request to the record (review F4), and the
+  ledger row is written before the revisions, so a billed request keeps its record. A
+  selection past the row bound is refused whole, never cut to a prefix (review F5); a flagged
+  section past the stored bound is refused before any request (review F6); a selection whose
+  smallest rendering exceeds the stored revision bound is refused before any request, and a
+  generated rendering past it is refused, billed and recorded.
 - **The owner alone generates and edits.** `generate:roundup` and `edit:output` belong to the
   `owner` role only; a non-owner sees no control and a direct request is refused at the
   data-access layer with the capability as the code, and audited.

@@ -5,14 +5,39 @@ import {
   worstCaseMicrodollars,
   wouldExceedCap,
 } from './cost.js';
-import { RoundupError } from './errors.js';
+import { RoundupError, type BilledUsage } from './errors.js';
 import { assertRoundupInput, inputDigest, type RoundupInput } from './input.js';
 import { PROMPT_VERSION, promptHash, systemPrompt, userPrompt } from './prompt.js';
-import { deterministicSlots, renderMarkdown } from './render.js';
+import { deterministicSlots, MAX_MARKDOWN_CHARACTERS, renderMarkdown } from './render.js';
 import { slotsJsonSchema, type RoundupSlots } from './schema.js';
 import { sectionOf, type LoadedTemplate } from './template.js';
+import { urlsIn } from './text.js';
 import type { RoundupTransport } from './transport.js';
 import { validateResponse } from './validate.js';
+
+/**
+ * The export may carry exactly the selection's URLs, each once, on the
+ * sources lines (review F2): whatever a slot text held, escaped or not, the
+ * rendered Markdown is checked against the selection before it is kept.
+ */
+function assertOnlySelectedUrls(
+  markdown: string,
+  input: RoundupInput,
+  billed: BilledUsage | null,
+): void {
+  const expected = input.incidents
+    .flatMap((incident) => incident.rows.map((row) => row.url))
+    .sort();
+  const found = urlsIn(markdown).sort();
+  if (found.length !== expected.length || found.some((url, i) => url !== expected[i])) {
+    throw new RoundupError(
+      'response_url_outside_selection',
+      'the rendered round-up carries a URL outside the selection',
+      { expected: expected.length, found: found.length },
+      billed,
+    );
+  }
+}
 
 export interface GenerationProvenance {
   readonly model: string;
@@ -50,6 +75,16 @@ export function prepareGeneration(
   readonly inputDigest: string;
 } {
   assertRoundupInput(input);
+  // The deterministic rendering is the smallest a round-up of this selection
+  // can be; past the stored bound, no revision could be kept, so nothing is
+  // requested.
+  const deterministic = renderMarkdown(deterministicSlots(input, loaded.template), loaded.template);
+  if (deterministic.length > MAX_MARKDOWN_CHARACTERS) {
+    throw new RoundupError('input_too_long', 'the selection renders past the stored bound', {
+      characters: deterministic.length,
+      bound: MAX_MARKDOWN_CHARACTERS,
+    });
+  }
   const system = systemPrompt(loaded.template);
   const user = userPrompt(input, sectionOf(loaded.template, 'extras').marker ?? '');
   return {
@@ -120,13 +155,40 @@ export async function generateRoundup(
     }
     throw new RoundupError('model_failed', 'the model request failed');
   }
-  const slots = validateResponse(response.raw, input, loaded.template);
+  // The request was made and billed whatever happens next: a failure from
+  // here carries the usage, so the ledger records the real cost (review F3).
+  const billed: BilledUsage = {
+    model: response.model,
+    inputTokens: response.usage.inputTokens,
+    outputTokens: response.usage.outputTokens,
+  };
+  let slots: RoundupSlots;
+  try {
+    slots = validateResponse(response.raw, input, loaded.template);
+  } catch (error) {
+    if (error instanceof RoundupError) {
+      throw new RoundupError(error.code, error.message, error.details, billed);
+    }
+    throw error;
+  }
+  const deterministicMarkdown = renderMarkdown(deterministic, loaded.template);
+  const generatedMarkdown = renderMarkdown(slots, loaded.template);
+  if (generatedMarkdown.length > MAX_MARKDOWN_CHARACTERS) {
+    throw new RoundupError(
+      'response_too_long',
+      'the generated round-up renders past the stored bound',
+      { characters: generatedMarkdown.length, bound: MAX_MARKDOWN_CHARACTERS },
+      billed,
+    );
+  }
+  assertOnlySelectedUrls(deterministicMarkdown, input, billed);
+  assertOnlySelectedUrls(generatedMarkdown, input, billed);
   return {
     deterministic: {
       slots: deterministic,
-      markdown: renderMarkdown(deterministic, loaded.template),
+      markdown: deterministicMarkdown,
     },
-    generated: { slots, markdown: renderMarkdown(slots, loaded.template) },
+    generated: { slots, markdown: generatedMarkdown },
     provenance: {
       model: response.model,
       promptVersion: PROMPT_VERSION,
