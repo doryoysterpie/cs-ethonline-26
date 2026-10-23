@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 /**
  * Slot text at the Markdown boundary (review of pull request 24, F2). A
  * model-controlled headline or summary is an inline run of prose and nothing
@@ -15,16 +17,55 @@
 
 /**
  * What the export removes from every slot text, model-written or recorded:
- * the C0 and C1 controls, and the invisible characters that steer or hide
- * text (the bidirectional controls U+061C, U+200E, U+200F, U+202A to U+202E
- * and U+2066 to U+2069; the zero-width characters U+200B to U+200D and
- * U+FEFF). Stored text keeps them exactly (threat model RR13); the
- * copy-ready Markdown is a rendering, and removal is its escape. Global, so
- * every occurrence goes (re-review of 22 October 2026, RR5).
+ * every code point the repository's prohibited-text policy names
+ * (`data/policy/prohibited-text.json`, the one table the hygiene check over
+ * tracked files and this export both read, so the two cannot drift): the C0
+ * and C1 controls (tab, line feed and carriage return excepted, since line
+ * breaks are collapsed on their own), the bidirectional controls, the
+ * zero-width characters, the interlinear annotation characters and the
+ * noncharacters; the line separators are left to the line-break collapse.
+ * Stored text keeps them exactly (threat model RR13); the copy-ready
+ * Markdown is a rendering, and removal is its escape. Global, so every
+ * occurrence goes (re-review of 22 October 2026, RR5; the third review added
+ * U+2060 and made the table the policy's).
  */
-const CONTROL =
-  // eslint-disable-next-line no-control-regex
-  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/gu;
+const POLICY_PATH = new URL('../../../data/policy/prohibited-text.json', import.meta.url);
+
+function prohibitedRanges(): readonly (readonly [number, number])[] {
+  const parsed = JSON.parse(readFileSync(POLICY_PATH, 'utf8')) as {
+    readonly version: string;
+    readonly rules: readonly {
+      readonly rule: string;
+      readonly ranges: readonly (readonly [string, string])[];
+    }[];
+  };
+  if (parsed.version !== 'prohibited-text@1') throw new Error('prohibited-text policy version');
+  return parsed.rules
+    .filter((entry) => entry.rule !== 'line_separator')
+    .flatMap((entry) =>
+      entry.ranges.map(([from, to]): readonly [number, number] => [
+        Number.parseInt(from, 16),
+        Number.parseInt(to, 16),
+      ]),
+    );
+}
+
+const PROHIBITED_RANGES = prohibitedRanges();
+
+/** Every code point the export removes, for the test that holds this table equal to the policy's. */
+export function prohibitedCodePoints(): readonly number[] {
+  const out: number[] = [];
+  for (const [from, to] of PROHIBITED_RANGES)
+    for (let code = from; code <= to; code += 1) out.push(code);
+  return out;
+}
+
+const CONTROL = new RegExp(
+  `[${PROHIBITED_RANGES.map(([from, to]) =>
+    from === to ? `\\u{${from.toString(16)}}` : `\\u{${from.toString(16)}}-\\u{${to.toString(16)}}`,
+  ).join('')}]`,
+  'gu',
+);
 const LINE_BREAK = /[\r\n\u2028\u2029]/u;
 const BLOCK_START = /^\s*(?:[#>+\-*=~|`]|\d{1,9}[.)])/u;
 const WWW = /\bwww\./iu;
