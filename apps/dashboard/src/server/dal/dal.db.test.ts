@@ -14,7 +14,7 @@ import {
 import { insertSynthetic, syntheticAccount } from '../../test/synthetic-accounts.ts';
 import { openMemoryStores } from '../auth/memory-store.ts';
 import { openPostgresStores } from '../auth/postgres-store.ts';
-import { recordedTransport, sectionOf, loadTemplate } from '@cas/roundup';
+import { recordedTransport, sectionOf, loadTemplate, MAX_MARKDOWN_CHARACTERS } from '@cas/roundup';
 import { recordedTransport as recordedPages, type RawTransport } from '@cas/source-reader';
 import { ReadingCache } from './readings.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
@@ -23,13 +23,14 @@ import { isDashboardError } from '../errors.ts';
 import { createRuntime, type Runtime } from '../runtime.ts';
 import {
   decideEvidence,
-  MAX_DRAFT_REVISIONS,
-  MAX_QUEUE_DECISIONS_PER_ENTRY,
-  mergeIncidentsAction,
-  reviewQueueEntry,
   generateArticle,
   generateRoundup,
+  MAX_DRAFT_REVISIONS,
+  MAX_QUEUE_DECISIONS_PER_ENTRY,
+  MAX_ROUNDUP_CHARACTERS,
+  mergeIncidentsAction,
   readArticleSources,
+  reviewQueueEntry,
   saveArticleRevision,
   saveDraftRevision,
   saveRoundupRevision,
@@ -910,6 +911,9 @@ describe('data-access layer against PostgreSQL', () => {
   }
 
   describe('the round-up (CAS-004)', () => {
+    it('holds the stored rendering bound equal across the package and the layer (the migration refuses the 400,001st character)', () => {
+      expect([MAX_MARKDOWN_CHARACTERS, MAX_ROUNDUP_CHARACTERS]).toEqual([400_000, 400_000]);
+    });
     /** A model answer that reformats the selection exactly as the contract demands: the rundown and the marker. */
     function goldenFor(snapshot: {
       incidents: readonly { rows: readonly { url: string; sourceRowId: string }[] }[];
@@ -1313,6 +1317,67 @@ describe('data-access layer against PostgreSQL', () => {
       await own.close();
     });
 
+    it('records a provider refusal after an answer at its real cost (re-review RR1)', async () => {
+      const own = await openMigratedSchema();
+      const week = await seedWeek(own.db);
+      const loaded = await loadTemplate();
+      const refusing = {
+        async generate() {
+          throw Object.assign(new Error('declined'), {
+            code: 'model_refused',
+            billed: { model: 'claude-opus-5-5', inputTokens: 1_500, outputTokens: 40 },
+          });
+        },
+      };
+      const { rt, persisted } = await persistentRuntime(refusing, own);
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: table.rows[0]?.incidentId ?? '',
+        state: 'selected',
+        note: null,
+      });
+      expect(
+        await kindOf(
+          generateRoundup(rt, persisted.owner, {
+            weekRunId: week.weekRunId,
+            category: 'cyberattack',
+            expectedTemplateHash: loaded.hash,
+          }),
+        ),
+      ).toBe('unavailable');
+      const ledger = await own.db.withClient((c) =>
+        c.query<{
+          outcome: string;
+          code: string;
+          input_tokens: number;
+          output_tokens: number;
+          cost: string;
+        }>(
+          `SELECT outcome, code, input_tokens, output_tokens, cost_microdollars::text AS cost FROM model_calls WHERE week_run_id = $1`,
+          [week.weekRunId],
+        ),
+      );
+      expect(ledger.rows).toEqual([
+        {
+          outcome: 'failed',
+          code: 'model_refused',
+          input_tokens: 1_500,
+          output_tokens: 40,
+          cost: String(1_500 * 4 + 40 * 20),
+        },
+      ]);
+      await own.close();
+    });
+
     it('serialises concurrent generations: two submissions make exactly one model request (review F4)', async () => {
       const own = await openMigratedSchema();
       const week = await seedWeek(own.db);
@@ -1355,11 +1420,16 @@ describe('data-access layer against PostgreSQL', () => {
         category: 'cyberattack',
         expectedTemplateHash: loaded.hash,
       };
-      const outcomes = await Promise.all([
-        kindOf(generateRoundup(rt, persisted.owner, input)),
-        kindOf(generateRoundup(rt, persisted.owner, input)),
-      ]);
-      expect(outcomes.sort()).toEqual(['succeeded', 'validation']);
+      // Pool-sized and larger concurrency (re-review RR2): the test runtime's
+      // pool holds four connections; five submissions at once make one
+      // request, the rest are refused at once, and nothing waits.
+      const outcomes = await Promise.all(
+        Array.from({ length: 5 }, () => kindOf(generateRoundup(rt, persisted.owner, input))),
+      );
+      expect(outcomes.filter((o) => o === 'succeeded')).toHaveLength(1);
+      expect(
+        outcomes.every((o) => o === 'succeeded' || o === 'conflict' || o === 'validation'),
+      ).toBe(true);
       expect(calls).toBe(1);
       const ledger = await own.db.withClient((c) =>
         c.query<{ outcome: string }>(`SELECT outcome FROM model_calls WHERE week_run_id = $1`, [
@@ -1452,6 +1522,75 @@ describe('data-access layer against PostgreSQL', () => {
         ),
       );
       expect(stored.rows[0]).toEqual({ entries: '200', sources: '10000' });
+      // The upper-bound revision is editable: a small edit above the draft
+      // editor's 200,000 characters saves as revision 2 (re-review RR3).
+      const generated = await own.db.withClient((c) =>
+        c.query<{ markdown: string }>(
+          `SELECT markdown FROM roundup_revisions WHERE week_run_id = $1 AND revision = 1`,
+          [week.weekRunId],
+        ),
+      );
+      const markdown = generated.rows[0]?.markdown ?? '';
+      expect(markdown.length).toBeGreaterThan(200_000);
+      const saved = await saveRoundupRevision(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedRevision: 1,
+        markdown: `${markdown}\nEdited by the owner.\n`,
+      });
+      expect(saved.revision).toBe(2);
+      await own.close();
+    }, 180_000);
+
+    it('flags every carried incident, past the sift table’s page, and refuses past the flagged bound (re-review RR4)', async () => {
+      const own = await openMigratedSchema();
+      // 1,003 incidents of one row: three posted before the window and first seen
+      // inside it (carried), which the sift table's page of 1,000 newest would drop.
+      const week = await seedLargeWeek(own.db, 1_003, 1, { carriedGroups: 3 });
+      const loaded = await loadTemplate();
+      const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+      const transport = {
+        async generate(request: { user: string; model: string }) {
+          const seen = JSON.parse(request.user) as {
+            incidents: { rows: { url: string; sourceRowId: string }[] }[];
+            extras: string;
+          };
+          return {
+            raw: goldenFor({ ...seen, extras: marker }),
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: request.model,
+          };
+        },
+      };
+      const { rt, persisted } = await persistentRuntime(transport, own);
+      const newest = await own.db.withClient((c) =>
+        c.query<{ id: string }>(
+          `SELECT c.id FROM incident_clusters c JOIN source_rows s ON s.id = c.representative_source_row_id
+              WHERE c.clustering_run_id = $1 ORDER BY s.posted_at DESC LIMIT 1`,
+          [week.clusteringRunId],
+        ),
+      );
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: newest.rows[0]?.id ?? '',
+        state: 'selected',
+        note: null,
+      });
+      const result = await generateRoundup(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedTemplateHash: loaded.hash,
+      });
+      expect(result.revision).toBe(1);
+      const stored = await own.db.withClient((c) =>
+        c.query<{ carried: string }>(
+          `SELECT (SELECT count(*) FROM jsonb_array_elements(slots->'flagged') f WHERE f->>'disposition' = 'carry')::text AS carried
+               FROM roundup_revisions WHERE week_run_id = $1 AND revision = 1`,
+          [week.weekRunId],
+        ),
+      );
+      expect(stored.rows[0]?.carried).toBe('3');
       await own.close();
     }, 180_000);
 

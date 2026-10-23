@@ -362,3 +362,52 @@ correction's own code, a polynomial regular expression in `text.ts` (the URL det
 model-written slot). Both URL scans are rewritten as single passes over the text (`includes`,
 `indexOf`, a fixed-width word-boundary pattern) in the commit that follows, with the same
 tests.
+
+### 7.2 Second round, at `64f7cac`: CHANGES REQUIRED, two P1 and three P2
+
+Codex re-reviewed the correction on 22 October 2026 (record
+`2026-10-22-CAS-004-roundup-pr24-rereview.md`): F1, F2's probe, F5's bound and F6's direct
+bounds held; five residual defects in the corrected paths remained. Every one is corrected on
+the same branch the same day, each with a test at the point of its claim.
+
+- **RR1, P1, provider-side failures after an answer were still ledgered at zero.** The
+  adapter threw without usage on a refusal, an output that did not fit and text that was not
+  JSON, although the provider had answered and billed. Correction: `ModelTransportError`
+  carries `billed` (model and usage) for every failure after a response; the package reads it
+  by shape (`billedOf`, never by class) and keeps it on its own error; the ledger records the
+  real cost. Tests: `anthropic.test.ts` through an injected client, a refusal, an overflow and
+  a non-JSON answer each carrying the usage and a request failure carrying none; the package
+  keeps a foreign billed shape; against PostgreSQL, a refusal after an answer is a failed row
+  at its real tokens and cost.
+- **RR2, P1, the lock could exhaust the pool.** The holder kept one connection while waiting
+  on the advisory lock and took more for its work; at pool-sized concurrency the waiters held
+  every connection and the holder starved. Correction: the lock is tried, never waited for
+  (`pg_try_advisory_lock`), a concurrent submission is refused at once with the fixed conflict
+  `roundup_generation_in_progress`, and every protected read and write (the claim check, the
+  spend, the ledger row, the revisions) runs on the lock-holding connection through
+  `transactionOn`, so a generation holds exactly one pooled connection. Test: five concurrent
+  submissions against the four-connection test pool make one transport call, one succeeds,
+  the rest are refused, nothing waits.
+- **RR3, P2, an upper-bound round-up could not be edited.** The editor reused the draft
+  bound of 200,000 characters while storage admits 400,000. Correction: `MAX_ROUNDUP_CHARACTERS`
+  (400,000) governs the round-up editor, held equal to the package's constant by a test; the
+  server-action body bound is 2 MB so 400,000 characters of UTF-8 fit. Test: the upper-bound
+  fixture generates, then a small edit above 200,000 characters saves as revision 2.
+- **RR4, P2, carried incidents came from a 1,000-row page.** Correction:
+  `listCarriedIncidents`, an exhaustive read of every carried, unselected, un-omitted incident
+  of the run in posted order, bound plus one; the layer refuses `flagged_too_many` when omitted
+  and carried together exceed 200. Test: 1,003 incidents through the real pipeline, three of
+  them carried and sorted past the first thousand; all three are flagged in the stored
+  revision.
+- **RR5, P2, only the first control character was removed on export.** Correction: the
+  removal is global, and the invisible characters that steer or hide text (the bidirectional
+  controls, the zero-width characters, the byte-order mark) are removed with the controls and
+  rejected in a model-written slot. Policy: stored text keeps them exactly (threat model RR13);
+  the copy-ready Markdown is a rendering, and removal is its escape. Test: nine characters
+  across a recorded slot reduce to the nine letters; a bidirectional or zero-width character in
+  a model slot is `control_character`.
+
+Counts at the second corrected head, from the runner, 22 October 2026: `verify` exit 0, 1,096
+offline tests (round-up 15, dashboard 87, worker 275), 31 tool tests; `test:db` exit 0, 307
+(database 104, worker 119, dashboard 35, mcp-server 49). The clean-clone reproduction and the
+CI run are recorded on the tracker.

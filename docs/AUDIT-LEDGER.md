@@ -43,6 +43,7 @@ repository's own reports and the sprint board. CAS-006 step 1, 22 October 2026.
 | CAS-003 second correction, PR #23          | `3c1d253` (code `48896ab`) | Codex                          | CHANGES REQUIRED, F3 at the database boundary (Medium) | 22 Oct 2026      | `2026-10-22-pr-23-third-review.md`                       |
 | CAS-003 third correction, PR #23 merged    | `048e673` in `bda4303`     | Codex                          | PASS, no findings                                      | 22 Oct 2026      | `2026-10-22-pr-23-fourth-review.md`                      |
 | CAS-004 round-up, PR #24                   | `f2e985c`                  | Codex                          | CHANGES REQUIRED, F1 to F3 (P1), F4 to F6 (P2)         | 22 Oct 2026      | `2026-10-22-CAS-004-roundup-pr24.md`                     |
+| CAS-004 correction, PR #24                 | `64f7cac` (code `b57ecf5`) | Codex                          | CHANGES REQUIRED, RR1 and RR2 (P1), RR3 to RR5 (P2)    | 22 Oct 2026      | `2026-10-22-CAS-004-roundup-pr24-rereview.md`            |
 | CAS-006 correction, PR #17 merged          | `e19449e` in `355e773`     | Codex                          | PASS, no findings                                      | 22 Oct 2026      | `2026-10-22-cas-006-pr-17-correction-reaudit.md`         |
 | CAS-006 blocker 3 code half, PR #18 merged | `3ceaf09` in `c32c963`     | Codex (delta at `32e1357`)     | PASS, delta only; merge head not audited               | 22 Oct 2026      | `2026-10-22-cas-006-pr-18-trusted-proxy.md`              |
 

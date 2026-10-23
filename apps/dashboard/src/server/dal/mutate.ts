@@ -915,25 +915,62 @@ export interface RoundupEditInput {
 const SELECTION_ROWS_FOR_GENERATION = 10_000;
 /** The most flagged entries a revision can hold (the stored slot schema's bound; review F6). */
 const FLAGGED_FOR_GENERATION = 200;
+/**
+ * The most characters a round-up revision holds: migration 0015's bound and
+ * the package's MAX_MARKDOWN_CHARACTERS, repeated here because the layer may
+ * not import the package statically; a test holds the three equal. The
+ * editor's bound is the stored bound, so every generated revision is editable
+ * (re-review RR3).
+ */
+export const MAX_ROUNDUP_CHARACTERS = 400_000;
 
 /**
- * A PostgreSQL advisory lock held for the duration of one generation, on a
- * connection of its own (review F4). Keyed by the schema, so every
- * generation against one application schema is serialised: the second of
- * two concurrent submissions waits, then finds the round-up generated and
- * is refused without a model request. Released on every exit.
+ * One generation at a time per schema (review F4, re-review RR2). The lock
+ * is tried, never waited for, on one connection, and every protected read
+ * and write runs on that same connection, so a generation holds exactly one
+ * pooled connection whatever the pool size: a concurrent submission is
+ * refused at once with a fixed conflict instead of queueing with a
+ * connection in hand, which at pool-sized concurrency starved the holder.
+ * Released on every exit.
  */
-async function withGenerationLock<T>(runtime: Runtime, work: () => Promise<T>): Promise<T> {
+async function withGenerationLock<T>(
+  runtime: Runtime,
+  work: (holder: Queryable) => Promise<T>,
+): Promise<T> {
   const key = `${runtime.database.schema}:roundup-generation`;
   return runtime.database.withClient(async (holder) => {
-    await holder.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))', [key]);
+    const claimed = await holder.query<{ locked: boolean }>(
+      'SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS locked',
+      [key],
+    );
+    if (claimed.rows[0]?.locked !== true) {
+      throw new DashboardError(
+        'conflict',
+        'roundup_generation_in_progress',
+        'A generation is in progress; wait for it to finish.',
+      );
+    }
     try {
-      return await work();
+      return await work(holder);
     } finally {
       await holder.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))', [key]);
     }
   });
 }
+
+/** A transaction on one given connection, for work that must not take a second one. */
+async function transactionOn<T>(client: Queryable, work: () => Promise<T>): Promise<T> {
+  await client.query('BEGIN');
+  try {
+    const result = await work();
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+}
+
 const CATEGORY_SHAPE = /^[a-z][a-z0-9_]{1,31}$/u;
 const HASH_SHAPE = /^[0-9a-f]{64}$/u;
 const CARRIED_REASON = 'first seen after the previous week’s freeze; carried per D10';
@@ -1028,11 +1065,10 @@ async function generateRoundupUnaudited(
     getWeekRun,
     insertModelCall,
     insertRoundupRevision,
-    listLatestIssueSelections,
+    listCarriedIncidents,
     listOmittedIncidents,
     listRoundupRevisions,
     listSelectedRows,
-    listWeekIncidents,
     listWeekRunChildren,
     spendBetween,
   } = packages.database;
@@ -1112,20 +1148,25 @@ async function generateRoundupUnaudited(
         'The week has more omitted incidents than one round-up can list.',
       );
     }
-    const latestSelections = await runtime.database.withClient((client) =>
-      listLatestIssueSelections(client, weekRunId),
-    );
-    const tableRows = await runtime.database.withClient((client) =>
-      listWeekIncidents(client, {
+    // The carried incidents, exhaustively: not a page of the sift table (its
+    // 1,000-row page dropped the rest silently, re-review RR4) but a read of
+    // every carried, unselected, un-omitted incident, bound plus one.
+    const carried = await runtime.database.withClient((client) =>
+      listCarriedIncidents(client, {
         clusteringRunId,
+        weekRunId,
+        category,
         windowStart: week.windowStart,
         windowEnd: week.windowEnd,
-        withText: true,
-        search: null,
-        sort: 'posted_desc',
-        limit: 1000,
+        limit: FLAGGED_FOR_GENERATION + 1,
       }),
     );
+    if (omitted.length + carried.length > FLAGGED_FOR_GENERATION) {
+      throw validation(
+        'flagged_too_many',
+        'The week has more flagged incidents than one round-up can list.',
+      );
+    }
     const flagged = [
       ...omitted.map((entry) => ({
         incidentId: entry.incidentId,
@@ -1133,20 +1174,12 @@ async function generateRoundupUnaudited(
         reason: entry.reason,
         disposition: 'omit' as const,
       })),
-      ...tableRows
-        .filter(
-          (row) =>
-            row.carried &&
-            !row.inWindow &&
-            latestSelections.get(row.incidentId)?.state !== 'selected' &&
-            !omitted.some((entry) => entry.incidentId === row.incidentId),
-        )
-        .map((row) => ({
-          incidentId: row.incidentId,
-          headline: row.title ?? 'untitled',
-          reason: CARRIED_REASON,
-          disposition: 'carry' as const,
-        })),
+      ...carried.map((row) => ({
+        incidentId: row.incidentId,
+        headline: row.title.length > 0 ? row.title : 'untitled',
+        reason: CARRIED_REASON,
+        disposition: 'carry' as const,
+      })),
     ];
     const snapshot = {
       weekRunId,
@@ -1173,13 +1206,14 @@ async function generateRoundupUnaudited(
       subjectId: weekRunId,
     });
     const ledger = (
+      holder: Queryable,
       outcome: 'completed' | 'refused' | 'failed',
       code: string,
       usage: { inputTokens: number; outputTokens: number; costMicrodollars: number },
       model: string,
     ): Promise<void> =>
-      runtime.database.withTransaction((tx) =>
-        insertModelCall(tx, {
+      transactionOn(holder, () =>
+        insertModelCall(holder, {
           id: randomUUID(),
           kind: 'roundup',
           weekRunId,
@@ -1200,12 +1234,10 @@ async function generateRoundupUnaudited(
     // cannot both observe an empty round-up and both call the model. The
     // ledger row is written in its own transaction before the revisions, so
     // a billed request keeps its record even if persistence fails after it.
-    const generation = await withGenerationLock(runtime, async () => {
-      await runtime.database.withClient(assertNotGenerated);
+    const generation = await withGenerationLock(runtime, async (holder) => {
+      await assertNotGenerated(holder);
       const bounds = monthBounds(new Date());
-      const spentThisMonth = await runtime.database.withClient((client) =>
-        spendBetween(client, 'roundup', bounds.from, bounds.to),
-      );
+      const spentThisMonth = await spendBetween(holder, 'roundup', bounds.from, bounds.to);
       let produced;
       try {
         produced = await runGeneration(snapshot, loaded, runtime.model, {
@@ -1225,6 +1257,7 @@ async function generateRoundupUnaudited(
         // answer (review F3): the ledger records its real usage and cost.
         const billed = error.billed;
         await ledger(
+          holder,
           refused ? 'refused' : 'failed',
           error.code,
           billed === null
@@ -1257,6 +1290,7 @@ async function generateRoundupUnaudited(
         throw validation(error.code, error.message);
       }
       await ledger(
+        holder,
         'completed',
         'completed',
         {
@@ -1267,8 +1301,8 @@ async function generateRoundupUnaudited(
         produced.provenance.model,
       );
       const now = new Date().toISOString();
-      await runtime.database.withTransaction(async (tx) => {
-        await insertRoundupRevision(tx, {
+      await transactionOn(holder, async () => {
+        await insertRoundupRevision(holder, {
           weekRunId,
           category,
           revision: 0,
@@ -1279,7 +1313,7 @@ async function generateRoundupUnaudited(
           savedByAccountId: principal.accountId,
           createdAt: now,
         });
-        await insertRoundupRevision(tx, {
+        await insertRoundupRevision(holder, {
           weekRunId,
           category,
           revision: 1,
@@ -1366,10 +1400,10 @@ async function saveRoundupRevisionUnaudited(
   if (typeof input.markdown !== 'string')
     throw validation('markdown_invalid', 'The round-up body must be text.');
   const markdown = input.markdown.replace(/\r\n/gu, '\n');
-  if (markdown.length < 1 || markdown.length > MAX_DRAFT_CHARACTERS) {
+  if (markdown.length < 1 || markdown.length > MAX_ROUNDUP_CHARACTERS) {
     throw validation(
       'markdown_length',
-      `The round-up body must be between 1 and ${MAX_DRAFT_CHARACTERS} characters.`,
+      `The round-up body must be between 1 and ${MAX_ROUNDUP_CHARACTERS} characters.`,
     );
   }
   if (DRAFT_FORBIDDEN.test(markdown)) {

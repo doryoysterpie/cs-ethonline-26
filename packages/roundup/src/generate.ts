@@ -15,6 +15,27 @@ import { urlsIn } from './text.js';
 import type { RoundupTransport } from './transport.js';
 import { validateResponse } from './validate.js';
 
+/** The billed usage a foreign error carries, when it has the shape; null otherwise. */
+function billedOf(value: unknown): BilledUsage | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const model = record['model'];
+  const inputTokens = record['inputTokens'];
+  const outputTokens = record['outputTokens'];
+  if (
+    typeof model !== 'string' ||
+    typeof inputTokens !== 'number' ||
+    typeof outputTokens !== 'number' ||
+    !Number.isInteger(inputTokens) ||
+    !Number.isInteger(outputTokens) ||
+    inputTokens < 0 ||
+    outputTokens < 0
+  ) {
+    return null;
+  }
+  return { model, inputTokens, outputTokens };
+}
+
 /**
  * The export may carry exactly the selection's URLs, each once, on the
  * sources lines (review F2): whatever a slot text held, escaped or not, the
@@ -147,13 +168,18 @@ export async function generateRoundup(
     // A transport may be loaded as another module instance; its coded failure
     // is honoured by code, never by class identity, and never by its text.
     const code = (error as { code?: unknown } | null)?.code;
+    // A transport that answered before failing carries what the answer cost
+    // (re-review RR1); read by shape, never by class, and kept on the error.
+    const billed = billedOf((error as { billed?: unknown } | null)?.billed);
     if (code === 'model_refused' || code === 'response_invalid') {
       throw new RoundupError(
         code,
         code === 'model_refused' ? 'the model declined the request' : 'the response was not JSON',
+        {},
+        billed,
       );
     }
-    throw new RoundupError('model_failed', 'the model request failed');
+    throw new RoundupError('model_failed', 'the model request failed', {}, billed);
   }
   // The request was made and billed whatever happens next: a failure from
   // here carries the usage, so the ledger records the real cost (review F3).
