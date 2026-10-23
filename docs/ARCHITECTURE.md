@@ -648,3 +648,20 @@ checked at render time against a digest pinned in code, each address verified by
 checksum, the QR code drawn in-process (`qrcode-generator` 2.0.4, the one new dependency).
 No role or capability changes; the data-access layer, the audit store, the limiter and the
 public-address configuration are reused. The report is `docs/CAS-008-REPORT.md`.
+
+## 23. CAS-010: the terminal grid
+
+The dashboard's presentation follows the terminal-grid template of D47 in the existing palette:
+one stylesheet on the nine tokens, the system monospaced stack, a fixed scanline overlay that
+intercepts nothing, a glow behind titles and the prompt, a blinking prompt, all removed under
+the user's motion and contrast preferences. The protected shell is a sidebar of sections with
+monospaced glyphs (plain anchors, so choosing a section renders the shell again) and the current
+section marked from a request header the proxy sets, a status
+block stating the build (`RAILWAY_GIT_COMMIT_SHA`, through the configuration), the latest week
+run and the data instant (the last successful import's completion, `latestCompletedImportBatch`
+in `@cas/database`, rendered in `America/Toronto` with its offset), and a header bar with the
+same instant. Every protected table sits in a section block with a title bar; the week page's
+filters are links in a filter bar that set the query parameters the page already reads. Nothing
+is fetched, no script is added, no dependency changes, and no route, capability or data-access
+contract moves. The memory store's email path gains a local file sink for a developer's or a
+browser test's one-time code. The report is `docs/CAS-010-REPORT.md`.

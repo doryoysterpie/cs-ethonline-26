@@ -23,7 +23,7 @@ test.describe('sign-in, sessions and sign-out', () => {
     page,
   }) => {
     const { accounts } = await credentials();
-    await signIn(page, accounts.judge.username, accounts.judge.password);
+    await signIn(page, accounts.reader.email);
     const cookie = (await page.context().cookies()).find((entry) => entry.name === SESSION_COOKIE);
     expect(cookie).toBeDefined();
     expect(cookie?.httpOnly).toBe(true);
@@ -45,7 +45,7 @@ test.describe('sign-in, sessions and sign-out', () => {
     expect([302, 307]).toContain(protectedPage.status());
     expect(protectedPage.headers()['location']).toContain('/login');
     const { accounts } = await credentials();
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     const me = await page.request.get('/api/me');
     expect(me.status()).toBe(200);
     const body = (await me.json()) as { username: string; role: string; capabilities: string[] };
@@ -61,7 +61,7 @@ test.describe('sign-in, sessions and sign-out', () => {
     request,
   }) => {
     const { accounts } = await credentials();
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     const token = await sessionCookie(page);
     expect(token).not.toBeNull();
     await page.getByRole('button', { name: 'Sign out' }).click();
@@ -93,7 +93,7 @@ test.describe('sign-in, sessions and sign-out', () => {
     const { accounts } = await credentials();
     const first = await browser.newContext();
     const firstPage = await first.newPage();
-    await signIn(firstPage, accounts.judge.username, accounts.judge.password);
+    await signIn(firstPage, accounts.reader.email);
     const firstToken =
       (await first.cookies()).find((cookie) => cookie.name === SESSION_COOKIE)?.value ?? '';
     // Present the first session while signing in again: it must be closed, not continued.

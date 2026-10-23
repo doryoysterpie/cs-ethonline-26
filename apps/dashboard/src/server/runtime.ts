@@ -4,6 +4,7 @@ import type { Database } from '@cas/database';
 
 import type { EmailProvider } from './auth/email-provider.ts';
 import { loadOtpEmailConfig, type OtpEmailConfig } from './auth/email-config.ts';
+import { LOCAL_EMAIL_FILE_VARIABLE, localEmailProvider } from './auth/local-email.ts';
 import { SessionService, type SessionServiceOptions } from './auth/session.ts';
 import type { Stores } from './auth/store.ts';
 import { openStores } from './auth/stores.ts';
@@ -24,11 +25,15 @@ import { workspace } from './packages.ts';
  * (development and tests, never production); this is the same restriction
  * applied to email delivery, so a developer or a test does not also need a
  * real Resend key and a real pepper just to load the runtime. The provider
- * is never called for real work while this branch is active: production
- * always uses the PostgreSQL store, which always requires `loadOtpEmailConfig`.
+ * writes each message to the local file the developer names, or drops it
+ * when none is named (CAS-010); production always uses the PostgreSQL store,
+ * which always requires `loadOtpEmailConfig`.
  */
-function localOtpEmailConfig(): OtpEmailConfig {
-  const provider: EmailProvider = { send: async () => undefined };
+function localOtpEmailConfig(env: Readonly<Record<string, string | undefined>>): OtpEmailConfig {
+  const file = env[LOCAL_EMAIL_FILE_VARIABLE]?.trim();
+  const provider: EmailProvider = localEmailProvider(
+    file === undefined || file.length === 0 ? null : file,
+  );
   return { provider, pepper: 'local-development-pepper-not-a-production-secret' };
 }
 
@@ -135,7 +140,9 @@ export function getRuntime(): Promise<Runtime> {
       );
       const stores = await openStores(config, database);
       const otp =
-        config.accountStore === 'memory' ? localOtpEmailConfig() : loadOtpEmailConfig(process.env);
+        config.accountStore === 'memory'
+          ? localOtpEmailConfig(process.env)
+          : loadOtpEmailConfig(process.env);
       const modelConfig = loadModelConfig(process.env);
       const readerConfig = loadReaderConfig(process.env);
       const supportConfig = loadSupportConfig(process.env);

@@ -948,27 +948,44 @@ describe('data-access layer against PostgreSQL', () => {
   }
 
   describe('the shell status (CAS-010)', () => {
+    /** What the database holds now: the schema is shared with the other blocks, which seed weeks and imports of their own. */
+    const expected = async () => {
+      const week = await isolated.db.withClient((c) =>
+        c.query<{ id: string }>(
+          `SELECT id FROM week_runs ORDER BY window_end DESC, started_at DESC, id LIMIT 1`,
+        ),
+      );
+      const batch = await isolated.db.withClient((c) =>
+        c.query<{ completed_at: string }>(
+          `SELECT to_json(completed_at) #>> '{}' AS completed_at FROM import_batches
+            WHERE status = 'completed' AND completed_at IS NOT NULL
+            ORDER BY completed_at DESC, id DESC LIMIT 1`,
+        ),
+      );
+      return {
+        weekId: week.rows[0]?.id ?? null,
+        asOf: Date.parse(batch.rows[0]?.completed_at ?? ''),
+      };
+    };
+
     it('states the build, the latest week and the last successful import as the data instant, for every role, and refuses nobody signed in', async () => {
       const { rt, persisted } = await persistentRuntime(null, isolated, null);
+      const before = await expected();
       for (const role of ROLES) {
         const status = await shellStatus(rt, persisted[role]);
         expect(status.build).toBe('local');
-        expect(status.latestWeek).toBeNull();
-        // The seeded pipeline's import completed: its instant is the data instant.
-        const batch = await isolated.db.withClient((c) =>
-          c.query<{ completed_at: string }>(
-            `SELECT to_json(completed_at) #>> '{}' AS completed_at FROM import_batches WHERE id = $1`,
-            [seeded.batchId],
-          ),
-        );
-        expect(Date.parse(status.asOf ?? '')).toBe(Date.parse(batch.rows[0]?.completed_at ?? ''));
+        expect(status.latestWeek?.id ?? null).toBe(before.weekId);
+        // The seeded pipeline's import completed: the latest completion is the data instant.
+        expect(Date.parse(status.asOf ?? '')).toBe(before.asOf);
       }
       expect(await kindOf(shellStatus(rt, null))).toBe('authentication');
-      // A week run, once one exists, is the latest by its window.
-      const week = await seedWeek(isolated.db);
-      const after = await shellStatus(rt, persisted.reader);
-      expect(after.latestWeek?.id).toBe(week.weekRunId);
-      expect(JSON.stringify(after)).not.toContain(HOSTILE_TITLE.slice(0, 8));
+      // A week run, once seeded, is reported when it is the latest by its window.
+      await seedWeek(isolated.db);
+      const after = await expected();
+      const status = await shellStatus(rt, persisted.reader);
+      expect(status.latestWeek?.id ?? null).toBe(after.weekId);
+      expect(Date.parse(status.asOf ?? '')).toBe(after.asOf);
+      expect(JSON.stringify(status)).not.toContain(HOSTILE_TITLE.slice(0, 8));
     });
   });
 

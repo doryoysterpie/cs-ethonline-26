@@ -10,7 +10,7 @@ test.describe('hostile stored content', () => {
       dialogs.push(dialog.message());
       void dialog.dismiss();
     });
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     await page.goto(`/incidents/${seeded.clusteringRunId}/${seeded.hostileIncidentId}`);
     const cell = page.getByRole('cell', { name: /alert\('x'\)/u });
     await expect(cell).toBeVisible();
@@ -34,7 +34,7 @@ test.describe('hostile stored content', () => {
       dialogs.push(dialog.message());
       void dialog.dismiss();
     });
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     const url = `/drafts/${seeded.evidenceRunId}?start=2026-09-02T00:00:00Z&end=2026-09-09T00:00:00Z`;
     await page.goto(url);
     const hostile = [
@@ -92,7 +92,7 @@ test.describe('hostile stored content', () => {
     page,
   }) => {
     const { accounts, seeded } = await credentials();
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     const url = `/drafts/${seeded.evidenceRunId}?start=2026-09-03T00:00:00Z&end=2026-09-10T00:00:00Z`;
     await page.goto(url);
     await page.getByLabel('Markdown').fill(`# ok ${String.fromCodePoint(0x202e)} reversed`);

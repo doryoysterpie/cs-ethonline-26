@@ -1,5 +1,4 @@
 import { headers } from 'next/headers';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -90,7 +89,11 @@ function StatusBlock({
  * and redirects when there is none; every page inside still calls the
  * data-access layer, which checks again. Navigation shows only what the
  * principal may open, and each hidden entry is also refused by the layer if
- * typed by hand. The status block states only what the dashboard can state
+ * typed by hand. The sidebar's links are plain anchors, full navigations, so
+ * choosing a section renders the shell again with the section marked and the
+ * status block fresh; a client-side navigation through a page's own link
+ * keeps the shell as last rendered, the price of adding no script for the
+ * look (CAS-010). The status block states only what the dashboard can state
  * truthfully; a line the layer refuses is not shown.
  */
 export default async function ProtectedLayout({ children }: { readonly children: ReactNode }) {
@@ -108,12 +111,12 @@ export default async function ProtectedLayout({ children }: { readonly children:
         <ul>
           {SECTIONS.filter((s) => s.needs === null || holds(principal, s.needs)).map((s) => (
             <li key={s.href}>
-              <Link href={s.href} aria-current={isCurrent(pathname, s.href) ? 'page' : undefined}>
+              <a href={s.href} aria-current={isCurrent(pathname, s.href) ? 'page' : undefined}>
                 <span className="glyph" aria-hidden="true">
                   {s.glyph}
                 </span>
                 {s.label}
-              </Link>
+              </a>
             </li>
           ))}
         </ul>

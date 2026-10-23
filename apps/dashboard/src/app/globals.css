@@ -233,9 +233,10 @@ a {
 /* The header bar: the prompt, the product name, and the data instant. */
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: 1rem;
+  gap: 0.25rem 1rem;
   padding: 0.6rem 2rem;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -243,6 +244,7 @@ a {
 }
 
 .topbar .product {
+  white-space: nowrap;
   color: var(--emphasis);
   text-transform: uppercase;
   letter-spacing: 0.06em;
