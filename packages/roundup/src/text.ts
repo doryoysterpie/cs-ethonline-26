@@ -13,11 +13,26 @@
  * reaches the export.
  */
 
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
+/**
+ * What the export removes from every slot text, model-written or recorded:
+ * the C0 and C1 controls, and the invisible characters that steer or hide
+ * text (the bidirectional controls U+061C, U+200E, U+200F, U+202A to U+202E
+ * and U+2066 to U+2069; the zero-width characters U+200B to U+200D and
+ * U+FEFF). Stored text keeps them exactly (threat model RR13); the
+ * copy-ready Markdown is a rendering, and removal is its escape. Global, so
+ * every occurrence goes (re-review of 22 October 2026, RR5).
+ */
+const CONTROL =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/gu;
 const LINE_BREAK = /[\r\n\u2028\u2029]/u;
 const BLOCK_START = /^\s*(?:[#>+\-*=~|`]|\d{1,9}[.)])/u;
 const WWW = /\bwww\./iu;
+
+function hasControl(value: string): boolean {
+  CONTROL.lastIndex = 0;
+  return CONTROL.test(value);
+}
 
 export type InlineTextIssue =
   | 'line_break'
@@ -35,7 +50,7 @@ export type InlineTextIssue =
 export function inlineSlotTextIssue(value: string): InlineTextIssue | null {
   if (value.trim().length === 0) return 'empty';
   if (LINE_BREAK.test(value)) return 'line_break';
-  if (CONTROL.test(value)) return 'control_character';
+  if (hasControl(value)) return 'control_character';
   if (value.includes('<') || value.includes('>')) return 'html';
   if (value.includes('[') || value.includes(']') || value.includes('](')) return 'link';
   if (value.includes('://') || WWW.test(value)) return 'url';

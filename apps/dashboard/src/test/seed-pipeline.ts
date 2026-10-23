@@ -364,9 +364,14 @@ export async function seedLargeWeek(
   db: Database,
   groups: number,
   rowsPerGroup: number,
+  options: {
+    /** The last `carriedGroups` groups are posted before the window and first seen inside it: carried incidents. */
+    readonly carriedGroups?: number | undefined;
+  } = {},
 ): Promise<SeededWeek> {
   const batchId = randomUUID();
   const total = groups * rowsPerGroup;
+  const carriedFrom = groups - (options.carriedGroups ?? 0) + 1;
   await db.withTransaction(async (tx) => {
     await tx.query(
       `INSERT INTO import_batches (
@@ -399,7 +404,8 @@ export async function seedLargeWeek(
        SELECT gen_random_uuid(), $1::uuid, (g - 1) * $3::int + r, 'replay', 'accepted',
               '["TRUE"]'::jsonb, '{"ch":"TRUE"}'::jsonb, 'TRUE',
               u.canonical_url, 'Security',
-              ('2026-10-20T10:00:00.000Z'::timestamptz + (r || ' minutes')::interval),
+              (CASE WHEN g >= $4::int THEN '2026-10-12T08:00:00.000Z'::timestamptz
+                    ELSE '2026-10-20T10:00:00.000Z'::timestamptz END + (r || ' minutes')::interval),
               'Ransomware halts Orgline' || g || 'corp terminal operations, report ' || r,
               'Orgline' || g || 'corp said terminal systems were encrypted overnight; report ' || r || '.',
               'html-to-text@1', u.canonical_url, u.id,
@@ -407,7 +413,7 @@ export async function seedLargeWeek(
          FROM generate_series(1, $2::int) AS g
          CROSS JOIN generate_series(1, $3::int) AS r
          JOIN url_groups u ON u.canonical_url = 'https://l.example/' || g`,
-      [batchId, groups, rowsPerGroup],
+      [batchId, groups, rowsPerGroup, carriedFrom],
     );
   });
   const week = await runWeek(db, { window: WEEK_WINDOW, batchId, categories: ['cyberattack'] });

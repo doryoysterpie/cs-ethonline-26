@@ -291,6 +291,7 @@ export {
   lastSelectionRevision,
   listIncidentMemberRefs,
   listLatestIssueSelections,
+  listCarriedIncidents,
   listWeekIncidents,
   listWeekRunChildren,
   listWeekRuns,

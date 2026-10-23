@@ -11,8 +11,10 @@ import type { NextConfig } from 'next';
  * - No production browser source map, no `X-Powered-By`, no remote image
  *   pattern of any kind (the app never uses `next/image`).
  * - `authInterrupts` enables `forbidden()` so a refused page answers 403.
- * - `serverActions.bodySizeLimit` bounds every action body at 1 MB, which
- *   holds the largest draft revision the data-access layer accepts.
+ * - `serverActions.bodySizeLimit` bounds every action body at 2 MB, which
+ *   holds the largest round-up revision the data-access layer accepts
+ *   (400,000 characters, UTF-8; re-review of 22 October 2026, RR3) and the
+ *   largest draft revision (200,000).
  * - Static assets get the same baseline headers the proxy sets; the proxy
  *   adds the per-request nonce policy for every rendered response.
  */
@@ -25,7 +27,7 @@ const config: NextConfig = {
   // Every server action's body is bounded here, explicitly rather than by
   // the framework default, and the bound is tested against the largest
   // legitimate action, a draft revision (CAS-006, release blocker 7).
-  experimental: { authInterrupts: true, serverActions: { bodySizeLimit: '1mb' } },
+  experimental: { authInterrupts: true, serverActions: { bodySizeLimit: '2mb' } },
   headers: async () => [
     {
       source: '/:path*',
