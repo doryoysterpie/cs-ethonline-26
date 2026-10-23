@@ -51,7 +51,7 @@ amendment of 22 October 2026).
 after its independent review and is not re-audited; no document may read as saying otherwise
 (`docs/SPRINT-5-REPORT.md`, section 16). Its rules stand as written: a file can be ingested as
 fixture or replay only; live evidence comes from the Graph client, never from a file; a claim
-is a record, not a UUID. Migrations 0001 to 0018 are applied by the deploy step before the
+is a record, not a UUID. Migrations 0001 to 0020 are applied by the deploy step before the
 dashboard serves traffic.
 
 **What is on `main`, and what is in review.** Four post-event units merged on 22 October
@@ -74,8 +74,10 @@ CAS-004, the round-up generated through the rundown template and edited by the o
 (migration 0015, `@cas/roundup`, the `owner` role), merged at `6f25fb0` after four review rounds
 and a PASS at `fcdf88c` (`docs/CAS-004-REPORT.md`, section 7).
 
-Merged into `main` on 22 October 2026 as one train, before independent review, with one combined
-audit of `main` at `881d5a3` requested (`docs/AUDIT-LEDGER.md`): CAS-005, the article written
+Merged into `main` on 22 October 2026 as one train, before independent review; the combined
+audit of `main` at `881d5a3` returned CHANGES REQUIRED on 23 October 2026 (seven findings,
+`docs/AUDIT-LEDGER.md`), corrected with tests on the correction pull request that follows,
+re-review pending: CAS-005, the article written
 from the full sources behind the system's first outbound fetch under the fetch policy adopted as
 D36 (migration 0016, `@cas/source-reader`, `@cas/article`), on pull request 26
 (`docs/CAS-005-REPORT.md`); CAS-007, reader sign-up with owner approval, the `reader` role in

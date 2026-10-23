@@ -79,7 +79,11 @@ export async function readBounded(
       const result = await nextOrAbort(iterator, signal);
       if (result.done) break;
       const chunk: Uint8Array = result.value;
-      if (total + chunk.length >= bound) {
+      // Cut only past the bound: a body that ends exactly at it is whole, so
+      // the loop reads on after an at-bound chunk and the stream's end, not
+      // the equality, decides (train review F2). A chunk that crosses the
+      // bound is kept to the bound and marks the cut.
+      if (total + chunk.length > bound) {
         chunks.push(chunk.subarray(0, bound - total));
         total = bound;
         cut = true;

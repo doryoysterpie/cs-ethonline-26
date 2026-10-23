@@ -250,3 +250,38 @@ and a fresh clone from the remote both pass install, `pnpm audit`, the bill-of-m
 `verify` (exit 0, 1,115 offline tests, 31 tool tests) and `test:db` (exit 0, 311: database 109,
 worker 119, dashboard 34, mcp-server 49). CI run 39845792274 at `38fb068` is green on every
 check, code scanning included. Pull request 27 carries the unit, stacked on pull request 26.
+
+## 7. Corrections after the train review: F4 and F5
+
+The independent review of `main` at `881d5a3` (`docs/AUDIT-LEDGER.md`) returned CHANGES REQUIRED
+with two findings against this unit, one High. Corrected on `train/26-28-corrections`.
+
+- **F4, Medium. An expired, unverified request blocked its address for good.** The one-open-
+  request index counted every undecided row, nothing closed an unverified row past its expiry,
+  and the admin's pending list never showed it, so an address that let one ten-minute code
+  lapse could never ask again. Correction: migration 0019 adds `superseded_at` to
+  `signup_requests` with its shape (set only on an unverified, undecided row at or after its
+  expiry), recreates the open-request index to ignore a superseded row, and replaces the guard
+  function in place so the column moves once and a superseded row changes no further; the next
+  request for the address supersedes such a row in the same transaction as its own insert;
+  `findOpenSignupRequest`, the attempt and the verification exclude superseded rows, and the
+  verify step answers a superseded request as expired. A verified request awaiting a decision is
+  never superseded. The two unauthenticated steps take an optional instant so a test can advance
+  the clock. Tests: against PostgreSQL in the database package (a stale request superseded at
+  the new request's instant, closed to attempts and verification, immutable thereafter; a live
+  and a verified request never superseded, by the code and by the table) and in the dashboard (a
+  request, the clock past the expiry, a second request that sends a new code, the first answering
+  expired and the second verifying).
+- **F5, High. Approval provisioned the account outside the decision.** `approveSignup` created
+  the reader through the invitation path, then decided the request in a second transaction, so a
+  lost race or a failure between the two left an active account for an undecided or denied
+  request. Correction: one transaction locks the request (`lockSignupRequest`, `FOR UPDATE`),
+  re-checks that it awaits a decision and that the address holds no account, inserts the
+  account, records the decision and writes both audit events (`account_provisioned`,
+  `signup_approved`); the email is sent after the commit; a concurrent denial waits on the lock
+  and then finds the request decided. The accounts live in the same database as the requests
+  only under the PostgreSQL stores, so approval under the memory stores is refused with
+  `persistent_accounts_required`. Tests: approve and deny raced four times, exactly one decision
+  each time and an account exactly when it is the approval, with both events; a failure injected
+  at each of the six statements of the transaction in turn, after which no account, no decision
+  and no event of the approval exists and the request still awaits one; then the approval whole.

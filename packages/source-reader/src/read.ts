@@ -10,6 +10,24 @@ import { parseRobots, robotsAllows, type RobotsRules } from './robots.js';
 import { checkTarget, type CheckedTarget, type Resolver } from './target.js';
 import type { RawResponse, RawTransport } from './transport.js';
 
+/**
+ * R10's preflight: the declared `Content-Length`, strictly parsed, or null
+ * when none is declared. A declaration that is not one decimal number, or
+ * that conflicts with a repeated declaration, fails closed (train review F1):
+ * a server that cannot state its length plainly is not read. A declared
+ * length below the bound is not trusted; the stream stays bounded.
+ */
+export function declaredLength(headers: Readonly<Record<string, string>>): number | null {
+  const raw = headers['content-length'];
+  if (raw === undefined) return null;
+  const values = raw.split(',').map((value) => value.trim());
+  const first = values[0];
+  if (first === undefined || !/^\d{1,18}$/u.test(first) || values.some((v) => v !== first)) {
+    throw new ReadError('content_length_invalid', 'the declared length is not one number');
+  }
+  return Number(first);
+}
+
 /** One source row of the persisted selection: the only thing ever fetched (R13). */
 export interface SourceToRead {
   readonly sourceRowId: string;
@@ -238,6 +256,12 @@ class Reader {
         const type = mediaType(contentType);
         if (!PERMITTED_TYPES.has(type)) {
           throw new ReadError('content_type_not_permitted', 'the response is not text');
+        }
+        // R10: a declared length over the bound is refused before the first
+        // byte is read (train review F1); the body factory is never called.
+        const declared = declaredLength(response.headers);
+        if (declared !== null && declared > this.limits.bodyBytes) {
+          throw new ReadError('body_limit', 'the declared length is over the bound');
         }
         const { bytes, cut } = await body();
         bytesRead = bytes.length;

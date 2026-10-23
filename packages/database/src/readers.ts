@@ -26,12 +26,14 @@ export interface SignupRequestRecord extends NewSignupRequest {
   readonly decision: SignupDecision | null;
   readonly decidedBy: string | null;
   readonly accountId: string | null;
+  /** Set once by the next request for the address, on an unverified request past its expiry (migration 0019). */
+  readonly supersededAt: string | null;
 }
 
 const COLUMNS = `id, normalized_email, code_digest, attempt_count,
   to_json(requested_at) #>> '{}' AS requested_at, to_json(expires_at) #>> '{}' AS expires_at,
   to_json(verified_at) #>> '{}' AS verified_at, to_json(decided_at) #>> '{}' AS decided_at,
-  decision, decided_by, account_id`;
+  decision, decided_by, account_id, to_json(superseded_at) #>> '{}' AS superseded_at`;
 
 interface Row {
   id: string;
@@ -45,6 +47,7 @@ interface Row {
   decision: SignupDecision | null;
   decided_by: string | null;
   account_id: string | null;
+  superseded_at: string | null;
 }
 
 function toRecord(row: Row): SignupRequestRecord {
@@ -60,15 +63,28 @@ function toRecord(row: Row): SignupRequestRecord {
     decision: row.decision,
     decidedBy: row.decided_by,
     accountId: row.account_id,
+    supersededAt: row.superseded_at,
   };
 }
 
-/** Records a request; `open_exists` when the address already has an undecided one. */
+/**
+ * Records a request; `open_exists` when the address already has a live
+ * undecided one. An open request of the address that is unverified and past
+ * its expiry at the new request's instant is superseded first (train review
+ * F4), in the caller's transaction, so one expired code never blocks the
+ * address; a verified request awaiting a decision is never superseded.
+ */
 export async function insertSignupRequest(
   client: Queryable,
   request: NewSignupRequest,
 ): Promise<'inserted' | 'open_exists'> {
   try {
+    await client.query(
+      `UPDATE signup_requests SET superseded_at = $2::timestamptz
+        WHERE normalized_email = $1 AND decided_at IS NULL AND superseded_at IS NULL
+          AND verified_at IS NULL AND expires_at <= $2::timestamptz`,
+      [request.normalizedEmail, request.requestedAt],
+    );
     await client.query(
       `INSERT INTO signup_requests (id, normalized_email, code_digest, requested_at, expires_at)
        VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)`,
@@ -103,8 +119,26 @@ export async function findOpenSignupRequest(
   normalizedEmail: string,
 ): Promise<SignupRequestRecord | null> {
   const result = await client.query<Row>(
-    `SELECT ${COLUMNS} FROM signup_requests WHERE normalized_email = $1 AND decided_at IS NULL`,
+    `SELECT ${COLUMNS} FROM signup_requests
+      WHERE normalized_email = $1 AND decided_at IS NULL AND superseded_at IS NULL`,
     [normalizedEmail],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : toRecord(row);
+}
+
+/**
+ * The request, locked for the rest of the caller's transaction, so a
+ * decision and what it creates commit together or not at all (train review
+ * F5). Null when unknown.
+ */
+export async function lockSignupRequest(
+  client: Queryable,
+  id: string,
+): Promise<SignupRequestRecord | null> {
+  const result = await client.query<Row>(
+    `SELECT ${COLUMNS} FROM signup_requests WHERE id = $1 FOR UPDATE`,
+    [id],
   );
   const row = result.rows[0];
   return row === undefined ? null : toRecord(row);
@@ -116,7 +150,8 @@ export async function recordSignupAttempt(
   id: string,
 ): Promise<SignupRequestRecord | null> {
   const result = await client.query<Row>(
-    `UPDATE signup_requests SET attempt_count = attempt_count + 1 WHERE id = $1 RETURNING ${COLUMNS}`,
+    `UPDATE signup_requests SET attempt_count = attempt_count + 1
+      WHERE id = $1 AND superseded_at IS NULL RETURNING ${COLUMNS}`,
     [id],
   );
   const row = result.rows[0];
@@ -131,7 +166,7 @@ export async function verifySignupRequest(
 ): Promise<boolean> {
   const result = await client.query(
     `UPDATE signup_requests SET verified_at = $2::timestamptz
-      WHERE id = $1 AND verified_at IS NULL AND decided_at IS NULL`,
+      WHERE id = $1 AND verified_at IS NULL AND decided_at IS NULL AND superseded_at IS NULL`,
     [id, at],
   );
   return (result.rowCount ?? 0) === 1;

@@ -614,9 +614,11 @@ The dashboard gains its second unauthenticated entry point beside sign-in: a sig
 limit per address and per network source, and the same answer whatever the address. Migration
 0017 records requests (`signup_requests`, one-way transitions by guard) and the published mark
 (`output_publications`, append-only, the latest record per output deciding), and retires `judge`
-into `reader` (D43). An admin approves or denies from `/admin/requests`; approval creates a
-`reader` account through the existing invitation path with a per-account expiry and sends a
-fixed email with no sign-in link. A reader holds the four sanitized views and `view:published`;
+into `reader` (D43); migration 0019 adds the supersession of an unverified request past its
+expiry by the next request for the address. An admin approves or denies from `/admin/requests`;
+approval is one transaction that locks the request, creates the `reader` account with a
+per-account expiry, records the decision and writes the audit events, then sends a fixed email
+with no sign-in link. A reader holds the four sanitized views and `view:published`;
 the owner alone holds `publish:output` and marks one revision of a round-up or an article public
 (D42), from the round-up and article pages; `/published` renders the marked revision through the
 sanitiser. Every reader-reachable read passes a per-account fixed-window limit, and
@@ -634,8 +636,13 @@ billing portal; `POST /api/stripe/webhook` receives Stripe's events, the body re
 bound, the `v1` signature verified with Node's crypto (no provider SDK, D44), each event
 recorded once by its identifier. Migration 0018 adds `checkout_sessions` (the hand-off bound to
 its account) and `supporter_events` (append-only, `event_id` unique, the body's digest and never
-the body), plus three audit kinds. The supporter mark is derived from the recorded events by the
-event's own instant, then by arrival; it is a view, never a column and never a capability. The
+the body), plus three audit kinds; migration 0020 adds `checkout_attempts`, one open hand-off
+per account with its idempotency key fixed at creation, bound once to its session and closed
+once. A hand-off runs under a per-account advisory lock and is refused for an account already
+subscribed. The supporter mark is derived from the recorded events by the event's own instant,
+then by arrival, through the binding relation (an event counts for the account it carries or
+whose subscription or customer any event bound to it), per subscription with the account's
+standing the best of them; it is a view, never a column and never a capability. The
 donation page (`/donate`) renders `data/policy/donation-addresses.json`, read at build time and
 checked at render time against a digest pinned in code, each address verified by its own
 checksum, the QR code drawn in-process (`qrcode-generator` 2.0.4, the one new dependency).

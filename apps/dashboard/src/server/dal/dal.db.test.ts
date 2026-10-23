@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { Queryable } from '@cas/database';
+
 import { openMigratedSchema, type IsolatedSchema } from '../../test/isolated-schema.ts';
 import {
   HOSTILE_TITLE,
@@ -26,7 +28,13 @@ import type { EmailMessage } from '../auth/email-provider.ts';
 import { WindowLimiter } from '../http/limits.ts';
 import { signPayload } from '../support/signature.ts';
 import type { StripeClient } from '../support/stripe.ts';
-import { openBillingPortal, recordWebhook, startCheckout, supportView } from './support.ts';
+import {
+  CHECKOUT_ATTEMPT_MINUTES,
+  openBillingPortal,
+  recordWebhook,
+  startCheckout,
+  supportView,
+} from './support.ts';
 import {
   approveSignup,
   denySignup,
@@ -38,9 +46,10 @@ import {
   unpublishOutput,
   verifySignup,
 } from './readers.ts';
+import { OTP_LIFETIME_SECONDS } from '../auth/otp.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
 import type { Principal } from '../auth/session.ts';
-import { isDashboardError } from '../errors.ts';
+import { DashboardError, isDashboardError } from '../errors.ts';
 import { createRuntime, type Runtime } from '../runtime.ts';
 import {
   decideEvidence,
@@ -2528,6 +2537,200 @@ describe('data-access layer against PostgreSQL', () => {
       ).toBe(true);
     });
 
+    it('lets an address ask again once its unverified code expired, and verifies the new code (train review F4)', async () => {
+      const mail = mailbox();
+      const { rt } = await persistentRuntime(null, isolated, null, {
+        emailProvider: mail.provider,
+        otpPepper: PEPPER,
+        publicUrl: 'https://dashboard.example.org',
+      });
+      const t0 = new Date('2026-10-23T12:00:00.000Z');
+      const later = new Date(t0.getTime() + (OTP_LIFETIME_SECONDS + 1) * 1000);
+      const first = await requestSignup(rt, {
+        email: 'retry@example.org',
+        networkKey: 'direct',
+        now: t0,
+      });
+      expect(mail.sent).toHaveLength(1);
+      // Before the expiry the address is held to its open request: silence, no code.
+      await requestSignup(rt, { email: 'retry@example.org', networkKey: 'direct', now: t0 });
+      expect(mail.sent).toHaveLength(1);
+      // Past it, a new request supersedes the stale one and a new code is sent.
+      const second = await requestSignup(rt, {
+        email: 'retry@example.org',
+        networkKey: 'direct',
+        now: later,
+      });
+      expect(second.requestId).not.toBe(first.requestId);
+      expect(mail.sent).toHaveLength(2);
+      expect(
+        await verifySignup(rt, {
+          requestId: first.requestId,
+          code: codeIn(mail.sent[0]),
+          networkKey: 'direct',
+          now: later,
+        }),
+      ).toBe('expired');
+      expect(
+        await verifySignup(rt, {
+          requestId: second.requestId,
+          code: codeIn(mail.sent[1]),
+          networkKey: 'direct',
+          now: later,
+        }),
+      ).toBe('verified');
+    });
+
+    it('approves atomically: a lost race or a failure at any write leaves no account, no decision and no event (train review F5)', async () => {
+      const mail = mailbox();
+      const own = await openMigratedSchema();
+      const { rt, persisted, persistent } = await persistentRuntime(null, own, null, {
+        emailProvider: mail.provider,
+        otpPepper: PEPPER,
+        publicUrl: 'https://dashboard.example.org',
+      });
+      /** A verified request for a fresh address. */
+      const verifiedRequest = async (email: string): Promise<string> => {
+        const before = mail.sent.length;
+        const { requestId } = await requestSignup(rt, { email, networkKey: 'direct' });
+        expect(
+          await verifySignup(rt, {
+            requestId,
+            code: codeIn(mail.sent[before]),
+            networkKey: 'direct',
+          }),
+        ).toBe('verified');
+        return requestId;
+      };
+      const stateOf = async (requestId: string, email: string) => {
+        const request = await own.db.withClient((c) =>
+          c.query<{ decision: string | null; account_id: string | null }>(
+            `SELECT decision, account_id FROM signup_requests WHERE id = $1`,
+            [requestId],
+          ),
+        );
+        const account = await persistent.accounts.findByNormalizedEmail(email);
+        const events = (await persistent.audit.list(500)).filter(
+          (e) =>
+            (e.kind === 'signup_approved' && e.subjectId === requestId) ||
+            (e.kind === 'account_provisioned' && e.subjectAccountId === account?.id),
+        );
+        return {
+          decision: request.rows[0]?.decision ?? null,
+          boundAccount: request.rows[0]?.account_id ?? null,
+          account: account?.id ?? null,
+          events: events.map((e) => e.kind).sort(),
+        };
+      };
+      // The race: approve and deny together, several times; exactly one decision
+      // lands each time, and an account exists exactly when it is the approval.
+      for (let round = 0; round < 4; round += 1) {
+        const email = `race${round}@example.org`;
+        const requestId = await verifiedRequest(email);
+        const outcomes = await Promise.allSettled([
+          approveSignup(rt, persisted.admin, { requestId, expiresAt: null }),
+          denySignup(rt, persisted.admin, { requestId }),
+        ]);
+        expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+        const state = await stateOf(requestId, email);
+        if (outcomes[0]?.status === 'fulfilled') {
+          expect(state.decision).toBe('approved');
+          expect(state.account).not.toBeNull();
+          expect(state.boundAccount).toBe(state.account);
+          expect(state.events).toEqual(['account_provisioned', 'signup_approved']);
+        } else {
+          expect(state.decision).toBe('denied');
+          expect(state).toMatchObject({ account: null, boundAccount: null, events: [] });
+        }
+      }
+      // A failure at every write of the approval, in turn: the k-th statement of
+      // the transaction throws, and nothing of the approval survives it.
+      const email = 'fragile@example.org';
+      const requestId = await verifiedRequest(email);
+      const failingAt = (k: number): Runtime => ({
+        ...rt,
+        database: {
+          schema: own.db.schema,
+          withClient: (work: (client: Queryable) => Promise<unknown>) => own.db.withClient(work),
+          withTransaction: (work: (tx: Queryable) => Promise<unknown>) =>
+            own.db.withTransaction(async (tx) => {
+              let count = 0;
+              const proxy: Queryable = {
+                query: (text, values) => {
+                  count += 1;
+                  if (count === k)
+                    return Promise.reject(new Error(`injected failure at statement ${k}`));
+                  return tx.query(text, values);
+                },
+              } as Queryable;
+              return work(proxy);
+            }),
+        } as unknown as Runtime['database'],
+      });
+      for (let k = 1; k <= 6; k += 1) {
+        let caught: unknown;
+        try {
+          await approveSignup(failingAt(k), persisted.admin, { requestId, expiresAt: null });
+        } catch (error) {
+          caught = error;
+        }
+        expect(caught, `statement ${k}`).toBeDefined();
+        expect(await stateOf(requestId, email), `statement ${k}`).toEqual({
+          decision: null,
+          boundAccount: null,
+          account: null,
+          events: [],
+        });
+      }
+      // Whole again, the approval lands with every record of it.
+      const approved = await approveSignup(rt, persisted.admin, { requestId, expiresAt: null });
+      expect(await stateOf(requestId, email)).toEqual({
+        decision: 'approved',
+        boundAccount: approved.accountId,
+        account: approved.accountId,
+        events: ['account_provisioned', 'signup_approved'],
+      });
+      expect(mail.sent.at(-1)).toMatchObject({
+        to: email,
+        subject: 'Your request to read Latest in Cyber was approved',
+      });
+      // The memory stores cannot hold the approval in one transaction with the request: refused.
+      const { rt: memory, persisted: memoryPrincipals } = await (async () => {
+        const stores = await openMemoryStores(null);
+        const runtime = createRuntime(
+          {
+            environment: 'local',
+            accountStore: 'memory',
+            memorySeedPath: null,
+            databaseSchema: own.name,
+            trustForwardedFor: false,
+            trustedProxyHops: 1,
+          },
+          stores,
+          own.db,
+          { otpPepper: PEPPER, emailProvider: mail.provider },
+        );
+        const account = await syntheticAccount('admin');
+        await insertSynthetic(stores, account);
+        const principal: Principal = {
+          accountId: account.record.id,
+          username: account.record.username,
+          normalizedEmail: null,
+          role: 'admin',
+          sessionId: randomUUID(),
+          sessionToken: 'c'.repeat(43),
+        };
+        return { rt: runtime, persisted: { admin: principal } };
+      })();
+      const another = await verifiedRequest('memory@example.org');
+      expect(
+        await kindOf(
+          approveSignup(memory, memoryPrincipals.admin, { requestId: another, expiresAt: null }),
+        ),
+      ).toBe('validation');
+      await own.close();
+    });
+
     it('throttles a burst per address and per source with one count-only event each, and limits a reader’s reads', async () => {
       const mail = mailbox();
       const { rt, persisted, persistent } = await persistentRuntime(null, isolated, null, {
@@ -2714,13 +2917,17 @@ describe('data-access layer against PostgreSQL', () => {
       });
       const { url } = await startCheckout(rt, reader, { networkKey: 'direct' });
       expect(url).toBe('https://checkout.stripe.com/c/pay/cs_test_dal00000001');
-      expect(stripe.calls[0]).toEqual({
+      expect(stripe.calls[0]).toMatchObject({
         priceId: 'price_Test00000001',
         accountId: reader.accountId,
+        customerId: null,
         customerEmail: null,
         successUrl: 'https://dashboard.example.org/support?notice=checkout_returned',
         cancelUrl: 'https://dashboard.example.org/support?notice=checkout_cancelled',
       });
+      expect((stripe.calls[0] as { idempotencyKey: string }).idempotencyKey).toMatch(
+        /^[0-9a-f-]{36}$/u,
+      );
       // Stripe completes the session, binding the customer and the subscription to the account.
       const t0 = 1_800_000_000;
       const completed = envelope('evt_dal_0000000001', 'checkout.session.completed', t0, {
@@ -2868,6 +3075,217 @@ describe('data-access layer against PostgreSQL', () => {
           .map((e) => e.code)
           .sort(),
       ).toEqual(['limited', 'limited', 'redirected']);
+    });
+
+    it('counts a subscription status delivered before the binding once Checkout binds it, and audits the change then (train review F6)', async () => {
+      const stripe = fakeStripe();
+      const own = await openMigratedSchema();
+      const { rt, persisted, persistent } = await persistentRuntime(null, own, null, {
+        publicUrl: 'https://dashboard.example.org',
+        support: {
+          stripe: stripe.client,
+          webhookSecret: SECRET,
+          priceId: 'price_Test00000001',
+          mode: 'test',
+        },
+      });
+      const reader = persisted.reader;
+      const { url } = await startCheckout(rt, reader, { networkKey: 'direct' });
+      const sessionId = url.slice(url.lastIndexOf('/') + 1);
+      const t0 = 1_800_100_000;
+      // The subscription's activation arrives first, naming no session and no known customer.
+      const created = envelope('evt_bind_000000001', 'customer.subscription.created', t0, {
+        id: 'sub_bind_00000001',
+        customer: 'cus_bind_00000001',
+        status: 'active',
+      });
+      expect(await recordWebhook(rt, signed(created, t0 + 5))).toEqual({
+        status: 200,
+        code: 'webhook_recorded',
+      });
+      expect((await supportView(rt, reader)).mark).toBe('none');
+      // Checkout completes and binds the customer and the subscription: the earlier status now counts.
+      const completed = envelope('evt_bind_000000002', 'checkout.session.completed', t0 + 10, {
+        id: sessionId,
+        customer: 'cus_bind_00000001',
+        subscription: 'sub_bind_00000001',
+        client_reference_id: reader.accountId,
+      });
+      expect((await recordWebhook(rt, signed(completed, t0 + 15))).code).toBe('webhook_recorded');
+      expect(await supportView(rt, reader)).toMatchObject({ mark: 'supporter' });
+      const events = await persistent.audit.list(200);
+      expect(
+        events
+          .filter((e) => e.kind === 'supporter_changed' && e.subjectAccountId === reader.accountId)
+          .map((e) => [e.code, e.subjectId]),
+      ).toEqual([['supporter', 'evt_bind_000000002']]);
+      // The attempt that held the session closed with it; a later hand-off is refused as already active.
+      const attempts = await own.db.withClient((c) =>
+        c.query<{ closed: boolean }>(
+          `SELECT closed_at IS NOT NULL AS closed FROM checkout_attempts WHERE account_id = $1`,
+          [reader.accountId],
+        ),
+      );
+      expect(attempts.rows).toEqual([{ closed: true }]);
+      expect(await kindOf(startCheckout(rt, reader, { networkKey: 'direct' }))).toBe(
+        'conflict:support_already_active',
+      );
+      await own.close();
+    });
+
+    it('opens one subscription per account: a double submission makes one request, a retry reuses the key and the session, an active account is refused, and a second subscription is never hidden by the cancellation of the first (train review F7)', async () => {
+      const own = await openMigratedSchema();
+      let failNext = 0;
+      const calls: {
+        idempotencyKey: string;
+        customerId: string | null;
+        customerEmail: string | null;
+      }[] = [];
+      const byKey = new Map<string, { id: string; url: string }>();
+      let issued = 0;
+      const stripe: StripeClient = {
+        createCheckoutSession: async (input) => {
+          calls.push({
+            idempotencyKey: input.idempotencyKey,
+            customerId: input.customerId,
+            customerEmail: input.customerEmail,
+          });
+          // The provider is idempotent by key: the same key answers the same session.
+          let session = byKey.get(input.idempotencyKey);
+          if (session === undefined) {
+            issued += 1;
+            const id = `cs_test_f7_${String(issued).padStart(8, '0')}`;
+            session = { id, url: `https://checkout.stripe.com/c/pay/${id}` };
+            byKey.set(input.idempotencyKey, session);
+          }
+          if (failNext > 0) {
+            // The request landed at the provider; the answer was lost on the way back.
+            failNext -= 1;
+            throw new DashboardError(
+              'unavailable',
+              'checkout_unavailable',
+              'the payment provider did not answer',
+            );
+          }
+          return session;
+        },
+        createPortalSession: async () => ({ url: 'https://billing.stripe.com/p/session?secret=x' }),
+      };
+      const { rt, persisted, persistent } = await persistentRuntime(null, own, null, {
+        publicUrl: 'https://dashboard.example.org',
+        support: { stripe, webhookSecret: SECRET, priceId: 'price_Test00000001', mode: 'test' },
+        limits: {
+          signupAddress: new WindowLimiter(50, 900),
+          signupNetwork: new WindowLimiter(50, 900),
+          readerReads: new WindowLimiter(50, 900),
+          checkoutAccount: new WindowLimiter(50, 900),
+        },
+      });
+      const editor = persisted.editor;
+      // A double submission: one request to the provider; both tabs end on the same session, or
+      // the second is refused at once while the first is being prepared.
+      const outcomes = await Promise.all(
+        [0, 1].map(async () => {
+          try {
+            return (await startCheckout(rt, editor, { networkKey: 'direct' })).url;
+          } catch (error) {
+            return isDashboardError(error) ? `${error.kind}:${error.code}` : 'unexpected';
+          }
+        }),
+      );
+      expect(calls).toHaveLength(1);
+      const urls = outcomes.filter((o) => o.startsWith('https://'));
+      expect(urls.length).toBeGreaterThanOrEqual(1);
+      expect(new Set(urls).size).toBe(1);
+      expect(
+        outcomes.every((o) => o.startsWith('https://') || o === 'conflict:checkout_in_progress'),
+      ).toBe(true);
+      const firstUrl = urls[0] ?? '';
+      // A third submission inside the window is the same session again, with no request.
+      expect((await startCheckout(rt, editor, { networkKey: 'direct' })).url).toBe(firstUrl);
+      expect(calls).toHaveLength(1);
+      const sessions = await own.db.withClient((c) =>
+        c.query<{ n: string }>(
+          `SELECT count(*)::text AS n FROM checkout_sessions WHERE account_id = $1`,
+          [editor.accountId],
+        ),
+      );
+      expect(sessions.rows[0]?.n).toBe('1');
+      // Past the window the attempt closes; a new one asks the provider under a new key.
+      const later = new Date(Date.now() + (CHECKOUT_ATTEMPT_MINUTES + 1) * 60_000);
+      const second = await startCheckout(rt, editor, { networkKey: 'direct', now: later });
+      expect(second.url).not.toBe(firstUrl);
+      expect(calls).toHaveLength(2);
+      expect(calls[1]?.idempotencyKey).not.toBe(calls[0]?.idempotencyKey);
+      // An ambiguous answer: the provider made the session but the answer was lost. The attempt
+      // keeps its key; the retry asks under the same key and receives that same session.
+      const much = new Date(later.getTime() + (CHECKOUT_ATTEMPT_MINUTES + 1) * 60_000);
+      failNext = 1;
+      expect(await kindOf(startCheckout(rt, editor, { networkKey: 'direct', now: much }))).toBe(
+        'unavailable:checkout_unavailable',
+      );
+      const retried = await startCheckout(rt, editor, { networkKey: 'direct', now: much });
+      expect(calls).toHaveLength(4);
+      expect(calls[3]?.idempotencyKey).toBe(calls[2]?.idempotencyKey);
+      expect(retried.url).toBe(byKey.get(calls[2]?.idempotencyKey ?? '')?.url);
+      // Checkout completes on the retried session: the account is a supporter; a further hand-off is refused.
+      const retriedId = retried.url.slice(retried.url.lastIndexOf('/') + 1);
+      const t0 = 1_800_200_000;
+      const completed = envelope('evt_f7_0000000001', 'checkout.session.completed', t0, {
+        id: retriedId,
+        customer: 'cus_f7_000000001',
+        subscription: 'sub_f7_000000001',
+        client_reference_id: editor.accountId,
+      });
+      expect((await recordWebhook(rt, signed(completed, t0 + 5))).code).toBe('webhook_recorded');
+      const active = envelope('evt_f7_0000000002', 'customer.subscription.created', t0 + 10, {
+        id: 'sub_f7_000000001',
+        customer: 'cus_f7_000000001',
+        status: 'active',
+      });
+      expect((await recordWebhook(rt, signed(active, t0 + 15))).code).toBe('webhook_recorded');
+      expect((await supportView(rt, editor)).mark).toBe('supporter');
+      expect(await kindOf(startCheckout(rt, editor, { networkKey: 'direct', now: much }))).toBe(
+        'conflict:support_already_active',
+      );
+      expect(calls).toHaveLength(4);
+      // A second subscription of the same customer, however it came to be, keeps the mark when the
+      // first is cancelled; only when both are cancelled does the mark fall; a hand-off is open again
+      // then, and it reuses the customer the account is bound to.
+      const secondSub = envelope('evt_f7_0000000003', 'customer.subscription.created', t0 + 20, {
+        id: 'sub_f7_000000002',
+        customer: 'cus_f7_000000001',
+        status: 'active',
+      });
+      expect((await recordWebhook(rt, signed(secondSub, t0 + 25))).code).toBe('webhook_recorded');
+      const cancelFirst = envelope('evt_f7_0000000004', 'customer.subscription.deleted', t0 + 30, {
+        id: 'sub_f7_000000001',
+        customer: 'cus_f7_000000001',
+        status: 'canceled',
+      });
+      expect((await recordWebhook(rt, signed(cancelFirst, t0 + 35))).code).toBe('webhook_recorded');
+      expect((await supportView(rt, editor)).mark).toBe('supporter');
+      const cancelSecond = envelope('evt_f7_0000000005', 'customer.subscription.deleted', t0 + 40, {
+        id: 'sub_f7_000000002',
+        customer: 'cus_f7_000000001',
+        status: 'canceled',
+      });
+      expect((await recordWebhook(rt, signed(cancelSecond, t0 + 45))).code).toBe(
+        'webhook_recorded',
+      );
+      expect((await supportView(rt, editor)).mark).toBe('none');
+      const again = await startCheckout(rt, editor, {
+        networkKey: 'direct',
+        now: new Date(much.getTime() + 60 * 60_000),
+      });
+      expect(again.url).toMatch(/^https:\/\/checkout\.stripe\.com\//u);
+      expect(calls[4]).toMatchObject({ customerId: 'cus_f7_000000001', customerEmail: null });
+      const changes = (await persistent.audit.list(300))
+        .filter((e) => e.kind === 'supporter_changed' && e.subjectAccountId === editor.accountId)
+        .map((e) => e.code)
+        .reverse();
+      expect(changes).toEqual(['supporter', 'none']);
+      await own.close();
     });
   });
 });

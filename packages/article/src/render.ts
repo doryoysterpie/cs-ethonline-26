@@ -32,6 +32,13 @@ export function renderMarkdown(slots: ArticleSlots, input: ArticleInput): string
     const marks = [...new Set(paragraph.citations)].map((id) => `[${number(id)}]`).join('');
     return `${paragraph.text} ${marks}`.trim();
   });
+  // The naming sentence's citations are numbered before the list is built,
+  // so a source cited only there has its entry (train review F3): every
+  // marker in the export resolves to exactly one Sources line.
+  const naming =
+    slots.victimNaming.named && slots.victimNaming.organization !== null
+      ? `Named: ${slots.victimNaming.organization}, on ${slots.victimNaming.basis === 'primary_statement' ? 'a primary statement' : 'two independent reports'} (${[...new Set(slots.victimNaming.citations)].map((id) => `[${number(id)}]`).join('')}).`
+      : 'The organization is not named: no primary statement and fewer than two independent reports among the sources read.';
   const sources = [...numbers.entries()].map(([id, n]) => {
     const row = rows.get(id);
     return row === undefined ? `${n}. (unknown source)` : `${n}. ${row.publisher}: ${row.url}`;
@@ -42,10 +49,6 @@ export function renderMarkdown(slots: ArticleSlots, input: ArticleInput): string
       ? `- (unknown source)`
       : `- ${row.publisher}: ${row.url} (${row.reading.code ?? 'not read'})`;
   });
-  const naming =
-    slots.victimNaming.named && slots.victimNaming.organization !== null
-      ? `Named: ${slots.victimNaming.organization}, on ${slots.victimNaming.basis === 'primary_statement' ? 'a primary statement' : 'two independent reports'} (${slots.victimNaming.citations.map((id) => `[${number(id)}]`).join('')}).`
-      : 'The organization is not named: no primary statement and fewer than two independent reports among the sources read.';
   return [
     `# ${slots.headline}`,
     '',

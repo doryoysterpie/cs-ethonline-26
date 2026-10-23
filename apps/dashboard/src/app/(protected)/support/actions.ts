@@ -10,7 +10,13 @@ import { networkKey } from '../../../server/http/network.ts';
 import { readClosedObject } from '../../../server/input.ts';
 import { attempt, noticeCodeFor, withNotice } from '../../page-support.ts';
 
-const OWN_CODES = new Set(['support_not_configured', 'checkout_unavailable', 'checkout_limited']);
+const OWN_CODES = new Set([
+  'support_not_configured',
+  'checkout_unavailable',
+  'checkout_limited',
+  'checkout_in_progress',
+  'support_already_active',
+]);
 
 function failureNotice(error: unknown): string {
   if (isDashboardError(error) && OWN_CODES.has(error.code)) return error.code;

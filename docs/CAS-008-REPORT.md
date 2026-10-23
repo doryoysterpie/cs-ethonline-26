@@ -237,3 +237,49 @@ the unit, stacked on pull request 27; its CI run is recorded on the tracker.
 Not verified here, by design of the unit: a real hosted Checkout, a real webhook delivery and a
 real donation (step 10), which wait on the owner's Stripe entity confirmation, the three
 Stripe values and the donation addresses by file.
+
+## 7. Corrections after the train review: F6 and F7
+
+The independent review of `main` at `881d5a3` (`docs/AUDIT-LEDGER.md`) returned CHANGES REQUIRED
+with two findings against this unit, one High. Corrected on `train/26-28-corrections`.
+
+- **F6, Medium. A status delivered before its binding stayed invisible.** A
+  `customer.subscription.created` that arrived before `checkout.session.completed` was recorded
+  with no account, and the mark read only rows carrying the account, so a charged subscriber
+  could stand at `none` until some later status happened to arrive. Correction: the status is
+  derived through the binding relation at read time, the ledger untouched: an event counts for
+  an account when it carries the account, or names a subscription or a customer that any event
+  bound to the account. The webhook's before-and-after comparison therefore sees the change on
+  the binding event and audits it then. Tests: in the database package, an activation before its
+  binding counts once the binding lands; in the dashboard, the same order through signed
+  webhooks, the mark `supporter` after the binding and `supporter_changed` on that event.
+- **F7, High. Every submission could open another subscription.** Each allowed submission
+  created a new Checkout session under a fresh idempotency key with no durable record of a
+  hand-off in progress and no check of the account's standing; the status model kept one event
+  per account, so a cancelled duplicate could hide another still billing. Correction, in four
+  parts. (1) Migration 0020 adds `checkout_attempts`: one open attempt per account (a partial
+  unique index), its idempotency key fixed at creation, the session and its address bound once
+  when the provider answers, closed once at its expiry or when its session completes, never
+  deleted. (2) `startCheckout` runs under a per-account advisory lock (tried, never waited for;
+  a concurrent submission is refused at once with `checkout_in_progress`): an account whose
+  standing is a supporter's or past due is refused with `support_already_active`; an open attempt
+  with an answer is reused without a request; otherwise the attempt is opened, or taken up again
+  when an earlier request failed, and the provider is asked once under the attempt's key, with
+  the customer the account is bound to reused in place of the address when known and the
+  session's expiry set to the attempt's (35 minutes, above Stripe's 30-minute floor); a lost
+  answer leaves the attempt committed with its key, so the retry asks under the same key and
+  receives the session the provider already holds. (3) The status is modelled per subscription:
+  each subscription's latest status by its own instant, the account's standing the best of them
+  (active or trialing, then past due, then the rest), so cancelling one subscription never hides
+  another. (4) The portal path is unchanged; the webhook closes the attempt whose session
+  completed. Owner's step 10 gains one item: enable Stripe's "limit customers to one
+  subscription" setting on the Checkout configuration as the provider-side half of the
+  invariant the dashboard now enforces. Tests: in the database package, the attempt's life
+  (one open per account, bound once and only to a session on record, closed at its expiry and
+  at its session, immutable thereafter) and the per-subscription ranking; in the dashboard, a
+  double submission making one request with both tabs on one session or the second refused at
+  once, a third submission reusing the session with no request, the window's expiry opening a
+  new attempt under a new key, an ambiguous answer retried under the same key to the same
+  session, an active account refused, two subscriptions with the first cancelled still a
+  supporter and both cancelled `none`, the next hand-off reusing the bound customer, and the
+  Stripe client sending the given key, the customer in place of the address and the expiry.

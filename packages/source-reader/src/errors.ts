@@ -5,7 +5,9 @@
  * verdict for a URL that does not parse), `robots_disallowed` and
  * `robots_unavailable` (the obey decision, O-2), `content_encoding_not_permitted`
  * (a body in an encoding the reader cannot bound) and `status_not_ok` (a
- * response that is not a page). No code ever reflects input.
+ * response that is not a page); and, after the train review (report section
+ * 8, F1), `content_length_invalid` (a declared length that is malformed or
+ * conflicting, refused before the first byte). No code ever reflects input.
  */
 export const READ_CODES = [
   'malformed',
@@ -26,6 +28,7 @@ export const READ_CODES = [
   'redirect_downgrade',
   'content_type_not_permitted',
   'content_encoding_not_permitted',
+  'content_length_invalid',
   'status_not_ok',
   'body_limit',
   'fetch_timeout',

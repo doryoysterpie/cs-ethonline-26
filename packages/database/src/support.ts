@@ -41,20 +41,168 @@ export interface NewSupporterEvent {
 
 export type SupporterEventRecord = NewSupporterEvent;
 
-export interface SupporterStatus {
-  readonly status: SubscriptionStatus;
+/** One subscription's latest status, by the event's own instant. */
+export interface SubscriptionState {
   readonly subscriptionId: string | null;
+  readonly status: SubscriptionStatus;
   readonly asOf: string;
 }
 
+/**
+ * The account's standing: the subscription whose latest status ranks best
+ * (active or trialing, then past due, then the rest; the latest on a tie),
+ * and every subscription's state beside it.
+ */
+export interface SupporterStatus extends SubscriptionState {
+  readonly subscriptions: readonly SubscriptionState[];
+}
+
+/**
+ * Records the session once; a session already recorded (the provider answered
+ * the same idempotent request twice) is left as it is.
+ */
 export async function insertCheckoutSession(
   client: Queryable,
   session: NewCheckoutSession,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO checkout_sessions (id, account_id, created_at) VALUES ($1, $2, $3::timestamptz)`,
+    `INSERT INTO checkout_sessions (id, account_id, created_at) VALUES ($1, $2, $3::timestamptz)
+     ON CONFLICT (id) DO NOTHING`,
     [session.id, session.accountId, session.createdAt],
   );
+}
+
+// ---------------------------------------------------------------- checkout attempts (migration 0020)
+
+/**
+ * One hand-off in progress for an account (train review F7): the idempotency
+ * key every request to the provider reuses until the attempt closes, the
+ * session and its address once the provider answered, and the instant the
+ * attempt closes, at its expiry or when its session completes.
+ */
+export interface CheckoutAttemptRecord {
+  readonly id: string;
+  readonly accountId: string;
+  readonly idempotencyKey: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly sessionId: string | null;
+  readonly url: string | null;
+  readonly closedAt: string | null;
+}
+
+export type NewCheckoutAttempt = Pick<
+  CheckoutAttemptRecord,
+  'id' | 'accountId' | 'idempotencyKey' | 'createdAt' | 'expiresAt'
+>;
+
+const ATTEMPT_COLUMNS = `id, account_id, idempotency_key,
+  to_json(created_at) #>> '{}' AS created_at, to_json(expires_at) #>> '{}' AS expires_at,
+  session_id, url, to_json(closed_at) #>> '{}' AS closed_at`;
+
+interface AttemptRow {
+  id: string;
+  account_id: string;
+  idempotency_key: string;
+  created_at: string;
+  expires_at: string;
+  session_id: string | null;
+  url: string | null;
+  closed_at: string | null;
+}
+
+function toAttempt(row: AttemptRow): CheckoutAttemptRecord {
+  return {
+    id: row.id,
+    accountId: row.account_id,
+    idempotencyKey: row.idempotency_key,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    sessionId: row.session_id,
+    url: row.url,
+    closedAt: row.closed_at,
+  };
+}
+
+/** Closes the account's open attempt when it is past its expiry at `now`; returns how many closed. */
+export async function closeExpiredCheckoutAttempts(
+  client: Queryable,
+  accountId: string,
+  now: string,
+): Promise<number> {
+  const result = await client.query(
+    `UPDATE checkout_attempts SET closed_at = $2::timestamptz
+      WHERE account_id = $1 AND closed_at IS NULL AND expires_at <= $2::timestamptz`,
+    [accountId, now],
+  );
+  return result.rowCount ?? 0;
+}
+
+/** The account's open attempt, locked for the caller's transaction, or null. */
+export async function lockOpenCheckoutAttempt(
+  client: Queryable,
+  accountId: string,
+): Promise<CheckoutAttemptRecord | null> {
+  const result = await client.query<AttemptRow>(
+    `SELECT ${ATTEMPT_COLUMNS} FROM checkout_attempts
+      WHERE account_id = $1 AND closed_at IS NULL FOR UPDATE`,
+    [accountId],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : toAttempt(row);
+}
+
+/** Opens an attempt; `open_exists` when the account has one open already. */
+export async function insertCheckoutAttempt(
+  client: Queryable,
+  attempt: NewCheckoutAttempt,
+): Promise<'inserted' | 'open_exists'> {
+  const result = await client.query(
+    `INSERT INTO checkout_attempts (id, account_id, idempotency_key, created_at, expires_at)
+     VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)
+     ON CONFLICT (account_id) WHERE closed_at IS NULL DO NOTHING`,
+    [attempt.id, attempt.accountId, attempt.idempotencyKey, attempt.createdAt, attempt.expiresAt],
+  );
+  return result.rowCount === 1 ? 'inserted' : 'open_exists';
+}
+
+/** Binds the provider's answer to the attempt, once. */
+export async function bindCheckoutAttempt(
+  client: Queryable,
+  id: string,
+  session: { readonly sessionId: string; readonly url: string },
+): Promise<boolean> {
+  const result = await client.query(
+    `UPDATE checkout_attempts SET session_id = $2, url = $3
+      WHERE id = $1 AND session_id IS NULL AND closed_at IS NULL`,
+    [id, session.sessionId, session.url],
+  );
+  return (result.rowCount ?? 0) === 1;
+}
+
+/** Closes the attempt bound to a session that completed; returns how many closed. */
+export async function closeCheckoutAttemptForSession(
+  client: Queryable,
+  sessionId: string,
+  now: string,
+): Promise<number> {
+  const result = await client.query(
+    `UPDATE checkout_attempts SET closed_at = $2::timestamptz
+      WHERE session_id = $1 AND closed_at IS NULL`,
+    [sessionId, now],
+  );
+  return result.rowCount ?? 0;
+}
+
+export async function listCheckoutAttempts(
+  client: Queryable,
+  accountId: string,
+): Promise<CheckoutAttemptRecord[]> {
+  const result = await client.query<AttemptRow>(
+    `SELECT ${ATTEMPT_COLUMNS} FROM checkout_attempts WHERE account_id = $1 ORDER BY created_at, id`,
+    [accountId],
+  );
+  return result.rows.map(toAttempt);
 }
 
 export async function accountForCheckoutSession(
@@ -175,29 +323,57 @@ export async function accountForCustomer(
 }
 
 /**
- * The supporter status of an account: the status carried by its most recent
- * subscription event by the event's own instant, then by arrival. Null when
- * no event carried a status.
+ * The events that belong to an account: those bound to it directly, and
+ * those naming a subscription or a customer that any event bound to it
+ * (train review F6), so a status delivered before the binding event counts
+ * once the binding lands; the ledger itself is never rewritten.
+ */
+const BOUND_EVENTS = `
+  WITH own AS (
+    SELECT subscription_id, customer_id FROM supporter_events WHERE account_id = $1
+  )
+  SELECT e.subscription_id, e.status,
+         to_json(e.occurred_at) #>> '{}' AS occurred_at, e.received_at
+    FROM supporter_events e
+   WHERE e.status IS NOT NULL AND (
+         e.account_id = $1
+      OR (e.subscription_id IS NOT NULL
+          AND e.subscription_id IN (SELECT subscription_id FROM own WHERE subscription_id IS NOT NULL))
+      OR (e.customer_id IS NOT NULL
+          AND e.customer_id IN (SELECT customer_id FROM own WHERE customer_id IS NOT NULL)))`;
+
+/**
+ * The supporter status of an account, one state per subscription (train
+ * review F7): each subscription's latest status by the event's own instant,
+ * then by arrival; the account's standing is the best of them, so a second
+ * subscription that is still billing is never hidden by the cancellation of
+ * another. Null when no event carried a status.
  */
 export async function supporterStatus(
   client: Queryable,
   accountId: string,
 ): Promise<SupporterStatus | null> {
   const result = await client.query<{
-    status: SubscriptionStatus;
     subscription_id: string | null;
+    status: SubscriptionStatus;
     occurred_at: string;
   }>(
-    `SELECT status, subscription_id, to_json(occurred_at) #>> '{}' AS occurred_at
-       FROM supporter_events
-      WHERE account_id = $1 AND status IS NOT NULL
-      ORDER BY occurred_at DESC, received_at DESC LIMIT 1`,
+    `SELECT subscription_id, status, occurred_at FROM (
+       SELECT DISTINCT ON (COALESCE(subscription_id, '')) subscription_id, status, occurred_at
+         FROM (${BOUND_EVENTS}) bound
+        ORDER BY COALESCE(subscription_id, ''), occurred_at DESC, received_at DESC
+     ) latest
+     ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'trialing' THEN 0 WHEN 'past_due' THEN 1 ELSE 2 END,
+              occurred_at DESC`,
     [accountId],
   );
-  const row = result.rows[0];
-  return row === undefined
-    ? null
-    : { status: row.status, subscriptionId: row.subscription_id, asOf: row.occurred_at };
+  const subscriptions = result.rows.map((row) => ({
+    subscriptionId: row.subscription_id,
+    status: row.status,
+    asOf: row.occurred_at,
+  }));
+  const best = subscriptions[0];
+  return best === undefined ? null : { ...best, subscriptions };
 }
 
 export async function listSupporterEvents(

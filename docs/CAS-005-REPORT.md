@@ -428,3 +428,34 @@ tests (the article 7, the dashboard 87, the source reader 23, the worker 269, th
 section 6) and 32 tool tests; `test:db` exit 0, 316 (database 106, worker 119, dashboard 42, the
 five above among them, mcp-server 49). The clean clone, the CI run and the commit are on the
 tracker's evidence record.
+
+## 8. Corrections after the train review: F1 to F3
+
+The independent review of `main` at `881d5a3` (pull requests 26, 27 and 28 merged as one train
+on 22 October 2026; `docs/AUDIT-LEDGER.md`) returned CHANGES REQUIRED with three findings against
+this unit, each Medium. Corrected on `train/26-28-corrections`, each with the test the finding
+named.
+
+- **F1. R10's declared-length preflight was absent.** The reader checked the media type and
+  opened the body; a response declaring a length over the bound was read and cut rather than
+  refused before the first byte. Correction: `declaredLength` parses `Content-Length` strictly
+  (one decimal number; a repeated header must agree) and the page path refuses a declared length
+  over `bodyBytes` with `body_limit` as a not-read outcome before the body factory is called; a
+  malformed or conflicting declaration fails closed with `content_length_invalid`, a code added to
+  the vocabulary here with this reason (as section 1.4 added its five). A declared length below
+  the bound stays untrusted: the stream is bounded as before. `robots.txt` keeps its bounded
+  prefix read (RFC 9309 permits parsing the first 500 KiB). Test: a lazy body that records
+  whether anything pulled from it; declared over the bound, malformed and conflicting are
+  `not_read` at zero bytes and never pulled; declared at the bound reads whole.
+- **F2. A body exactly at the bound was marked cut.** The stream reader cut on `>=`, so a
+  200-byte page under a 200-byte bound was `partly_read`. Correction: the reader cuts only when a
+  chunk crosses the bound and otherwise reads on, so the stream's end, not the equality, decides.
+  Tests: 200 bytes in one chunk and in two read whole at `read`, `null`, 200 bytes; 201 in one
+  chunk and 100 plus 101 cut to 200 with `body_limit`.
+- **F3. A source cited only by the naming sentence had no Sources line.** `renderMarkdown`
+  snapshotted the numbering before numbering the naming citations, so `_Named: … ([2])._` could
+  point past the list. Correction: the naming sentence's citations are numbered before the list
+  is built; a repeated naming citation is numbered once. Test: a selection widened by two read
+  sources no paragraph cites, named on a primary statement and on two independent reports; every
+  marker resolves to exactly one Sources line, the numbering is 1 to n, and the naming sources
+  appear in the list.

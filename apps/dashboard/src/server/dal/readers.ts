@@ -19,7 +19,6 @@ import type { Runtime } from '../runtime.ts';
 import { mapFailure } from './failures.ts';
 import { requireCapability } from './guard.ts';
 import { enforceReaderLimit } from './reader-limit.ts';
-import { inviteAccount } from './mutate.ts';
 import { weekRunDto } from './read.ts';
 import type { WeekRunDto } from './dto.ts';
 
@@ -55,6 +54,8 @@ export { enforceReaderLimit };
 export interface SignupRequestInput {
   readonly email: unknown;
   readonly networkKey: string;
+  /** The request's instant; the wall clock when absent. Tests advance it past an expiry. */
+  readonly now?: Date | undefined;
 }
 
 /**
@@ -71,7 +72,7 @@ export async function requestSignup(
   if (runtime.email === null || runtime.otpPepper === null) {
     throw new DashboardError('configuration', 'signup_not_configured', 'sign-up is not configured');
   }
-  const now = new Date();
+  const now = input.now ?? new Date();
   const normalized = normalizeEmail(input.email);
   const addressKey = `address:${normalized ?? 'malformed'}`;
   const byAddress = runtime.limits.signupAddress.check(addressKey, seconds());
@@ -124,6 +125,8 @@ export async function requestSignup(
       requestedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + OTP_LIFETIME_SECONDS * 1000).toISOString(),
     };
+    // An unverified request of the address past its expiry is superseded in
+    // the same transaction (train review F4); a live one keeps the silence.
     const outcome = await runtime.database.withTransaction((tx) =>
       packages.database.insertSignupRequest(tx, request),
     );
@@ -160,7 +163,12 @@ export type SignupVerification = 'verified' | 'invalid' | 'locked' | 'expired';
  */
 export async function verifySignup(
   runtime: Runtime,
-  input: { readonly requestId: unknown; readonly code: unknown; readonly networkKey: string },
+  input: {
+    readonly requestId: unknown;
+    readonly code: unknown;
+    readonly networkKey: string;
+    readonly now?: Date | undefined;
+  },
 ): Promise<SignupVerification> {
   if (runtime.otpPepper === null) {
     throw new DashboardError('configuration', 'signup_not_configured', 'sign-up is not configured');
@@ -172,8 +180,13 @@ export async function verifySignup(
     const request = await runtime.database.withClient((client) =>
       getSignupRequest(client, input.requestId as string),
     );
-    const now = Date.now();
-    if (request === null || request.decidedAt !== null || Date.parse(request.expiresAt) <= now) {
+    const now = (input.now ?? new Date()).getTime();
+    if (
+      request === null ||
+      request.decidedAt !== null ||
+      request.supersededAt !== null ||
+      Date.parse(request.expiresAt) <= now
+    ) {
       return 'expired';
     }
     if (request.attemptCount >= OTP_MAX_ATTEMPTS) return 'locked';
@@ -263,7 +276,14 @@ function approvalText(publicUrl: string | null, expiresAt: string): string {
   );
 }
 
-/** Approval: a reader account for the address, the decision recorded, the fixed email sent. */
+/**
+ * Approval (train review F5): one transaction locks the request, re-checks
+ * that it awaits a decision and that the address holds no account, creates
+ * the reader account, records the decision and writes both audit events,
+ * so either every record of the approval exists or none does; the email is
+ * sent after the commit. The accounts live in the same database as the
+ * requests only under the PostgreSQL stores, so the memory stores refuse.
+ */
 export async function approveSignup(
   runtime: Runtime,
   who: Principal | null,
@@ -275,58 +295,107 @@ export async function approveSignup(
   const expiresAt =
     optionalInstant(input.expiresAt, 'expiresAt') ??
     new Date(now.getTime() + READER_EXPIRY_DEFAULT_DAYS * 24 * 3600 * 1000).toISOString();
-  const packages = await workspace();
-  const { decideSignupRequest, getSignupRequest } = packages.database;
-  try {
-    const request = await runtime.database.withClient((client) =>
-      getSignupRequest(client, requestId),
+  if (Date.parse(expiresAt) <= now.getTime()) {
+    throw validation('expires_at_past', 'A reader account needs an expiry in the future.');
+  }
+  if (runtime.stores.kind !== 'postgres') {
+    throw validation(
+      'persistent_accounts_required',
+      'Approving a reader needs the PostgreSQL account store.',
     );
-    if (request === null) {
-      throw new DashboardError('not_found', 'signup_request_not_found', 'No request with that id.');
-    }
-    if (request.verifiedAt === null || request.decidedAt !== null) {
-      throw validation('signup_request_not_pending', 'That request is not awaiting a decision.');
-    }
-    const { accountId } = await inviteAccount(runtime, principal, {
-      email: request.normalizedEmail,
-      role: 'reader',
-      expiresAt,
-    });
-    const decided = await runtime.database.withTransaction((tx) =>
-      decideSignupRequest(tx, {
+  }
+  const packages = await workspace();
+  const {
+    appendAuditEvent,
+    decideSignupRequest,
+    findAccountByNormalizedEmail,
+    insertAccount,
+    lockSignupRequest,
+  } = packages.database;
+  try {
+    const approved = await runtime.database.withTransaction(async (tx) => {
+      const request = await lockSignupRequest(tx, requestId);
+      if (request === null) {
+        throw new DashboardError(
+          'not_found',
+          'signup_request_not_found',
+          'No request with that id.',
+        );
+      }
+      if (request.verifiedAt === null || request.decidedAt !== null) {
+        throw validation('signup_request_not_pending', 'That request is not awaiting a decision.');
+      }
+      if ((await findAccountByNormalizedEmail(tx, request.normalizedEmail)) !== null) {
+        throw new DashboardError(
+          'conflict',
+          'account_exists',
+          'An account with that email exists.',
+        );
+      }
+      const accountId = randomUUID();
+      await insertAccount(tx, {
+        id: accountId,
+        username: null,
+        role: 'reader',
+        passwordHash: null,
+        createdAt: now.toISOString(),
+        passwordChangedAt: now.toISOString(),
+        disabledAt: null,
+        expiresAt,
+        normalizedEmail: request.normalizedEmail,
+      });
+      const decided = await decideSignupRequest(tx, {
         id: requestId,
         decision: 'approved',
         decidedBy: principal.accountId,
         accountId,
         at: now.toISOString(),
-      }),
-    );
-    if (!decided) {
-      throw new DashboardError(
-        'conflict',
-        'signup_request_decided',
-        'That request was decided meanwhile.',
-      );
-    }
+      });
+      if (!decided) {
+        throw new DashboardError(
+          'conflict',
+          'signup_request_decided',
+          'That request was decided meanwhile.',
+        );
+      }
+      await appendAuditEvent(tx, {
+        id: randomUUID(),
+        at: now.toISOString(),
+        kind: 'account_provisioned',
+        outcome: 'success',
+        code: 'reader',
+        actorAccountId: principal.accountId,
+        subjectAccountId: accountId,
+        sessionId: principal.sessionId,
+        networkKey: null,
+        subjectId: null,
+      });
+      await appendAuditEvent(tx, {
+        id: randomUUID(),
+        at: now.toISOString(),
+        kind: 'signup_approved',
+        outcome: 'success',
+        code: 'reader',
+        actorAccountId: principal.accountId,
+        subjectAccountId: accountId,
+        sessionId: principal.sessionId,
+        networkKey: null,
+        subjectId: requestId,
+      });
+      return { accountId, email: request.normalizedEmail };
+    });
     void runtime.email
       ?.send({
-        to: request.normalizedEmail,
+        to: approved.email,
         subject: 'Your request to read Latest in Cyber was approved',
         text: approvalText(runtime.publicUrl, expiresAt),
       })
       .catch(() => undefined);
-    await audit(runtime, {
-      kind: 'signup_approved',
-      outcome: 'success',
-      code: 'reader',
-      actorAccountId: principal.accountId,
-      subjectAccountId: accountId,
-      sessionId: principal.sessionId,
-      networkKey: null,
-      subjectId: requestId,
-    });
-    return { accountId };
+    return { accountId: approved.accountId };
   } catch (error) {
+    if (packages.database.isDatabaseError(error) && error.code === '23505') {
+      throw new DashboardError('conflict', 'account_exists', 'An account with that email exists.');
+    }
     throw mapFailure(error, packages);
   }
 }

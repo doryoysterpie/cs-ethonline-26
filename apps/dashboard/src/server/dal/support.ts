@@ -7,6 +7,7 @@ import type { AuditEvent } from '../auth/store.ts';
 import { DashboardError } from '../errors.ts';
 import { workspace } from '../packages.ts';
 import type { Runtime } from '../runtime.ts';
+import type { Queryable } from '@cas/database';
 import {
   loadDonationPolicy,
   pinnedDonationPolicy,
@@ -18,6 +19,7 @@ import { markFor, type SupporterMark } from '../support/status.ts';
 import type { StripeMode } from '../support/config.ts';
 import { mapFailure } from './failures.ts';
 import { requireCapability } from './guard.ts';
+import { transactionOn } from './mutate.ts';
 
 /**
  * The supporter tier and the donation page (CAS-008, report section 1).
@@ -84,12 +86,57 @@ export async function supportView(
 
 export interface CheckoutInput {
   readonly networkKey: string;
+  /** The request's instant; the wall clock when absent. Tests advance it past an attempt's expiry. */
+  readonly now?: Date | undefined;
+}
+
+/** How long one hosted session, and the attempt that holds it, stays usable. Stripe asks for at least 30 minutes. */
+export const CHECKOUT_ATTEMPT_MINUTES = 35;
+
+/**
+ * One hand-off at a time per account: an advisory lock tried on one
+ * connection, never waited for, held across the provider's answer, so two
+ * submissions at once make one request and the second is refused at once
+ * with a fixed conflict; every read and write of the attempt runs on the
+ * one connection that holds the lock. Released on every exit.
+ */
+async function withCheckoutLock<T>(
+  runtime: Runtime,
+  accountId: string,
+  work: (holder: Queryable) => Promise<T>,
+): Promise<T> {
+  const key = `${runtime.database.schema}:checkout:${accountId}`;
+  return runtime.database.withClient(async (holder) => {
+    const claimed = await holder.query<{ locked: boolean }>(
+      'SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS locked',
+      [key],
+    );
+    if (claimed.rows[0]?.locked !== true) {
+      throw new DashboardError(
+        'conflict',
+        'checkout_in_progress',
+        'a checkout for this account is being prepared; try again in a moment',
+      );
+    }
+    try {
+      return await work(holder);
+    } finally {
+      await holder.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))', [key]);
+    }
+  });
 }
 
 /**
- * The hand-off to Stripe's hosted Checkout: one session per request, bound
- * to the account before the browser is sent anywhere, so a later webhook
- * resolves to the account whatever Stripe's object carries.
+ * The hand-off to Stripe's hosted Checkout, one subscription per account
+ * (train review F7). An account whose standing is already a supporter's or
+ * past due is not sent to Checkout again. Under the account's lock, the open
+ * attempt is reused when the provider has answered it; otherwise an attempt
+ * is opened, or the open one without an answer is taken up again, and the
+ * provider is asked once under the attempt's own idempotency key (the
+ * customer the account is bound to reused when known), then the session is
+ * recorded and bound to the attempt. A request that fails leaves the
+ * attempt committed with its key, so a retry inside the window asks under
+ * the same key and the provider answers the session it may already hold.
  */
 export async function startCheckout(
   runtime: Runtime,
@@ -97,6 +144,7 @@ export async function startCheckout(
   input: CheckoutInput,
 ): Promise<{ readonly url: string }> {
   const who = requireCapability(principal, SIGNED_IN);
+  const now = input.now ?? new Date();
   const base = {
     actorAccountId: who.accountId,
     subjectAccountId: who.accountId,
@@ -116,6 +164,8 @@ export async function startCheckout(
     await refused('support_not_configured');
     throw notConfigured();
   }
+  const support = runtime.support;
+  const publicUrl = runtime.publicUrl;
   const decision = runtime.limits.checkoutAccount.check(`account:${who.accountId}`, seconds());
   if (!decision.allowed) {
     if (decision.firstTrip) {
@@ -130,40 +180,88 @@ export async function startCheckout(
     await refused('limited');
     throw new DashboardError('throttled', 'checkout_limited', 'too many checkout attempts');
   }
-  let session: { id: string; url: string };
+  const packages = await workspace();
+  const db = packages.database;
+  let outcome: {
+    readonly url: string;
+    readonly code: 'reused' | 'redirected';
+    readonly subjectId: string;
+  };
   try {
-    session = await runtime.support.stripe.createCheckoutSession({
-      priceId: runtime.support.priceId,
-      accountId: who.accountId,
-      customerEmail: who.normalizedEmail,
-      successUrl: `${runtime.publicUrl}/support?notice=checkout_returned`,
-      cancelUrl: `${runtime.publicUrl}/support?notice=checkout_cancelled`,
+    outcome = await withCheckoutLock(runtime, who.accountId, async (holder) => {
+      const standing = await db.supporterStatus(holder, who.accountId);
+      if (standing !== null && markFor(standing.status) !== 'none') {
+        throw new DashboardError(
+          'conflict',
+          'support_already_active',
+          'this account already has a subscription',
+        );
+      }
+      const customer = await db.customerForAccount(holder, who.accountId);
+      const attempt = await transactionOn(holder, async () => {
+        await db.closeExpiredCheckoutAttempts(holder, who.accountId, now.toISOString());
+        const open = await db.lockOpenCheckoutAttempt(holder, who.accountId);
+        if (open !== null) return open;
+        const created = {
+          id: randomUUID(),
+          accountId: who.accountId,
+          idempotencyKey: randomUUID(),
+          createdAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + CHECKOUT_ATTEMPT_MINUTES * 60_000).toISOString(),
+        };
+        if ((await db.insertCheckoutAttempt(holder, created)) === 'open_exists') {
+          // Cannot happen under the lock; read what is there rather than use a key not on record.
+          const raced = await db.lockOpenCheckoutAttempt(holder, who.accountId);
+          if (raced !== null) return raced;
+        }
+        return { ...created, sessionId: null, url: null, closedAt: null };
+      });
+      if (attempt.url !== null) return { url: attempt.url, code: 'reused', subjectId: attempt.id };
+      const session = await support.stripe.createCheckoutSession({
+        priceId: support.priceId,
+        accountId: who.accountId,
+        customerId: customer,
+        customerEmail: customer === null ? who.normalizedEmail : null,
+        successUrl: `${publicUrl}/support?notice=checkout_returned`,
+        cancelUrl: `${publicUrl}/support?notice=checkout_cancelled`,
+        idempotencyKey: attempt.idempotencyKey,
+        expiresAtSeconds: Math.floor(Date.parse(attempt.expiresAt) / 1000),
+      });
+      await transactionOn(holder, async () => {
+        await db.insertCheckoutSession(holder, {
+          id: session.id,
+          accountId: who.accountId,
+          createdAt: now.toISOString(),
+        });
+        await db.bindCheckoutAttempt(holder, attempt.id, {
+          sessionId: session.id,
+          url: session.url,
+        });
+      });
+      return { url: session.url, code: 'redirected', subjectId: session.id };
     });
   } catch (error) {
-    await refused('checkout_unavailable');
-    throw error;
-  }
-  const packages = await workspace();
-  try {
-    await runtime.database.withTransaction((tx) =>
-      packages.database.insertCheckoutSession(tx, {
-        id: session.id,
-        accountId: who.accountId,
-        createdAt: new Date().toISOString(),
-      }),
-    );
-  } catch (error) {
+    if (error instanceof DashboardError) {
+      await refused(
+        error.code === 'checkout_unavailable' ||
+          error.code === 'support_already_active' ||
+          error.code === 'checkout_in_progress'
+          ? error.code
+          : 'record_failed',
+      );
+      throw error;
+    }
     await refused('record_failed');
     throw mapFailure(error, packages);
   }
   await audit(runtime, {
     kind: 'checkout_started',
     outcome: 'success',
-    code: 'redirected',
+    code: outcome.code,
     ...base,
-    subjectId: session.id,
+    subjectId: outcome.subjectId,
   });
-  return { url: session.url };
+  return { url: outcome.url };
 }
 
 /** The hand-off to Stripe's hosted billing portal, for a supporter to cancel or update a card. */
@@ -312,6 +410,9 @@ export async function recordWebhook(
         payloadDigest: digest,
       });
       if (inserted === 'replay') return { code: 'webhook_replay', accountId, changed: null };
+      if (event.sessionId !== null && event.type === 'checkout.session.completed') {
+        await db.closeCheckoutAttemptForSession(tx, event.sessionId, now.toISOString());
+      }
       const after = accountId === null ? null : await db.supporterStatus(tx, accountId);
       const from = markFor(before?.status ?? null);
       const to = markFor(after?.status ?? null);

@@ -10,9 +10,15 @@ import {
   accountForCustomer,
   accountForSubscription,
   customerForAccount,
+  bindCheckoutAttempt,
+  closeCheckoutAttemptForSession,
+  closeExpiredCheckoutAttempts,
+  insertCheckoutAttempt,
   insertCheckoutSession,
   insertSupporterEvent,
+  listCheckoutAttempts,
   listSupporterEvents,
+  lockOpenCheckoutAttempt,
   supporterStatus,
 } from './support.js';
 import { openIsolatedSchema, type IsolatedSchema } from './test-support.js';
@@ -121,7 +127,7 @@ describe('checkout sessions and supporter events (migration 0018)', () => {
         ),
       ),
     ).toBe('inserted');
-    expect(await isolated.db.withClient((c) => supporterStatus(c, reader))).toEqual({
+    expect(await isolated.db.withClient((c) => supporterStatus(c, reader))).toMatchObject({
       status: 'canceled',
       subscriptionId: 'sub_test_s1t2u3v4',
       asOf: '2026-10-22T12:00:00+00:00',
@@ -222,5 +228,198 @@ describe('checkout sessions and supporter events (migration 0018)', () => {
         ),
       );
     }
+  });
+
+  it('counts a status delivered before its binding once the binding lands, and ranks the account by its best subscription (train review F6, F7)', async () => {
+    const other = randomUUID();
+    await isolated.db.withTransaction((tx) =>
+      tx.query(
+        `INSERT INTO accounts (id, username, role, password_hash, created_at, password_changed_at, expires_at)
+         VALUES ($1, 'other_reader', 'reader', 'synthetic-not-a-credential', now(), now(), now() + interval '1 year')`,
+        [other],
+      ),
+    );
+    const event = (
+      n: number,
+      fields: Partial<Parameters<typeof insertSupporterEvent>[1]>,
+    ): Parameters<typeof insertSupporterEvent>[1] => ({
+      id: randomUUID(),
+      provider: 'stripe',
+      eventId: `evt_bind_${String(n).padStart(10, '0')}`,
+      eventType: 'customer.subscription.updated',
+      occurredAt: `2026-10-23T10:${String(n).padStart(2, '0')}:00.000Z`,
+      receivedAt: `2026-10-23T11:${String(n).padStart(2, '0')}:00.000Z`,
+      accountId: null,
+      customerId: 'cus_bind_c1d2e3f4',
+      subscriptionId: 'sub_bind_s1t2u3v4',
+      status: null,
+      payloadDigest: hash(String(n % 10)),
+      ...fields,
+    });
+    // The subscription's activation arrives first and binds to nothing.
+    await isolated.db.withTransaction((tx) =>
+      insertSupporterEvent(tx, event(1, { status: 'active' })),
+    );
+    expect(await isolated.db.withClient((c) => supporterStatus(c, other))).toBeNull();
+    // Checkout completes for the account, naming the same customer and subscription: the earlier status now counts.
+    await isolated.db.withTransaction((tx) =>
+      insertSupporterEvent(
+        tx,
+        event(2, { eventType: 'checkout.session.completed', accountId: other }),
+      ),
+    );
+    expect(await isolated.db.withClient((c) => supporterStatus(c, other))).toMatchObject({
+      status: 'active',
+      subscriptionId: 'sub_bind_s1t2u3v4',
+    });
+    // A second subscription of the same customer activates; the first is cancelled: still active by the second.
+    await isolated.db.withTransaction((tx) =>
+      insertSupporterEvent(tx, event(3, { subscriptionId: 'sub_bind_second01', status: 'active' })),
+    );
+    await isolated.db.withTransaction((tx) =>
+      insertSupporterEvent(tx, event(4, { status: 'canceled', accountId: other })),
+    );
+    const standing = await isolated.db.withClient((c) => supporterStatus(c, other));
+    expect(standing).toMatchObject({ status: 'active', subscriptionId: 'sub_bind_second01' });
+    expect(standing?.subscriptions.map((s) => [s.subscriptionId, s.status])).toEqual([
+      ['sub_bind_second01', 'active'],
+      ['sub_bind_s1t2u3v4', 'canceled'],
+    ]);
+    // Both cancelled: nothing active remains, the latest cancellation leads.
+    await isolated.db.withTransaction((tx) =>
+      insertSupporterEvent(
+        tx,
+        event(5, { subscriptionId: 'sub_bind_second01', status: 'canceled' }),
+      ),
+    );
+    expect(await isolated.db.withClient((c) => supporterStatus(c, other))).toMatchObject({
+      status: 'canceled',
+      subscriptionId: 'sub_bind_second01',
+    });
+    // The first account's events are untouched by the other's binding.
+    expect(
+      (await isolated.db.withClient((c) => supporterStatus(c, reader)))?.subscriptions.length,
+    ).toBe(1);
+  });
+
+  it('holds one open checkout attempt per account with a fixed key, binds it once, and closes it at its expiry or its session (train review F7)', async () => {
+    const t = (seconds: number) => new Date(Date.UTC(2026, 9, 23, 12, 0, seconds)).toISOString();
+    const first = {
+      id: randomUUID(),
+      accountId: reader,
+      idempotencyKey: randomUUID(),
+      createdAt: t(0),
+      expiresAt: t(2_100),
+    };
+    expect(await isolated.db.withTransaction((tx) => insertCheckoutAttempt(tx, first))).toBe(
+      'inserted',
+    );
+    expect(
+      await isolated.db.withTransaction((tx) =>
+        insertCheckoutAttempt(tx, { ...first, id: randomUUID(), idempotencyKey: randomUUID() }),
+      ),
+    ).toBe('open_exists');
+    expect(
+      (await isolated.db.withTransaction((tx) => lockOpenCheckoutAttempt(tx, reader)))?.id,
+    ).toBe(first.id);
+    // Bound once to the provider's answer, and only to a session on record; a second binding is refused by the table.
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        bindCheckoutAttempt(tx, first.id, {
+          sessionId: 'cs_test_attempt0001',
+          url: 'https://checkout.stripe.com/c/pay/cs_test_attempt0001',
+        }),
+      ),
+    ).toBe('23503');
+    await isolated.db.withTransaction((tx) =>
+      insertCheckoutSession(tx, { id: 'cs_test_attempt0001', accountId: reader, createdAt: t(1) }),
+    );
+    expect(
+      await isolated.db.withTransaction((tx) =>
+        bindCheckoutAttempt(tx, first.id, {
+          sessionId: 'cs_test_attempt0001',
+          url: 'https://checkout.stripe.com/c/pay/cs_test_attempt0001',
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(
+          `UPDATE checkout_attempts SET url = 'https://checkout.stripe.com/other' WHERE id = $1`,
+          [first.id],
+        ),
+      ),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE checkout_attempts SET idempotency_key = $2 WHERE id = $1`, [
+          first.id,
+          randomUUID(),
+        ]),
+      ),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`DELETE FROM checkout_attempts WHERE id = $1`, [first.id]),
+      ),
+    ).toBe('P0001');
+    // The same session recorded again is left as it is.
+    await isolated.db.withTransaction((tx) =>
+      insertCheckoutSession(tx, { id: 'cs_test_attempt0001', accountId: reader, createdAt: t(2) }),
+    );
+    // Not expired yet: nothing closes; at the expiry it closes, and a new attempt opens.
+    expect(
+      await isolated.db.withTransaction((tx) => closeExpiredCheckoutAttempts(tx, reader, t(2_099))),
+    ).toBe(0);
+    expect(
+      await isolated.db.withTransaction((tx) => closeExpiredCheckoutAttempts(tx, reader, t(2_100))),
+    ).toBe(1);
+    expect(
+      await isolated.db.withTransaction((tx) => lockOpenCheckoutAttempt(tx, reader)),
+    ).toBeNull();
+    const second = {
+      ...first,
+      id: randomUUID(),
+      idempotencyKey: randomUUID(),
+      createdAt: t(2_100),
+      expiresAt: t(4_200),
+    };
+    expect(await isolated.db.withTransaction((tx) => insertCheckoutAttempt(tx, second))).toBe(
+      'inserted',
+    );
+    await isolated.db.withTransaction((tx) =>
+      insertCheckoutSession(tx, {
+        id: 'cs_test_attempt0002',
+        accountId: reader,
+        createdAt: t(2_101),
+      }),
+    );
+    await isolated.db.withTransaction((tx) =>
+      bindCheckoutAttempt(tx, second.id, {
+        sessionId: 'cs_test_attempt0002',
+        url: 'https://checkout.stripe.com/c/pay/cs_test_attempt0002',
+      }),
+    );
+    // Its session completes: the attempt closes, once.
+    expect(
+      await isolated.db.withTransaction((tx) =>
+        closeCheckoutAttemptForSession(tx, 'cs_test_attempt0002', t(2_200)),
+      ),
+    ).toBe(1);
+    expect(
+      await isolated.db.withTransaction((tx) =>
+        closeCheckoutAttemptForSession(tx, 'cs_test_attempt0002', t(2_300)),
+      ),
+    ).toBe(0);
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE checkout_attempts SET closed_at = NULL WHERE id = $1`, [second.id]),
+      ),
+    ).toBe('P0001');
+    const attempts = await isolated.db.withClient((c) => listCheckoutAttempts(c, reader));
+    expect(attempts.map((a) => [a.id, a.sessionId, a.closedAt !== null])).toEqual([
+      [first.id, 'cs_test_attempt0001', true],
+      [second.id, 'cs_test_attempt0002', true],
+    ]);
   });
 });

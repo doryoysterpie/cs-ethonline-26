@@ -8,8 +8,9 @@ import { STRIPE_API_VERSION, type SupportConfig } from './config.ts';
 /**
  * The one boundary to Stripe (CAS-008, report section 1.2): two
  * form-encoded POSTs to `api.stripe.com`, the key in the `Authorization`
- * header and nowhere else, the API version pinned, an idempotency key per
- * request, a ten-second deadline. The transport is injected so tests see the
+ * header and nowhere else, the API version pinned, the checkout attempt's
+ * own idempotency key on the checkout request (train review F7) and a
+ * fresh one on the portal request, a ten-second deadline. The transport is injected so tests see the
  * exact request and no socket opens. A failure of any kind is one fixed code;
  * Stripe's response body is never surfaced.
  *
@@ -39,9 +40,16 @@ export type FetchLike = (url: string, init: StripeRequestInit) => Promise<Stripe
 export interface CheckoutSessionInput {
   readonly priceId: string;
   readonly accountId: string;
+  /** The provider's customer the account is bound to, reused so one person has one customer; null before the first subscription. */
+  readonly customerId: string | null;
+  /** The address to prefill when no customer is known; ignored when one is. */
   readonly customerEmail: string | null;
   readonly successUrl: string;
   readonly cancelUrl: string;
+  /** The attempt's key (train review F7): the same attempt sends the same key, so a retry answers the same session. */
+  readonly idempotencyKey: string;
+  /** When the hosted session expires, unix seconds; the attempt's own expiry. */
+  readonly expiresAtSeconds: number;
 }
 
 export interface PortalSessionInput {
@@ -88,6 +96,7 @@ export function createStripeClient(
   async function post(
     path: string,
     form: URLSearchParams,
+    idempotencyKey: string,
   ): Promise<Readonly<Record<string, unknown>>> {
     let response: StripeResponseLike;
     try {
@@ -97,7 +106,7 @@ export function createStripeClient(
           authorization: `Bearer ${config.secretKey}`,
           'content-type': 'application/x-www-form-urlencoded',
           'stripe-version': STRIPE_API_VERSION,
-          'idempotency-key': randomUUID(),
+          'idempotency-key': idempotencyKey,
         },
         body: form.toString(),
         signal: AbortSignal.timeout(timeoutMs),
@@ -132,8 +141,10 @@ export function createStripeClient(
       form.set('success_url', input.successUrl);
       form.set('cancel_url', input.cancelUrl);
       form.set('client_reference_id', input.accountId);
-      if (input.customerEmail !== null) form.set('customer_email', input.customerEmail);
-      const session = await post('/v1/checkout/sessions', form);
+      form.set('expires_at', String(input.expiresAtSeconds));
+      if (input.customerId !== null) form.set('customer', input.customerId);
+      else if (input.customerEmail !== null) form.set('customer_email', input.customerEmail);
+      const session = await post('/v1/checkout/sessions', form, input.idempotencyKey);
       const id = session['id'];
       const url = session['url'];
       if (typeof id !== 'string' || !SESSION_ID.test(id) || !isStripeHostedUrl(url)) {
@@ -145,7 +156,7 @@ export function createStripeClient(
       const form = new URLSearchParams();
       form.set('customer', input.customerId);
       form.set('return_url', input.returnUrl);
-      const portal = await post('/v1/billing_portal/sessions', form);
+      const portal = await post('/v1/billing_portal/sessions', form, randomUUID());
       const url = portal['url'];
       if (!isStripeHostedUrl(url)) throw unavailable();
       return { url };
