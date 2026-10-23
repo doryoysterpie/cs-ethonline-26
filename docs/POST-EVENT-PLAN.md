@@ -405,7 +405,7 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
   webhook is refused and logged as a fixed code; the donation page shows the pinned addresses
   and nothing else; changing an address requires a commit.
 
-### CAS-009: Shareable story cards (queued)
+### CAS-009: Shareable story cards (S0 written)
 
 **Tracker:** `docs/tcu/CAS-009.md`. **Issue, live status:** [#11](https://github.com/doryoysterpie/cs-ethonline-26/issues/11).
 
@@ -413,10 +413,14 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 - **Admitted.** With the whole sprint, by the owner on 21 October 2026 (SPRINT-P1); it starts
   when CAS-007 is Complete. The owner designs the creatives; this unit builds the functionality
   only.
-- **Decisions before any build.** Which fields are public (D6's allowlist governs); how the
-  card is rendered; whether third-party headlines may appear on a card; what is measured.
-- **Nothing else is specified here.** The unit is a placeholder with its decisions listed so
-  the idea is not lost.
+- **Decisions before any build.** The plan's four (which fields are public under D6's
+  allowlist; how the card is rendered; whether third-party headlines may appear; what is
+  measured) and three the design note adds (a public page without a session; a card's lifetime
+  against its publication; who may make one), raised with options in
+  `docs/CAS-009-REPORT.md`, section 1.5, on 23 October 2026.
+- **Design note.** Written 23 October 2026 (`docs/CAS-009-REPORT.md`, section 1): a reader
+  picks entries of a published output and receives a card at a public address, a record
+  rendered from the published text under D6 and D42, in CAS-010's grid.
 
 ### CAS-010: The dashboard's terminal grid (S0 only)
 
