@@ -880,6 +880,50 @@ review and pending an independent audit**.
 - **`robots.txt` disallows the known AI crawlers** from a fixed, versioned list, a convention
   they may ignore; the limits are the protection, and the hosting layer is assumed to add none.
 
+## 22. The supporter tier, the webhook boundary and donations (CAS-008)
+
+Rules the payment boundary implements (D44, D45, D46). The unit is **in review and pending an
+independent audit**.
+
+- **No card data touches this service.** Checkout and the billing portal are Stripe-hosted
+  pages; the dashboard redirects to them and never renders a card field, reads a card number,
+  a bank detail or a tax identifier. Payment is a support mechanism, not access control: no
+  capability reads the supporter mark, and a supporter sees what every reader sees.
+- **The key travels in one header to one host.** `STRIPE_SECRET_KEY` (a restricted key by
+  preference) is sent only as `Authorization: Bearer` to `api.stripe.com`, with the API version
+  pinned (`STRIPE_API_VERSION`) and an idempotency key per request; it is never in a URL, a
+  log, an audit event or an error. A provider failure of any kind is one fixed code
+  (`checkout_unavailable`); Stripe's response body is never surfaced. The URL Stripe returns is
+  followed only when it is https on a `stripe.com` host; the content security policy admits
+  exactly those two hosts as form targets, so the redirect after the form submission is allowed
+  and nothing else is.
+- **The webhook's authentication is its signature.** `POST /api/stripe/webhook` carries no
+  session and no CSRF token; it reads the body under a 256 KiB bound (declared length and
+  streamed bytes both), verifies the `v1` signature as Stripe documents it (HMAC-SHA256 over
+  `timestamp.body` under the endpoint secret, constant-time comparison, every other scheme
+  ignored, a five-minute tolerance), parses the envelope with shape checks on every identifier,
+  and records the event once by its identifier. A forged, stale or malformed delivery is
+  refused with `400` and a fixed audit code; a replay is acknowledged with `200` and changes
+  nothing; an unsubscribed type is recorded and ignored; the handler never calls Stripe back.
+- **The supporter record is append-only and bodiless.** `supporter_events` keeps identifiers,
+  instants, the status the event carried and the SHA-256 of the raw body; the body itself is
+  never stored. The mark is derived from the events by the event's own instant, then by
+  arrival, so delivery order cannot grant or revoke it out of sequence; a change of mark is its
+  own audit event.
+- **Hand-offs are limited per account** (five in fifteen minutes) with one count-only trip
+  event per window; each hand-off is recorded against the account before the redirect, so a
+  later webhook resolves to the account whatever Stripe's object carries.
+- **A donation address changes only by a reviewed commit.** The policy file is read at build
+  time; the page refuses to render (`donation_policy_drift`) when the entries' digest differs
+  from the constant pinned in code; every EVM address must carry its EIP-55 checksum and every
+  Bitcoin address its bech32, bech32m or Base58Check checksum, so a transcription error fails a
+  test instead of reaching a reader; the QR code is drawn in-process from the same pinned
+  string, and nothing on the page is fetched.
+- **Configuration fails closed.** The three Stripe variables are read together or not at all;
+  a partial set is a start-up error; with none, every support action answers
+  `support_not_configured` and the webhook answers `503`, so Stripe retries once the secret is
+  set. The key's own prefix says whether Stripe is in test mode, and the support page says so.
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,

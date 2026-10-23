@@ -53,6 +53,12 @@ export default async function ProtectedLayout({ children }: { readonly children:
               <Link href="/published">Published</Link>
             </li>
           ) : null}
+          <li>
+            <Link href="/support">Support</Link>
+          </li>
+          <li>
+            <Link href="/donate">Donate</Link>
+          </li>
           {holds(principal, 'admin:accounts') ? (
             <li>
               <Link href="/admin/accounts">Accounts and sessions</Link>

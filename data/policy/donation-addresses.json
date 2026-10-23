@@ -1,0 +1,20 @@
+{
+  "$comment": [
+    "The pinned donation addresses (CAS-008, D46). Not a secret, and deliberately so.",
+    "",
+    "Each entry names a chain, the address readers send to, the tokens accepted on",
+    "it, and the date of the small transfer that verified the address as the",
+    "owner's before it was pinned. The dashboard renders the address as text and as",
+    "a QR code from this same record, and refuses to render when the digest of the",
+    "entries differs from the one pinned in code: an address changes only in a",
+    "reviewed commit that changes both, never by editing a running instance.",
+    "",
+    "The owner's rule for every entry: a wallet dedicated to this product, no",
+    "address shared with another venture's treasury or already public under",
+    "another identity, and one verification transfer per entry even where two",
+    "entries share a string. The addresses arrive by file, not in chat; until",
+    "then the list is empty and the page says so."
+  ],
+  "version": "donation-addresses@1",
+  "entries": []
+}

@@ -32,6 +32,7 @@
     "mdast-util-from-markdown": "catalog:",
     "mdast-util-to-hast": "catalog:",
     "next": "catalog:",
+    "qrcode-generator": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "server-only": "catalog:"

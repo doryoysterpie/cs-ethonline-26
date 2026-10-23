@@ -10,7 +10,9 @@ describe('content security policy', () => {
     expect(policy).toContain("style-src 'self'");
     expect(policy).toContain("img-src 'self'");
     expect(policy).toContain("connect-src 'self'");
-    expect(policy).toContain("form-action 'self'");
+    expect(policy).toContain(
+      "form-action 'self' https://checkout.stripe.com https://billing.stripe.com",
+    );
     expect(policy).toContain("frame-ancestors 'none'");
     expect(policy).toContain("base-uri 'none'");
     expect(policy).toContain("object-src 'none'");

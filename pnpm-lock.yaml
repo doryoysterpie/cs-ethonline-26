@@ -69,6 +69,9 @@ catalogs:
     prettier:
       specifier: 3.9.6
       version: 3.9.6
+    qrcode-generator:
+      specifier: 2.0.4
+      version: 2.0.4
     react:
       specifier: 19.2.8
       version: 19.2.8
@@ -176,6 +179,9 @@ importers:
       next:
         specifier: 'catalog:'
         version: 16.4.2(@opentelemetry/api@1.10.0)(@playwright/test@1.63.0)(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      qrcode-generator:
+        specifier: 'catalog:'
+        version: 2.0.4
       react:
         specifier: 'catalog:'
         version: 19.2.8
@@ -1785,6 +1791,9 @@ packages:
     resolution: {integrity: sha512-+Owyggi9IxT1ePKGafcI87ubSmxol6smwJ+RAHDQlx9+9cPwFWDiKFFCPuWhr9ignlGpZ9vDQLw67N4dcTVFEA==}
     engines: {node: '>=20'}
 
+  qrcode-generator@2.0.4:
+    resolution: {integrity: sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqmNFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==}
+
   react-dom@19.2.8:
     resolution: {integrity: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==}
     peerDependencies:
@@ -3332,6 +3341,8 @@ snapshots:
   qified@0.10.1:
     dependencies:
       hookified: 2.2.0
+
+  qrcode-generator@2.0.4: {}
 
   react-dom@19.2.8(react@19.2.8):
     dependencies:

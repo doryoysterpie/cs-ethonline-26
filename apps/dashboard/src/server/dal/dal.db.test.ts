@@ -24,6 +24,9 @@ import { ReadingCache } from './readings.ts';
 import { insertRoundupRevision } from '@cas/database';
 import type { EmailMessage } from '../auth/email-provider.ts';
 import { WindowLimiter } from '../http/limits.ts';
+import { signPayload } from '../support/signature.ts';
+import type { StripeClient } from '../support/stripe.ts';
+import { openBillingPortal, recordWebhook, startCheckout, supportView } from './support.ts';
 import {
   approveSignup,
   denySignup,
@@ -2534,6 +2537,7 @@ describe('data-access layer against PostgreSQL', () => {
           signupAddress: new WindowLimiter(2, 900),
           signupNetwork: new WindowLimiter(3, 900),
           readerReads: new WindowLimiter(2, 900),
+          checkoutAccount: new WindowLimiter(5, 900),
         },
       });
       const outcomes: string[] = [];
@@ -2650,6 +2654,220 @@ describe('data-access layer against PostgreSQL', () => {
         'output_published:roundup_0',
         'output_unpublished:roundup_0',
       ]);
+    });
+  });
+
+  describe('the supporter tier (CAS-008)', () => {
+    const SECRET = 'whsec_' + 's'.repeat(32);
+    // One identifier per hand-off across the block, as Stripe would issue.
+    let sessions = 0;
+    function fakeStripe() {
+      const calls: unknown[] = [];
+      const client: StripeClient = {
+        createCheckoutSession: async (input) => {
+          calls.push(input);
+          sessions += 1;
+          const id = `cs_test_dal${String(sessions).padStart(8, '0')}`;
+          return { id, url: `https://checkout.stripe.com/c/pay/${id}` };
+        },
+        createPortalSession: async (input) => {
+          calls.push(input);
+          return { url: 'https://billing.stripe.com/p/session?secret=x' };
+        },
+      };
+      return { calls, client };
+    }
+    const envelope = (id: string, type: string, created: number, object: Record<string, unknown>) =>
+      JSON.stringify({ id, object: 'event', created, livemode: false, type, data: { object } });
+    const signed = (body: string, at: number, now: number = at) => ({
+      body,
+      signatureHeader: `t=${at},v1=${signPayload(SECRET, at, body)}`,
+      networkKey: 'direct',
+      now: new Date(now * 1000),
+    });
+    const kindOf = async (call: Promise<unknown>): Promise<string> => {
+      try {
+        await call;
+      } catch (error) {
+        return isDashboardError(error) ? `${error.kind}:${error.code}` : 'unexpected';
+      }
+      return 'succeeded';
+    };
+
+    it('hands off once per request, records the session, derives the mark from signed webhooks by event instant, and lets a replay or a forgery change nothing', async () => {
+      const stripe = fakeStripe();
+      const { rt, persisted, persistent } = await persistentRuntime(null, isolated, null, {
+        publicUrl: 'https://dashboard.example.org',
+        support: {
+          stripe: stripe.client,
+          webhookSecret: SECRET,
+          priceId: 'price_Test00000001',
+          mode: 'test',
+        },
+      });
+      const reader = persisted.reader;
+      expect(await supportView(rt, reader)).toEqual({
+        configured: true,
+        mode: 'test',
+        mark: 'none',
+        asOf: null,
+      });
+      const { url } = await startCheckout(rt, reader, { networkKey: 'direct' });
+      expect(url).toBe('https://checkout.stripe.com/c/pay/cs_test_dal00000001');
+      expect(stripe.calls[0]).toEqual({
+        priceId: 'price_Test00000001',
+        accountId: reader.accountId,
+        customerEmail: null,
+        successUrl: 'https://dashboard.example.org/support?notice=checkout_returned',
+        cancelUrl: 'https://dashboard.example.org/support?notice=checkout_cancelled',
+      });
+      // Stripe completes the session, binding the customer and the subscription to the account.
+      const t0 = 1_800_000_000;
+      const completed = envelope('evt_dal_0000000001', 'checkout.session.completed', t0, {
+        id: 'cs_test_dal00000001',
+        customer: 'cus_dal00000001',
+        subscription: 'sub_dal00000001',
+        client_reference_id: reader.accountId,
+      });
+      expect(await recordWebhook(rt, signed(completed, t0 + 5))).toEqual({
+        status: 200,
+        code: 'webhook_recorded',
+      });
+      // The subscription events arrive out of order: the later cancellation first.
+      const canceled = envelope('evt_dal_0000000003', 'customer.subscription.deleted', t0 + 200, {
+        id: 'sub_dal00000001',
+        customer: 'cus_dal00000001',
+        status: 'canceled',
+      });
+      const active = envelope('evt_dal_0000000002', 'customer.subscription.created', t0 + 100, {
+        id: 'sub_dal00000001',
+        customer: 'cus_dal00000001',
+        status: 'active',
+      });
+      expect((await recordWebhook(rt, signed(canceled, t0 + 210))).code).toBe('webhook_recorded');
+      expect((await supportView(rt, reader)).mark).toBe('none');
+      expect((await recordWebhook(rt, signed(active, t0 + 220))).code).toBe('webhook_recorded');
+      // The activation's own instant precedes the cancellation's: still no supporter.
+      expect((await supportView(rt, reader)).mark).toBe('none');
+      // A replay, a forgery, a stale signature and a malformed body change nothing.
+      expect(await recordWebhook(rt, signed(active, t0 + 230))).toEqual({
+        status: 200,
+        code: 'webhook_replay',
+      });
+      expect(
+        await recordWebhook(rt, {
+          body: active,
+          signatureHeader: `t=${t0 + 230},v1=${'0'.repeat(64)}`,
+          networkKey: 'direct',
+          now: new Date((t0 + 230) * 1000),
+        }),
+      ).toEqual({ status: 400, code: 'webhook_signature_mismatch' });
+      expect(await recordWebhook(rt, signed(active, t0 + 230, t0 + 1_000))).toEqual({
+        status: 400,
+        code: 'webhook_signature_stale',
+      });
+      expect(await recordWebhook(rt, signed('{"object":"event"}', t0 + 240))).toEqual({
+        status: 400,
+        code: 'webhook_body_malformed',
+      });
+      // A reactivation later by its own instant makes the reader a supporter.
+      const again = envelope('evt_dal_0000000004', 'customer.subscription.updated', t0 + 300, {
+        id: 'sub_dal00000001',
+        customer: 'cus_dal00000001',
+        status: 'active',
+      });
+      expect((await recordWebhook(rt, signed(again, t0 + 310))).code).toBe('webhook_recorded');
+      const view = await supportView(rt, reader);
+      expect([view.mark, view.asOf]).toEqual([
+        'supporter',
+        new Date((t0 + 300) * 1000).toISOString().replace('.000Z', '+00:00'),
+      ]);
+      // The portal opens with the bound customer; an unknown type is recorded and ignored.
+      const portal = await openBillingPortal(rt, reader, { networkKey: 'direct' });
+      expect(portal.url).toBe('https://billing.stripe.com/p/session?secret=x');
+      expect(stripe.calls[1]).toEqual({
+        customerId: 'cus_dal00000001',
+        returnUrl: 'https://dashboard.example.org/support',
+      });
+      const unknown = envelope('evt_dal_0000000005', 'charge.succeeded', t0 + 400, { id: 'ch_1' });
+      expect(await recordWebhook(rt, signed(unknown, t0 + 405))).toEqual({
+        status: 200,
+        code: 'webhook_ignored',
+      });
+      // A supporter and a free account receive the same content (D45): the published list is one list.
+      expect(await publishedList(rt, reader)).toEqual(await publishedList(rt, persisted.editor));
+      expect(JSON.stringify(reader)).not.toContain('supporter');
+      // The audit trail by code; never a body, never an address.
+      const events = await persistent.audit.list(200);
+      expect(
+        events
+          .filter((e) => e.kind === 'webhook_received')
+          .map((e) => e.code)
+          .sort(),
+      ).toEqual(
+        [
+          'webhook_recorded',
+          'webhook_recorded',
+          'webhook_recorded',
+          'webhook_recorded',
+          'webhook_replay',
+          'webhook_signature_mismatch',
+          'webhook_signature_stale',
+          'webhook_body_malformed',
+          'webhook_ignored',
+        ].sort(),
+      );
+      expect(events.filter((e) => e.kind === 'supporter_changed').map((e) => e.code)).toEqual([
+        'supporter',
+      ]);
+      expect(
+        events
+          .filter((e) => e.kind === 'checkout_started' && e.actorAccountId === reader.accountId)
+          .map((e) => e.code)
+          .sort(),
+      ).toEqual(['portal_redirected', 'redirected']);
+      expect(JSON.stringify(events)).not.toContain('livemode');
+    });
+
+    it('limits hand-offs per account, audits the trip once, and fails closed for an account with no customer', async () => {
+      const stripe = fakeStripe();
+      const { rt, persisted, persistent } = await persistentRuntime(null, isolated, null, {
+        publicUrl: 'https://dashboard.example.org',
+        support: {
+          stripe: stripe.client,
+          webhookSecret: SECRET,
+          priceId: 'price_Test00000001',
+          mode: 'test',
+        },
+        limits: {
+          signupAddress: new WindowLimiter(3, 900),
+          signupNetwork: new WindowLimiter(10, 900),
+          readerReads: new WindowLimiter(600, 900),
+          checkoutAccount: new WindowLimiter(1, 900),
+        },
+      });
+      const editor = persisted.editor;
+      expect(await kindOf(openBillingPortal(rt, editor, { networkKey: 'direct' }))).toBe(
+        'not_found:no_supporter_record',
+      );
+      expect(await kindOf(startCheckout(rt, editor, { networkKey: 'direct' }))).toBe('succeeded');
+      expect(await kindOf(startCheckout(rt, editor, { networkKey: 'direct' }))).toBe(
+        'throttled:checkout_limited',
+      );
+      expect(await kindOf(startCheckout(rt, editor, { networkKey: 'direct' }))).toBe(
+        'throttled:checkout_limited',
+      );
+      expect(stripe.calls).toHaveLength(1);
+      const events = await persistent.audit.list(50);
+      expect(
+        events.filter((e) => e.kind === 'limit_tripped' && e.code === 'checkout_account'),
+      ).toHaveLength(1);
+      expect(
+        events
+          .filter((e) => e.kind === 'checkout_started' && e.actorAccountId === editor.accountId)
+          .map((e) => e.code)
+          .sort(),
+      ).toEqual(['limited', 'limited', 'redirected']);
     });
   });
 });

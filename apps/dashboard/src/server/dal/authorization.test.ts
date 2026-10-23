@@ -33,6 +33,13 @@ import {
   unpublishOutput,
 } from './readers.ts';
 import {
+  donationsView,
+  openBillingPortal,
+  recordWebhook,
+  startCheckout,
+  supportView,
+} from './support.ts';
+import {
   administration,
   anomalyView,
   articleView,
@@ -253,6 +260,49 @@ describe('data-access layer authorization without a database', () => {
     } catch (error) {
       expect((error as Error).message).not.toContain('must not be reached');
     }
+  });
+
+  it('opens the supporter tier to every signed-in role and to no one else, failing closed while unconfigured (CAS-008)', async () => {
+    const { runtime, principals } = await runtimeFor();
+    const key = { networkKey: 'direct' };
+    for (const call of [
+      (p: Principal | null) => supportView(runtime, p),
+      (p: Principal | null) => startCheckout(runtime, p, key),
+      (p: Principal | null) => openBillingPortal(runtime, p, key),
+      (p: Principal | null) => donationsView(runtime, p),
+    ]) {
+      expect(await kindOf(call(null))).toBe('authentication');
+    }
+    for (const role of ROLES) {
+      // The view reaches the (untouchable) database: the gate opened.
+      expect(await kindOf(supportView(runtime, principals[role])), role).toBe('unavailable');
+      // The hand-offs fail closed on configuration before any provider or database call.
+      expect(await kindOf(startCheckout(runtime, principals[role], key)), role).toBe(
+        'configuration',
+      );
+      expect(await kindOf(openBillingPortal(runtime, principals[role], key)), role).toBe(
+        'configuration',
+      );
+      // The pinned donation list needs no database at all.
+      expect((await donationsView(runtime, principals[role])).entries).toEqual([]);
+    }
+    const started = (await runtime.stores.audit.list(50)).filter(
+      (e) => e.kind === 'checkout_started',
+    );
+    expect(started.map((e) => e.code)).toEqual(ROLES.map(() => 'support_not_configured'));
+    // The webhook needs no session; unconfigured, it answers 503 with a fixed code and records it.
+    const unconfigured = await recordWebhook(runtime, {
+      body: '{}',
+      signatureHeader: null,
+      networkKey: 'direct',
+    });
+    expect(unconfigured).toEqual({ status: 503, code: 'webhook_not_configured' });
+    const oversized = await recordWebhook(runtime, {
+      body: 'x'.repeat(256 * 1024 + 1),
+      signatureHeader: null,
+      networkKey: 'direct',
+    });
+    expect(oversized).toEqual({ status: 400, code: 'webhook_too_large' });
   });
 
   it('validates identifiers before touching anything, with fixed codes', async () => {

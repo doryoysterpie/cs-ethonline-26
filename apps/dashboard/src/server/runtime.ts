@@ -15,6 +15,8 @@ import { createAnthropicTransport } from './model/anthropic.ts';
 import { loadModelConfig } from './model/config.ts';
 import { createNodeReader, loadReaderConfig, type SourceReaderDeps } from './model/reader.ts';
 import { defaultLimits, type Limits } from './http/limits.ts';
+import { loadSupportConfig, type StripeMode } from './support/config.ts';
+import { createStripeClient, type StripeClient } from './support/stripe.ts';
 import { workspace } from './packages.ts';
 
 /**
@@ -58,6 +60,15 @@ export interface Runtime {
   readonly limits: Limits;
   /** The dashboard's public https origin (DASHBOARD_PUBLIC_URL), named in the approval email; null when unset. */
   readonly publicUrl: string | null;
+  /** The supporter tier's provider boundary (CAS-008); null when not configured, so every support action fails closed. */
+  readonly support: SupportDeps | null;
+}
+
+export interface SupportDeps {
+  readonly stripe: StripeClient;
+  readonly webhookSecret: string;
+  readonly priceId: string;
+  readonly mode: StripeMode;
 }
 
 export function createRuntime(
@@ -70,9 +81,10 @@ export function createRuntime(
     readonly readings?: ReadingCache | undefined;
     readonly limits?: Limits | undefined;
     readonly publicUrl?: string | null | undefined;
+    readonly support?: SupportDeps | null | undefined;
   } = {},
 ): Runtime {
-  const { model, reader, readings, limits, publicUrl, ...sessionOptions } = options;
+  const { model, reader, readings, limits, publicUrl, support, ...sessionOptions } = options;
   return {
     config,
     stores,
@@ -85,6 +97,7 @@ export function createRuntime(
     otpPepper: sessionOptions.otpPepper ?? null,
     limits: limits ?? defaultLimits(),
     publicUrl: publicUrl ?? null,
+    support: support ?? null,
   };
 }
 
@@ -125,12 +138,22 @@ export function getRuntime(): Promise<Runtime> {
         config.accountStore === 'memory' ? localOtpEmailConfig() : loadOtpEmailConfig(process.env);
       const modelConfig = loadModelConfig(process.env);
       const readerConfig = loadReaderConfig(process.env);
+      const supportConfig = loadSupportConfig(process.env);
       return createRuntime(config, stores, database, {
         emailProvider: otp.provider,
         otpPepper: otp.pepper,
         model: modelConfig === null ? null : createAnthropicTransport(modelConfig),
         reader: readerConfig === null ? null : createNodeReader(readerConfig, sourceReader),
         publicUrl: readerConfig === null ? null : new URL(readerConfig.publicUrl).origin,
+        support:
+          supportConfig === null
+            ? null
+            : {
+                stripe: createStripeClient(supportConfig, fetch),
+                webhookSecret: supportConfig.webhookSecret,
+                priceId: supportConfig.priceId,
+                mode: supportConfig.mode,
+              },
       });
     })();
     // A failed start is not cached: the next request tries again and reports

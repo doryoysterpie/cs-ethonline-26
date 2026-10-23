@@ -22,6 +22,13 @@ const NOTICES: Readonly<Record<string, string>> = {
   denied: 'Request denied; the email was sent.',
   published: 'Published. Readers now see this revision.',
   unpublished: 'Unpublished. Readers no longer see this output.',
+  checkout_returned:
+    'Thank you. Stripe confirms a subscription within a minute or so; this page then shows it.',
+  checkout_cancelled: 'Checkout cancelled. Nothing was charged.',
+  checkout_unavailable: 'The payment provider did not answer. Try again later.',
+  checkout_limited: 'Too many checkout attempts. Wait a while and try again.',
+  support_not_configured: 'Card support is not set up yet.',
+  no_supporter_record: 'No support record exists for this account yet.',
   unselected: 'Set aside for this issue.',
   already_recorded: 'Already recorded: an identical action existed.',
   revoked: 'Sessions revoked.',
@@ -60,6 +67,10 @@ export function isErrorNotice(code: unknown): boolean {
     code === 'failed' ||
     code === 'session_expired' ||
     code === 'code_invalid' ||
-    code === 'code_expired'
+    code === 'code_expired' ||
+    code === 'checkout_unavailable' ||
+    code === 'checkout_limited' ||
+    code === 'support_not_configured' ||
+    code === 'no_supporter_record'
   );
 }
