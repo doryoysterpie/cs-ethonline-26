@@ -76,7 +76,8 @@ and a PASS at `fcdf88c` (`docs/CAS-004-REPORT.md`, section 7).
 
 Merged into `main` on 22 October 2026 as one train, before independent review; the combined
 audit of `main` at `881d5a3` returned CHANGES REQUIRED on 23 October 2026 (seven findings,
-`docs/AUDIT-LEDGER.md`), corrected with tests on pull request 33, re-review pending: CAS-005, the article written
+`docs/AUDIT-LEDGER.md`), corrected with tests on pull request 33, which passed its re-review at
+`8f06193` and merged on 23 October 2026: CAS-005, the article written
 from the full sources behind the system's first outbound fetch under the fetch policy adopted as
 D36 (migration 0016, `@cas/source-reader`, `@cas/article`), on pull request 26
 (`docs/CAS-005-REPORT.md`); CAS-007, reader sign-up with owner approval, the `reader` role in
