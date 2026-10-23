@@ -51,6 +51,7 @@ repository's own reports and the sprint board. CAS-006 step 1, 22 October 2026.
 | CAS-005 article, PR #26 merged             | `00369e3` in `497fe13`     | Codex                          | CHANGES REQUIRED in the combined audit of `main` at `881d5a3`: F1 to F3 (Medium); corrected on `train/26-28-corrections` | 23 Oct 2026      | `2026-10-23-prs-26-28-merged-train.md`                   |
 | CAS-007 readers, PR #27 merged             | `d2cd1ed` in `75c5ba4`     | Codex                          | CHANGES REQUIRED in the same audit: F4 (Medium), F5 (High); corrected on `train/26-28-corrections`                       | 23 Oct 2026      | `2026-10-23-prs-26-28-merged-train.md`                   |
 | CAS-008 supporter tier, PR #28 merged      | `4ad5a9a` in `881d5a3`     | Codex                          | CHANGES REQUIRED in the same audit: F6 (Medium), F7 (High); corrected on `train/26-28-corrections`                       | 23 Oct 2026      | `2026-10-23-prs-26-28-merged-train.md`                   |
+| Train corrections, PR #33                  | `224e82a`                  | none yet                       | not audited; the re-review of F1 to F7 requested at this head                                                            | 23 Oct 2026      | none yet                                                 |
 
 ## What this means for the deployed service
 
