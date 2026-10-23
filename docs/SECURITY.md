@@ -270,7 +270,11 @@ consumer of the store inherits:
   `database` job (security-foundation track, pending audit) starts a PostgreSQL 17 service
   pinned by digest inside the job, with trust authentication on the job's own loopback and a
   credential-free URL, applies every migration, reruns them as a no-op, checks drift and
-  runs the complete `test:db` suite, then discards the database with the job.
+  runs the complete `test:db` suite, then discards the database with the job. A second job,
+  `database-password`, runs the same steps against the same image under scram password
+  authentication with a synthetic per-run password that exists only inside the job (pull
+  request 33's re-review, N1), so a test that loses a credential fails there as it would
+  against a real server, which trust authentication cannot show.
 - A file that crosses an import limit (`RESOURCE_LIMITS.import`, decision D27, pending
   audit) is refused as a whole at the first chunk, header, cell or row that crosses it, with
   a fixed message and numeric details, before any write; see section 15.

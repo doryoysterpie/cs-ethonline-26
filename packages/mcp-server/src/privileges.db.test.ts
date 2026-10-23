@@ -174,6 +174,7 @@ describe('F9: the reader role and the privilege matrix', () => {
   it('catches every widening of the reader, and the template converges it back', async () => {
     const reader = quoteIdentifier(database.readerRole);
     const writer = `${database.readerRole}_writer`;
+    const password = decodeURIComponent(new URL(database.readerConfig.connectionString).password);
     const verify = async (): Promise<readonly string[]> =>
       (
         await withReadOnlyConnection(database.readerConfig, (client, schema) =>
@@ -206,15 +207,19 @@ describe('F9: the reader role and the privilege matrix', () => {
       await admin(`GRANT ${quoteIdentifier(writer)} TO ${reader}`);
       expect(await verify()).toContain('no_write_capable_membership');
       // Rerunning the template revokes the membership and every stray grant.
-      await provisionReaderRole(database.admin, database.readerRole, 'public', 'ab'.repeat(24));
+      // The template sets the role's password, so it is rerun with the
+      // harness's own: the verification that follows connects with the
+      // credential the harness holds, under password authentication as under
+      // trust (pull request 33's re-review, N1).
+      await provisionReaderRole(database.admin, database.readerRole, 'public', password);
       expect(await verify()).toEqual([]);
     } finally {
       await admin(`DROP OWNED BY ${quoteIdentifier(writer)}`);
       await admin(`DROP ROLE IF EXISTS ${quoteIdentifier(writer)}`);
     }
-    // The password was replaced by the rerun; restore the harness's own.
-    const password = new URL(database.readerConfig.connectionString).password;
-    await admin(`ALTER ROLE ${reader} PASSWORD '${password}'`);
+    // The reader still connects with its own credential after the rerun; a
+    // rerun under another password would leave the harness locked out, which
+    // a password-authenticated server reports as 28P01 and trust never would.
     expect(await verify()).toEqual([]);
   });
 

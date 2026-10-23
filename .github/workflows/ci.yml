@@ -164,6 +164,80 @@ jobs:
       - name: PostgreSQL integration suite
         run: pnpm test:db
 
+  database-password:
+    name: PostgreSQL integration, password authentication
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17.11@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+        env:
+          POSTGRES_USER: cas_ci
+          POSTGRES_DB: cas_ci
+          # A synthetic password, not a secret: it exists only inside this
+          # job, on its loopback, so that the suite runs once under scram
+          # authentication and a test that loses a credential fails here
+          # as it would against a real server (pull request 33, N1).
+          POSTGRES_PASSWORD: cas_ci_scram_${{ github.run_id }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cas_ci -d cas_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+    env:
+      # The same role and database, the synthetic password in the URL.
+      DATABASE_URL: postgresql://cas_ci:cas_ci_scram_${{ github.run_id }}@127.0.0.1:5432/cas_ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          check-latest: false
+          cache: pnpm
+
+      - name: Install with frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Each step asserts the exact fixed line the command prints, with the
+      # expected count taken from the migrations directory, so a new migration
+      # changes the expectation and a missing one fails it.
+      - name: Apply every migration to the fresh database
+        run: |
+          expected="$(ls packages/database/migrations/*.sql | wc -l | tr -d ' ')"
+          output="$(pnpm db:migrate)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -qx "db:migrate: applied=${expected} alreadyApplied=0 total=${expected}"
+
+      - name: Rerun the migrations as a no-op
+        run: |
+          expected="$(ls packages/database/migrations/*.sql | wc -l | tr -d ' ')"
+          output="$(pnpm db:migrate)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -qx "db:migrate: applied=0 alreadyApplied=${expected} total=${expected} (no-op)"
+
+      - name: Drift check
+        run: |
+          expected="$(ls packages/database/migrations/*.sql | wc -l | tr -d ' ')"
+          output="$(pnpm db:check)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -qx "migrations: applied=${expected} pending=0 drift=0"
+
+      - name: PostgreSQL integration suite
+        run: pnpm test:db
+
   supply-chain:
     name: Supply chain
     runs-on: ubuntu-latest
