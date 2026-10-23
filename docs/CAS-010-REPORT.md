@@ -2,7 +2,7 @@
 
 **Unit:** CAS-010 (`docs/POST-EVENT-PLAN.md`, section 5). **Tracker:** `docs/tcu/CAS-010.md`.
 **Issue:** [#30](https://github.com/doryoysterpie/cs-ethonline-26/issues/30). **Decision:** D47.
-**State:** in build. The owner admitted this unit on 22 October 2026 for its design note, with
+**State:** in review, pull request 34. The owner admitted this unit on 22 October 2026 for its design note, with
 one condition: no implementation pull request opens until the review queue of pull requests
 24 to 28 is back under a day. The note was written first so that CAS-009's story cards have a
 grid to land in; the queue emptied on 22 October 2026 when the owner merged 26, 27 and 28, and
