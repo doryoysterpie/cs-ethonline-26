@@ -56,9 +56,9 @@ dashboard serves traffic.
 
 **What is on `main`, and what is in review.** CAS-001, the living feed imported from the
 authorized Google Sheets workbook, merged on 22 October 2026 at `9c03a35` after an independent
-PASS at `2ad714d`; its first real import into the hosted database follows the deploy into the
-database recreated after the Railway platform incident of 21 to 22 October
-(`docs/INCIDENT_RESPONSE.md`, section 7). CAS-002, one classification run per category with
+PASS at `2ad714d`; its first real import into the hosted database follows, the database having
+been recreated and `main` redeployed on 22 October 2026 after the Railway platform incident of
+21 to 22 October (`docs/INCIDENT_RESPONSE.md`, section 7; `docs/RUNBOOK-HOSTING.md`). CAS-002, one classification run per category with
 the category recorded beside the run and bound to a policy registry (migration 0013), merged
 the same day at `b4c8270`; its first review returned two findings, corrected at `aeeccf4`, and
 that corrected head awaits the reviewer's verdict, so it is not called audited
@@ -481,6 +481,7 @@ audit and nothing in it is accepted.
 | `docs/SECURITY.md`                        | security policy                                                                                                       |
 | `docs/SHEETS-INTAKE.md`                   | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                           |
 | `docs/RUNBOOK-WEEKLY-IMPORT.md`           | the weekly Sheets import: the command, what it needs, what it prints, exit codes                                      |
+| `docs/RUNBOOK-HOSTING.md`                 | the hosted service on Railway: what runs, the variables, the rebuild after a provider incident, the plan, the proxy   |
 | `docs/CAS-001-REPORT.md`                  | CAS-001 report: design note, reference implementation, import path, local run                                         |
 | `docs/THREAT_MODEL.md`                    | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks |
 | `docs/RISK_REGISTER.md`                   | risks with owner, status, next action and review date                                                                 |

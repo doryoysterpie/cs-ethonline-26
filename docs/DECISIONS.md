@@ -1268,7 +1268,11 @@ to replace the file in that window defeated every check.
   Railway, so no platform move is needed. A cost judgment, not a vendor commitment: the
   hackathon has ended and no sponsor obligation remains.
 - **Consequences:** `docs/ACCOUNT_READINESS.md` records the live hosting row as resolved.
-  Backups and their restore test are CAS-006's. Only the dashboard image is deployed; the
+  Backups and their restore test are CAS-006's. Note, 22 October 2026: on Railway, creating
+  backups, scheduling them and point-in-time recovery need the Pro plan (USD 20), which Hobby
+  lacks; the owner defers that upgrade to the launch (the refined dashboard opened for public
+  reader sign-up and the supporter tier), so the hosted database runs without backups meanwhile (`RISK_REGISTER.md`, K21; `RUNBOOK-HOSTING.md`,
+  sections 4 and 5). Only the dashboard image is deployed; the
   pipeline commands still run from an operator's machine until CAS-003 decides scheduling.
 - **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
   section 3 (P-1).
