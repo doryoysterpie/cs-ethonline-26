@@ -377,3 +377,54 @@ worker 119, dashboard 31, mcp-server 49); CI green on every check, code scanning
 `c06451c`, the branch having taken pull request 23's third correction through pull request 24,
 the loop and the four suites pass with the same counts, and CI run 39837895756 is green on every
 check.
+
+## 7. Corrections before review: the round-up's findings applied to the article
+
+Pull request 24's independent review found, in the round-up's generation, defects the article's
+generation shared by construction: it was written to the same shape. They were corrected here
+before the article's own review was requested, each with the test the round-up's correction
+carries, so the reviewer meets the article as the round-up now stands.
+
+- **A billed but rejected response was recorded at zero (the round-up's F3) and a provider
+  refusal after an answer likewise (RR1).** Correction: `ArticleError` carries `billed` (model and
+  usage) for every failure after a response; the package reads a transport's billed shape by
+  shape, never by class (`billedOf`); the ledger records such a failure at its real tokens and
+  cost, and the month's spend includes it. Tests: in the package, a validator rejection, a
+  billed provider refusal, a malformed billed shape (no usage) and a missing credential (no
+  request) each carry what they should; against PostgreSQL, a rejected answer of 2,000 input and
+  500 output tokens is a failed row at USD 0.018 that leaves the reading in place, and a second
+  attempt is refused by the cap exactly when that cost is what stands between the month and the
+  ceiling (a completed row placed one microdollar short of it, the worst case taken from the
+  prompt the transport saw); a provider refusal after an answer is a failed row at its usage.
+- **Concurrent generation could make an unrecorded duplicate request (F4, RR2).** The
+  existence check was a standalone read, the cap check a pooled read, the ledger row written with
+  the revision. Correction: the claim, the cap check, the one request, the ledger row and the
+  revision run under an advisory lock of the article's own (`withGenerationLock` with the kind `article`, keyed by the schema and the kind, tried and never waited for, held on one
+  connection that every protected read and write uses); a concurrent submission is refused at
+  once with `article_generation_in_progress`; the ledger row is written in its own transaction
+  before the revision. The round-up's key string is unchanged; the two kinds, each capped and
+  checked apart, never wait on each other. Test: five submissions of one reading at once make
+  exactly one transport call, one succeeds, the rest are refused, one ledger row, one revision,
+  the reading consumed.
+- **The selection query could silently truncate (F5).** Correction: the reading and the
+  generation fetch the bound plus one row and refuse whole with `selection_too_large` when the
+  page is full, before any page is fetched and before any request. Test: 201 incidents of 50 rows
+  seeded through the real pipeline and selected; the reading is refused with no fetch; one
+  incident set aside, exactly 10,000 rows are read, every row in the reading.
+- **The editor's bound was below storage's (RR3).** The article editor held 200,000 characters
+  against migration 0016's 400,000. Correction: `MAX_ARTICLE_CHARACTERS` (400,000) bounds the
+  editor, so every generated revision is editable. Test: the package's `MAX_MARKDOWN_CHARACTERS`,
+  the layer's bound and the migration agree; 400,001 characters are refused by the layer and, behind
+  it, by the database; 400,000 save as revision 2.
+- **Found with the bound, corrected with it.** A selection whose sources that could not be read
+  list past the stored bound could be requested, billed and then refused by the database.
+  Correction: `MAX_MARKDOWN_CHARACTERS` is pinned in the package beside the migration's bound and a
+  generated rendering past it is `response_too_long`, billed and recorded. Test: two hundred
+  unread sources at the URL bound render past 400,000 characters; the response, valid in every
+  other respect, is refused with its usage and without naming a source.
+
+Counts at the corrected head, from the runner, 22 October 2026: `verify` exit 0, 1,120 offline
+tests (the article 7, the dashboard 87, the source reader 23, the worker 269, the rest as at
+section 6) and 32 tool tests; `test:db` exit 0, 316 (database 106, worker 119, dashboard 42, the
+five above among them, mcp-server 49). The clean clone, the CI run and the commit are on the
+tracker's evidence record.

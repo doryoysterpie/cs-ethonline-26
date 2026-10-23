@@ -7,10 +7,10 @@ import {
   worstCaseMicrodollars,
   wouldExceedCap,
 } from './cost.js';
-import { ArticleError } from './errors.js';
+import { ArticleError, type BilledUsage } from './errors.js';
 import { assertArticleInput, inputDigest, type ArticleInput } from './input.js';
 import { PROMPT_VERSION, promptHash, systemPrompt, userPrompt } from './prompt.js';
-import { renderMarkdown } from './render.js';
+import { MAX_MARKDOWN_CHARACTERS, renderMarkdown } from './render.js';
 import { slotsJsonSchema, type ArticleSlots, type NamingBasis } from './schema.js';
 import type { ArticleTransport } from './transport.js';
 import { validateArticle, wordCountOf } from './validate.js';
@@ -45,6 +45,27 @@ export interface ArticleGeneration {
 export interface GenerateOptions {
   /** The month's spend so far on articles, in microdollars, for the cap check. */
   readonly spentThisMonth: number;
+}
+
+/** The billed usage a foreign error carries, when it has the shape; null otherwise. */
+function billedOf(value: unknown): BilledUsage | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const model = record['model'];
+  const inputTokens = record['inputTokens'];
+  const outputTokens = record['outputTokens'];
+  if (
+    typeof model !== 'string' ||
+    typeof inputTokens !== 'number' ||
+    typeof outputTokens !== 'number' ||
+    !Number.isInteger(inputTokens) ||
+    !Number.isInteger(outputTokens) ||
+    inputTokens < 0 ||
+    outputTokens < 0
+  ) {
+    return null;
+  }
+  return { model, inputTokens, outputTokens };
 }
 
 /** The prompt and its worst case, for the caller's cap check before any request. */
@@ -124,19 +145,50 @@ export async function generateArticle(
     });
   } catch (error) {
     if (error instanceof ArticleError) throw error;
+    // A transport may be loaded as another module instance; its coded failure
+    // is honoured by code, never by class identity, and never by its text.
     const code = (error as { code?: unknown } | null)?.code;
+    // A transport that answered before failing carries what the answer cost;
+    // read by shape, never by class, and kept on the error for the ledger.
+    const billed = billedOf((error as { billed?: unknown } | null)?.billed);
     if (code === 'model_refused' || code === 'response_invalid') {
       throw new ArticleError(
         code,
         code === 'model_refused' ? 'the model declined the request' : 'the response was not JSON',
+        {},
+        billed,
       );
     }
-    throw new ArticleError('model_failed', 'the model request failed');
+    throw new ArticleError('model_failed', 'the model request failed', {}, billed);
   }
-  const slots = validateArticle(response.raw, input);
+  // The request was made and billed whatever happens next: a failure from
+  // here carries the usage, so the ledger records the real cost.
+  const billed: BilledUsage = {
+    model: response.model,
+    inputTokens: response.usage.inputTokens,
+    outputTokens: response.usage.outputTokens,
+  };
+  let slots: ArticleSlots;
+  try {
+    slots = validateArticle(response.raw, input);
+  } catch (error) {
+    if (error instanceof ArticleError) {
+      throw new ArticleError(error.code, error.message, error.details, billed);
+    }
+    throw error;
+  }
+  const markdown = renderMarkdown(slots, input);
+  if (markdown.length > MAX_MARKDOWN_CHARACTERS) {
+    throw new ArticleError(
+      'response_too_long',
+      'the generated article renders past the stored bound',
+      { characters: markdown.length, bound: MAX_MARKDOWN_CHARACTERS },
+      billed,
+    );
+  }
   return {
     slots,
-    markdown: renderMarkdown(slots, input),
+    markdown,
     provenance: {
       model: response.model,
       promptVersion: PROMPT_VERSION,

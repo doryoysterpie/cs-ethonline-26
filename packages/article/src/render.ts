@@ -2,6 +2,13 @@ import type { ArticleInput, ArticleRow } from './input.js';
 import type { ArticleSlots } from './schema.js';
 
 /**
+ * The most characters a stored revision may hold: migration 0016's CHECK on
+ * `article_revisions.markdown`, pinned here so a generated rendering past it
+ * is refused with a fixed code (billed, recorded) instead of by the database.
+ */
+export const MAX_MARKDOWN_CHARACTERS = 400_000;
+
+/**
  * The copy-ready Markdown the owner pastes out by hand: the headline, the
  * standfirst in bold, the paragraphs with their source numbers, a numbered
  * source list, and the sources that were not read, so the owner sees what

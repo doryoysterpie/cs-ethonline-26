@@ -837,6 +837,17 @@ audit**.
 - **The owner alone reads, writes and edits** (`generate:article`, `edit:output`); the
   article's monthly cap is accounted apart from the round-up's; every refusal with a known actor
   is audited once at the boundary.
+- **Cost is bounded twice and recorded, as the round-up's is** (section 19; applied to the
+  article before its review from the round-up's findings F3 to F5, RR1 and RR3). A refused
+  request is a ledger row with zero tokens and its code; a response the validator rejected, and a
+  provider refusal after an answer, were billed all the same and are failed rows at their real
+  cost, and every row of the month counts toward the cap. One article generation runs at a time
+  per schema under an advisory lock of its own, tried and never waited for, every protected read
+  and write on the one connection that holds it; a concurrent submission is refused at once with
+  `article_generation_in_progress`; the ledger row is written before the revision. The owner's
+  editor accepts what storage accepts (400,000 characters), so every generated revision is
+  editable; a selection past the row bound is refused whole before any page is fetched, never
+  cut to a prefix; a generated rendering past the stored bound is refused, billed and recorded.
 
 ## Reporting a vulnerability
 

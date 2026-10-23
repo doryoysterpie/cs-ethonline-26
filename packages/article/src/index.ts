@@ -22,7 +22,7 @@ export {
   wouldExceedCap,
   type TokenUsage,
 } from './cost.js';
-export { ArticleError, isArticleError, type ArticleErrorCode } from './errors.js';
+export { ArticleError, isArticleError, type ArticleErrorCode, type BilledUsage } from './errors.js';
 export {
   generateArticle,
   prepareArticle,
@@ -45,7 +45,7 @@ export {
   type SourceReading,
 } from './input.js';
 export { PROMPT_VERSION, promptHash, systemPrompt, userPrompt } from './prompt.js';
-export { renderMarkdown } from './render.js';
+export { MAX_MARKDOWN_CHARACTERS, renderMarkdown } from './render.js';
 export {
   ArticleSlotsSchema,
   CONTRACT,

@@ -12,20 +12,33 @@ export type ArticleErrorCode =
   | 'response_length'
   | 'response_headline'
   | 'response_naming_basis'
+  | 'response_too_long'
   | 'model_key_missing'
   | 'spend_cap_exceeded'
   | 'model_refused'
   | 'model_failed';
 
+/** What a request that reached the model cost, carried on a failure after the response (the round-up's review F3). */
+export interface BilledUsage {
+  readonly model: string;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
 /** A fixed code and a message that never carries model output or page text. */
 export class ArticleError extends Error {
+  /** Non-null when a model request was made and billed before the failure; the ledger records it. */
+  readonly billed: BilledUsage | null;
+
   constructor(
     readonly code: ArticleErrorCode,
     message: string,
     readonly details: Readonly<Record<string, string | number | boolean | null>> = {},
+    billed: BilledUsage | null = null,
   ) {
     super(message);
     this.name = 'ArticleError';
+    this.billed = billed;
   }
 }
 

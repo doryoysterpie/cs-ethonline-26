@@ -923,9 +923,13 @@ const FLAGGED_FOR_GENERATION = 200;
  * (re-review RR3).
  */
 export const MAX_ROUNDUP_CHARACTERS = 400_000;
+/** The article editor accepts what migration 0016 stores (400,000 characters), so every generated revision is editable. */
+export const MAX_ARTICLE_CHARACTERS = 400_000;
 
 /**
- * One generation at a time per schema (review F4, re-review RR2). The lock
+ * One generation at a time per schema and kind (review F4, re-review RR2;
+ * the article takes its own key so the two kinds, each capped and checked
+ * apart, never wait on each other). The lock
  * is tried, never waited for, on one connection, and every protected read
  * and write runs on that same connection, so a generation holds exactly one
  * pooled connection whatever the pool size: a concurrent submission is
@@ -935,9 +939,10 @@ export const MAX_ROUNDUP_CHARACTERS = 400_000;
  */
 async function withGenerationLock<T>(
   runtime: Runtime,
+  kind: 'roundup' | 'article',
   work: (holder: Queryable) => Promise<T>,
 ): Promise<T> {
-  const key = `${runtime.database.schema}:roundup-generation`;
+  const key = `${runtime.database.schema}:${kind}-generation`;
   return runtime.database.withClient(async (holder) => {
     const claimed = await holder.query<{ locked: boolean }>(
       'SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS locked',
@@ -946,7 +951,7 @@ async function withGenerationLock<T>(
     if (claimed.rows[0]?.locked !== true) {
       throw new DashboardError(
         'conflict',
-        'roundup_generation_in_progress',
+        `${kind}_generation_in_progress`,
         'A generation is in progress; wait for it to finish.',
       );
     }
@@ -1234,7 +1239,7 @@ async function generateRoundupUnaudited(
     // cannot both observe an empty round-up and both call the model. The
     // ledger row is written in its own transaction before the revisions, so
     // a billed request keeps its record even if persistence fails after it.
-    const generation = await withGenerationLock(runtime, async (holder) => {
+    const generation = await withGenerationLock(runtime, 'roundup', async (holder) => {
       await assertNotGenerated(holder);
       const bounds = monthBounds(new Date());
       const spentThisMonth = await spendBetween(holder, 'roundup', bounds.from, bounds.to);
@@ -1567,8 +1572,16 @@ async function articleSelection(
     throw validation('week_not_ready', 'The week must be completed and cover that category.');
   }
   const rows = await runtime.database.withClient((client) =>
-    listSelectedRows(client, weekRunId, category, SELECTION_ROWS_FOR_GENERATION),
+    listSelectedRows(client, weekRunId, category, SELECTION_ROWS_FOR_GENERATION + 1),
   );
+  if (rows.length > SELECTION_ROWS_FOR_GENERATION) {
+    // Never a prefix: a selection past the bound is refused whole, before
+    // any page is fetched and before any request (the round-up's review F5).
+    throw validation(
+      'selection_too_large',
+      'The selection holds more rows than one article can carry.',
+    );
+  }
   if (rows.length === 0) {
     throw validation('selection_empty', 'No story is selected for that week and category.');
   }
@@ -1705,6 +1718,7 @@ async function generateArticleUnaudited(
   const { insertArticleRevision, insertModelCall, listArticleRevisions, spendBetween } =
     packages.database;
   const {
+    costMicrodollars,
     generateArticle: runGeneration,
     isArticleError,
     MODEL_ID,
@@ -1715,12 +1729,13 @@ async function generateArticleUnaudited(
   };
   try {
     const { week, rows } = await articleSelection(runtime, weekRunId, category);
-    const existing = await runtime.database.withClient((client) =>
-      listArticleRevisions(client, weekRunId, category),
-    );
-    if (existing.length > 0) {
-      throw validation('article_already_generated', 'This article was written; edit it instead.');
-    }
+    const assertNotGenerated = async (client: Queryable): Promise<void> => {
+      const existing = await listArticleRevisions(client, weekRunId, category);
+      if (existing.length > 0) {
+        throw validation('article_already_generated', 'This article was written; edit it instead.');
+      }
+    };
+    await runtime.database.withClient(assertNotGenerated);
     const entry = runtime.readings.get(readingId);
     if (
       entry === null ||
@@ -1784,10 +1799,6 @@ async function generateArticleUnaudited(
       windowEnd: week.windowEnd,
       incidents,
     };
-    const bounds = monthBounds(new Date());
-    const spentThisMonth = await runtime.database.withClient((client) =>
-      spendBetween(client, 'article', bounds.from, bounds.to),
-    );
     await audit(runtime, {
       kind: 'article_requested',
       outcome: 'success',
@@ -1798,13 +1809,14 @@ async function generateArticleUnaudited(
       subjectId: weekRunId,
     });
     const ledger = (
+      holder: Queryable,
       outcome: 'completed' | 'refused' | 'failed',
       code: string,
       usage: { inputTokens: number; outputTokens: number; costMicrodollars: number },
       model: string,
     ): Promise<void> =>
-      runtime.database.withTransaction((tx) =>
-        insertModelCall(tx, {
+      transactionOn(holder, () =>
+        insertModelCall(holder, {
           id: randomUUID(),
           kind: 'article',
           weekRunId,
@@ -1819,81 +1831,100 @@ async function generateArticleUnaudited(
           createdAt: new Date().toISOString(),
         }),
       );
-    let generation;
-    try {
-      generation = await runGeneration(articleInput, runtime.model, { spentThisMonth });
-    } catch (error) {
-      if (!isArticleError(error)) throw error;
-      const refused =
-        error.code === 'spend_cap_exceeded' ||
-        error.code === 'model_key_missing' ||
-        error.code === 'input_empty' ||
-        error.code === 'input_invalid' ||
-        error.code === 'input_too_large';
+    // One article generation at a time per schema, as the round-up's (its
+    // review F4): the claim, the cap check, the one request, the ledger row
+    // and the revision happen under an advisory lock held on a dedicated
+    // connection, so two submissions cannot both observe an unwritten
+    // article and both call the model. The ledger row is written in its own
+    // transaction before the revision, so a billed request keeps its record
+    // even if persistence fails after it.
+    const generation = await withGenerationLock(runtime, 'article', async (holder) => {
+      await assertNotGenerated(holder);
+      const bounds = monthBounds(new Date());
+      const spentThisMonth = await spendBetween(holder, 'article', bounds.from, bounds.to);
+      let produced;
+      try {
+        produced = await runGeneration(articleInput, runtime.model, { spentThisMonth });
+      } catch (error) {
+        if (!isArticleError(error)) throw error;
+        const refused =
+          error.code === 'spend_cap_exceeded' ||
+          error.code === 'model_key_missing' ||
+          error.code === 'input_empty' ||
+          error.code === 'input_invalid' ||
+          error.code === 'input_too_large';
+        // A request the model answered is billed whatever the verdict on the
+        // answer (the round-up's review F3): the ledger records its real cost.
+        const billed = error.billed;
+        await ledger(
+          holder,
+          refused ? 'refused' : 'failed',
+          error.code,
+          billed === null
+            ? { inputTokens: 0, outputTokens: 0, costMicrodollars: 0 }
+            : {
+                inputTokens: billed.inputTokens,
+                outputTokens: billed.outputTokens,
+                costMicrodollars: costMicrodollars(billed),
+              },
+          billed?.model ?? MODEL_ID,
+        );
+        if (
+          error.code === 'model_key_missing' ||
+          error.code === 'model_failed' ||
+          error.code === 'model_refused'
+        ) {
+          throw new DashboardError(
+            'unavailable',
+            error.code,
+            'The model request could not be completed; nothing was written.',
+          );
+        }
+        if (error.code.startsWith('response_')) {
+          throw new DashboardError(
+            'unavailable',
+            error.code,
+            'The response was rejected; nothing was written.',
+          );
+        }
+        throw validation(error.code, error.message);
+      }
       await ledger(
-        refused ? 'refused' : 'failed',
-        error.code,
-        { inputTokens: 0, outputTokens: 0, costMicrodollars: 0 },
-        MODEL_ID,
-      );
-      if (
-        error.code === 'model_key_missing' ||
-        error.code === 'model_failed' ||
-        error.code === 'model_refused'
-      ) {
-        throw new DashboardError(
-          'unavailable',
-          error.code,
-          'The model request could not be completed; nothing was written.',
-        );
-      }
-      if (error.code.startsWith('response_')) {
-        throw new DashboardError(
-          'unavailable',
-          error.code,
-          'The response was rejected; nothing was written.',
-        );
-      }
-      throw validation(error.code, error.message);
-    }
-    const now = new Date().toISOString();
-    await runtime.database.withTransaction(async (tx) => {
-      await insertArticleRevision(tx, {
-        weekRunId,
-        category,
-        revision: 1,
-        kind: 'generated',
-        slots: generation.slots,
-        markdown: generation.markdown,
-        provenance: {
-          model: generation.provenance.model,
-          promptVersion: generation.provenance.promptVersion,
-          promptHash: generation.provenance.promptHash,
-          inputDigest: generation.provenance.inputDigest,
-          inputTokens: generation.provenance.inputTokens,
-          outputTokens: generation.provenance.outputTokens,
-          costMicrodollars: generation.provenance.costMicrodollars,
-          wordCount: generation.provenance.wordCount,
-          namingBasis: generation.provenance.namingBasis,
-          sources: generation.provenance.sources,
+        holder,
+        'completed',
+        'completed',
+        {
+          inputTokens: produced.provenance.inputTokens,
+          outputTokens: produced.provenance.outputTokens,
+          costMicrodollars: produced.provenance.costMicrodollars,
         },
-        savedByAccountId: principal.accountId,
-        createdAt: now,
-      });
-      await insertModelCall(tx, {
-        id: randomUUID(),
-        kind: 'article',
-        weekRunId,
-        category,
-        model: generation.provenance.model,
-        inputTokens: generation.provenance.inputTokens,
-        outputTokens: generation.provenance.outputTokens,
-        costMicrodollars: generation.provenance.costMicrodollars,
-        outcome: 'completed',
-        code: 'completed',
-        actorAccountId: principal.accountId,
-        createdAt: now,
-      });
+        produced.provenance.model,
+      );
+      await transactionOn(holder, () =>
+        insertArticleRevision(holder, {
+          weekRunId,
+          category,
+          revision: 1,
+          kind: 'generated',
+          slots: produced.slots,
+          markdown: produced.markdown,
+          provenance: {
+            model: produced.provenance.model,
+            promptVersion: produced.provenance.promptVersion,
+            promptHash: produced.provenance.promptHash,
+            inputDigest: produced.provenance.inputDigest,
+            inputTokens: produced.provenance.inputTokens,
+            outputTokens: produced.provenance.outputTokens,
+            costMicrodollars: produced.provenance.costMicrodollars,
+            wordCount: produced.provenance.wordCount,
+            namingBasis: produced.provenance.namingBasis,
+            sources: produced.provenance.sources,
+          },
+          savedByAccountId: principal.accountId,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      return produced;
     });
     runtime.readings.delete(readingId);
     await audit(runtime, {
@@ -1955,10 +1986,10 @@ async function saveArticleRevisionUnaudited(
   if (typeof input.markdown !== 'string')
     throw validation('markdown_invalid', 'The article body must be text.');
   const markdown = input.markdown.replace(/\r\n/gu, '\n');
-  if (markdown.length < 1 || markdown.length > MAX_DRAFT_CHARACTERS) {
+  if (markdown.length < 1 || markdown.length > MAX_ARTICLE_CHARACTERS) {
     throw validation(
       'markdown_length',
-      `The article body must be between 1 and ${MAX_DRAFT_CHARACTERS} characters.`,
+      `The article body must be between 1 and ${MAX_ARTICLE_CHARACTERS} characters.`,
     );
   }
   if (DRAFT_FORBIDDEN.test(markdown)) {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -9,7 +10,7 @@ import { isArticleError } from './errors.js';
 import { generateArticle, prepareArticle } from './generate.js';
 import { assertArticleInput, inputDigest, type ArticleInput, type ArticleRow } from './input.js';
 import { PROMPT_VERSION, promptHash, systemPrompt } from './prompt.js';
-import { renderMarkdown } from './render.js';
+import { MAX_MARKDOWN_CHARACTERS, renderMarkdown } from './render.js';
 import { ArticleSlotsSchema, slotsJsonSchema, type ArticleSlots } from './schema.js';
 import { countWords, quotedSpans } from './text.js';
 import { recordedTransport } from './transport.js';
@@ -523,6 +524,112 @@ describe('generation through the transport seam', () => {
     expect(await codeOf(generateArticle(input, failing, { spentThisMonth: 0 }))).toBe(
       'model_failed',
     );
+  });
+
+  it('carries the billed usage on every failure after a response and none before one, and refuses a rendering past the stored bound', async () => {
+    const input = cyberInput();
+    // A response the validator rejects was billed all the same: the failure
+    // carries the model and the usage for the ledger.
+    const bad = recordedTransport({
+      raw: golden(input, { notRead: [] }),
+      usage: { inputTokens: 2_000, outputTokens: 500 },
+    });
+    let rejected: unknown;
+    try {
+      await generateArticle(input, bad, { spentThisMonth: 0 });
+    } catch (error) {
+      rejected = error;
+    }
+    expect(isArticleError(rejected) && rejected.code).toBe('response_not_read_differs');
+    expect(isArticleError(rejected) && rejected.billed).toEqual({
+      model: 'claude-opus-5-5',
+      inputTokens: 2_000,
+      outputTokens: 500,
+    });
+    // A transport that answered before failing carries the billed usage by
+    // shape, never by class; a shape that is not a usage is no usage.
+    const billedRefusal = {
+      async generate() {
+        throw Object.assign(new Error('declined'), {
+          code: 'model_refused',
+          billed: { model: 'claude-opus-5-5', inputTokens: 321, outputTokens: 12 },
+        });
+      },
+    };
+    let refusal: unknown;
+    try {
+      await generateArticle(input, billedRefusal, { spentThisMonth: 0 });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(isArticleError(refusal) && refusal.code).toBe('model_refused');
+    expect(isArticleError(refusal) && refusal.billed).toEqual({
+      model: 'claude-opus-5-5',
+      inputTokens: 321,
+      outputTokens: 12,
+    });
+    const malformed = {
+      async generate() {
+        throw Object.assign(new Error('socket hang up'), {
+          billed: { model: 'claude-opus-5-5', inputTokens: -1, outputTokens: 0 },
+        });
+      },
+    };
+    let failed: unknown;
+    try {
+      await generateArticle(input, malformed, { spentThisMonth: 0 });
+    } catch (error) {
+      failed = error;
+    }
+    expect(isArticleError(failed) && [failed.code, failed.billed]).toEqual(['model_failed', null]);
+    // Before any request there is nothing to bill.
+    let keyMissing: unknown;
+    try {
+      await generateArticle(input, null, { spentThisMonth: 0 });
+    } catch (error) {
+      keyMissing = error;
+    }
+    expect(isArticleError(keyMissing) && [keyMissing.code, keyMissing.billed]).toEqual([
+      'model_key_missing',
+      null,
+    ]);
+    // Two hundred sources that could not be read, each at the URL bound, list
+    // past the stored bound in the export: the response passes every check
+    // on its content and is refused on its size, billed and carrying the usage.
+    const longUrl = `https://long.example.org/${'a'.repeat(2_048 - 'https://long.example.org/'.length)}`;
+    expect(longUrl).toHaveLength(2_048);
+    const wide: ArticleInput = {
+      ...input,
+      incidents: [
+        ...input.incidents,
+        ...Array.from({ length: 4 }, () => ({
+          incidentId: randomUUID(),
+          rows: Array.from({ length: 50 }, () => ({
+            ...row(randomUUID(), 'long.example.org', null),
+            url: longUrl,
+          })),
+        })),
+      ],
+    };
+    assertArticleInput(wide);
+    expect(renderMarkdown(golden(wide), wide).length).toBeGreaterThan(MAX_MARKDOWN_CHARACTERS);
+    const long = recordedTransport({
+      raw: golden(wide),
+      usage: { inputTokens: 110_000, outputTokens: 4_000 },
+    });
+    let tooLong: unknown;
+    try {
+      await generateArticle(wide, long, { spentThisMonth: 0 });
+    } catch (error) {
+      tooLong = error;
+    }
+    expect(isArticleError(tooLong) && tooLong.code).toBe('response_too_long');
+    expect(isArticleError(tooLong) && tooLong.billed).toEqual({
+      model: 'claude-opus-5-5',
+      inputTokens: 110_000,
+      outputTokens: 4_000,
+    });
+    expect(String(tooLong)).not.toContain('long.example.org');
   });
 
   it('opens no socket: the package names no network module', async () => {

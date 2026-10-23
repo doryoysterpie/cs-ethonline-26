@@ -14,6 +14,10 @@ import {
 import { insertSynthetic, syntheticAccount } from '../../test/synthetic-accounts.ts';
 import { openMemoryStores } from '../auth/memory-store.ts';
 import { openPostgresStores } from '../auth/postgres-store.ts';
+import {
+  MAX_MARKDOWN_CHARACTERS as ARTICLE_MARKDOWN_CHARACTERS,
+  worstCaseMicrodollars as articleWorstCase,
+} from '@cas/article';
 import { recordedTransport, sectionOf, loadTemplate, MAX_MARKDOWN_CHARACTERS } from '@cas/roundup';
 import { recordedTransport as recordedPages, type RawTransport } from '@cas/source-reader';
 import { ReadingCache } from './readings.ts';
@@ -25,6 +29,7 @@ import {
   decideEvidence,
   generateArticle,
   generateRoundup,
+  MAX_ARTICLE_CHARACTERS,
   MAX_DRAFT_REVISIONS,
   MAX_QUEUE_DECISIONS_PER_ENTRY,
   MAX_ROUNDUP_CHARACTERS,
@@ -2032,5 +2037,314 @@ describe('data-access layer against PostgreSQL', () => {
         (await articleView(noModel, p2.owner, good.weekRunId, 'cyberattack')).revisions,
       ).toEqual([]);
     });
+
+    /** A transport answering the contract from the request, counting its calls and recording the prompt's size. */
+    function answeringWith(
+      usage: { readonly inputTokens: number; readonly outputTokens: number },
+      options: {
+        readonly delayMs?: number;
+        readonly shape?: (slots: ReturnType<typeof goldenFor>) => unknown;
+      } = {},
+    ) {
+      const transport = {
+        calls: 0,
+        promptCharacters: 0,
+        async generate(request: { system: string; user: string; model: string }) {
+          transport.calls += 1;
+          transport.promptCharacters = request.system.length + request.user.length;
+          if (options.delayMs !== undefined) {
+            await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+          }
+          const slots = goldenFor(request.user);
+          return {
+            raw: options.shape === undefined ? slots : options.shape(slots),
+            usage,
+            model: request.model,
+          };
+        },
+      };
+      return transport;
+    }
+
+    /** A week on the public-looking host, every story selected and the sources read: ready for one generation. */
+    async function readyToWrite(
+      answering: Parameters<typeof persistentRuntime>[0],
+      schema: IsolatedSchema,
+    ) {
+      const week = await seedWeek(schema.db, { host: HOST });
+      const pages = pagesFor(week.batchId);
+      const { rt, persisted } = await persistentRuntime(answering, schema, pages);
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      for (const row of table.rows) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: row.incidentId,
+          state: 'selected',
+          note: null,
+        });
+      }
+      const reading = await readArticleSources(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+      });
+      expect(reading).toMatchObject({ read: 2, partlyRead: 0, notRead: 1 });
+      const input = {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        readingId: reading.readingId,
+      };
+      return { week, rt, persisted, input };
+    }
+
+    const ledgerOf = (schema: IsolatedSchema, weekRunId: string) =>
+      schema.db.withClient((c) =>
+        c.query<{
+          outcome: string;
+          code: string;
+          input_tokens: number;
+          output_tokens: number;
+          cost: string;
+        }>(
+          `SELECT outcome, code, input_tokens, output_tokens, cost_microdollars::text AS cost
+             FROM model_calls WHERE week_run_id = $1 AND kind = 'article' ORDER BY created_at, id`,
+          [weekRunId],
+        ),
+      );
+
+    it('records a billed but rejected response at its real cost, keeps the reading, and counts the cost toward the cap (the round-up’s review F3)', async () => {
+      const own = await openMigratedSchema();
+      // The model answers the contract but claims every source was read:
+      // schema-valid, policy-invalid, billed.
+      const answering = answeringWith(
+        { inputTokens: 2_000, outputTokens: 500 },
+        { shape: (slots) => ({ ...slots, notRead: [] }) },
+      );
+      const { rt, persisted, input, week } = await readyToWrite(answering, own);
+      let caught: unknown;
+      try {
+        await generateArticle(rt, persisted.owner, input);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isDashboardError(caught) && `${caught.kind}:${caught.code}`).toBe(
+        'unavailable:response_not_read_differs',
+      );
+      expect(answering.calls).toBe(1);
+      expect((await ledgerOf(own, week.weekRunId)).rows).toEqual([
+        {
+          outcome: 'failed',
+          code: 'response_not_read_differs',
+          input_tokens: 2_000,
+          output_tokens: 500,
+          cost: String(2_000 * 4 + 500 * 20),
+        },
+      ]);
+      const view = await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(view.revisions).toEqual([]);
+      expect(view.reading).not.toBeNull();
+      // The failed row counts toward the cap: with a completed row that leaves
+      // the month exactly one microdollar short of the ceiling once the failed
+      // row is counted, and the worst case to spare when it is not, a second
+      // attempt is refused before any request.
+      const worstCase = articleWorstCase(answering.promptCharacters);
+      await own.db.withTransaction((tx) =>
+        tx.query(
+          `INSERT INTO model_calls (id, kind, week_run_id, category, model, input_tokens, output_tokens, cost_microdollars, outcome, code, actor_account_id, created_at)
+           VALUES ($1, 'article', $2, 'cyberattack', 'claude-opus-5-5', 1, 1, $3, 'completed', 'completed', $4, now())`,
+          [
+            randomUUID(),
+            week.weekRunId,
+            25_000_000 - worstCase - (2_000 * 4 + 500 * 20) + 1,
+            persisted.owner.accountId,
+          ],
+        ),
+      );
+      let capped: unknown;
+      try {
+        await generateArticle(rt, persisted.owner, input);
+      } catch (error) {
+        capped = error;
+      }
+      expect(isDashboardError(capped) && `${capped.kind}:${capped.code}`).toBe(
+        'validation:spend_cap_exceeded',
+      );
+      expect(answering.calls).toBe(1);
+      expect((await ledgerOf(own, week.weekRunId)).rows.map((r) => [r.outcome, r.cost])).toEqual([
+        ['failed', String(2_000 * 4 + 500 * 20)],
+        ['completed', String(25_000_000 - worstCase - (2_000 * 4 + 500 * 20) + 1)],
+        ['refused', '0'],
+      ]);
+      await own.close();
+    });
+
+    it('records a provider refusal after an answer at its real cost (the round-up’s re-review RR1)', async () => {
+      const own = await openMigratedSchema();
+      const refusing = {
+        calls: 0,
+        async generate() {
+          refusing.calls += 1;
+          throw Object.assign(new Error('declined'), {
+            code: 'model_refused',
+            billed: { model: 'claude-opus-5-5', inputTokens: 1_500, outputTokens: 40 },
+          });
+        },
+      };
+      const { rt, persisted, input, week } = await readyToWrite(refusing, own);
+      expect(await kindOf(generateArticle(rt, persisted.owner, input))).toBe('unavailable');
+      expect(refusing.calls).toBe(1);
+      expect((await ledgerOf(own, week.weekRunId)).rows).toEqual([
+        {
+          outcome: 'failed',
+          code: 'model_refused',
+          input_tokens: 1_500,
+          output_tokens: 40,
+          cost: String(1_500 * 4 + 40 * 20),
+        },
+      ]);
+      expect(
+        (await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack')).revisions,
+      ).toEqual([]);
+      await own.close();
+    });
+
+    it('serialises concurrent generations: five submissions of one reading make exactly one model request (the round-up’s review F4)', async () => {
+      const own = await openMigratedSchema();
+      const slow = answeringWith({ inputTokens: 10, outputTokens: 10 }, { delayMs: 150 });
+      const { rt, persisted, input, week } = await readyToWrite(slow, own);
+      // Pool-sized and larger concurrency: the test runtime's pool holds four
+      // connections; five submissions at once make one request, the rest are
+      // refused at once with the article's own conflict, and nothing waits.
+      const outcomes = await Promise.all(
+        Array.from({ length: 5 }, async () => {
+          try {
+            await generateArticle(rt, persisted.owner, input);
+            return 'succeeded';
+          } catch (error) {
+            if (!isDashboardError(error)) throw error;
+            return `${error.kind}:${error.code}`;
+          }
+        }),
+      );
+      expect(outcomes.filter((o) => o === 'succeeded')).toHaveLength(1);
+      expect(
+        outcomes.every(
+          (o) =>
+            o === 'succeeded' ||
+            o === 'conflict:article_generation_in_progress' ||
+            o === 'validation:article_already_generated' ||
+            o === 'validation:reading_not_found',
+        ),
+        outcomes.join(' '),
+      ).toBe(true);
+      expect(slow.calls).toBe(1);
+      expect((await ledgerOf(own, week.weekRunId)).rows.map((r) => r.outcome)).toEqual([
+        'completed',
+      ]);
+      const view = await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(view.revisions.map((r) => r.revision)).toEqual([1]);
+      expect(view.reading).toBeNull();
+      await own.close();
+    });
+
+    it('holds the editor bound at storage: the package, the layer and migration 0016 agree on 400,000 characters (the round-up’s re-review RR3)', async () => {
+      expect([ARTICLE_MARKDOWN_CHARACTERS, MAX_ARTICLE_CHARACTERS]).toEqual([400_000, 400_000]);
+      const own = await openMigratedSchema();
+      const answering = answeringWith({ inputTokens: 10, outputTokens: 10 });
+      const { rt, persisted, input, week } = await readyToWrite(answering, own);
+      await generateArticle(rt, persisted.owner, input);
+      const edit = { weekRunId: week.weekRunId, category: 'cyberattack', expectedRevision: 1 };
+      let tooLong: unknown;
+      try {
+        await saveArticleRevision(rt, persisted.owner, { ...edit, markdown: 'a'.repeat(400_001) });
+      } catch (error) {
+        tooLong = error;
+      }
+      expect(isDashboardError(tooLong) && `${tooLong.kind}:${tooLong.code}`).toBe(
+        'validation:markdown_length',
+      );
+      expect(
+        await saveArticleRevision(rt, persisted.owner, { ...edit, markdown: 'a'.repeat(400_000) }),
+      ).toEqual({ revision: 2 });
+      // Behind the layer's bound, the database refuses the 400,001st character.
+      let refused: unknown;
+      try {
+        await own.db.withTransaction((tx) =>
+          tx.query(
+            `INSERT INTO article_revisions (week_run_id, category, revision, kind, slots, markdown, saved_by_account_id, created_at)
+             SELECT $1, 'cyberattack', 3, 'edited', '{}'::jsonb, repeat('x', 400001), $2, now()`,
+            [week.weekRunId, persisted.owner.accountId],
+          ),
+        );
+      } catch (error) {
+        refused = error;
+      }
+      expect((refused as { code?: string } | undefined)?.code).toBe('23514');
+      expect(
+        (await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack')).revisions.map(
+          (r) => r.revision,
+        ),
+      ).toEqual([1, 2]);
+      await own.close();
+    });
+
+    it('refuses a selection past the row bound whole before any page is fetched, and reads one at the bound (the round-up’s review F5)', async () => {
+      const own = await openMigratedSchema();
+      // 201 incidents of 50 rows: 10,050 selected rows, whose first 10,000 would
+      // read and generate as a silent prefix. The seed's host is a reserved
+      // name, so a reading classifies every source and fetches none.
+      const week = await seedLargeWeek(own.db, 201, 50);
+      const pages = recordedPages({});
+      const { rt, persisted } = await persistentRuntime(model(), own, pages);
+      const incidents = await own.db.withClient((c) =>
+        c.query<{ id: string }>(
+          `SELECT id FROM incident_clusters WHERE clustering_run_id = $1 ORDER BY created_at, id`,
+          [week.clusteringRunId],
+        ),
+      );
+      expect(incidents.rows).toHaveLength(201);
+      for (const incident of incidents.rows) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: incident.id,
+          state: 'selected',
+          note: null,
+        });
+      }
+      const input = { weekRunId: week.weekRunId, category: 'cyberattack' };
+      let caught: unknown;
+      try {
+        await readArticleSources(rt, persisted.owner, input);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isDashboardError(caught) && `${caught.kind}:${caught.code}`).toBe(
+        'validation:selection_too_large',
+      );
+      expect(pages.calls).toEqual([]);
+      expect(
+        await kindOf(generateArticle(rt, persisted.owner, { ...input, readingId: 'f'.repeat(32) })),
+      ).toBe('validation');
+      // One incident set aside: exactly 10,000 rows, the bound inclusive, every row in the reading.
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: incidents.rows[200]?.id ?? '',
+        state: 'unselected',
+        note: null,
+      });
+      const reading = await readArticleSources(rt, persisted.owner, input);
+      expect(reading.read + reading.partlyRead + reading.notRead).toBe(10_000);
+      expect(pages.calls).toEqual([]);
+      await own.close();
+    }, 120_000);
   });
 });

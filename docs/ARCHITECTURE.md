@@ -598,8 +598,11 @@ holds a response to the selection and the texts read (citations, quotations, sec
 naming basis), the Markdown export and the cost rules D9 resolved for the article. Migration 0016
 adds `article_revisions` and the article's place in the ledger. The dashboard's runtime holds the
 reader and a ten-minute in-memory reading cache (O-1, R17); its data-access layer reads the
-selection's sources, shows the reading, and on the owner's confirmation calls the package and
-writes revision 1 and the ledger row in one transaction. Dependency edges added: `@cas/worker`
+selection's sources, shows the reading, and on the owner's confirmation calls the package under
+an advisory lock of the article's own (one generation at a time per schema, held on one
+connection, as the round-up's), writes the ledger row in its own transaction and then revision 1,
+so a billed request keeps its record; a failure after the model answered is a failed ledger row at
+its real cost. Dependency edges added: `@cas/worker`
 depends on `@cas/source-reader`; the dashboard depends on both packages; `@cas/source-reader`
 depends on `@cas/contracts` and `htmlparser2`; `@cas/article` depends on nothing in the
 workspace. The report is `docs/CAS-005-REPORT.md`.
