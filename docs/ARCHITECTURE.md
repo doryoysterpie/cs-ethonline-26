@@ -665,3 +665,15 @@ filters are links in a filter bar that set the query parameters the page already
 is fetched, no script is added, no dependency changes, and no route, capability or data-access
 contract moves. The memory store's email path gains a local file sink for a developer's or a
 browser test's one-time code. The report is `docs/CAS-010-REPORT.md`.
+
+## 24. CAS-009: story cards
+
+A signed-in principal who may view published outputs makes a card for one story from the
+published page; the card is a public page at `/cards/[id]` and two images. Migration 0021 adds
+`story_cards` (one row per story, a rising view count) and `story_card_images` (one PNG per card
+and revision); `@cas/contracts` holds the public field allowlist (`story-card@1`). The
+dashboard's `server/cards/` reads a story from the published markdown with the parser the
+sanitiser already uses, lays the card out as SVG, and rasterizes it with `@resvg/resvg-wasm` and
+two TrueType files from `@expo-google-fonts/jetbrains-mono`; `server/dal/cards.ts` makes, serves
+and counts. Every request resolves the story from the current publication. The proxy admits
+`/cards/` without a session and marks it unindexed. The report is `docs/CAS-009-REPORT.md`.

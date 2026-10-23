@@ -3,9 +3,9 @@ import type { NextConfig } from 'next';
 /**
  * Next configuration for the dashboard.
  *
- * - The two Node-only dependencies from `node_modules` stay external to the
- *   server bundle, so `argon2` loads its prebuilt binary and `pg` its own
- *   tree. The workspace packages that need Node semantics are loaded at run
+ * - The Node-only dependencies from `node_modules` stay external to the
+ *   server bundle, so `argon2` loads its prebuilt binary, `pg` its own tree
+ *   and `@resvg/resvg-wasm` its WebAssembly module from its own directory. The workspace packages that need Node semantics are loaded at run
  *   time by `src/server/packages.ts`, because Next bundles every workspace
  *   package regardless of this list.
  * - No production browser source map, no `X-Powered-By`, no remote image
@@ -22,7 +22,7 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
-  serverExternalPackages: ['argon2', 'pg'],
+  serverExternalPackages: ['argon2', 'pg', '@resvg/resvg-wasm'],
   images: { remotePatterns: [], dangerouslyAllowSVG: false, unoptimized: true },
   // Every server action's body is bounded here, explicitly rather than by
   // the framework default, and the bound is tested against the largest

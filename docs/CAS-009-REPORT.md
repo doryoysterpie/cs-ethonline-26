@@ -2,11 +2,11 @@
 
 **Unit:** CAS-009 (`docs/POST-EVENT-PLAN.md`, section 5). **Tracker:** `docs/tcu/CAS-009.md`.
 **Issue:** [#11](https://github.com/doryoysterpie/cs-ethonline-26/issues/11). **Decisions:** D6
-(the public allowlist), D42 (the published mark), and the ones this note raises.
-**State:** S0 only. The unit was admitted with the sprint on 21 October 2026 and starts once
+(the public allowlist), D42 (the published mark), D48 (the seven of section 1.5).
+**State:** in build. The unit was admitted with the sprint on 21 October 2026 and starts once
 CAS-007 is complete, which it is since 23 October 2026. The owner designs the creatives; this
-unit builds the functionality only. Nothing below is built until the owner resolves section
-1.5.
+unit builds the functionality only. The owner resolved section 1.5 on 23 October 2026 (D48);
+section 1.6 records what the answers changed in the mechanism.
 
 ## 1. Design note, S0, written before code (step 1)
 
@@ -123,7 +123,39 @@ recommendation first.
    new capability; a per-account limit on making (twenty per fifteen minutes). (b) A new
    capability, assigned by role. Recommendation: (a).
 
-### 1.6 Files touched, and not touched
+### 1.6 The decisions, resolved, and what they changed
+
+Resolved by the owner on 23 October 2026 and recorded as D48: 1 (a); 2 (b), under the stack check;
+3 (a); 4 (a), the counter counting origin hits; 5 (a), with `X-Robots-Tag: noindex` and no
+sitemap; 6 (a) for unpublication, amended for supersession; 7 (a), amended with idempotency.
+What the answers change in section 1.3:
+
+- **One story per card.** Decisions 6 and 7 bind a card to an output and one entry and make
+  creation idempotent per that pair, so a card is one story's card, shared by every reader who
+  makes it: one public address per story. A reader who wants several stories shares several
+  cards. The record keeps who made it first.
+- **Bound to the entry, re-rendered from the current revision.** The card stores the week, the
+  category, the output and the entry's index, never a revision. Every request reads the current
+  published revision: unpublished, 404; a deterministic revision (revision 0, whose headlines are
+  the sources' own titles), 404, by decision 3; the entry absent, 404. An entry's index is stable
+  across every revision of an output: one generation writes revisions 0 and 1 and refuses a
+  second, and every edited revision copies the slots of the one before it and changes only the
+  markdown (`saveRoundupRevision`, `saveArticleRevision`).
+- **The headline from the published text.** Because an edit changes the markdown and not the
+  slots, the headline is read from the published markdown, parsed by the parser the dashboard
+  already uses (`mdast-util-from-markdown`), never from the slots: a round-up entry is the bold
+  line that opens a block whose sources lines carry exactly the entry's URLs, an article is its
+  first-level heading. An entry the owner removed or restructured past recognition is absent
+  and answers 404, so a correction is never contradicted by a card. The publishers' names come
+  from those URLs, each its host name, the attribution the published text itself carries.
+- **The image.** The PNG is rasterized from the card's own SVG with the published revision it
+  shows: at creation, and again only when a correction changes the current revision, then served
+  from the cache. "Once at creation" and "re-renders from the current revision" meet there:
+  one rasterization per card and revision.
+- **Counting.** The page counts each origin view; the images do not count; a cached response is
+  not counted.
+
+### 1.7 Files touched, and not touched
 
 Touched: migration 0021 and `packages/database/src/cards.ts`; `apps/dashboard/src/server/dal/cards.ts`
 (make, read, count); the published page's pick form and action; `app/cards/[id]/page.tsx`
@@ -132,7 +164,7 @@ and `app/cards/[id].svg/route.ts`; the proxy's public paths; the limits; two aud
 the tracker. Not touched: anything under `packages/roundup`, `packages/article`,
 `packages/source-reader`; the capability table; the headers; the dependency set.
 
-### 1.7 Verification plan
+### 1.8 Verification plan
 
 Against PostgreSQL: a card made from a published round-up by a reader and by an editor;
 picks outside the revision refused; a card of an unpublished or superseded output answering
@@ -141,3 +173,141 @@ card serializes exactly the allowed fields and nothing else, proven on a hostile
 SVG escaping every text; the public path in the proxy. In the browser: a reader makes a card
 and a fresh, signed-out context opens it and downloads the SVG. Then the verify loop, a clean
 clone and CI.
+
+### 1.9 A question the build raised: the robots file
+
+CAS-007's `robots.txt` (`robots-policy@1`) disallows every path for every agent, the AI crawlers
+by name and everyone else under `User-agent: *`. The social preview bots that read a card's
+`og:image` (X's, LinkedIn's, Slack's, and most others) honour that file, so under it a shared card
+is a bare link on the platforms decision 2 names, which is the gap the decision was made to
+close. Changing it changes CAS-007's merged policy, so it is put to the owner rather than
+applied: (a) `Allow: /cards/` under `User-agent: *` ahead of its `Disallow: /`, the AI crawlers'
+groups unchanged, so they stay out of cards too, and the pages stay unindexed by `X-Robots-Tag`;
+(b) the same allowance for the named preview bots only; (c) no change, previews only where a
+platform ignores the file. The build ships with the file unchanged.
+
+## 2. Stack check and data contract, S1 and S2 (steps 3 and 4)
+
+**Stack check (step 3).** Decision 2 chose a PNG for link previews under this check; it passes,
+with two dependencies, both in the workspace catalogue and the lockfile, both under the
+release-age gate and the bill of materials (345 components, `CHECK OK`, `pnpm audit` clean).
+
+- `@resvg/resvg-wasm` 2.6.2 (MPL-2.0; published 26 March 2024; no dependencies, no install
+  script; 2.5 MB unpacked). The resvg renderer compiled to WebAssembly: it rasterizes the card's
+  own SVG to PNG in the server process, about 50 milliseconds for a card, and has no input or
+  output of its own, so nothing an SVG names can be fetched. Rejected: `@resvg/resvg-js` 2.6.2,
+  the same renderer as a native addon, which brings twelve platform packages and a native binary
+  into the server; `sharp`, larger and native, reading SVG through librsvg; a headless browser in
+  production.
+- `@expo-google-fonts/jetbrains-mono` 0.4.1 (MIT AND OFL-1.1; published 12 September 2025; no
+  dependencies, no install script; 3.4 MB, of which two TrueType files are read, regular and
+  bold). The rasterizer needs TrueType bytes; the production image has no fonts, and the
+  repository's hygiene scan refuses a committed binary. Rejected: `@fontsource/jetbrains-mono`,
+  which ships only WOFF, which resvg cannot read; fonts installed with `apt` in the Docker image,
+  outside the lockfile and the bill of materials; `dejavu-fonts-ttf`, whose licence field is not
+  an SPDX expression.
+
+The rasterizer was probed before adoption: a 1,200 by 630 card with an external image reference
+rendered in 54 milliseconds from the font buffer alone, and the reference was not fetched.
+`@resvg/resvg-wasm` joins `serverExternalPackages` so Next loads it from its own directory.
+
+**Data contract (step 4).** Migration 0021 (`0021_story_cards.sql`, SHA-256
+`6866f5f7bcd678b4dda8e8aed4a7ee33cdaa0fc602fbd51bc5c02186cc6a27d0`): `story_cards`, one row per
+story (unique on week run, category, output and entry index; an article's entry is 0), a 22-
+character URL-safe identifier from 128 random bits, the maker and the instant, and a view count
+that only rises; `story_card_images`, one PNG per card and revision, at most 1 MiB, with its
+digest, append-only; the audit kind `card_created`. Guards refuse every other update and every
+delete. The public field set is a contract in `@cas/contracts` (`story-card@1`,
+`toPublicStoryCard`): it copies exactly the eight allowlisted fields, each shape-checked, and drops
+anything else on its input.
+
+## 3. The card, S3 (step 5)
+
+`packages/database/src/cards.ts` records a card or returns the one a concurrent request recorded
+first (`ON CONFLICT` on the story), counts a view, and caches an image. In the dashboard,
+`server/cards/story.ts` reads a story from the published markdown as section 1.6 describes,
+`server/cards/svg.ts` lays the card out as an SVG of text only, every string XML-escaped, and
+`server/cards/raster.ts` rasterizes it, the WebAssembly module initialised once per process and
+held on `globalThis` because Next compiles route handlers and server actions as separate module
+graphs. `server/dal/cards.ts` makes a card (the capability check, the input, the story resolved
+from the current publication, the existing card returned before the limit is consulted, the
+insert, the audit event, the image cached), serves the public card (the per-source limit, the
+record, the story resolved again, the contract, one view counted) and serves its images.
+
+## 4. Tests, S4 (step 6)
+
+Offline: the contract (exactly the allowlisted fields from a hostile input; each wrong shape
+refused); the story extraction, on markdown from the real round-up renderer (escapes resolved,
+URL order ignored, a URL inside a summary not a sources line, a partial or larger set not the
+entry, a corrected headline followed, a removed or restructured entry absent, an article's
+headline and only its Sources section's URLs, publishers once each by host, display text one
+bounded line); the SVG (every string escaped, nothing outside the document, the wrapping); the
+rasterizer (a 1,200 by 630 PNG, twice in one process); the authorization enumeration (no session
+refused; every role past the gate; a malformed address refused before any read). Against
+PostgreSQL, the database package (one card per story, a second request returning the first, four
+concurrent requests one card, views upward only, nothing rewritten or deleted, the shapes, the
+image cache) and the data-access layer: a reader makes a card and every other role receives the
+same address; the public read is exactly the allowlist with the published headline and the hosts,
+counting each view; the published page lists the shareable stories; one audit event without text;
+a correction published shows at the same address while an unpublished one does not; an entry the
+owner removed, a deterministic revision and an unpublished output answer not found, and a
+republished correction serves again; the PNG rasterized at creation, served from the cache, and
+rasterized once more for a correction; the SVG escaping the owner's text; the per-source limit on
+pages and images; one new card per account in the window, an existing card returned without
+spending it; one trip event for each limit. In the browser, against the production build, the
+launcher publishes a round-up and makes a card through the data-access layer, and
+`tests/browser/cards.spec.ts` opens it with no session (section 7).
+
+## 5. The interface, S5 (step 7)
+
+The published page gains a "Share a story" block listing the stories of the published revision,
+each with a "Make a card" button, which posts the story and redirects to the card. The card page,
+`/cards/[id]`, is the dashboard's first page served without a session: the proxy admits `/cards/`
+without a cookie and adds `X-Robots-Tag: noindex, nofollow`; the page carries `robots` noindex,
+the Open Graph title, description and image (the PNG's absolute address under
+`DASHBOARD_PUBLIC_URL`, omitted when it is unset) and the large-image Twitter card; it shows the
+headline, the publishers, the week and the category, the image, a link back to the published
+page (which needs a sign-in) and to the sign-up page, and the two downloads. The page and its
+metadata share one read through React's request cache, so a view is counted once. The images are
+served by two route handlers, `/cards/[id]/image.png` and `/cards/[id]/image.svg` (the SVG as an
+attachment), cacheable for five minutes, so a cached fetch is not counted (decision 4); the page
+is never cached. A refusal is a fixed answer: 404 for an unknown address or a story no longer
+shown, 429 with `Retry-After` on an image past the per-source limit, the page a fixed notice.
+
+## 6. Security baseline, S6 (step 8)
+
+What crosses to the public is the contract's eight fields; the headline and the publishers come
+from the published text, the one thing the owner chose to make public, and a deterministic
+revision, whose headlines are the sources' own titles, never renders. A card follows unpublishing
+and correction at once, because nothing about the published text is stored with it. Input is
+validated at the boundary (the address's shape before any read; the story's identifiers, output
+and entry index before any read). Limits are enforced where input is read: per network source
+on the card and its images (300 in fifteen minutes), per account on new cards (20). Audit events
+carry the card's identifier and its output, never text. The SVG is the dashboard's own document,
+text only, escaped; the rasterizer has no network; the PNG is bounded at 1 MiB. No secret is
+involved. The content security policy is unchanged and applies to the card page and its images.
+The robots file is unchanged (section 1.9).
+
+## 7. Verification, S8 (step 9)
+
+On the branch, 23 October 2026, from the runner: `corepack pnpm verify` exit 0 (1,174 offline
+tests, 32 tool tests: the contracts 18, the database 32 offline, the dashboard 137, with the
+contract, the story extraction, the SVG, the rasterizer and the authorization case among them;
+format, lint, typecheck, the repository checks and the production build); `corepack pnpm test:db`
+exit 0 (339: database 116, worker 119, dashboard 55 with the three card cases among them,
+mcp-server 49); `playwright test` 30 of 30 against the production build, the three card specs
+among them (a signed-out browser opens the card with `X-Robots-Tag: noindex, nofollow`, the
+`robots` metadata, the Open Graph title and image and the large-image Twitter card, the image
+loaded at 1,200 pixels wide, no summary and no source address in the page, and exactly one view
+counted for one page load; the PNG and the SVG served without a session, the PNG cacheable for
+five minutes; unknown and malformed addresses 404; a reader sees the published round-up's three
+stories with a card button each). A card rendered through the compiled modules was looked at and
+matches section 1.3.
+
+One run of the full database suite failed once on the image-cache case: after a correction was
+published, the cache held only the first revision's image. It passed alone four times and in two
+further full runs; the cause was not found in the code. The case now asserts the published
+revision and the image's revision before it checks the cache, so a recurrence names the step
+that disagrees. Recorded here rather than claimed fixed.
+
+The clean clone, the CI run and the pull request are on the tracker's evidence record.

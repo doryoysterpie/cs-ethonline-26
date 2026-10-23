@@ -88,6 +88,7 @@ export const AUDIT_EVENT_KINDS = [
   'checkout_started',
   'webhook_received',
   'supporter_changed',
+  'card_created',
   'otp_requested',
 ] as const;
 export type AuditEventKind = (typeof AUDIT_EVENT_KINDS)[number];
