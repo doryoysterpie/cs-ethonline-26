@@ -1500,7 +1500,9 @@ Decided by the owner on 22 October 2026 (CAS-003, step 1). The editorial timezon
 - **Date:** 2026-10-22
 - **Status:** ACCEPTED
 - **Decision:** The dashboard's layout follows the "clean terminal grid" template the owner
-  supplied on 22 October 2026 (`docs/design/dashboard-layout-template-2026-10-22.webp`): a
+  supplied on 22 October 2026 (an image, kept in the owner's vault under
+  `01_Specs/cs-ethonline-26/design/`, since the repository's hygiene check admits no binary
+  file): a
   left sidebar listing the sections with a status block beneath (online, uptime, load, log
   level); a header bar with the product name and the clock; the main area as stacked section
   blocks, each a sortable table of rows (feed, title, source or cluster or signal path, date,
