@@ -7,7 +7,11 @@ import { loadOtpEmailConfig, type OtpEmailConfig } from './auth/email-config.ts'
 import { SessionService, type SessionServiceOptions } from './auth/session.ts';
 import type { Stores } from './auth/store.ts';
 import { openStores } from './auth/stores.ts';
+import type { RoundupTransport } from '@cas/roundup';
+
 import { loadDashboardConfig, type DashboardConfig } from './config.ts';
+import { createAnthropicTransport } from './model/anthropic.ts';
+import { loadModelConfig } from './model/config.ts';
 import { workspace } from './packages.ts';
 
 /**
@@ -37,15 +41,24 @@ export interface Runtime {
   readonly stores: Stores;
   readonly sessions: SessionService;
   readonly database: Database;
+  /** The one boundary to a model; null when no credential is configured, so generation fails closed. */
+  readonly model: RoundupTransport | null;
 }
 
 export function createRuntime(
   config: DashboardConfig,
   stores: Stores,
   database: Database,
-  options: SessionServiceOptions = {},
+  options: SessionServiceOptions & { readonly model?: RoundupTransport | null | undefined } = {},
 ): Runtime {
-  return { config, stores, sessions: new SessionService(stores, options), database };
+  const { model, ...sessionOptions } = options;
+  return {
+    config,
+    stores,
+    sessions: new SessionService(stores, sessionOptions),
+    database,
+    model: model ?? null,
+  };
 }
 
 /**
@@ -83,9 +96,11 @@ export function getRuntime(): Promise<Runtime> {
       const stores = await openStores(config, database);
       const otp =
         config.accountStore === 'memory' ? localOtpEmailConfig() : loadOtpEmailConfig(process.env);
+      const modelConfig = loadModelConfig(process.env);
       return createRuntime(config, stores, database, {
         emailProvider: otp.provider,
         otpPepper: otp.pepper,
+        model: modelConfig === null ? null : createAnthropicTransport(modelConfig),
       });
     })();
     // A failed start is not cached: the next request tries again and reports

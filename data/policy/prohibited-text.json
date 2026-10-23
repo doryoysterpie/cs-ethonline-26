@@ -1,0 +1,73 @@
+{
+  "$comment": [
+    "The code points a text file of this repository may not contain, and the code points the",
+    "round-up export removes from every slot text (CAS-004, review RR5 and the third review).",
+    "One table, two readers: tools/checks/hygiene.ts (the hygiene check over tracked files) and",
+    "packages/roundup/src/text.ts (the export). Ranges are inclusive, hexadecimal. The export",
+    "skips the line_separator rule, which its line-break collapse handles; the hygiene check",
+    "handles carriage return and the byte-order mark by path, as before."
+  ],
+  "version": "prohibited-text@1",
+  "rules": [
+    {
+      "rule": "c0_control",
+      "ranges": [
+        ["0000", "0008"],
+        ["000b", "000c"],
+        ["000e", "001f"]
+      ]
+    },
+    {
+      "rule": "c1_control",
+      "ranges": [["007f", "009f"]]
+    },
+    {
+      "rule": "line_separator",
+      "ranges": [["2028", "2029"]]
+    },
+    {
+      "rule": "bidi_control",
+      "ranges": [
+        ["061c", "061c"],
+        ["200e", "200f"],
+        ["202a", "202e"],
+        ["2066", "2069"]
+      ]
+    },
+    {
+      "rule": "zero_width",
+      "ranges": [
+        ["200b", "200d"],
+        ["2060", "2060"],
+        ["feff", "feff"]
+      ]
+    },
+    {
+      "rule": "interlinear_annotation",
+      "ranges": [["fff9", "fffb"]]
+    },
+    {
+      "rule": "noncharacter",
+      "ranges": [
+        ["fdd0", "fdef"],
+        ["fffe", "ffff"],
+        ["1fffe", "1ffff"],
+        ["2fffe", "2ffff"],
+        ["3fffe", "3ffff"],
+        ["4fffe", "4ffff"],
+        ["5fffe", "5ffff"],
+        ["6fffe", "6ffff"],
+        ["7fffe", "7ffff"],
+        ["8fffe", "8ffff"],
+        ["9fffe", "9ffff"],
+        ["afffe", "affff"],
+        ["bfffe", "bffff"],
+        ["cfffe", "cffff"],
+        ["dfffe", "dffff"],
+        ["efffe", "effff"],
+        ["ffffe", "fffff"],
+        ["10fffe", "10ffff"]
+      ]
+    }
+  ]
+}

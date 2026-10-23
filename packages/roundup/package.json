@@ -1,0 +1,29 @@
+{
+  "name": "@cas/roundup",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The round-up contract (CAS-004): the rundown template, the slot schema, the prompt contract, the deterministic rendering, the validation of a model response against the selection, the Markdown export and the cost estimate. Pure: no network, no model client, no database.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

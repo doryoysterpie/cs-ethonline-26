@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { Queryable } from '@cas/database';
+
 import { randomUUID } from 'node:crypto';
 
 import { REVIEW_STATES, type ReviewState } from '@cas/contracts';
@@ -24,7 +26,7 @@ import { workspace } from '../packages.ts';
 import type { Runtime } from '../runtime.ts';
 import { mapFailure } from './failures.ts';
 import { requireCapability } from './guard.ts';
-import { draftKeyOf } from './read.ts';
+import { draftKeyOf, monthBounds } from './read.ts';
 
 /**
  * Mutation side of the data-access layer.
@@ -885,6 +887,589 @@ async function selectStoryUnaudited(
       subjectId: incidentId,
     });
     return { selectionId, revision };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}
+
+// ------------------------------------------------------------ the round-up (CAS-004)
+
+export interface RoundupGenerationInput {
+  readonly weekRunId: unknown;
+  readonly category: unknown;
+  /** The template hash the page showed; a mismatch refuses (D40). */
+  readonly expectedTemplateHash: unknown;
+}
+
+export interface RoundupEditInput {
+  readonly weekRunId: unknown;
+  readonly category: unknown;
+  readonly expectedRevision: unknown;
+  readonly markdown: unknown;
+}
+
+/** The most selected rows a generation accepts; one more is fetched, and a full page refuses (review F5). */
+const SELECTION_ROWS_FOR_GENERATION = 10_000;
+/** The most flagged entries a revision can hold (the stored slot schema's bound; review F6). */
+const FLAGGED_FOR_GENERATION = 200;
+/**
+ * The most characters a round-up revision holds: migration 0015's bound and
+ * the package's MAX_MARKDOWN_CHARACTERS, repeated here because the layer may
+ * not import the package statically; a test holds the three equal. The
+ * editor's bound is the stored bound, so every generated revision is editable
+ * (re-review RR3).
+ */
+export const MAX_ROUNDUP_CHARACTERS = 400_000;
+
+/**
+ * One generation at a time per schema (review F4, re-review RR2). The lock
+ * is tried, never waited for, on one connection, and every protected read
+ * and write runs on that same connection, so a generation holds exactly one
+ * pooled connection whatever the pool size: a concurrent submission is
+ * refused at once with a fixed conflict instead of queueing with a
+ * connection in hand, which at pool-sized concurrency starved the holder.
+ * Released on every exit.
+ */
+async function withGenerationLock<T>(
+  runtime: Runtime,
+  work: (holder: Queryable) => Promise<T>,
+): Promise<T> {
+  const key = `${runtime.database.schema}:roundup-generation`;
+  return runtime.database.withClient(async (holder) => {
+    const claimed = await holder.query<{ locked: boolean }>(
+      'SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS locked',
+      [key],
+    );
+    if (claimed.rows[0]?.locked !== true) {
+      throw new DashboardError(
+        'conflict',
+        'roundup_generation_in_progress',
+        'A generation is in progress; wait for it to finish.',
+      );
+    }
+    try {
+      return await work(holder);
+    } finally {
+      await holder.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))', [key]);
+    }
+  });
+}
+
+/** A transaction on one given connection, for work that must not take a second one. */
+async function transactionOn<T>(client: Queryable, work: () => Promise<T>): Promise<T> {
+  await client.query('BEGIN');
+  try {
+    const result = await work();
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+}
+
+const CATEGORY_SHAPE = /^[a-z][a-z0-9_]{1,31}$/u;
+const HASH_SHAPE = /^[0-9a-f]{64}$/u;
+const CARRIED_REASON = 'first seen after the previous week’s freeze; carried per D10';
+
+interface SnapshotRow {
+  readonly sourceRowId: string;
+  readonly title: string;
+  readonly summary: string | null;
+  readonly url: string;
+  readonly publisher: string;
+  readonly postedAt: string | null;
+}
+
+/**
+ * One generation for one week and category (report, sections 1.3 to 1.8):
+ * the owner's capability, persistent accounts, a completed week, the
+ * selection snapshot and nothing else as input, the deterministic flagged
+ * entries, the cap from the ledger, one request through the runtime's
+ * transport, and both revisions written with the ledger row in one
+ * transaction. Every refusal is a fixed code, recorded in the ledger and the
+ * audit log without content. A second generation is refused: the owner edits.
+ */
+export async function generateRoundup(
+  runtime: Runtime,
+  who: Principal | null,
+  input: RoundupGenerationInput,
+): Promise<RoundupGenerationResult> {
+  try {
+    return await generateRoundupUnaudited(runtime, who, input);
+  } catch (error) {
+    // Every refusal with a known actor is audited once, at this boundary, with
+    // its fixed code and the week it named when well formed, never content
+    // (the rule review F4 set for selections). A database outage is not a
+    // refusal and is not audited; a model-side failure is, by its code.
+    if (
+      who !== null &&
+      isDashboardError(error) &&
+      (error.kind !== 'unavailable' || MODEL_FAILURE_CODE.test(error.code))
+    ) {
+      await audit(runtime, {
+        kind: 'roundup_refused',
+        outcome: 'failure',
+        code: error.code,
+        actorAccountId: who.accountId,
+        subjectAccountId: null,
+        sessionId: who.sessionId,
+        subjectId:
+          typeof input.weekRunId === 'string' && UUID_SHAPE.test(input.weekRunId)
+            ? input.weekRunId
+            : null,
+      });
+    }
+    throw error;
+  }
+}
+
+const MODEL_FAILURE_CODE = /^(?:model_|response_)/u;
+
+interface RoundupGenerationResult {
+  readonly revision: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly costMicrodollars: number;
+}
+
+async function generateRoundupUnaudited(
+  runtime: Runtime,
+  who: Principal | null,
+  input: RoundupGenerationInput,
+): Promise<RoundupGenerationResult> {
+  const principal = requireCapability(who, 'generate:roundup');
+  if (runtime.stores.kind !== 'postgres') {
+    throw validation(
+      'persistent_accounts_required',
+      'Generating a round-up needs the PostgreSQL account store.',
+    );
+  }
+  const weekRunId = uuid(input.weekRunId, 'weekRunId');
+  if (typeof input.category !== 'string' || !CATEGORY_SHAPE.test(input.category)) {
+    throw validation('category_invalid', 'The category is not valid.');
+  }
+  const category = input.category;
+  if (
+    typeof input.expectedTemplateHash !== 'string' ||
+    !HASH_SHAPE.test(input.expectedTemplateHash)
+  ) {
+    throw validation('template_hash_invalid', 'The template hash is not valid.');
+  }
+  const expectedTemplateHash = input.expectedTemplateHash;
+  const packages = await workspace();
+  const {
+    getWeekRun,
+    insertModelCall,
+    insertRoundupRevision,
+    listCarriedIncidents,
+    listOmittedIncidents,
+    listRoundupRevisions,
+    listSelectedRows,
+    listWeekRunChildren,
+    spendBetween,
+  } = packages.database;
+  const {
+    costMicrodollars,
+    generateRoundup: runGeneration,
+    isRoundupError,
+    loadTemplate,
+    MODEL_ID,
+    publisherOf,
+  } = packages.roundup;
+  try {
+    const week = await runtime.database.withClient((client) => getWeekRun(client, weekRunId));
+    if (week === null) {
+      throw new DashboardError('not_found', 'week_run_not_found', 'No week run with that id.');
+    }
+    if (week.status !== 'completed' || !week.categories.includes(category)) {
+      throw validation('week_not_ready', 'The week must be completed and cover that category.');
+    }
+    const assertNotGenerated = async (client: Queryable): Promise<void> => {
+      const existing = await listRoundupRevisions(client, weekRunId, category);
+      if (existing.length > 0) {
+        throw validation(
+          'roundup_already_generated',
+          'This round-up was generated; edit it instead.',
+        );
+      }
+    };
+    await runtime.database.withClient(assertNotGenerated);
+    const children = await runtime.database.withClient((client) =>
+      listWeekRunChildren(client, weekRunId),
+    );
+    const clustering = children.find((c) => c.kind === 'clustering' && c.category === category);
+    if (clustering === undefined || clustering.clusteringRunId === null) {
+      throw new DashboardError(
+        'not_found',
+        'week_category_not_clustered',
+        'This week has no clustering run for that category.',
+      );
+    }
+    const clusteringRunId = clustering.clusteringRunId;
+
+    // The input: the selection snapshot in selection order, and the
+    // deterministic flagged entries. Nothing else crosses to the model.
+    const rows = await runtime.database.withClient((client) =>
+      listSelectedRows(client, weekRunId, category, SELECTION_ROWS_FOR_GENERATION + 1),
+    );
+    if (rows.length > SELECTION_ROWS_FOR_GENERATION) {
+      // Never a prefix: a selection past the bound is refused whole (review F5).
+      throw validation(
+        'selection_too_large',
+        'The selection holds more rows than one round-up can carry.',
+      );
+    }
+    const incidents: { incidentId: string; rows: SnapshotRow[] }[] = [];
+    for (const row of rows) {
+      let incident = incidents.find((i) => i.incidentId === row.incidentId);
+      if (incident === undefined) {
+        incident = { incidentId: row.incidentId, rows: [] };
+        incidents.push(incident);
+      }
+      incident.rows.push({
+        sourceRowId: row.sourceRowId,
+        title: row.title,
+        summary: row.summary,
+        url: row.url,
+        publisher: publisherOf(row.url),
+        postedAt: row.postedAt,
+      });
+    }
+    const omitted = await runtime.database.withClient((client) =>
+      listOmittedIncidents(client, weekRunId, category, FLAGGED_FOR_GENERATION + 1),
+    );
+    if (omitted.length > FLAGGED_FOR_GENERATION) {
+      throw validation(
+        'flagged_too_many',
+        'The week has more omitted incidents than one round-up can list.',
+      );
+    }
+    // The carried incidents, exhaustively: not a page of the sift table (its
+    // 1,000-row page dropped the rest silently, re-review RR4) but a read of
+    // every carried, unselected, un-omitted incident, bound plus one.
+    const carried = await runtime.database.withClient((client) =>
+      listCarriedIncidents(client, {
+        clusteringRunId,
+        weekRunId,
+        category,
+        windowStart: week.windowStart,
+        windowEnd: week.windowEnd,
+        limit: FLAGGED_FOR_GENERATION + 1,
+      }),
+    );
+    if (omitted.length + carried.length > FLAGGED_FOR_GENERATION) {
+      throw validation(
+        'flagged_too_many',
+        'The week has more flagged incidents than one round-up can list.',
+      );
+    }
+    const flagged = [
+      ...omitted.map((entry) => ({
+        incidentId: entry.incidentId,
+        headline: entry.title,
+        reason: entry.reason,
+        disposition: 'omit' as const,
+      })),
+      ...carried.map((row) => ({
+        incidentId: row.incidentId,
+        headline: row.title.length > 0 ? row.title : 'untitled',
+        reason: CARRIED_REASON,
+        disposition: 'carry' as const,
+      })),
+    ];
+    const snapshot = {
+      weekRunId,
+      category,
+      windowStart: week.windowStart,
+      windowEnd: week.windowEnd,
+      incidents,
+      flagged,
+    };
+    if (flagged.length > FLAGGED_FOR_GENERATION) {
+      throw validation(
+        'flagged_too_many',
+        'The week has more flagged incidents than one round-up can list.',
+      );
+    }
+    const loaded = await loadTemplate();
+    await audit(runtime, {
+      kind: 'roundup_requested',
+      outcome: 'success',
+      code: category,
+      actorAccountId: principal.accountId,
+      subjectAccountId: null,
+      sessionId: principal.sessionId,
+      subjectId: weekRunId,
+    });
+    const ledger = (
+      holder: Queryable,
+      outcome: 'completed' | 'refused' | 'failed',
+      code: string,
+      usage: { inputTokens: number; outputTokens: number; costMicrodollars: number },
+      model: string,
+    ): Promise<void> =>
+      transactionOn(holder, () =>
+        insertModelCall(holder, {
+          id: randomUUID(),
+          kind: 'roundup',
+          weekRunId,
+          category,
+          model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          costMicrodollars: usage.costMicrodollars,
+          outcome,
+          code,
+          actorAccountId: principal.accountId,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+    // One generation at a time per schema (review F4): the claim, the cap
+    // check, the one request, the ledger row and the revisions happen under
+    // an advisory lock held on a dedicated connection, so two submissions
+    // cannot both observe an empty round-up and both call the model. The
+    // ledger row is written in its own transaction before the revisions, so
+    // a billed request keeps its record even if persistence fails after it.
+    const generation = await withGenerationLock(runtime, async (holder) => {
+      await assertNotGenerated(holder);
+      const bounds = monthBounds(new Date());
+      const spentThisMonth = await spendBetween(holder, bounds.from, bounds.to);
+      let produced;
+      try {
+        produced = await runGeneration(snapshot, loaded, runtime.model, {
+          spentThisMonth,
+          expectedTemplateHash,
+        });
+      } catch (error) {
+        if (!isRoundupError(error)) throw error;
+        const refused =
+          error.code === 'spend_cap_exceeded' ||
+          error.code === 'template_hash_mismatch' ||
+          error.code === 'model_key_missing' ||
+          error.code === 'input_empty' ||
+          error.code === 'input_invalid' ||
+          error.code === 'input_too_long';
+        // A request the model answered is billed whatever the verdict on the
+        // answer (review F3): the ledger records its real usage and cost.
+        const billed = error.billed;
+        await ledger(
+          holder,
+          refused ? 'refused' : 'failed',
+          error.code,
+          billed === null
+            ? { inputTokens: 0, outputTokens: 0, costMicrodollars: 0 }
+            : {
+                inputTokens: billed.inputTokens,
+                outputTokens: billed.outputTokens,
+                costMicrodollars: costMicrodollars(billed),
+              },
+          billed?.model ?? MODEL_ID,
+        );
+        if (
+          error.code === 'model_key_missing' ||
+          error.code === 'model_failed' ||
+          error.code === 'model_refused'
+        ) {
+          throw new DashboardError(
+            'unavailable',
+            error.code,
+            'The model request could not be completed; nothing was written.',
+          );
+        }
+        if (error.code.startsWith('response_')) {
+          throw new DashboardError(
+            'unavailable',
+            error.code,
+            'The response was rejected; nothing was written.',
+          );
+        }
+        throw validation(error.code, error.message);
+      }
+      await ledger(
+        holder,
+        'completed',
+        'completed',
+        {
+          inputTokens: produced.provenance.inputTokens,
+          outputTokens: produced.provenance.outputTokens,
+          costMicrodollars: produced.provenance.costMicrodollars,
+        },
+        produced.provenance.model,
+      );
+      const now = new Date().toISOString();
+      await transactionOn(holder, async () => {
+        await insertRoundupRevision(holder, {
+          weekRunId,
+          category,
+          revision: 0,
+          kind: 'deterministic',
+          slots: produced.deterministic.slots,
+          markdown: produced.deterministic.markdown,
+          provenance: null,
+          savedByAccountId: principal.accountId,
+          createdAt: now,
+        });
+        await insertRoundupRevision(holder, {
+          weekRunId,
+          category,
+          revision: 1,
+          kind: 'generated',
+          slots: produced.generated.slots,
+          markdown: produced.generated.markdown,
+          provenance: produced.provenance,
+          savedByAccountId: principal.accountId,
+          createdAt: now,
+        });
+      });
+      return produced;
+    });
+    await audit(runtime, {
+      kind: 'roundup_completed',
+      outcome: 'success',
+      code: `cost_${generation.provenance.costMicrodollars}_in_${generation.provenance.inputTokens}_out_${generation.provenance.outputTokens}`,
+      actorAccountId: principal.accountId,
+      subjectAccountId: null,
+      sessionId: principal.sessionId,
+      subjectId: weekRunId,
+    });
+    return {
+      revision: 1,
+      inputTokens: generation.provenance.inputTokens,
+      outputTokens: generation.provenance.outputTokens,
+      costMicrodollars: generation.provenance.costMicrodollars,
+    };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}
+
+/** The owner's edit: the next revision, under the expected one, like a draft revision. */
+export async function saveRoundupRevision(
+  runtime: Runtime,
+  who: Principal | null,
+  input: RoundupEditInput,
+): Promise<{ readonly revision: number }> {
+  try {
+    return await saveRoundupRevisionUnaudited(runtime, who, input);
+  } catch (error) {
+    // As for the generation: every refusal with a known actor, including a
+    // revision conflict, is audited once here with its fixed code.
+    if (who !== null && isDashboardError(error) && error.kind !== 'unavailable') {
+      await audit(runtime, {
+        kind: 'roundup_edited',
+        outcome: 'failure',
+        code: error.code,
+        actorAccountId: who.accountId,
+        subjectAccountId: null,
+        sessionId: who.sessionId,
+        subjectId:
+          typeof input.weekRunId === 'string' && UUID_SHAPE.test(input.weekRunId)
+            ? input.weekRunId
+            : null,
+      });
+    }
+    throw error;
+  }
+}
+
+async function saveRoundupRevisionUnaudited(
+  runtime: Runtime,
+  who: Principal | null,
+  input: RoundupEditInput,
+): Promise<{ readonly revision: number }> {
+  const principal = requireCapability(who, 'edit:output');
+  if (runtime.stores.kind !== 'postgres') {
+    throw validation(
+      'persistent_accounts_required',
+      'Editing a round-up needs the PostgreSQL account store.',
+    );
+  }
+  const weekRunId = uuid(input.weekRunId, 'weekRunId');
+  if (typeof input.category !== 'string' || !CATEGORY_SHAPE.test(input.category)) {
+    throw validation('category_invalid', 'The category is not valid.');
+  }
+  const category = input.category;
+  const expectedRevision = integer(input.expectedRevision, 'expectedRevision', {
+    min: 0,
+    max: 1_000_000,
+  });
+  if (typeof input.markdown !== 'string')
+    throw validation('markdown_invalid', 'The round-up body must be text.');
+  const markdown = input.markdown.replace(/\r\n/gu, '\n');
+  if (markdown.length < 1 || markdown.length > MAX_ROUNDUP_CHARACTERS) {
+    throw validation(
+      'markdown_length',
+      `The round-up body must be between 1 and ${MAX_ROUNDUP_CHARACTERS} characters.`,
+    );
+  }
+  if (DRAFT_FORBIDDEN.test(markdown)) {
+    throw validation(
+      'markdown_control',
+      'The round-up body must not contain a control or bidirectional character.',
+    );
+  }
+  const packages = await workspace();
+  const { insertRoundupRevision, isDatabaseError, latestRoundupRevision } = packages.database;
+  try {
+    const latest = await runtime.database.withClient((client) =>
+      latestRoundupRevision(client, weekRunId, category),
+    );
+    if (latest === null) {
+      throw new DashboardError(
+        'not_found',
+        'roundup_not_generated',
+        'No round-up exists for that week and category.',
+      );
+    }
+    if (latest.revision >= MAX_DRAFT_REVISIONS) {
+      throw validation(
+        'revision_limit',
+        `A round-up keeps at most ${MAX_DRAFT_REVISIONS} revisions.`,
+      );
+    }
+    if (expectedRevision !== latest.revision) {
+      throw new DashboardError(
+        'conflict',
+        'roundup_revision_conflict',
+        'The round-up was revised by someone else; reload and try again.',
+      );
+    }
+    const revision = latest.revision + 1;
+    try {
+      await runtime.database.withTransaction((tx) =>
+        insertRoundupRevision(tx, {
+          weekRunId,
+          category,
+          revision,
+          kind: 'edited',
+          slots: latest.slots,
+          markdown,
+          provenance: null,
+          savedByAccountId: principal.accountId,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+    } catch (error) {
+      if (isDatabaseError(error) && (error.code === '23505' || error.code === 'P0001')) {
+        throw new DashboardError(
+          'conflict',
+          'roundup_revision_conflict',
+          'The round-up was revised by someone else; reload and try again.',
+        );
+      }
+      throw error;
+    }
+    await audit(runtime, {
+      kind: 'roundup_edited',
+      outcome: 'success',
+      code: `revision_${revision}`,
+      actorAccountId: principal.accountId,
+      subjectAccountId: null,
+      sessionId: principal.sessionId,
+      subjectId: weekRunId,
+    });
+    return { revision };
   } catch (error) {
     throw mapFailure(error, packages);
   }

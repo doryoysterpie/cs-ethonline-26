@@ -17,10 +17,12 @@
     "account": "pnpm -s build:cli && node --conditions=react-server dist/cli/account.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "catalog:",
     "@cas/contracts": "workspace:*",
     "@cas/database": "workspace:*",
     "@cas/drafting": "workspace:*",
     "@cas/evidence": "workspace:*",
+    "@cas/roundup": "workspace:*",
     "@cas/worker": "workspace:*",
     "argon2": "catalog:",
     "hast-util-sanitize": "catalog:",

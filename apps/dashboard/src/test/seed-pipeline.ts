@@ -345,3 +345,80 @@ export async function seedWeek(db: Database): Promise<SeededWeek> {
     category: 'cyberattack',
   };
 }
+
+/**
+ * A week whose selection can exceed the round-up's row bound (review of pull
+ * request 24, F5): `groups` exact-URL duplicate groups of `rowsPerGroup`
+ * rows each, every group its own incident after clustering, in one batch
+ * over the standard window. Titles name a distinct organisation per group so
+ * no two groups share a rare signal; one group's rows share one canonical
+ * URL, so the clusterer keeps them together. Synthetic throughout.
+ */
+export async function seedLargeWeek(
+  db: Database,
+  groups: number,
+  rowsPerGroup: number,
+  options: {
+    /** The last `carriedGroups` groups are posted before the window and first seen inside it: carried incidents. */
+    readonly carriedGroups?: number | undefined;
+  } = {},
+): Promise<SeededWeek> {
+  const batchId = randomUUID();
+  const total = groups * rowsPerGroup;
+  const carriedFrom = groups - (options.carriedGroups ?? 0) + 1;
+  await db.withTransaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO import_batches (
+         id, data_origin, source_kind, review_label, source_basename, file_sha256, byte_length,
+         header_cells, importer_version, idempotency_key, status, parsed_row_count,
+         accepted_row_count, quarantined_row_count, started_at, completed_at
+       ) VALUES ($1, 'replay', 'master', NULL, 'large-week.csv', $2, 10, '["ch"]'::jsonb,
+                 'editorial-csv-import@1', $3, 'completed', $4, $4, 0, $5::timestamptz, $5::timestamptz)`,
+      [
+        batchId,
+        hash('e'),
+        randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64),
+        total,
+        '2026-10-22T12:00:00.000Z',
+      ],
+    );
+    // One URL group per incident-to-be, then its rows, all in two statements.
+    await tx.query(
+      `INSERT INTO url_groups (id, canonical_url)
+       SELECT gen_random_uuid(), 'https://l.example/' || g
+         FROM generate_series(1, $1::int) AS g`,
+      [groups],
+    );
+    await tx.query(
+      `INSERT INTO source_rows (
+         id, batch_id, row_number, data_origin, status, raw_cells, raw_fields, raw_ch,
+         raw_url, raw_category, posted_at, normalized_title, derived_summary_text,
+         text_transform, canonical_url, url_group_id, row_hash
+       )
+       SELECT gen_random_uuid(), $1::uuid, (g - 1) * $3::int + r, 'replay', 'accepted',
+              '["TRUE"]'::jsonb, '{"ch":"TRUE"}'::jsonb, 'TRUE',
+              u.canonical_url, 'Security',
+              (CASE WHEN g >= $4::int THEN '2026-10-12T08:00:00.000Z'::timestamptz
+                    ELSE '2026-10-20T10:00:00.000Z'::timestamptz END + (r || ' minutes')::interval),
+              'Ransomware halts Orgline' || g || 'corp terminal operations, report ' || r,
+              'Orgline' || g || 'corp said terminal systems were encrypted overnight; report ' || r || '.',
+              'html-to-text@1', u.canonical_url, u.id,
+              encode(sha256(convert_to($1::text || ':' || g || ':' || r, 'UTF8')), 'hex')
+         FROM generate_series(1, $2::int) AS g
+         CROSS JOIN generate_series(1, $3::int) AS r
+         JOIN url_groups u ON u.canonical_url = 'https://l.example/' || g`,
+      [batchId, groups, rowsPerGroup, carriedFrom],
+    );
+  });
+  const week = await runWeek(db, { window: WEEK_WINDOW, batchId, categories: ['cyberattack'] });
+  const clustering = week.children.find((c) => c.kind === 'clustering');
+  if (clustering?.clusteringRunId === undefined || clustering.clusteringRunId === null) {
+    throw new Error('the seeded large week recorded no clustering run');
+  }
+  return {
+    batchId,
+    weekRunId: week.week.id,
+    clusteringRunId: clustering.clusteringRunId,
+    category: 'cyberattack',
+  };
+}

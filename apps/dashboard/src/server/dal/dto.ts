@@ -344,4 +344,38 @@ export interface WeekTableDto {
   readonly canSelect: boolean;
   /** Only a principal who may read titles may search them. */
   readonly canSearch: boolean;
+  readonly canViewRoundup: boolean;
+}
+
+// ------------------------------------------------------------ the round-up (CAS-004)
+
+export interface RoundupRevisionDto {
+  readonly revision: number;
+  readonly kind: 'deterministic' | 'generated' | 'edited';
+  readonly savedBy: string;
+  readonly savedAt: string;
+  readonly provenance: {
+    readonly model: string;
+    readonly promptVersion: string;
+    readonly templateVersion: string;
+    readonly inputDigest: string;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly costMicrodollars: number;
+  } | null;
+}
+
+export interface RoundupViewDto {
+  readonly week: WeekRunDto;
+  readonly category: string;
+  readonly templateVersion: string;
+  readonly templateHash: string;
+  readonly selectedIncidents: number;
+  readonly revisions: readonly RoundupRevisionDto[];
+  readonly latest: { readonly revision: number; readonly markdown: string } | null;
+  readonly spendThisMonthMicrodollars: number;
+  readonly capMicrodollars: number;
+  readonly modelConfigured: boolean;
+  readonly canGenerate: boolean;
+  readonly canEdit: boolean;
 }

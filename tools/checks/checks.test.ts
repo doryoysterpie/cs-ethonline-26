@@ -6,7 +6,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { scanForbiddenFiles } from './forbidden-files.ts';
-import { scanFileHygiene, scanHygiene } from './hygiene.ts';
+import {
+  PROHIBITED_CODE_POINTS,
+  readProhibitedTextPolicy,
+  scanFileHygiene,
+  scanHygiene,
+} from './hygiene.ts';
 import { formatFinding } from './lib/report.ts';
 import { repositoryRoot, trackedEntries } from './lib/tracked.ts';
 import { scanSecrets, scanTextForSecrets } from './secrets.ts';
@@ -47,6 +52,27 @@ function disposableRepository(files: Record<string, string | Buffer>): string {
 const rules = (findings: readonly { rule: string }[]) => findings.map((f) => f.rule).sort();
 
 describe('hygiene', () => {
+  it('reads its table from data/policy/prohibited-text.json, which names U+2060 zero-width', () => {
+    const policy = readProhibitedTextPolicy();
+    expect(policy.version).toBe('prohibited-text@1');
+    expect(PROHIBITED_CODE_POINTS.get(0x2060)).toBe('zero_width');
+    expect(PROHIBITED_CODE_POINTS.get(0x200b)).toBe('zero_width');
+    expect(PROHIBITED_CODE_POINTS.get(0x202e)).toBe('bidi_control');
+    expect(PROHIBITED_CODE_POINTS.get(0x09)).toBeUndefined();
+    expect(PROHIBITED_CODE_POINTS.get(0x10ffff)).toBe('noncharacter');
+    expect(PROHIBITED_CODE_POINTS.size).toBe(
+      policy.rules.reduce(
+        (n, entry) =>
+          n +
+          entry.ranges.reduce(
+            (m, [a, b]) => m + Number.parseInt(b, 16) - Number.parseInt(a, 16) + 1,
+            0,
+          ),
+        0,
+      ),
+    );
+  });
+
   it('reports nothing on the repository as tracked', () => {
     const result = scanHygiene(REPO);
     expect(result.scanned).toBeGreaterThan(200);

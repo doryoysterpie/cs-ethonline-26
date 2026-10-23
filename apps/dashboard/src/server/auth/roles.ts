@@ -10,7 +10,7 @@
  * Pure: no environment, no database, no clock.
  */
 
-export const ROLES = ['judge', 'editor', 'admin'] as const;
+export const ROLES = ['judge', 'editor', 'admin', 'owner'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const CAPABILITIES = [
@@ -30,6 +30,10 @@ export const CAPABILITIES = [
   'review:evidence',
   'edit:draft',
   'select:stories',
+  // Generation and the editing of a generated output: the owner's alone (D34, D39).
+  'generate:roundup',
+  'generate:article',
+  'edit:output',
   // Administration.
   'admin:accounts',
   'admin:sessions',
@@ -86,10 +90,23 @@ const ADMIN: readonly Capability[] = [
   'view:audit',
 ];
 
+/**
+ * The owner (D39): the editor's capabilities plus generation and the editing
+ * of generated outputs. Administration stays with admin; an admin cannot
+ * generate (D34).
+ */
+const OWNER: readonly Capability[] = [
+  ...EDITOR,
+  'generate:roundup',
+  'generate:article',
+  'edit:output',
+];
+
 const PERMISSIONS: Readonly<Record<Role, ReadonlySet<Capability>>> = {
   judge: new Set(JUDGE),
   editor: new Set(EDITOR),
   admin: new Set(ADMIN),
+  owner: new Set(OWNER),
 };
 
 export function isRole(value: unknown): value is Role {
@@ -116,6 +133,9 @@ export const MUTATION_CAPABILITIES: readonly Capability[] = [
   'review:evidence',
   'edit:draft',
   'select:stories',
+  'generate:roundup',
+  'generate:article',
+  'edit:output',
   'admin:accounts',
   'admin:sessions',
 ];
@@ -125,4 +145,11 @@ export const ADMIN_CAPABILITIES: readonly Capability[] = [
   'admin:accounts',
   'admin:sessions',
   'view:audit',
+];
+
+/** What only the owner holds: used by tests to enumerate the refusals of every other role. */
+export const OWNER_CAPABILITIES: readonly Capability[] = [
+  'generate:roundup',
+  'generate:article',
+  'edit:output',
 ];

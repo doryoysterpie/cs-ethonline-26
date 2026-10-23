@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { conclude, finding, isMain, type Finding } from './lib/report.ts';
 import { readTracked, repositoryRoot, trackedEntries, type TrackedEntry } from './lib/tracked.ts';
 
@@ -41,23 +43,33 @@ function span(from: number, to: number): number[] {
   return out;
 }
 
+/** The policy file both this check and the round-up export read (`data/policy/prohibited-text.json`). */
+const POLICY_PATH = new URL('../../data/policy/prohibited-text.json', import.meta.url);
+
+interface ProhibitedTextPolicy {
+  readonly version: string;
+  readonly rules: readonly {
+    readonly rule: string;
+    readonly ranges: readonly (readonly [string, string])[];
+  }[];
+}
+
+export function readProhibitedTextPolicy(): ProhibitedTextPolicy {
+  const parsed = JSON.parse(readFileSync(POLICY_PATH, 'utf8')) as ProhibitedTextPolicy;
+  if (parsed.version !== 'prohibited-text@1' || !Array.isArray(parsed.rules)) {
+    throw new Error('data/policy/prohibited-text.json is not the structure this check reads');
+  }
+  return parsed;
+}
+
 function table(): ReadonlyMap<number, string> {
   const rules = new Map<number, string>();
-  const add = (codes: readonly number[], rule: string) => {
-    for (const code of codes) rules.set(code, rule);
-  };
-  add(
-    span(0x00, 0x1f).filter((code) => code !== 0x09 && code !== 0x0a && code !== 0x0d),
-    'c0_control',
-  );
-  add([0x7f, ...span(0x80, 0x9f)], 'c1_control');
-  add([0x2028, 0x2029], 'line_separator');
-  add([0x061c, 0x200e, 0x200f, ...span(0x202a, 0x202e), ...span(0x2066, 0x2069)], 'bidi_control');
-  add([0x200b, 0x200c, 0x200d, 0x2060, 0xfeff], 'zero_width');
-  add(span(0xfff9, 0xfffb), 'interlinear_annotation');
-  add(span(0xfdd0, 0xfdef), 'noncharacter');
-  for (let plane = 0; plane <= 0x10; plane += 1) {
-    add([plane * 0x10000 + 0xfffe, plane * 0x10000 + 0xffff], 'noncharacter');
+  for (const entry of readProhibitedTextPolicy().rules) {
+    for (const [from, to] of entry.ranges) {
+      for (const code of span(Number.parseInt(from, 16), Number.parseInt(to, 16))) {
+        rules.set(code, entry.rule);
+      }
+    }
   }
   return rules;
 }

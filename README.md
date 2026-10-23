@@ -51,24 +51,32 @@ amendment of 22 October 2026).
 after its independent review and is not re-audited; no document may read as saying otherwise
 (`docs/SPRINT-5-REPORT.md`, section 16). Its rules stand as written: a file can be ingested as
 fixture or replay only; live evidence comes from the Graph client, never from a file; a claim
-is a record, not a UUID. Migrations 0001 to 0014 are applied by the deploy step before the
+is a record, not a UUID. Migrations 0001 to 0015 are applied by the deploy step before the
 dashboard serves traffic.
 
-**What is on `main`, and what is in review.** CAS-001, the living feed imported from the
-authorized Google Sheets workbook, merged on 22 October 2026 at `9c03a35` after an independent
-PASS at `2ad714d`; its first real import into the hosted database follows, the database having
-been recreated and `main` redeployed on 22 October 2026 after the Railway platform incident of
-21 to 22 October (`docs/INCIDENT_RESPONSE.md`, section 7; `docs/RUNBOOK-HOSTING.md`). CAS-002, one classification run per category with
-the category recorded beside the run and bound to a policy registry (migration 0013), merged
-the same day at `b4c8270`; its first review returned two findings, corrected at `aeeccf4`, and
-that corrected head awaits the reviewer's verdict, so it is not called audited
-(`docs/CAS-002-REPORT.md`, section 7). CAS-006's release-blocker corrections merged the same day:
-pull request 17 at `355e773`, whose first review returned one finding, corrected at `e19449e`
-and awaiting the reviewer's verdict on that head; pull request 18 at `c32c963`, passed at
-`32e1357` (`docs/CAS-006-REPORT.md`). Nothing merged today is called audited until a verdict
-names its merged head. CAS-003, the editorial week as one command with its manifest and the
-sift table where the owner selects stories per incident (migration 0014, `week run`,
-`select:stories`), is in review on pull request 23 (`docs/CAS-003-REPORT.md`).
+**What is on `main`, and what is in review.** Four post-event units merged on 22 October
+2026, each at a head an independent review passed. CAS-001, the living feed imported from the
+authorized Google Sheets workbook, at `9c03a35` after a PASS at `2ad714d`; its first real
+import into the hosted database follows, the database having been recreated and `main`
+redeployed on 22 October 2026 after the Railway platform incident of 21 to 22 October
+(`docs/INCIDENT_RESPONSE.md`, section 7; `docs/RUNBOOK-HOSTING.md`).
+CAS-002, one classification run per category bound to a policy registry (migration 0013), at
+`b4c8270`, with its second correction at `592d3bc` after a PASS at `2c87946`
+(`docs/CAS-002-REPORT.md`, section 7). CAS-006's release-blocker corrections: pull request 17
+at `355e773`, passed at `e19449e`; pull request 18 at `c32c963`, passed at `32e1357`
+(`docs/CAS-006-REPORT.md`). CAS-003, the editorial week as one command with its manifest and
+the sift table where the owner selects stories per incident (migration 0014, `week run`,
+`select:stories`), at `bda4303` after four review rounds and a PASS at `048e673`
+(`docs/CAS-003-REPORT.md`). The Next.js advisories of the same day closed at `5d583f4`
+(pull request 25). Every verdict names its head in `docs/AUDIT-LEDGER.md`.
+
+In review, stacked in order: CAS-004, the round-up generated through the rundown template and
+edited by the owner (migration 0015, `@cas/roundup`, the `owner` role), on pull request 24
+(`docs/CAS-004-REPORT.md`); CAS-005, the article written from the full sources behind the
+system's first outbound fetch under the fetch policy adopted as D36 (migration 0016,
+`@cas/source-reader`, `@cas/article`), on pull request 26 (`docs/CAS-005-REPORT.md`); CAS-007,
+reader sign-up with owner approval, the `reader` role in place of `judge`, the published mark
+and scrape protection (migration 0017), on pull request 27 (`docs/CAS-007-REPORT.md`).
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up
@@ -154,12 +162,13 @@ import command was run against the live workbook into a local database on 21 Oct
 
 | Path                      | Package               | State after integration                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/dashboard`          | `@cas/dashboard`      | Next.js command center, built in Sprint 6, passwordless login; from CAS-003 the editorial week pages and the per-incident selection under `select:stories`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `apps/dashboard`          | `@cas/dashboard`      | Next.js command center, built in Sprint 6, passwordless login; from CAS-003 the editorial week pages and the per-incident selection under `select:stories`; from CAS-004 the round-up page, generation and editing under the `owner` role, and the one model transport                                                                                                                                                                                                                                                                                                                                                                                          |
 | `apps/worker`             | `@cas/worker`         | implemented: CSV validation, import, classification, clustering, evidence, claim, anomaly and drafting commands; import limits and a command deadline; `sheets import` (CAS-001) and `week run`, the editorial week as one command recording a manifest (CAS-003)                                                                                                                                                                                                                                                                                                                                                                                               |
 | `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set, the Graph evidence contracts and the versioned resource limits (`resource-limits@1`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, fourteen migrations, ingestion, classification, clustering, evidence and claim ops, Sheets provenance, run categories and the editorial week (manifest, children, selections)                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, fifteen migrations, ingestion, classification, clustering, evidence and claim ops, Sheets provenance, run categories, the editorial week (manifest, children, selections) and the round-up revisions and model ledger                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `packages/roundup`        | `@cas/roundup`        | CAS-004: the rundown template, slot schema, prompt contract, deterministic rendering, response validation and cost rules; pure, no socket                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `packages/taxonomy`       | `@cas/taxonomy`       | versioned classification signal policy and, from CAS-002, one category policy per category (`cyberattack`, `crypto`). Incident taxonomy: future work                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `packages/classification` | `@cas/classification` | implemented: deterministic high-recall classifier and calibration evaluator; from CAS-002, one built contract per category                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `packages/clustering`     | `@cas/clustering`     | implemented: deterministic duplicate, syndication and incident grouping (D22)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -349,7 +358,7 @@ corepack pnpm --filter @cas/dashboard start
 ```
 
 ```bash
-corepack pnpm --filter @cas/dashboard provision --username <name> --role <judge|editor|admin> --expires-at <instant>
+corepack pnpm --filter @cas/dashboard provision --username <name> --role <judge|editor|admin|owner> --expires-at <instant>
 ```
 
 The provisioning command reads the password on the terminal without echo, validates it,
@@ -484,6 +493,7 @@ audit and nothing in it is accepted.
 | `docs/RUNBOOK-HOSTING.md`                 | the hosted service on Railway: what runs, the variables, the rebuild after a provider incident, the plan, the proxy   |
 | `docs/CAS-010-REPORT.md`                  | CAS-010 report: the dashboard's terminal grid, the S0 design note against D47 and the decisions it raises             |
 | `docs/CAS-001-REPORT.md`                  | CAS-001 report: design note, reference implementation, import path, local run                                         |
+| `docs/CAS-004-REPORT.md`                  | CAS-004 report: the round-up design note, prompt contract, migration 0015, the model boundary, tests, verification    |
 | `docs/THREAT_MODEL.md`                    | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks |
 | `docs/RISK_REGISTER.md`                   | risks with owner, status, next action and review date                                                                 |
 | `docs/DATA_CLASSIFICATION_RETENTION.md`   | data classes, inventory, retention and removal                                                                        |

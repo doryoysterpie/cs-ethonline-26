@@ -70,6 +70,15 @@ export default async function WeekTablePage({
           <Link href={href(view.category, 'members_desc')}>most reports</Link>
         )}
       </p>
+      {view.canViewRoundup ? (
+        <p className="small">
+          <Link
+            href={`/week/${view.week.id}/roundup?category=${encodeURIComponent(view.category)}`}
+          >
+            Round-up for {view.category}
+          </Link>
+        </p>
+      ) : null}
       {view.canSearch ? (
         <form method="get" action={`/week/${view.week.id}`}>
           <input type="hidden" name="category" value={view.category} />
