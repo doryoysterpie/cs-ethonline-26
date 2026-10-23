@@ -50,6 +50,10 @@ test.describe('story cards', () => {
       `https://dashboard.example.org/cards/${id}/image.png`,
     );
     expect(await meta('meta[name="twitter:card"]')).toBe('summary_large_image');
+    // Both preview images resolve under /cards/, as absolute addresses (the owner's condition).
+    expect(await meta('meta[name="twitter:image"]')).toBe(
+      `https://dashboard.example.org/cards/${id}/image.png`,
+    );
     // The allowlist: no summary, no source address, no status block, no sign-in shell.
     const html = await page.content();
     expect(html).not.toContain('A summary the card never carries');
@@ -84,6 +88,10 @@ test.describe('story cards', () => {
     const body = await svg.text();
     expect(body).toContain('Card headline 1');
     expect(body).not.toMatch(/href|<script|url\(/u);
+    // The robots file lets every agent but the named AI crawlers reach cards, and nothing else.
+    const robots = await (await request.get('/robots.txt')).text();
+    expect(robots).toContain('User-agent: *\nAllow: /cards/\nDisallow: /\n');
+    expect(robots).toContain('User-agent: GPTBot\nDisallow: /\n');
     for (const path of [
       `/cards/${'A'.repeat(22)}`,
       '/cards/not-a-card',

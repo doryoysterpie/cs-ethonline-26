@@ -1784,6 +1784,18 @@ disabled on this model, so effort is the only control.
   7. **Who.** Every principal holding `view:published`, readers included, with no new
      capability; creation is idempotent per output and entry, so a second request returns the
      existing address, the limit is not spent on duplicates, and the counter stays whole.
+  8. **The robots file** (raised by the build, `docs/CAS-009-REPORT.md`, section 1.9), resolved
+     the same day: (a). `Allow: /cards/` under `User-agent: *`, ahead of its `Disallow: /`; the
+     named AI crawlers' groups keep their own `Disallow: /`, which covers cards, since a crawler
+     with its own group ignores the `*` group. Under the old file a search engine could not
+     fetch a card, so it never saw `noindex`, and a card linked from elsewhere could be indexed
+     as a bare address: allowing the path is what makes `noindex` effective. The `Allow` line
+     comes first for parsers that take the first match. Condition: the preview images resolve
+     under `/cards/` as absolute addresses.
+  9. **A known limit, recorded, not changed.** "Not found at once" holds at the origin. The
+     images are cacheable for five minutes, so a downstream cache may serve an unpublished
+     card's image for up to five minutes, and platforms cache link previews for their own
+     periods, outside the product's control. The card page itself is never cached.
 - **Rationale:** The owner's. The card is the hook, not the content: the summary is what sign-in
   or the newsletter delivers, and generated text on a public address would be published outside
   D6's publication act. A card without an image is a bare link on every platform that matters.

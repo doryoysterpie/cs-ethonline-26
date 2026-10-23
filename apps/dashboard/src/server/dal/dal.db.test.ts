@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { STORY_CARD_FIELDS } from '@cas/contracts';
-import type { Queryable } from '@cas/database';
+import { insertStoryCardImage, type Queryable } from '@cas/database';
 
 import { openMigratedSchema, type IsolatedSchema } from '../../test/isolated-schema.ts';
 import {
@@ -3554,6 +3554,51 @@ describe('data-access layer against PostgreSQL', () => {
       expect(await kindCode(cardImage(rt, id, 'png', 'direct'))).toBe(
         'not_found:story_not_shareable',
       );
+      await own.close();
+    });
+
+    it('serves the image stored for the revision the same read found current, never another revision’s (the owner’s merge condition)', async () => {
+      const own = await openMigratedSchema();
+      const { week, rt, persisted, target } = await publishedRoundup(own);
+      const { id } = await makeCard(rt, persisted.reader, story(week.weekRunId, 0));
+      const first = (await cardImage(rt, id, 'png', 'direct')).body as Uint8Array;
+      const published = await publishedOutput(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        'roundup',
+      );
+      await saveRoundupRevision(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedRevision: 1,
+        markdown: published.markdown.replace('**Card headline 1**', '**Corrected headline**'),
+      });
+      // A sentinel stored under revision 2 before revision 2 is published.
+      const sentinel = new Uint8Array([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x53, 0x45, 0x4e, 0x54,
+      ]);
+      await own.db.withTransaction((tx) =>
+        insertStoryCardImage(tx, {
+          cardId: id,
+          revision: 2,
+          png: sentinel,
+          pngSha256: 'f'.repeat(64),
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      const bytes = async () => [
+        ...((await cardImage(rt, id, 'png', 'direct')).body as Uint8Array),
+      ];
+      // Revision 1 current: revision 1's image, never revision 2's.
+      expect(await bytes()).toEqual([...first]);
+      // Revision 2 current: exactly what is stored under revision 2.
+      await publishOutput(rt, persisted.owner, { ...target, revision: 2 });
+      expect(await bytes()).toEqual([...sentinel]);
+      // Revision 1 current again: revision 1's image again.
+      await publishOutput(rt, persisted.owner, { ...target, revision: 1 });
+      expect(await bytes()).toEqual([...first]);
       await own.close();
     });
 
