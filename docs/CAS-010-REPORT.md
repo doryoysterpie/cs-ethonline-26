@@ -2,10 +2,11 @@
 
 **Unit:** CAS-010 (`docs/POST-EVENT-PLAN.md`, section 5). **Tracker:** `docs/tcu/CAS-010.md`.
 **Issue:** [#30](https://github.com/doryoysterpie/cs-ethonline-26/issues/30). **Decision:** D47.
-**State:** S0 only. The owner admitted this unit on 22 October 2026 for its design note, with
+**State:** in build. The owner admitted this unit on 22 October 2026 for its design note, with
 one condition: no implementation pull request opens until the review queue of pull requests
-24 to 28 is back under a day. The note is written now so that CAS-009's story cards have a grid
-to land in.
+24 to 28 is back under a day. The note was written first so that CAS-009's story cards have a
+grid to land in; the queue emptied on 22 October 2026 when the owner merged 26, 27 and 28, and
+the build began the same day on `cas-010/layout`.
 
 ## 1. Design note, S0, written before code (step 1)
 
@@ -128,3 +129,21 @@ A story card is a section block of its own: the block's title bar carries the ca
 block's rows are the stories the reader picked, each row the four fields a row has today
 (feed, title, source, date) under D6's public allowlist. CAS-009 adds the card's rendering and
 its sharing; it does not add a layout.
+
+## 2. Stack check and data contract, S1 and S2 (steps 3 and 4)
+
+**Stack check (step 3).** No dependency is added, removed or changed: the typeface is the system
+monospaced stack (`ui-monospace`, `SFMono-Regular`, `Menlo`, `Consolas`, `Liberation Mono`,
+`monospace`), zero bytes downloaded, `font-src 'self'` unchanged; the effects are CSS alone. The
+browser-test runner the verification plan names is already present: `@playwright/test`, pinned
+in the workspace catalogue, whose installed binary prints `Version 1.63.0`
+(`corepack pnpm exec playwright --version`, 22 October 2026), on Node `v24.21.0` and pnpm
+`11.10.0`; its configuration (`apps/dashboard/playwright.config.ts`) runs against the
+production build with an isolated migrated schema and never in `pnpm test` or CI. The bill of
+materials and the lockfile are expected unchanged at the end of the unit, and the
+supply-chain check proves it.
+
+**Data contract (step 4).** Not applicable: the unit changes presentation only. No migration, no
+new table or column, no new query; the status block reads what the data-access layer already
+returns to the principal, and a line the principal may not read is not shown. Stated here so
+the step is not skipped silently.
