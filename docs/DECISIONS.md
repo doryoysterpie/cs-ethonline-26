@@ -1268,7 +1268,11 @@ to replace the file in that window defeated every check.
   Railway, so no platform move is needed. A cost judgment, not a vendor commitment: the
   hackathon has ended and no sponsor obligation remains.
 - **Consequences:** `docs/ACCOUNT_READINESS.md` records the live hosting row as resolved.
-  Backups and their restore test are CAS-006's. Only the dashboard image is deployed; the
+  Backups and their restore test are CAS-006's. Note, 22 October 2026: on Railway, creating
+  backups, scheduling them and point-in-time recovery need the Pro plan (USD 20), which Hobby
+  lacks; the owner defers that upgrade to the launch (the refined dashboard opened for public
+  reader sign-up and the supporter tier), so the hosted database runs without backups meanwhile (`RISK_REGISTER.md`, K21; `RUNBOOK-HOSTING.md`,
+  sections 4 and 5). Only the dashboard image is deployed; the
   pipeline commands still run from an operator's machine until CAS-003 decides scheduling.
 - **Decided by:** Project owner, 16 September 2026, recorded from `docs/POST-EVENT-PLAN.md`
   section 3 (P-1).
@@ -1490,3 +1494,33 @@ Decided by the owner on 22 October 2026 (CAS-003, step 1). The editorial timezon
   references, not text.
 - **Decided by:** Project owner, on the plan's recommendation.
 - **Supersedes:** none.
+
+## D47 The dashboard's layout direction: the terminal grid, in the existing palette
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** The dashboard's layout follows the "clean terminal grid" template the owner
+  supplied on 22 October 2026 (an image, kept in the owner's vault under
+  `01_Specs/cs-ethonline-26/design/`, since the repository's hygiene check admits no binary
+  file): a
+  left sidebar listing the sections with a status block beneath (online, uptime, load, log
+  level); a header bar with the product name and the clock; the main area as stacked section
+  blocks, each a sortable table of rows (feed, title, source or cluster or signal path, date,
+  signal marks) with its own sort control; a footer filter bar (filter chips, sort by, limit,
+  a search shortcut). The treatment is the terminal: a monospaced face, section titles in the
+  emphasis colour, subtle scanlines and glow, blinking cursor accents. The colours are the
+  existing tokens of `apps/dashboard/src/app/globals.css` (navy, panel, ink, muted, sky,
+  orange, yellow, green, magenta) and nothing else; the template's own colours are not
+  adopted.
+- **Rationale:** The owner's direction, given with the template. The template is an
+  evolution of the command centre the dashboard already has, so the information architecture
+  stays and the presentation changes.
+- **Consequences:** A unit of its own, with the standard steps, opened by the owner when it is
+  admitted; it changes nothing about what any role may see, and it adds no dependency for
+  effects that CSS alone provides. The retro treatment is CSS-only, so the dashboard stays as
+  light as it is: no client-side framework for the look, no font loaded from a third party (a
+  system monospaced stack, or one self-hosted file).
+- **Decided by:** Project owner, 22 October 2026, from the template he supplied in chat.
+- **Supersedes:** nothing; refines the dashboard's presentation under D28. Numbered past
+  D46 because D39 to D46 are recorded on the pull requests still in review (24, 26, 27, 28)
+  and this entry merges to `main` ahead of them.
