@@ -1,0 +1,30 @@
+{
+  "name": "@cas/source-reader",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The source-reading boundary (CAS-005): the fetch policy of docs/FETCH-POLICY.md over an injected transport and resolver, robots.txt, bounded bodies, text extraction. The policy layer opens no socket; the one Node transport is small and separate.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cas/contracts": "workspace:*",
+    "htmlparser2": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

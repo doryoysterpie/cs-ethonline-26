@@ -1,7 +1,9 @@
 import 'server-only';
 
+import type * as ArticleModule from '@cas/article';
 import type * as DatabaseModule from '@cas/database';
 import type * as RoundupModule from '@cas/roundup';
+import type * as SourceReaderModule from '@cas/source-reader';
 import type * as WorkerModule from '@cas/worker';
 
 /**
@@ -24,6 +26,10 @@ export interface WorkspacePackages {
   readonly worker: typeof WorkerModule;
   /** Resolves its template from `import.meta.url`, so it loads the same way. */
   readonly roundup: typeof RoundupModule;
+  /** The source-reading boundary (CAS-005): its one transport names Node's HTTP clients. */
+  readonly sourceReader: typeof SourceReaderModule;
+  /** The article contract (CAS-005), loaded beside the reader it is fed by. */
+  readonly article: typeof ArticleModule;
 }
 
 let loaded: Promise<WorkspacePackages> | null = null;
@@ -34,7 +40,15 @@ export function workspace(): Promise<WorkspacePackages> {
       import(/* turbopackIgnore: true */ /* webpackIgnore: true */ '@cas/database'),
       import(/* turbopackIgnore: true */ /* webpackIgnore: true */ '@cas/worker'),
       import(/* turbopackIgnore: true */ /* webpackIgnore: true */ '@cas/roundup'),
-    ]).then(([database, worker, roundup]) => ({ database, worker, roundup }));
+      import(/* turbopackIgnore: true */ /* webpackIgnore: true */ '@cas/source-reader'),
+      import(/* turbopackIgnore: true */ /* webpackIgnore: true */ '@cas/article'),
+    ]).then(([database, worker, roundup, sourceReader, article]) => ({
+      database,
+      worker,
+      roundup,
+      sourceReader,
+      article,
+    }));
     loaded.catch(() => {
       loaded = null;
     });

@@ -12,10 +12,13 @@ import {
   assignRole,
   decideEvidence,
   disableAccount,
+  generateArticle,
   mergeIncidentsAction,
   provisionAccount,
+  readArticleSources,
   revokeAccountSessions,
   reviewQueueEntry,
+  saveArticleRevision,
   saveDraftRevision,
   setAccountExpiry,
   splitIncidentAction,
@@ -23,6 +26,7 @@ import {
 import {
   administration,
   anomalyView,
+  articleView,
   commandCenter,
   draftView,
   evidenceView,
@@ -95,9 +99,21 @@ const READS: Readonly<Record<string, Call>> = {
     anomalyView(r, p, { signalRunId: ID, asOf: null, clusteringRunId: null, windows: [] }),
   draftView: (r, p) => draftView(r, p, ID, '2026-08-09T00:00:00Z', '2026-08-16T00:00:00Z'),
   administration: (r, p) => administration(r, p),
+  articleView: (r, p) => articleView(r, p, ID, 'cyberattack'),
 };
 
 const MUTATIONS: Readonly<Record<string, Call>> = {
+  readArticleSources: (r, p) =>
+    readArticleSources(r, p, { weekRunId: ID, category: 'cyberattack' }),
+  generateArticle: (r, p) =>
+    generateArticle(r, p, { weekRunId: ID, category: 'cyberattack', readingId: 'a'.repeat(32) }),
+  saveArticleRevision: (r, p) =>
+    saveArticleRevision(r, p, {
+      weekRunId: ID,
+      category: 'cyberattack',
+      expectedRevision: 1,
+      markdown: 'x',
+    }),
   reviewQueueEntry: (r, p) =>
     reviewQueueEntry(r, p, {
       classificationRunId: ID,
@@ -163,7 +179,7 @@ const ADMIN_ONLY = new Set([
   'setAccountExpiry',
   'revokeAccountSessions',
 ]);
-const EDITOR_ONLY_READS = new Set(['reviewQueue', 'draftView']);
+const EDITOR_ONLY_READS = new Set(['reviewQueue', 'draftView', 'articleView']);
 
 async function kindOf(call: Promise<unknown>): Promise<string> {
   try {

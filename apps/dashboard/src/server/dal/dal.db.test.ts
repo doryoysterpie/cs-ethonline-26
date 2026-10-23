@@ -14,19 +14,29 @@ import {
 import { insertSynthetic, syntheticAccount } from '../../test/synthetic-accounts.ts';
 import { openMemoryStores } from '../auth/memory-store.ts';
 import { openPostgresStores } from '../auth/postgres-store.ts';
+import {
+  MAX_MARKDOWN_CHARACTERS as ARTICLE_MARKDOWN_CHARACTERS,
+  worstCaseMicrodollars as articleWorstCase,
+} from '@cas/article';
 import { recordedTransport, sectionOf, loadTemplate, MAX_MARKDOWN_CHARACTERS } from '@cas/roundup';
+import { recordedTransport as recordedPages, type RawTransport } from '@cas/source-reader';
+import { ReadingCache } from './readings.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
 import type { Principal } from '../auth/session.ts';
 import { isDashboardError } from '../errors.ts';
 import { createRuntime, type Runtime } from '../runtime.ts';
 import {
   decideEvidence,
+  generateArticle,
   generateRoundup,
+  MAX_ARTICLE_CHARACTERS,
   MAX_DRAFT_REVISIONS,
   MAX_QUEUE_DECISIONS_PER_ENTRY,
   MAX_ROUNDUP_CHARACTERS,
   mergeIncidentsAction,
+  readArticleSources,
   reviewQueueEntry,
+  saveArticleRevision,
   saveDraftRevision,
   saveRoundupRevision,
   selectStory,
@@ -40,6 +50,7 @@ import {
   evidenceView,
   incidentDetail,
   incidentExplorer,
+  articleView,
   reviewQueue,
   roundupView,
   weekList,
@@ -847,56 +858,67 @@ describe('data-access layer against PostgreSQL', () => {
     });
   });
 
+  async function persistentRuntime(
+    model: ReturnType<typeof recordedTransport> | null,
+    schema: IsolatedSchema = isolated,
+    reader: RawTransport | null = null,
+  ) {
+    const persistent = openPostgresStores(schema.db);
+    const rt = createRuntime(
+      {
+        environment: 'local',
+        accountStore: 'memory',
+        memorySeedPath: null,
+        databaseSchema: schema.name,
+        trustForwardedFor: false,
+        trustedProxyHops: 1,
+      },
+      persistent,
+      schema.db,
+      {
+        model,
+        reader:
+          reader === null
+            ? null
+            : {
+                transport: reader,
+                resolver: { resolve: async () => ['93.184.216.34'] },
+                userAgent: 'LatestInCyber/0.1 (+https://dashboard.example.org)',
+              },
+        readings: new ReadingCache(),
+      },
+    );
+    const persisted = {} as Record<Role, Principal>;
+    for (const role of ROLES) {
+      const account = await syntheticAccount(role);
+      await insertSynthetic(persistent, account);
+      const sessionId = randomUUID();
+      await persistent.sessions.insert({
+        id: sessionId,
+        accountId: account.record.id,
+        tokenHash: randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64),
+        createdAt: new Date().toISOString(),
+        lastSeenAt: new Date().toISOString(),
+        absoluteExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        revokedAt: null,
+        revokedReason: null,
+      });
+      persisted[role] = {
+        accountId: account.record.id,
+        username: account.record.username,
+        normalizedEmail: null,
+        role,
+        sessionId,
+        sessionToken: 'c'.repeat(43),
+      };
+    }
+    return { rt, persisted, persistent };
+  }
+
   describe('the round-up (CAS-004)', () => {
     it('holds the stored rendering bound equal across the package and the layer (the migration refuses the 400,001st character)', () => {
       expect([MAX_MARKDOWN_CHARACTERS, MAX_ROUNDUP_CHARACTERS]).toEqual([400_000, 400_000]);
     });
-
-    async function persistentRuntime(
-      model: ReturnType<typeof recordedTransport> | null,
-      schema: IsolatedSchema = isolated,
-    ) {
-      const persistent = openPostgresStores(schema.db);
-      const rt = createRuntime(
-        {
-          environment: 'local',
-          accountStore: 'memory',
-          memorySeedPath: null,
-          databaseSchema: schema.name,
-          trustForwardedFor: false,
-          trustedProxyHops: 1,
-        },
-        persistent,
-        schema.db,
-        { model },
-      );
-      const persisted = {} as Record<Role, Principal>;
-      for (const role of ROLES) {
-        const account = await syntheticAccount(role);
-        await insertSynthetic(persistent, account);
-        const sessionId = randomUUID();
-        await persistent.sessions.insert({
-          id: sessionId,
-          accountId: account.record.id,
-          tokenHash: randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64),
-          createdAt: new Date().toISOString(),
-          lastSeenAt: new Date().toISOString(),
-          absoluteExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-          revokedAt: null,
-          revokedReason: null,
-        });
-        persisted[role] = {
-          accountId: account.record.id,
-          username: account.record.username,
-          normalizedEmail: null,
-          role,
-          sessionId,
-          sessionToken: 'c'.repeat(43),
-        };
-      }
-      return { rt, persisted, persistent };
-    }
-
     /** A model answer that reformats the selection exactly as the contract demands: the rundown and the marker. */
     function goldenFor(snapshot: {
       incidents: readonly { rows: readonly { url: string; sourceRowId: string }[] }[];
@@ -1652,5 +1674,677 @@ describe('data-access layer against PostgreSQL', () => {
       expect(edits.every((e) => e.subjectId === week.weekRunId)).toBe(true);
       expect(edits.every((e) => !e.code.includes('Edited'))).toBe(true);
     });
+  });
+
+  describe('the article (CAS-005)', () => {
+    const HOST = 'seed.example.org';
+    const page = (body: string) =>
+      `<html><head><title>t</title></head><body><article><p>${body}</p></article></body></html>`;
+    const TEXT_A =
+      'Harborline Port said terminal systems were encrypted overnight and that trucks were turned away at the gate while crews worked to restore operations.';
+    const TEXT_B =
+      'The port confirmed the ransomware intrusion to its terminal systems on Tuesday and said it had notified the provincial regulator and its insurers.';
+
+    /** Pages for the seeded rows: a is read, b is read, c is disallowed by robots.txt. */
+    function pagesFor(batchId: string): RawTransport & { readonly calls: readonly string[] } {
+      return recordedPages({
+        [`https://${HOST}/robots.txt`]: {
+          headers: { 'content-type': 'text/plain' },
+          body: `User-agent: LatestInCyber\nDisallow: /${batchId}/c`,
+        },
+        [`https://${HOST}/${batchId}/a`]: { body: page(TEXT_A) },
+        [`https://${HOST}/${batchId}/b`]: { body: page(TEXT_B) },
+        [`https://${HOST}/${batchId}/c`]: { body: page('never fetched') },
+      });
+    }
+
+    const filler = (sentences: number): string =>
+      Array.from(
+        { length: sentences },
+        (_, i) => `The port reported detail number ${i + 1} of the incident.`,
+      ).join(' ');
+
+    /** A model answer in the contract, built from the request it is given. */
+    function goldenFor(user: string) {
+      const input = JSON.parse(user) as {
+        incidents: { rows: { sourceRowId: string; reading: { status: string } }[] }[];
+      };
+      const rows = input.incidents.flatMap((i) => i.rows);
+      const read = rows.filter((r) => r.reading.status !== 'not_read').map((r) => r.sourceRowId);
+      const notRead = rows.filter((r) => r.reading.status === 'not_read').map((r) => r.sourceRowId);
+      const first = read[0] as string;
+      const second = read[1] ?? first;
+      return {
+        headline: 'Harborline Port halts terminal operations after ransomware intrusion',
+        standfirst:
+          'Harborline Port said on Tuesday that a ransomware intrusion encrypted its terminal systems overnight, turning trucks away at the gate while crews worked to restore operations.',
+        paragraphs: [
+          {
+            section: 'what_happened',
+            text: `Harborline Port said terminal systems were encrypted overnight. ${filler(9)}`,
+            citations: [first],
+          },
+          {
+            section: 'organization_statement',
+            text: `The port confirmed the intrusion to its terminal systems on Tuesday. ${filler(9)}`,
+            citations: [second],
+          },
+          {
+            section: 'scale_impact',
+            text: `Trucks were turned away at the gate while crews worked. ${filler(9)}`,
+            citations: [first],
+          },
+          {
+            section: 'not_confirmed',
+            text: `The port did not say who was responsible or when operations would resume. ${filler(9)}`,
+            citations: [first, second],
+          },
+          {
+            section: 'next_step',
+            text: `The port said it had notified the provincial regulator and its insurers. ${filler(9)}`,
+            citations: [second],
+          },
+        ],
+        victimNaming: { named: false, basis: 'none', organization: null, citations: [] },
+        notRead,
+      };
+    }
+
+    const model = () =>
+      recordedTransport({ raw: null, usage: { inputTokens: 12_000, outputTokens: 2_000 } });
+
+    it('reads only the selected sources under the policy, shows the reading, writes on confirmation, and audits every step without content', async () => {
+      const week = await seedWeek(isolated.db, { host: HOST });
+      const pages = pagesFor(week.batchId);
+      let userSeen = '';
+      const answering = {
+        async generate(request: { user: string; model: string; maxOutputTokens: number }) {
+          userSeen = request.user;
+          expect(request.maxOutputTokens).toBe(32_000);
+          return {
+            raw: goldenFor(request.user),
+            usage: { inputTokens: 12_000, outputTokens: 2_000 },
+            model: request.model,
+          };
+        },
+      };
+      const { rt, persisted, persistent } = await persistentRuntime(answering, isolated, pages);
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      for (const row of table.rows) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: row.incidentId,
+          state: 'selected',
+          note: null,
+        });
+      }
+      const input = { weekRunId: week.weekRunId, category: 'cyberattack' };
+      for (const role of ['judge', 'editor', 'admin'] as const) {
+        expect(await kindOf(readArticleSources(rt, persisted[role], input))).toBe('authorization');
+      }
+      const before = await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(before).toMatchObject({
+        canRead: true,
+        canGenerate: false,
+        canEdit: false,
+        reading: null,
+        readerConfigured: true,
+        modelConfigured: true,
+        revisions: [],
+      });
+      expect(before.selectedSources).toBe(3);
+      const reading = await readArticleSources(rt, persisted.owner, input);
+      expect(reading).toMatchObject({ read: 2, partlyRead: 0, notRead: 1 });
+      // Only the selected URLs and the host's robots.txt were requested; the disallowed page never.
+      expect(pages.calls.map((c) => c.split(' ')[1])).toEqual([
+        `https://${HOST}/robots.txt`,
+        `https://${HOST}/${week.batchId}/a`,
+        `https://${HOST}/${week.batchId}/b`,
+      ]);
+      const shown = await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(shown.reading).toMatchObject({ readingId: reading.readingId, read: 2, partlyRead: 0 });
+      expect(shown.reading?.notRead).toEqual([{ publisher: HOST, code: 'robots_disallowed' }]);
+      expect(shown.canGenerate).toBe(true);
+      // A judge sees nothing; an editor sees the page but no pending reading of someone else's.
+      expect(await kindOf(articleView(rt, persisted.judge, week.weekRunId, 'cyberattack'))).toBe(
+        'authorization',
+      );
+      expect(
+        (await articleView(rt, persisted.editor, week.weekRunId, 'cyberattack')).reading,
+      ).toBeNull();
+      // The fetch audit: one event per source, the row as subject, bytes and duration in the code, never a URL.
+      const fetched = (await persistent.audit.list(100)).filter((e) => e.kind === 'source_fetched');
+      expect(fetched).toHaveLength(3);
+      expect(fetched.map((e) => e.outcome).sort()).toEqual(['failure', 'success', 'success']);
+      expect(
+        fetched.every((e) => /^bytes_\d+_ms_\d+_(?:read|robots_disallowed)$/u.test(e.code)),
+      ).toBe(true);
+      // The fixed shape above admits no host, path or text; every event names its row.
+      expect(fetched.every((e) => e.subjectId !== null)).toBe(true);
+      // A bogus or foreign reading identifier is refused; the owner's is accepted once.
+      const generation = { ...input, readingId: 'f'.repeat(32) };
+      expect(await kindOf(generateArticle(rt, persisted.owner, generation))).toBe('validation');
+      for (const role of ['judge', 'editor', 'admin'] as const) {
+        expect(
+          await kindOf(
+            generateArticle(rt, persisted[role], { ...input, readingId: reading.readingId }),
+          ),
+        ).toBe('authorization');
+      }
+      const written = await generateArticle(rt, persisted.owner, {
+        ...input,
+        readingId: reading.readingId,
+      });
+      expect(written).toMatchObject({
+        revision: 1,
+        inputTokens: 12_000,
+        outputTokens: 2_000,
+        costMicrodollars: 12_000 * 4 + 2_000 * 20,
+      });
+      expect(written.wordCount).toBeGreaterThanOrEqual(450);
+      // The model saw the texts read and the not-read row without text.
+      const sent = JSON.parse(userSeen) as {
+        incidents: { rows: { reading: { status: string; text: string | null } }[] }[];
+      };
+      const sentRows = sent.incidents.flatMap((i) => i.rows);
+      expect(
+        sentRows
+          .filter((r) => r.reading.status === 'read')
+          .map((r) => r.reading.text)
+          .sort(),
+      ).toEqual([TEXT_A, TEXT_B].sort());
+      expect(
+        sentRows
+          .filter((r) => r.reading.status === 'not_read')
+          .every((r) => r.reading.text === null),
+      ).toBe(true);
+      const after = await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(after.revisions.map((r) => [r.revision, r.kind])).toEqual([[1, 'generated']]);
+      expect(after.revisions[0]?.provenance).toMatchObject({
+        model: 'claude-opus-5-5',
+        promptVersion: 'article-prompt@1',
+        namingBasis: 'none',
+        sourcesRead: 2,
+        sourcesNotRead: 1,
+      });
+      expect(after.latest?.markdown).toContain('# Harborline Port halts terminal operations');
+      expect(after.latest?.markdown).toContain('## Not read');
+      expect(after.reading).toBeNull();
+      expect(after.canRead).toBe(false);
+      expect(after.canEdit).toBe(true);
+      expect(after.spendThisMonthMicrodollars).toBe(88_000);
+      // The ledger carries the article apart from the round-up.
+      const ledger = await isolated.db.withClient((c) =>
+        c.query<{ kind: string; outcome: string; cost: string }>(
+          `SELECT kind, outcome, cost_microdollars::text AS cost FROM model_calls WHERE week_run_id = $1`,
+          [week.weekRunId],
+        ),
+      );
+      expect(ledger.rows).toEqual([{ kind: 'article', outcome: 'completed', cost: '88000' }]);
+      // Audit events: requested and completed with counts; the refusals at the boundary by code.
+      const events = (await persistent.audit.list(200)).filter((e) =>
+        e.kind.startsWith('article_'),
+      );
+      expect(events.filter((e) => e.kind === 'article_requested')).toHaveLength(1);
+      expect(events.find((e) => e.kind === 'article_completed')?.code).toMatch(
+        /^cost_88000_in_12000_out_2000_words_\d+$/u,
+      );
+      expect(
+        events
+          .filter((e) => e.kind === 'article_refused')
+          .map((e) => e.code)
+          .sort(),
+      ).toEqual([
+        'generate:article',
+        'generate:article',
+        'generate:article',
+        'generate:article',
+        'generate:article',
+        'generate:article',
+        'reading_not_found',
+      ]);
+      expect(events.every((e) => !e.code.includes('Harborline'))).toBe(true);
+      // A second article is refused; reading again is refused too.
+      expect(
+        await kindOf(
+          generateArticle(rt, persisted.owner, { ...input, readingId: reading.readingId }),
+        ),
+      ).toBe('validation');
+      expect(await kindOf(readArticleSources(rt, persisted.owner, input))).toBe('validation');
+      // The owner edits as revision 2 under the expected one; others are refused.
+      const edit = {
+        ...input,
+        expectedRevision: 1,
+        markdown: '# Edited\n\nThe owner rewrote this.\n',
+      };
+      for (const role of ['judge', 'editor', 'admin'] as const) {
+        expect(await kindOf(saveArticleRevision(rt, persisted[role], edit))).toBe('authorization');
+      }
+      expect(await saveArticleRevision(rt, persisted.owner, edit)).toEqual({ revision: 2 });
+      expect(await kindOf(saveArticleRevision(rt, persisted.owner, edit))).toBe('conflict');
+      const edits = (await persistent.audit.list(200)).filter((e) => e.kind === 'article_edited');
+      expect(edits.map((e) => `${e.outcome}:${e.code}`).sort()).toEqual([
+        'failure:article_revision_conflict',
+        'failure:edit:output',
+        'failure:edit:output',
+        'failure:edit:output',
+        'success:revision_2',
+      ]);
+    });
+
+    it('refuses reserved names at the boundary, fails closed without a credential or a reader, and writes nothing', async () => {
+      // The default seed's host is a reserved name (R3): every source is not read, and there is nothing to write from.
+      const week = await seedWeek(isolated.db);
+      const pages = recordedPages({});
+      const { rt, persisted, persistent } = await persistentRuntime(model(), isolated, pages);
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: table.rows[0]?.incidentId ?? '',
+        state: 'selected',
+        note: null,
+      });
+      const input = { weekRunId: week.weekRunId, category: 'cyberattack' };
+      const reading = await readArticleSources(rt, persisted.owner, input);
+      expect(reading.read + reading.partlyRead).toBe(0);
+      expect(pages.calls).toEqual([]);
+      const fetched = (await persistent.audit.list(200)).filter(
+        (e) => e.kind === 'source_fetched' && e.code.endsWith('reserved_name'),
+      );
+      expect(fetched.length).toBeGreaterThan(0);
+      expect(
+        await kindOf(
+          generateArticle(rt, persisted.owner, { ...input, readingId: reading.readingId }),
+        ),
+      ).toBe('validation');
+      const ledger = await isolated.db.withClient((c) =>
+        c.query<{ outcome: string; code: string }>(
+          `SELECT outcome, code FROM model_calls WHERE week_run_id = $1`,
+          [week.weekRunId],
+        ),
+      );
+      expect(ledger.rows).toEqual([{ outcome: 'refused', code: 'input_empty' }]);
+      expect(
+        (await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack')).revisions,
+      ).toEqual([]);
+      // No reader configured: reading fails closed with a fixed code and audits it.
+      const { rt: noReader, persisted: owners } = await persistentRuntime(model(), isolated, null);
+      let caught: unknown;
+      try {
+        await readArticleSources(noReader, owners.owner, input);
+      } catch (error) {
+        caught = error;
+      }
+      expect(
+        isDashboardError(caught) &&
+          caught.kind === 'unavailable' &&
+          caught.code === 'reader_not_configured',
+      ).toBe(true);
+      // No credential: the reading works, the generation fails closed before any request, nothing is written.
+      const good = await seedWeek(isolated.db, { host: HOST });
+      const { rt: noModel, persisted: p2 } = await persistentRuntime(
+        null,
+        isolated,
+        pagesFor(good.batchId),
+      );
+      const t2 = await weekTable(
+        noModel,
+        p2.owner,
+        good.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      await selectStory(noModel, p2.owner, {
+        weekRunId: good.weekRunId,
+        clusteringRunId: good.clusteringRunId,
+        incidentId: t2.rows[0]?.incidentId ?? '',
+        state: 'selected',
+        note: null,
+      });
+      const r2 = await readArticleSources(noModel, p2.owner, {
+        weekRunId: good.weekRunId,
+        category: 'cyberattack',
+      });
+      let keyMissing: unknown;
+      try {
+        await generateArticle(noModel, p2.owner, {
+          weekRunId: good.weekRunId,
+          category: 'cyberattack',
+          readingId: r2.readingId,
+        });
+      } catch (error) {
+        keyMissing = error;
+      }
+      expect(isDashboardError(keyMissing) && keyMissing.code === 'model_key_missing').toBe(true);
+      expect(
+        (await articleView(noModel, p2.owner, good.weekRunId, 'cyberattack')).revisions,
+      ).toEqual([]);
+    });
+
+    /** A transport answering the contract from the request, counting its calls and recording the prompt's size. */
+    function answeringWith(
+      usage: { readonly inputTokens: number; readonly outputTokens: number },
+      options: {
+        readonly delayMs?: number;
+        readonly shape?: (slots: ReturnType<typeof goldenFor>) => unknown;
+      } = {},
+    ) {
+      const transport = {
+        calls: 0,
+        promptCharacters: 0,
+        async generate(request: { system: string; user: string; model: string }) {
+          transport.calls += 1;
+          transport.promptCharacters = request.system.length + request.user.length;
+          if (options.delayMs !== undefined) {
+            await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+          }
+          const slots = goldenFor(request.user);
+          return {
+            raw: options.shape === undefined ? slots : options.shape(slots),
+            usage,
+            model: request.model,
+          };
+        },
+      };
+      return transport;
+    }
+
+    /** A week on the public-looking host, every story selected and the sources read: ready for one generation. */
+    async function readyToWrite(
+      answering: Parameters<typeof persistentRuntime>[0],
+      schema: IsolatedSchema,
+    ) {
+      const week = await seedWeek(schema.db, { host: HOST });
+      const pages = pagesFor(week.batchId);
+      const { rt, persisted } = await persistentRuntime(answering, schema, pages);
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      for (const row of table.rows) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: row.incidentId,
+          state: 'selected',
+          note: null,
+        });
+      }
+      const reading = await readArticleSources(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+      });
+      expect(reading).toMatchObject({ read: 2, partlyRead: 0, notRead: 1 });
+      const input = {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        readingId: reading.readingId,
+      };
+      return { week, rt, persisted, input };
+    }
+
+    const ledgerOf = (schema: IsolatedSchema, weekRunId: string) =>
+      schema.db.withClient((c) =>
+        c.query<{
+          outcome: string;
+          code: string;
+          input_tokens: number;
+          output_tokens: number;
+          cost: string;
+        }>(
+          `SELECT outcome, code, input_tokens, output_tokens, cost_microdollars::text AS cost
+             FROM model_calls WHERE week_run_id = $1 AND kind = 'article' ORDER BY created_at, id`,
+          [weekRunId],
+        ),
+      );
+
+    it('records a billed but rejected response at its real cost, keeps the reading, and counts the cost toward the cap (the round-up’s review F3)', async () => {
+      const own = await openMigratedSchema();
+      // The model answers the contract but claims every source was read:
+      // schema-valid, policy-invalid, billed.
+      const answering = answeringWith(
+        { inputTokens: 2_000, outputTokens: 500 },
+        { shape: (slots) => ({ ...slots, notRead: [] }) },
+      );
+      const { rt, persisted, input, week } = await readyToWrite(answering, own);
+      let caught: unknown;
+      try {
+        await generateArticle(rt, persisted.owner, input);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isDashboardError(caught) && `${caught.kind}:${caught.code}`).toBe(
+        'unavailable:response_not_read_differs',
+      );
+      expect(answering.calls).toBe(1);
+      expect((await ledgerOf(own, week.weekRunId)).rows).toEqual([
+        {
+          outcome: 'failed',
+          code: 'response_not_read_differs',
+          input_tokens: 2_000,
+          output_tokens: 500,
+          cost: String(2_000 * 4 + 500 * 20),
+        },
+      ]);
+      const view = await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(view.revisions).toEqual([]);
+      expect(view.reading).not.toBeNull();
+      // The failed row counts toward the cap: with a completed row that leaves
+      // the month exactly one microdollar short of the ceiling once the failed
+      // row is counted, and the worst case to spare when it is not, a second
+      // attempt is refused before any request.
+      const worstCase = articleWorstCase(answering.promptCharacters);
+      await own.db.withTransaction((tx) =>
+        tx.query(
+          `INSERT INTO model_calls (id, kind, week_run_id, category, model, input_tokens, output_tokens, cost_microdollars, outcome, code, actor_account_id, created_at)
+           VALUES ($1, 'article', $2, 'cyberattack', 'claude-opus-5-5', 1, 1, $3, 'completed', 'completed', $4, now())`,
+          [
+            randomUUID(),
+            week.weekRunId,
+            25_000_000 - worstCase - (2_000 * 4 + 500 * 20) + 1,
+            persisted.owner.accountId,
+          ],
+        ),
+      );
+      let capped: unknown;
+      try {
+        await generateArticle(rt, persisted.owner, input);
+      } catch (error) {
+        capped = error;
+      }
+      expect(isDashboardError(capped) && `${capped.kind}:${capped.code}`).toBe(
+        'validation:spend_cap_exceeded',
+      );
+      expect(answering.calls).toBe(1);
+      expect((await ledgerOf(own, week.weekRunId)).rows.map((r) => [r.outcome, r.cost])).toEqual([
+        ['failed', String(2_000 * 4 + 500 * 20)],
+        ['completed', String(25_000_000 - worstCase - (2_000 * 4 + 500 * 20) + 1)],
+        ['refused', '0'],
+      ]);
+      await own.close();
+    });
+
+    it('records a provider refusal after an answer at its real cost (the round-up’s re-review RR1)', async () => {
+      const own = await openMigratedSchema();
+      const refusing = {
+        calls: 0,
+        async generate() {
+          refusing.calls += 1;
+          throw Object.assign(new Error('declined'), {
+            code: 'model_refused',
+            billed: { model: 'claude-opus-5-5', inputTokens: 1_500, outputTokens: 40 },
+          });
+        },
+      };
+      const { rt, persisted, input, week } = await readyToWrite(refusing, own);
+      expect(await kindOf(generateArticle(rt, persisted.owner, input))).toBe('unavailable');
+      expect(refusing.calls).toBe(1);
+      expect((await ledgerOf(own, week.weekRunId)).rows).toEqual([
+        {
+          outcome: 'failed',
+          code: 'model_refused',
+          input_tokens: 1_500,
+          output_tokens: 40,
+          cost: String(1_500 * 4 + 40 * 20),
+        },
+      ]);
+      expect(
+        (await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack')).revisions,
+      ).toEqual([]);
+      await own.close();
+    });
+
+    it('serialises concurrent generations: five submissions of one reading make exactly one model request (the round-up’s review F4)', async () => {
+      const own = await openMigratedSchema();
+      const slow = answeringWith({ inputTokens: 10, outputTokens: 10 }, { delayMs: 150 });
+      const { rt, persisted, input, week } = await readyToWrite(slow, own);
+      // Pool-sized and larger concurrency: the test runtime's pool holds four
+      // connections; five submissions at once make one request, the rest are
+      // refused at once with the article's own conflict, and nothing waits.
+      const outcomes = await Promise.all(
+        Array.from({ length: 5 }, async () => {
+          try {
+            await generateArticle(rt, persisted.owner, input);
+            return 'succeeded';
+          } catch (error) {
+            if (!isDashboardError(error)) throw error;
+            return `${error.kind}:${error.code}`;
+          }
+        }),
+      );
+      expect(outcomes.filter((o) => o === 'succeeded')).toHaveLength(1);
+      expect(
+        outcomes.every(
+          (o) =>
+            o === 'succeeded' ||
+            o === 'conflict:article_generation_in_progress' ||
+            o === 'validation:article_already_generated' ||
+            o === 'validation:reading_not_found',
+        ),
+        outcomes.join(' '),
+      ).toBe(true);
+      expect(slow.calls).toBe(1);
+      expect((await ledgerOf(own, week.weekRunId)).rows.map((r) => r.outcome)).toEqual([
+        'completed',
+      ]);
+      const view = await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(view.revisions.map((r) => r.revision)).toEqual([1]);
+      expect(view.reading).toBeNull();
+      await own.close();
+    });
+
+    it('holds the editor bound at storage: the package, the layer and migration 0016 agree on 400,000 characters (the round-up’s re-review RR3)', async () => {
+      expect([ARTICLE_MARKDOWN_CHARACTERS, MAX_ARTICLE_CHARACTERS]).toEqual([400_000, 400_000]);
+      const own = await openMigratedSchema();
+      const answering = answeringWith({ inputTokens: 10, outputTokens: 10 });
+      const { rt, persisted, input, week } = await readyToWrite(answering, own);
+      await generateArticle(rt, persisted.owner, input);
+      const edit = { weekRunId: week.weekRunId, category: 'cyberattack', expectedRevision: 1 };
+      let tooLong: unknown;
+      try {
+        await saveArticleRevision(rt, persisted.owner, { ...edit, markdown: 'a'.repeat(400_001) });
+      } catch (error) {
+        tooLong = error;
+      }
+      expect(isDashboardError(tooLong) && `${tooLong.kind}:${tooLong.code}`).toBe(
+        'validation:markdown_length',
+      );
+      expect(
+        await saveArticleRevision(rt, persisted.owner, { ...edit, markdown: 'a'.repeat(400_000) }),
+      ).toEqual({ revision: 2 });
+      // Behind the layer's bound, the database refuses the 400,001st character.
+      let refused: unknown;
+      try {
+        await own.db.withTransaction((tx) =>
+          tx.query(
+            `INSERT INTO article_revisions (week_run_id, category, revision, kind, slots, markdown, saved_by_account_id, created_at)
+             SELECT $1, 'cyberattack', 3, 'edited', '{}'::jsonb, repeat('x', 400001), $2, now()`,
+            [week.weekRunId, persisted.owner.accountId],
+          ),
+        );
+      } catch (error) {
+        refused = error;
+      }
+      expect((refused as { code?: string } | undefined)?.code).toBe('23514');
+      expect(
+        (await articleView(rt, persisted.owner, week.weekRunId, 'cyberattack')).revisions.map(
+          (r) => r.revision,
+        ),
+      ).toEqual([1, 2]);
+      await own.close();
+    });
+
+    it('refuses a selection past the row bound whole before any page is fetched, and reads one at the bound (the round-up’s review F5)', async () => {
+      const own = await openMigratedSchema();
+      // 201 incidents of 50 rows: 10,050 selected rows, whose first 10,000 would
+      // read and generate as a silent prefix. The seed's host is a reserved
+      // name, so a reading classifies every source and fetches none.
+      const week = await seedLargeWeek(own.db, 201, 50);
+      const pages = recordedPages({});
+      const { rt, persisted } = await persistentRuntime(model(), own, pages);
+      const incidents = await own.db.withClient((c) =>
+        c.query<{ id: string }>(
+          `SELECT id FROM incident_clusters WHERE clustering_run_id = $1 ORDER BY created_at, id`,
+          [week.clusteringRunId],
+        ),
+      );
+      expect(incidents.rows).toHaveLength(201);
+      for (const incident of incidents.rows) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: incident.id,
+          state: 'selected',
+          note: null,
+        });
+      }
+      const input = { weekRunId: week.weekRunId, category: 'cyberattack' };
+      let caught: unknown;
+      try {
+        await readArticleSources(rt, persisted.owner, input);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isDashboardError(caught) && `${caught.kind}:${caught.code}`).toBe(
+        'validation:selection_too_large',
+      );
+      expect(pages.calls).toEqual([]);
+      expect(
+        await kindOf(generateArticle(rt, persisted.owner, { ...input, readingId: 'f'.repeat(32) })),
+      ).toBe('validation');
+      // One incident set aside: exactly 10,000 rows, the bound inclusive, every row in the reading.
+      await selectStory(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        clusteringRunId: week.clusteringRunId,
+        incidentId: incidents.rows[200]?.id ?? '',
+        state: 'unselected',
+        note: null,
+      });
+      const reading = await readArticleSources(rt, persisted.owner, input);
+      expect(reading.read + reading.partlyRead + reading.notRead).toBe(10_000);
+      expect(pages.calls).toEqual([]);
+      await own.close();
+    }, 120_000);
   });
 });

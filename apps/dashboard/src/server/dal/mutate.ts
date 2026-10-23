@@ -22,6 +22,9 @@ import {
   uuid,
   uuidList,
 } from '../input.ts';
+import type { ArticleInput } from '@cas/article';
+import type { SourceOutcome } from '@cas/source-reader';
+
 import { workspace } from '../packages.ts';
 import type { Runtime } from '../runtime.ts';
 import { mapFailure } from './failures.ts';
@@ -920,9 +923,13 @@ const FLAGGED_FOR_GENERATION = 200;
  * (re-review RR3).
  */
 export const MAX_ROUNDUP_CHARACTERS = 400_000;
+/** The article editor accepts what migration 0016 stores (400,000 characters), so every generated revision is editable. */
+export const MAX_ARTICLE_CHARACTERS = 400_000;
 
 /**
- * One generation at a time per schema (review F4, re-review RR2). The lock
+ * One generation at a time per schema and kind (review F4, re-review RR2;
+ * the article takes its own key so the two kinds, each capped and checked
+ * apart, never wait on each other). The lock
  * is tried, never waited for, on one connection, and every protected read
  * and write runs on that same connection, so a generation holds exactly one
  * pooled connection whatever the pool size: a concurrent submission is
@@ -932,9 +939,10 @@ export const MAX_ROUNDUP_CHARACTERS = 400_000;
  */
 async function withGenerationLock<T>(
   runtime: Runtime,
+  kind: 'roundup' | 'article',
   work: (holder: Queryable) => Promise<T>,
 ): Promise<T> {
-  const key = `${runtime.database.schema}:roundup-generation`;
+  const key = `${runtime.database.schema}:${kind}-generation`;
   return runtime.database.withClient(async (holder) => {
     const claimed = await holder.query<{ locked: boolean }>(
       'SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS locked',
@@ -943,7 +951,7 @@ async function withGenerationLock<T>(
     if (claimed.rows[0]?.locked !== true) {
       throw new DashboardError(
         'conflict',
-        'roundup_generation_in_progress',
+        `${kind}_generation_in_progress`,
         'A generation is in progress; wait for it to finish.',
       );
     }
@@ -1231,10 +1239,10 @@ async function generateRoundupUnaudited(
     // cannot both observe an empty round-up and both call the model. The
     // ledger row is written in its own transaction before the revisions, so
     // a billed request keeps its record even if persistence fails after it.
-    const generation = await withGenerationLock(runtime, async (holder) => {
+    const generation = await withGenerationLock(runtime, 'roundup', async (holder) => {
       await assertNotGenerated(holder);
       const bounds = monthBounds(new Date());
-      const spentThisMonth = await spendBetween(holder, bounds.from, bounds.to);
+      const spentThisMonth = await spendBetween(holder, 'roundup', bounds.from, bounds.to);
       let produced;
       try {
         produced = await runGeneration(snapshot, loaded, runtime.model, {
@@ -1462,6 +1470,587 @@ async function saveRoundupRevisionUnaudited(
     }
     await audit(runtime, {
       kind: 'roundup_edited',
+      outcome: 'success',
+      code: `revision_${revision}`,
+      actorAccountId: principal.accountId,
+      subjectAccountId: null,
+      sessionId: principal.sessionId,
+      subjectId: weekRunId,
+    });
+    return { revision };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}
+
+// ---------------------------------------------------------------- the article (CAS-005)
+
+export interface ArticleReadingInput {
+  readonly weekRunId: unknown;
+  readonly category: unknown;
+}
+
+export interface ArticleGenerationInput {
+  readonly weekRunId: unknown;
+  readonly category: unknown;
+  /** The reading the owner confirmed, by its identifier (R17). */
+  readonly readingId: unknown;
+}
+
+export interface ArticleEditInput {
+  readonly weekRunId: unknown;
+  readonly category: unknown;
+  readonly expectedRevision: unknown;
+  readonly markdown: unknown;
+}
+
+export interface ArticleReadingResult {
+  readonly readingId: string;
+  readonly read: number;
+  readonly partlyRead: number;
+  readonly notRead: number;
+}
+
+interface ArticleGenerationResult {
+  readonly revision: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly costMicrodollars: number;
+  readonly wordCount: number;
+}
+
+const READING_ID_SHAPE = /^[0-9a-f]{32}$/u;
+
+async function auditArticleRefusal(
+  runtime: Runtime,
+  who: Principal | null,
+  kind: 'article_refused' | 'article_edited',
+  error: unknown,
+  weekRunId: unknown,
+): Promise<void> {
+  // Every refusal with a known actor is audited once, at the boundary, with
+  // its fixed code and the week it named when well formed, never content;
+  // a database outage is not a refusal, a model-side or reader-side failure
+  // is, by its code.
+  if (
+    who !== null &&
+    isDashboardError(error) &&
+    (error.kind !== 'unavailable' || /^(?:model_|response_|reader_)/u.test(error.code))
+  ) {
+    await audit(runtime, {
+      kind,
+      outcome: 'failure',
+      code: error.code,
+      actorAccountId: who.accountId,
+      subjectAccountId: null,
+      sessionId: who.sessionId,
+      subjectId: typeof weekRunId === 'string' && UUID_SHAPE.test(weekRunId) ? weekRunId : null,
+    });
+  }
+}
+
+/** The week, the category and the selection an article request names, checked once for all three mutations. */
+async function articleSelection(
+  runtime: Runtime,
+  weekRunId: string,
+  category: string,
+): Promise<{
+  readonly week: Awaited<
+    ReturnType<Awaited<ReturnType<typeof workspace>>['database']['getWeekRun']>
+  > &
+    object;
+  readonly rows: Awaited<
+    ReturnType<Awaited<ReturnType<typeof workspace>>['database']['listSelectedRows']>
+  >;
+}> {
+  const { getWeekRun, listSelectedRows } = (await workspace()).database;
+  const week = await runtime.database.withClient((client) => getWeekRun(client, weekRunId));
+  if (week === null) {
+    throw new DashboardError('not_found', 'week_run_not_found', 'No week run with that id.');
+  }
+  if (week.status !== 'completed' || !week.categories.includes(category)) {
+    throw validation('week_not_ready', 'The week must be completed and cover that category.');
+  }
+  const rows = await runtime.database.withClient((client) =>
+    listSelectedRows(client, weekRunId, category, SELECTION_ROWS_FOR_GENERATION + 1),
+  );
+  if (rows.length > SELECTION_ROWS_FOR_GENERATION) {
+    // Never a prefix: a selection past the bound is refused whole, before
+    // any page is fetched and before any request (the round-up's review F5).
+    throw validation(
+      'selection_too_large',
+      'The selection holds more rows than one article can carry.',
+    );
+  }
+  if (rows.length === 0) {
+    throw validation('selection_empty', 'No story is selected for that week and category.');
+  }
+  return { week, rows };
+}
+
+/**
+ * The reading stage (R13, R16, R17): every selected source's canonical URL,
+ * and nothing else, is read under the fetch policy; one audit event per
+ * source carries the row, the outcome code, bytes and duration, never a URL;
+ * the reading is held in memory under a random identifier for the owner to
+ * confirm. Nothing is written to the database.
+ */
+export async function readArticleSources(
+  runtime: Runtime,
+  who: Principal | null,
+  input: ArticleReadingInput,
+): Promise<ArticleReadingResult> {
+  try {
+    return await readArticleSourcesUnaudited(runtime, who, input);
+  } catch (error) {
+    await auditArticleRefusal(runtime, who, 'article_refused', error, input.weekRunId);
+    throw error;
+  }
+}
+
+async function readArticleSourcesUnaudited(
+  runtime: Runtime,
+  who: Principal | null,
+  input: ArticleReadingInput,
+): Promise<ArticleReadingResult> {
+  const principal = requireCapability(who, 'generate:article');
+  if (runtime.stores.kind !== 'postgres') {
+    throw validation(
+      'persistent_accounts_required',
+      'Writing an article needs the PostgreSQL account store.',
+    );
+  }
+  const weekRunId = uuid(input.weekRunId, 'weekRunId');
+  if (typeof input.category !== 'string' || !CATEGORY_SHAPE.test(input.category)) {
+    throw validation('category_invalid', 'The category is not valid.');
+  }
+  const category = input.category;
+  const packages = await workspace();
+  try {
+    const { rows } = await articleSelection(runtime, weekRunId, category);
+    const existing = await runtime.database.withClient((client) =>
+      packages.database.listArticleRevisions(client, weekRunId, category),
+    );
+    if (existing.length > 0) {
+      throw validation('article_already_generated', 'This article was written; edit it instead.');
+    }
+    if (runtime.reader === null) {
+      throw new DashboardError(
+        'unavailable',
+        'reader_not_configured',
+        'The dashboard has no public address configured; sources cannot be read.',
+      );
+    }
+    const reading = await packages.sourceReader.readSources(
+      rows.map((row) => ({ sourceRowId: row.sourceRowId, url: row.url })),
+      runtime.reader,
+    );
+    for (const outcome of reading.outcomes) {
+      await audit(runtime, {
+        kind: 'source_fetched',
+        outcome: outcome.status === 'not_read' ? 'failure' : 'success',
+        code: `bytes_${outcome.bytes}_ms_${outcome.ms}_${outcome.code ?? outcome.status}`,
+        actorAccountId: principal.accountId,
+        subjectAccountId: null,
+        sessionId: principal.sessionId,
+        subjectId: outcome.sourceRowId,
+      });
+    }
+    const entry = runtime.readings.put({
+      weekRunId,
+      category,
+      accountId: principal.accountId,
+      reading,
+    });
+    return {
+      readingId: entry.id,
+      read: reading.outcomes.filter((o) => o.status === 'read').length,
+      partlyRead: reading.outcomes.filter((o) => o.status === 'partly_read').length,
+      notRead: reading.outcomes.filter((o) => o.status === 'not_read').length,
+    };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}
+
+/**
+ * The generation, on the owner's confirmation of a reading: the input is the
+ * selection's recorded fields with what the reading left of each page;
+ * one request; revision 1 and the ledger row in one transaction; the reading
+ * dropped from memory. Every outcome is a ledger row and an audit event with
+ * counts and codes, never content.
+ */
+export async function generateArticle(
+  runtime: Runtime,
+  who: Principal | null,
+  input: ArticleGenerationInput,
+): Promise<ArticleGenerationResult> {
+  try {
+    return await generateArticleUnaudited(runtime, who, input);
+  } catch (error) {
+    await auditArticleRefusal(runtime, who, 'article_refused', error, input.weekRunId);
+    throw error;
+  }
+}
+
+async function generateArticleUnaudited(
+  runtime: Runtime,
+  who: Principal | null,
+  input: ArticleGenerationInput,
+): Promise<ArticleGenerationResult> {
+  const principal = requireCapability(who, 'generate:article');
+  if (runtime.stores.kind !== 'postgres') {
+    throw validation(
+      'persistent_accounts_required',
+      'Writing an article needs the PostgreSQL account store.',
+    );
+  }
+  const weekRunId = uuid(input.weekRunId, 'weekRunId');
+  if (typeof input.category !== 'string' || !CATEGORY_SHAPE.test(input.category)) {
+    throw validation('category_invalid', 'The category is not valid.');
+  }
+  const category = input.category;
+  if (typeof input.readingId !== 'string' || !READING_ID_SHAPE.test(input.readingId)) {
+    throw validation('reading_id_invalid', 'The reading identifier is not valid.');
+  }
+  const readingId = input.readingId;
+  const packages = await workspace();
+  const { insertArticleRevision, insertModelCall, listArticleRevisions, spendBetween } =
+    packages.database;
+  const {
+    costMicrodollars,
+    generateArticle: runGeneration,
+    isArticleError,
+    MODEL_ID,
+    publisherOf,
+  } = {
+    ...packages.article,
+    publisherOf: packages.roundup.publisherOf,
+  };
+  try {
+    const { week, rows } = await articleSelection(runtime, weekRunId, category);
+    const assertNotGenerated = async (client: Queryable): Promise<void> => {
+      const existing = await listArticleRevisions(client, weekRunId, category);
+      if (existing.length > 0) {
+        throw validation('article_already_generated', 'This article was written; edit it instead.');
+      }
+    };
+    await runtime.database.withClient(assertNotGenerated);
+    const entry = runtime.readings.get(readingId);
+    if (
+      entry === null ||
+      entry.weekRunId !== weekRunId ||
+      entry.category !== category ||
+      entry.accountId !== principal.accountId
+    ) {
+      throw validation(
+        'reading_not_found',
+        'That reading expired or is not yours; read the sources again.',
+      );
+    }
+    const outcomes = new Map<string, SourceOutcome>(
+      entry.reading.outcomes.map((outcome) => [outcome.sourceRowId, outcome]),
+    );
+    // Every selected row must be in the reading, and every reading outcome a
+    // selected row: a selection that changed since the reading is read again.
+    if (rows.length !== outcomes.size || rows.some((row) => !outcomes.has(row.sourceRowId))) {
+      throw validation('reading_stale', 'The selection changed since the reading; read again.');
+    }
+    const incidents: {
+      incidentId: string;
+      rows: ArticleInput['incidents'][number]['rows'][number][];
+    }[] = [];
+    for (const row of rows) {
+      let incident = incidents.find((i) => i.incidentId === row.incidentId);
+      if (incident === undefined) {
+        incident = { incidentId: row.incidentId, rows: [] };
+        incidents.push(incident);
+      }
+      const outcome = outcomes.get(row.sourceRowId) as SourceOutcome;
+      incident.rows.push({
+        sourceRowId: row.sourceRowId,
+        title: row.title,
+        summary: row.summary,
+        url: row.url,
+        publisher: publisherOf(row.url),
+        postedAt: row.postedAt,
+        reading:
+          outcome.status === 'not_read'
+            ? {
+                status: 'not_read',
+                code: outcome.code,
+                text: null,
+                digest: null,
+                bytes: outcome.bytes,
+              }
+            : {
+                status: outcome.status,
+                code: outcome.code,
+                text: outcome.text,
+                digest: outcome.digest,
+                bytes: outcome.bytes,
+              },
+      });
+    }
+    const articleInput: ArticleInput = {
+      weekRunId,
+      category,
+      windowStart: week.windowStart,
+      windowEnd: week.windowEnd,
+      incidents,
+    };
+    await audit(runtime, {
+      kind: 'article_requested',
+      outcome: 'success',
+      code: category,
+      actorAccountId: principal.accountId,
+      subjectAccountId: null,
+      sessionId: principal.sessionId,
+      subjectId: weekRunId,
+    });
+    const ledger = (
+      holder: Queryable,
+      outcome: 'completed' | 'refused' | 'failed',
+      code: string,
+      usage: { inputTokens: number; outputTokens: number; costMicrodollars: number },
+      model: string,
+    ): Promise<void> =>
+      transactionOn(holder, () =>
+        insertModelCall(holder, {
+          id: randomUUID(),
+          kind: 'article',
+          weekRunId,
+          category,
+          model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          costMicrodollars: usage.costMicrodollars,
+          outcome,
+          code,
+          actorAccountId: principal.accountId,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+    // One article generation at a time per schema, as the round-up's (its
+    // review F4): the claim, the cap check, the one request, the ledger row
+    // and the revision happen under an advisory lock held on a dedicated
+    // connection, so two submissions cannot both observe an unwritten
+    // article and both call the model. The ledger row is written in its own
+    // transaction before the revision, so a billed request keeps its record
+    // even if persistence fails after it.
+    const generation = await withGenerationLock(runtime, 'article', async (holder) => {
+      await assertNotGenerated(holder);
+      const bounds = monthBounds(new Date());
+      const spentThisMonth = await spendBetween(holder, 'article', bounds.from, bounds.to);
+      let produced;
+      try {
+        produced = await runGeneration(articleInput, runtime.model, { spentThisMonth });
+      } catch (error) {
+        if (!isArticleError(error)) throw error;
+        const refused =
+          error.code === 'spend_cap_exceeded' ||
+          error.code === 'model_key_missing' ||
+          error.code === 'input_empty' ||
+          error.code === 'input_invalid' ||
+          error.code === 'input_too_large';
+        // A request the model answered is billed whatever the verdict on the
+        // answer (the round-up's review F3): the ledger records its real cost.
+        const billed = error.billed;
+        await ledger(
+          holder,
+          refused ? 'refused' : 'failed',
+          error.code,
+          billed === null
+            ? { inputTokens: 0, outputTokens: 0, costMicrodollars: 0 }
+            : {
+                inputTokens: billed.inputTokens,
+                outputTokens: billed.outputTokens,
+                costMicrodollars: costMicrodollars(billed),
+              },
+          billed?.model ?? MODEL_ID,
+        );
+        if (
+          error.code === 'model_key_missing' ||
+          error.code === 'model_failed' ||
+          error.code === 'model_refused'
+        ) {
+          throw new DashboardError(
+            'unavailable',
+            error.code,
+            'The model request could not be completed; nothing was written.',
+          );
+        }
+        if (error.code.startsWith('response_')) {
+          throw new DashboardError(
+            'unavailable',
+            error.code,
+            'The response was rejected; nothing was written.',
+          );
+        }
+        throw validation(error.code, error.message);
+      }
+      await ledger(
+        holder,
+        'completed',
+        'completed',
+        {
+          inputTokens: produced.provenance.inputTokens,
+          outputTokens: produced.provenance.outputTokens,
+          costMicrodollars: produced.provenance.costMicrodollars,
+        },
+        produced.provenance.model,
+      );
+      await transactionOn(holder, () =>
+        insertArticleRevision(holder, {
+          weekRunId,
+          category,
+          revision: 1,
+          kind: 'generated',
+          slots: produced.slots,
+          markdown: produced.markdown,
+          provenance: {
+            model: produced.provenance.model,
+            promptVersion: produced.provenance.promptVersion,
+            promptHash: produced.provenance.promptHash,
+            inputDigest: produced.provenance.inputDigest,
+            inputTokens: produced.provenance.inputTokens,
+            outputTokens: produced.provenance.outputTokens,
+            costMicrodollars: produced.provenance.costMicrodollars,
+            wordCount: produced.provenance.wordCount,
+            namingBasis: produced.provenance.namingBasis,
+            sources: produced.provenance.sources,
+          },
+          savedByAccountId: principal.accountId,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      return produced;
+    });
+    runtime.readings.delete(readingId);
+    await audit(runtime, {
+      kind: 'article_completed',
+      outcome: 'success',
+      code: `cost_${generation.provenance.costMicrodollars}_in_${generation.provenance.inputTokens}_out_${generation.provenance.outputTokens}_words_${generation.provenance.wordCount}`,
+      actorAccountId: principal.accountId,
+      subjectAccountId: null,
+      sessionId: principal.sessionId,
+      subjectId: weekRunId,
+    });
+    return {
+      revision: 1,
+      inputTokens: generation.provenance.inputTokens,
+      outputTokens: generation.provenance.outputTokens,
+      costMicrodollars: generation.provenance.costMicrodollars,
+      wordCount: generation.provenance.wordCount,
+    };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}
+
+/** The owner's edit: the next revision, under the expected one, as for the round-up. */
+export async function saveArticleRevision(
+  runtime: Runtime,
+  who: Principal | null,
+  input: ArticleEditInput,
+): Promise<{ readonly revision: number }> {
+  try {
+    return await saveArticleRevisionUnaudited(runtime, who, input);
+  } catch (error) {
+    await auditArticleRefusal(runtime, who, 'article_edited', error, input.weekRunId);
+    throw error;
+  }
+}
+
+async function saveArticleRevisionUnaudited(
+  runtime: Runtime,
+  who: Principal | null,
+  input: ArticleEditInput,
+): Promise<{ readonly revision: number }> {
+  const principal = requireCapability(who, 'edit:output');
+  if (runtime.stores.kind !== 'postgres') {
+    throw validation(
+      'persistent_accounts_required',
+      'Editing an article needs the PostgreSQL account store.',
+    );
+  }
+  const weekRunId = uuid(input.weekRunId, 'weekRunId');
+  if (typeof input.category !== 'string' || !CATEGORY_SHAPE.test(input.category)) {
+    throw validation('category_invalid', 'The category is not valid.');
+  }
+  const category = input.category;
+  const expectedRevision = integer(input.expectedRevision, 'expectedRevision', {
+    min: 1,
+    max: 1_000_000,
+  });
+  if (typeof input.markdown !== 'string')
+    throw validation('markdown_invalid', 'The article body must be text.');
+  const markdown = input.markdown.replace(/\r\n/gu, '\n');
+  if (markdown.length < 1 || markdown.length > MAX_ARTICLE_CHARACTERS) {
+    throw validation(
+      'markdown_length',
+      `The article body must be between 1 and ${MAX_ARTICLE_CHARACTERS} characters.`,
+    );
+  }
+  if (DRAFT_FORBIDDEN.test(markdown)) {
+    throw validation(
+      'markdown_control',
+      'The article body must not contain a control or bidirectional character.',
+    );
+  }
+  const packages = await workspace();
+  const { insertArticleRevision, isDatabaseError, latestArticleRevision } = packages.database;
+  try {
+    const latest = await runtime.database.withClient((client) =>
+      latestArticleRevision(client, weekRunId, category),
+    );
+    if (latest === null) {
+      throw new DashboardError(
+        'not_found',
+        'article_not_generated',
+        'No article exists for that week and category.',
+      );
+    }
+    if (latest.revision >= MAX_DRAFT_REVISIONS) {
+      throw validation(
+        'revision_limit',
+        `An article keeps at most ${MAX_DRAFT_REVISIONS} revisions.`,
+      );
+    }
+    if (expectedRevision !== latest.revision) {
+      throw new DashboardError(
+        'conflict',
+        'article_revision_conflict',
+        'The article was revised by someone else; reload and try again.',
+      );
+    }
+    const revision = latest.revision + 1;
+    try {
+      await runtime.database.withTransaction((tx) =>
+        insertArticleRevision(tx, {
+          weekRunId,
+          category,
+          revision,
+          kind: 'edited',
+          slots: latest.slots,
+          markdown,
+          provenance: null,
+          savedByAccountId: principal.accountId,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+    } catch (error) {
+      if (isDatabaseError(error) && (error.code === '23505' || error.code === 'P0001')) {
+        throw new DashboardError(
+          'conflict',
+          'article_revision_conflict',
+          'The article was revised by someone else; reload and try again.',
+        );
+      }
+      throw error;
+    }
+    await audit(runtime, {
+      kind: 'article_edited',
       outcome: 'success',
       code: `revision_${revision}`,
       actorAccountId: principal.accountId,

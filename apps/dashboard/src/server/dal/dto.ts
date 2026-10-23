@@ -345,6 +345,7 @@ export interface WeekTableDto {
   /** Only a principal who may read titles may search them. */
   readonly canSearch: boolean;
   readonly canViewRoundup: boolean;
+  readonly canViewArticle: boolean;
 }
 
 // ------------------------------------------------------------ the round-up (CAS-004)
@@ -376,6 +377,57 @@ export interface RoundupViewDto {
   readonly spendThisMonthMicrodollars: number;
   readonly capMicrodollars: number;
   readonly modelConfigured: boolean;
+  readonly canGenerate: boolean;
+  readonly canEdit: boolean;
+}
+
+// ------------------------------------------------------------ the article (CAS-005)
+
+export interface ArticleRevisionDto {
+  readonly revision: number;
+  readonly kind: 'generated' | 'edited';
+  readonly savedBy: string;
+  readonly savedAt: string;
+  readonly provenance: {
+    readonly model: string;
+    readonly promptVersion: string;
+    readonly inputDigest: string;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly costMicrodollars: number;
+    readonly wordCount: number;
+    readonly namingBasis: 'primary_statement' | 'two_independent' | 'none';
+    readonly sourcesRead: number;
+    readonly sourcesPartlyRead: number;
+    readonly sourcesNotRead: number;
+  } | null;
+}
+
+/** What the reading stage left, shown to the owner before the model is called (R17). Never a URL path, never text. */
+export interface ReadingSummaryDto {
+  readonly readingId: string;
+  readonly expiresAt: string;
+  readonly read: number;
+  readonly partlyRead: number;
+  readonly notRead: readonly { readonly publisher: string; readonly code: string }[];
+  readonly partly: readonly { readonly publisher: string; readonly code: string }[];
+  readonly bytes: number;
+  readonly chars: number;
+}
+
+export interface ArticleViewDto {
+  readonly week: WeekRunDto;
+  readonly category: string;
+  readonly selectedIncidents: number;
+  readonly selectedSources: number;
+  readonly revisions: readonly ArticleRevisionDto[];
+  readonly latest: { readonly revision: number; readonly markdown: string } | null;
+  readonly reading: ReadingSummaryDto | null;
+  readonly spendThisMonthMicrodollars: number;
+  readonly capMicrodollars: number;
+  readonly modelConfigured: boolean;
+  readonly readerConfigured: boolean;
+  readonly canRead: boolean;
   readonly canGenerate: boolean;
   readonly canEdit: boolean;
 }

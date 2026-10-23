@@ -187,8 +187,8 @@ to change without code changes.
 ## D9 Model configuration
 
 - **Date:** 2026-09-04
-- **Status:** RESOLVED for the round-up on 2026-10-22 (see the D9 resolution appended below); not
-  used for classification, which D21 keeps deterministic
+- **Status:** RESOLVED for the round-up and for the article on 2026-10-22 (see the two D9
+  resolutions appended below); not used for classification, which D21 keeps deterministic
 - **Decision:** Anthropic is planned as the model provider for classification and drafting.
   The exact model, the deterministic structured-output settings and the spending cap remain
   unresolved.
@@ -1377,8 +1377,9 @@ to replace the file in that window defeated every check.
 ## D36 The source fetch policy is the contract for any outbound fetch
 
 - **Date:** 2026-09-16
-- **Status:** ACCEPTED as the contract; binding on implementation when CAS-005 records it at
-  S0 with the numeric bounds fixed
+- **Status:** ACCEPTED as the contract; BINDING since 2026-10-22, when CAS-005 recorded it at
+  S0 with the numeric bounds fixed from a measurement (`docs/CAS-005-REPORT.md`, section 1.3)
+  and two `robots.txt` reason codes added (section 1.4)
 - **Decision:** Any fetch of a source page by this system obeys `docs/FETCH-POLICY.md`: rules
   R1 to R17, its fixed reason codes, its threat-model additions and its required tests. The
   three owner decisions it lists were taken on 16 September 2026: fetched text is held in
@@ -1578,6 +1579,59 @@ report, section 1.10).
   before drafting work begins is unchanged for the article.
 - **Decided by:** Project owner.
 - **Supersedes:** nothing; it scopes D4 and leaves its bar for the article as written.
+
+### D9 resolution, 2026-10-22: the article
+
+Decided by the owner on 22 October 2026 (CAS-005, step 4), from the current model reference:
+`claude-opus-5-5` with a one-million-token context and a 128,000-token output ceiling, at
+USD 4 per million input tokens and USD 20 per million output tokens; thinking cannot be
+disabled on this model, so effort is the only control.
+
+- **Model and settings.** The same model as the round-up; adaptive thinking at `medium`
+  effort, since the article synthesizes rather than reformats; structured output against the
+  article schema.
+- **Bounds.** Source text bounded at 200,000 tokens per generation (a source over its share is
+  cut at a paragraph boundary and listed as partly read); output at 32,000 tokens. Worst case
+  about USD 1.45 per generation.
+- **Cap.** A separate USD 25 monthly cap for the article, accounted apart from the round-up's.
+  Grounds, the owner's: the round-up is the Sunday critical path and costs cents; the article is
+  the only thing that can spend dollars, and a refused Sunday run because a draft was regenerated
+  too often in the same month is the one failure a pooled cap permits. Worst-case exposure
+  doubles to USD 50, immaterial; per-path accounting is cleaner in the report.
+- **Provenance.** As for the round-up, plus the per-source reading record (outcome, bytes, text
+  digest) and the word count.
+- **Decided by:** Project owner, option (b) of the plan's two.
+
+## D41 The reporter register and the article contract, structure and tone only
+
+- **Date:** 2026-10-22
+- **Status:** ACCEPTED
+- **Decision:** The article's register is described by two published targets, by structure and
+  tone only, never copied: a Reuters wire report on the 2021 Colonial Pipeline attack, for
+  attribution and length (every paragraph carries its source, a non-response is itself
+  reported, unknowns are stated as unknowns, about 450 words, no editorial sentence); and the
+  BleepingComputer report on the same incident, for the section order and the lede (a bold
+  opening paragraph that is the whole story in one sentence, then the organization's own
+  account, then scale, then attacker attribution as a claim with its source, then group
+  background, then what is not yet confirmed). The contract, in the owner's words: a
+  headline that is declarative, present tense, names the organization where D4 permits and the
+  effect, under twelve words, no question, no colon stack; a standfirst of one sentence, 25 to
+  35 words, the article in miniature; a body in this order: what happened and when; the
+  organization's statement; scale and impact; attacker attribution as a claim, with who made it;
+  what is not known or not confirmed; one paragraph of prior context; a close on the next
+  expected step or a pending response; no lessons, no advice section; paragraphs of one claim
+  each, one to three sentences, each attributed to a selected source; attacker statements are
+  claims, never facts; quotations only from selected sources, short, attributed, nothing
+  invented; 500 to 700 words; wire-neutral, no adjectives of alarm, no sarcasm (that voice
+  belongs to the manual extras), Canadian spelling, "US" without periods.
+- **Rationale:** The owner's description of the target (CAS-005, step 3). No article text enters
+  the repository; the targets are named for their structure and tone.
+- **Consequences:** The contract is the article schema and the validator's mechanical rules
+  (`docs/CAS-005-REPORT.md`, section 1.5) and the versioned, hashed prompt contract; the
+  register is instructed where it cannot be validated. Changing the contract is a new prompt
+  version and a reviewed commit.
+- **Decided by:** Project owner.
+- **Supersedes:** none.
 
 ## D47 The dashboard's layout direction: the terminal grid, in the existing palette
 

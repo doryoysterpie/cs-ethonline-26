@@ -27,6 +27,7 @@ import type {
   IncidentExplorerDto,
   PrincipalDto,
   ReviewQueueDto,
+  ArticleViewDto,
   RoundupViewDto,
   WeekListDto,
   WeekRunDto,
@@ -801,6 +802,7 @@ export async function weekTable(
       canSelect: holds(principal, 'select:stories'),
       canSearch: withText,
       canViewRoundup: holds(principal, 'view:draft'),
+      canViewArticle: holds(principal, 'view:draft'),
       rows: rows.map((row) => {
         const selection = selections.get(row.incidentId) ?? null;
         return {
@@ -884,7 +886,7 @@ export async function roundupView(
     );
     const bounds = monthBounds(new Date());
     const spent = await runtime.database.withClient((client) =>
-      spendBetween(client, bounds.from, bounds.to),
+      spendBetween(client, 'roundup', bounds.from, bounds.to),
     );
     const accounts = new Map<string, string>();
     for (const account of await runtime.stores.accounts.list())
@@ -922,6 +924,130 @@ export async function roundupView(
         holds(principal, 'generate:roundup') &&
         week.status === 'completed' &&
         revisions.length === 0,
+      canEdit: holds(principal, 'edit:output') && revisions.length > 0,
+    };
+  } catch (error) {
+    throw mapFailure(error, packages);
+  }
+}
+
+/**
+ * The article page (CAS-005): the revisions of one week and category, the
+ * latest body, the pending reading if this principal has one, the month's
+ * article spend against its own cap, and what this principal may do.
+ * `view:draft` reads it; reading, generation and editing are the owner's.
+ */
+export async function articleView(
+  runtime: Runtime,
+  who: Principal | null,
+  weekRunId: unknown,
+  category: unknown,
+): Promise<ArticleViewDto> {
+  const principal = requireCapability(who, 'view:draft');
+  const id = uuid(weekRunId, 'weekRunId');
+  const packages = await workspace();
+  const { getWeekRun, listArticleRevisions, listSelectedRows, spendBetween } = packages.database;
+  const { MONTHLY_CAP_MICRODOLLARS } = packages.article;
+  try {
+    const week = await runtime.database.withClient((client) => getWeekRun(client, id));
+    if (week === null) {
+      throw new DashboardError('not_found', 'week_run_not_found', 'No week run with that id.');
+    }
+    const wantedCategory =
+      category === undefined || category === null || category === ''
+        ? week.categories[0]
+        : category;
+    if (typeof wantedCategory !== 'string' || !week.categories.includes(wantedCategory)) {
+      throw new DashboardError(
+        'validation',
+        'category_not_in_week',
+        'That category is not one this week covered.',
+      );
+    }
+    const revisions = await runtime.database.withClient((client) =>
+      listArticleRevisions(client, week.id, wantedCategory),
+    );
+    const selected = await runtime.database.withClient((client) =>
+      listSelectedRows(client, week.id, wantedCategory, SELECTION_ROWS),
+    );
+    const bounds = monthBounds(new Date());
+    const spent = await runtime.database.withClient((client) =>
+      spendBetween(client, 'article', bounds.from, bounds.to),
+    );
+    const accounts = new Map<string, string>();
+    for (const account of await runtime.stores.accounts.list())
+      accounts.set(account.id, account.username ?? account.normalizedEmail ?? account.id);
+    const latest = revisions[revisions.length - 1] ?? null;
+    const publisherOf = (sourceRowId: string): string => {
+      const row = selected.find((candidate) => candidate.sourceRowId === sourceRowId);
+      if (row === undefined) return 'unknown';
+      try {
+        return new URL(row.url).hostname.toLowerCase();
+      } catch {
+        return 'unknown';
+      }
+    };
+    const pending = runtime.readings.find(week.id, wantedCategory, principal.accountId);
+    const reading =
+      pending === null
+        ? null
+        : {
+            readingId: pending.id,
+            expiresAt: new Date(pending.expiresAt).toISOString(),
+            read: pending.reading.outcomes.filter((o) => o.status === 'read').length,
+            partlyRead: pending.reading.outcomes.filter((o) => o.status === 'partly_read').length,
+            notRead: pending.reading.outcomes
+              .filter((o) => o.status === 'not_read')
+              .map((o) => ({ publisher: publisherOf(o.sourceRowId), code: o.code })),
+            partly: pending.reading.outcomes
+              .filter((o) => o.status === 'partly_read')
+              .map((o) => ({
+                publisher: publisherOf(o.sourceRowId),
+                code: o.code ?? 'partly_read',
+              })),
+            bytes: pending.reading.totals.bytes,
+            chars: pending.reading.totals.chars,
+          };
+    const mayGenerate =
+      holds(principal, 'generate:article') && week.status === 'completed' && revisions.length === 0;
+    return {
+      week: weekRunDto(week),
+      category: wantedCategory,
+      selectedIncidents: new Set(selected.map((row) => row.incidentId)).size,
+      selectedSources: selected.length,
+      revisions: revisions.map((revision) => ({
+        revision: revision.revision,
+        kind: revision.kind,
+        savedBy: accounts.get(revision.savedByAccountId) ?? 'unknown',
+        savedAt: revision.createdAt,
+        provenance:
+          revision.provenance === null
+            ? null
+            : {
+                model: revision.provenance.model,
+                promptVersion: revision.provenance.promptVersion,
+                inputDigest: revision.provenance.inputDigest,
+                inputTokens: revision.provenance.inputTokens,
+                outputTokens: revision.provenance.outputTokens,
+                costMicrodollars: revision.provenance.costMicrodollars,
+                wordCount: revision.provenance.wordCount,
+                namingBasis: revision.provenance.namingBasis,
+                sourcesRead: revision.provenance.sources.filter((s) => s.status === 'read').length,
+                sourcesPartlyRead: revision.provenance.sources.filter(
+                  (s) => s.status === 'partly_read',
+                ).length,
+                sourcesNotRead: revision.provenance.sources.filter((s) => s.status === 'not_read')
+                  .length,
+              },
+      })),
+      latest: latest === null ? null : { revision: latest.revision, markdown: latest.markdown },
+      reading,
+      spendThisMonthMicrodollars: spent,
+      capMicrodollars: MONTHLY_CAP_MICRODOLLARS,
+      modelConfigured: runtime.model !== null,
+      readerConfigured: runtime.reader !== null,
+      canRead: mayGenerate,
+      canGenerate: mayGenerate && reading !== null,
       canEdit: holds(principal, 'edit:output') && revisions.length > 0,
     };
   } catch (error) {

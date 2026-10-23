@@ -156,6 +156,7 @@ describe('search-path capture (migration 0005)', () => {
     expect(functions.rows.map((row) => row.name)).toEqual([
       'accounts_guard',
       'append_only_guard',
+      'article_revision_guard',
       'association_append_only_guard',
       'classification_policy_guard',
       'classification_result_guard',
@@ -326,7 +327,7 @@ describe('search-path capture (migration 0005)', () => {
     const status = await migrationStatus(isolated.db);
     expect(status.pending).toEqual([]);
     expect(status.drift).toEqual([]);
-    expect(status.applied).toHaveLength(15);
+    expect(status.applied).toHaveLength(16);
     // A rerun stays a no-op rather than reapplying into the shadow schema.
     expect((await runMigrations(isolated.db)).applied).toEqual([]);
 
@@ -341,7 +342,7 @@ describe('search-path capture (migration 0005)', () => {
         `SELECT count(*)::text AS count FROM ${quoteIdentifier(isolated.name)}.schema_migrations`,
       ),
     );
-    expect(real.rows[0]?.count).toBe('15');
+    expect(real.rows[0]?.count).toBe('16');
   });
 
   it('leaves every shadow table empty', async () => {

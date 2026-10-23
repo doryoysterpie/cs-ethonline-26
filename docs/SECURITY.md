@@ -802,6 +802,53 @@ The unit is **in review and pending an independent audit**.
   never an overwrite. The rendering goes through the existing Markdown sanitiser; no HTML string
   is set. No automatic publication exists (section 6).
 
+## 20. The source reader and the article (CAS-005)
+
+Rules the system's first outbound fetch implements (`docs/FETCH-POLICY.md`, adopted at S0 as
+D36; D41; the D9 resolution for the article). The unit is **in review and pending an independent
+audit**.
+
+- **Only a selected source's canonical URL is ever fetched** (R13): the reading stage takes its
+  list from the persisted selection record; no link, image, script or subresource on a page is
+  requested; nothing is crawled.
+- **A URL is checked before any connection, and the connection goes where the check went**
+  (R1 to R6): the shared classifier refuses every scheme but `http` and `https`, credentials,
+  local and reserved names, and every loopback, private, link-local, multicast and reserved
+  address in every encoding; the name is resolved first and every address classified; the socket
+  is opened to one checked address through a pinned lookup, so a rebinding name cannot move it.
+- **Redirects are never followed by the client** (R7): a `Location` is re-classified, at most
+  three are followed, and never from `https` to `http`.
+- **The request carries nothing** (R8): `GET`, the fixed user agent naming the product and the
+  dashboard's address, `Accept` for HTML and plain text only, no cookie, no credential.
+- **The body is bounded in type, size and time** (R9 to R12): HTML, XHTML and plain text only; at
+  most 2 MiB after decompression, a page past it cut and listed as partly read; 15 seconds per
+  fetch and 5 minutes per reading stage; four in flight.
+- **Fetched text is hostile and transient** (R15, O-1): never logged, never in an error, an
+  audit event, a ledger row or a table; held in the dashboard's memory for ten minutes and in
+  the request to the model as quoted material under a prompt that names it as such; its digest
+  alone persists. The page shows publishers and codes, never a path.
+- **The model may cite only what was read** (R15, R17): a source that could not be read is
+  shown to the owner before the model is called, and a response citing it, or any row outside
+  the selection, or quoting words not found verbatim in a cited source, is rejected whole.
+- **The audit event per fetch carries the row, the outcome code, bytes and duration** (R16),
+  never a URL, header or text.
+- **`robots.txt` is obeyed** (O-2): read once per host per reading under the same rules; a
+  disallowed or unreadable file lists the source as not read.
+- **The owner alone reads, writes and edits** (`generate:article`, `edit:output`); the
+  article's monthly cap is accounted apart from the round-up's; every refusal with a known actor
+  is audited once at the boundary.
+- **Cost is bounded twice and recorded, as the round-up's is** (section 19; applied to the
+  article before its review from the round-up's findings F3 to F5, RR1 and RR3). A refused
+  request is a ledger row with zero tokens and its code; a response the validator rejected, and a
+  provider refusal after an answer, were billed all the same and are failed rows at their real
+  cost, and every row of the month counts toward the cap. One article generation runs at a time
+  per schema under an advisory lock of its own, tried and never waited for, every protected read
+  and write on the one connection that holds it; a concurrent submission is refused at once with
+  `article_generation_in_progress`; the ledger row is written before the revision. The owner's
+  editor accepts what storage accepts (400,000 characters), so every generated revision is
+  editable; a selection past the row bound is refused whole before any page is fetched, never
+  cut to a prefix; a generated rendering past the stored bound is refused, billed and recorded.
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,
