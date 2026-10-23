@@ -131,7 +131,7 @@ test.describe('role boundaries in the browser', () => {
     expect(editorHtml).not.toContain('Source text is not shown for this role');
     expect(editorHtml).toContain('Record merge');
 
-    // And a judge visiting after the editor still gets the judge rendering.
+    // And a reader visiting after the editor still gets the reader rendering.
     await readerPage.goto(url);
     expect(await readerPage.content()).toContain('Source text is not shown for this role');
 
