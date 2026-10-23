@@ -520,3 +520,4 @@ audit and nothing in it is accepted.
 | `LICENSE`                                 | Apache License 2.0                                                                                                                |
 | `docs/RUNBOOK-HOSTING.md`                 | the hosted service on Railway: what runs, the variables, the rebuild after a provider incident, the plan, the proxy               |
 | `docs/CAS-010-REPORT.md`                  | CAS-010 report: the dashboard's terminal grid, the S0 design note against D47 and the decisions it raises                         |
+| `docs/CAS-009-REPORT.md`                  | CAS-009 report: shareable story cards, the S0 design note under D6 and D42 and the seven decisions it raises                      |
