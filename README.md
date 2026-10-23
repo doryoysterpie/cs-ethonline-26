@@ -57,8 +57,9 @@ dashboard serves traffic.
 **What is on `main`, and what is in review.** Four post-event units merged on 22 October
 2026, each at a head an independent review passed. CAS-001, the living feed imported from the
 authorized Google Sheets workbook, at `9c03a35` after a PASS at `2ad714d`; its first real
-import into the hosted database follows the deploy into the database recreated after the
-Railway platform incident of 21 to 22 October (`docs/INCIDENT_RESPONSE.md`, section 7).
+import into the hosted database follows, the database having been recreated and `main`
+redeployed on 22 October 2026 after the Railway platform incident of 21 to 22 October
+(`docs/INCIDENT_RESPONSE.md`, section 7; `docs/RUNBOOK-HOSTING.md`).
 CAS-002, one classification run per category bound to a policy registry (migration 0013), at
 `b4c8270`, with its second correction at `592d3bc` after a PASS at `2c87946`
 (`docs/CAS-002-REPORT.md`, section 7). CAS-006's release-blocker corrections: pull request 17
@@ -489,6 +490,7 @@ audit and nothing in it is accepted.
 | `docs/SECURITY.md`                        | security policy                                                                                                       |
 | `docs/SHEETS-INTAKE.md`                   | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                           |
 | `docs/RUNBOOK-WEEKLY-IMPORT.md`           | the weekly Sheets import: the command, what it needs, what it prints, exit codes                                      |
+| `docs/RUNBOOK-HOSTING.md`                 | the hosted service on Railway: what runs, the variables, the rebuild after a provider incident, the plan, the proxy   |
 | `docs/CAS-001-REPORT.md`                  | CAS-001 report: design note, reference implementation, import path, local run                                         |
 | `docs/CAS-004-REPORT.md`                  | CAS-004 report: the round-up design note, prompt contract, migration 0015, the model boundary, tests, verification    |
 | `docs/THREAT_MODEL.md`                    | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks |
