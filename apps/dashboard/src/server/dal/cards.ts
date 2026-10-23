@@ -19,6 +19,8 @@ import { DashboardError, validation } from '../errors.ts';
 import { uuid } from '../input.ts';
 import { workspace } from '../packages.ts';
 import type { Runtime } from '../runtime.ts';
+import type { Queryable } from '@cas/database';
+
 import { mapFailure } from './failures.ts';
 import { requireCapability } from './guard.ts';
 
@@ -102,45 +104,51 @@ export function rundownOf(
   return entries;
 }
 
-/** The story as the current published revision states it, or null when it cannot be shown. */
-async function resolveStory(runtime: Runtime, key: StoryKey): Promise<ResolvedStory | null> {
+/**
+ * The story as the current published revision states it, or null when it
+ * cannot be shown, read on the caller's connection: a caller that holds a
+ * snapshot gets the current publication, the revision and its text from that
+ * one snapshot.
+ */
+async function resolveStoryOn(client: Queryable, key: StoryKey): Promise<ResolvedStory | null> {
   const packages = await workspace();
   const { currentPublication, getWeekRun, listArticleRevisions, listRoundupRevisions } =
     packages.database;
-  return runtime.database.withClient(async (client) => {
-    const current = await currentPublication(client, key.weekRunId, key.category, key.output);
-    if (current === null) return null;
-    const week = await getWeekRun(client, key.weekRunId);
-    if (week === null) return null;
-    const revisions =
-      key.output === 'roundup'
-        ? await listRoundupRevisions(client, key.weekRunId, key.category)
-        : await listArticleRevisions(client, key.weekRunId, key.category);
-    const revision = revisions.find((candidate) => candidate.revision === current.revision);
-    if (revision === undefined || revision.kind === 'deterministic') return null;
-    let headline: string | null;
-    let publishers: string[];
-    if (key.output === 'roundup') {
-      const entry = rundownOf(revision.slots)?.[key.entryIndex];
-      if (entry === undefined) return null;
-      headline = roundupHeadline(revision.markdown, entry.sources);
-      publishers = publishersOf(entry.sources);
-    } else {
-      headline = articleHeadline(revision.markdown);
-      publishers = publishersOf(articleSourceUrls(revision.markdown));
-    }
-    if (headline === null) return null;
-    return {
-      output: key.output,
-      category: key.category,
-      weekStart: week.windowStart,
-      weekEnd: week.windowEnd,
-      revision: revision.revision,
-      headline,
-      publishers,
-    };
-  });
+  const current = await currentPublication(client, key.weekRunId, key.category, key.output);
+  if (current === null) return null;
+  const week = await getWeekRun(client, key.weekRunId);
+  if (week === null) return null;
+  const revisions =
+    key.output === 'roundup'
+      ? await listRoundupRevisions(client, key.weekRunId, key.category)
+      : await listArticleRevisions(client, key.weekRunId, key.category);
+  const revision = revisions.find((candidate) => candidate.revision === current.revision);
+  if (revision === undefined || revision.kind === 'deterministic') return null;
+  let headline: string | null;
+  let publishers: string[];
+  if (key.output === 'roundup') {
+    const entry = rundownOf(revision.slots)?.[key.entryIndex];
+    if (entry === undefined) return null;
+    headline = roundupHeadline(revision.markdown, entry.sources);
+    publishers = publishersOf(entry.sources);
+  } else {
+    headline = articleHeadline(revision.markdown);
+    publishers = publishersOf(articleSourceUrls(revision.markdown));
+  }
+  if (headline === null) return null;
+  return {
+    output: key.output,
+    category: key.category,
+    weekStart: week.windowStart,
+    weekEnd: week.windowEnd,
+    revision: revision.revision,
+    headline,
+    publishers,
+  };
 }
+
+/** One snapshot for a story read: every statement sees the same committed state. */
+const SNAPSHOT = { isolationLevel: 'repeatable read' } as const;
 
 /** The stories of one published revision a principal may make cards for (the published page's list). */
 export function shareableStories(
@@ -156,19 +164,16 @@ export function shareableStories(
   return rundown === null ? [] : roundupStories(revision.markdown, rundown);
 }
 
-async function cacheImage(
-  runtime: Runtime,
-  card: PublicStoryCard,
-): Promise<{ readonly png: Uint8Array } | null> {
+/**
+ * Stores the image of a card as one read stated it: the render is that read's
+ * content and the key is that read's revision, so an image can only ever be
+ * stored under the revision whose text it shows.
+ */
+async function storeImage(runtime: Runtime, card: PublicStoryCard): Promise<Uint8Array> {
   const packages = await workspace();
-  const { getStoryCardImage, insertStoryCardImage } = packages.database;
-  const cached = await runtime.database.withClient((client) =>
-    getStoryCardImage(client, card.id, card.revision),
-  );
-  if (cached !== null) return { png: cached.png };
   const { png, sha256 } = await rasterize(cardSvg(card));
   await runtime.database.withTransaction((tx) =>
-    insertStoryCardImage(tx, {
+    packages.database.insertStoryCardImage(tx, {
       cardId: card.id,
       revision: card.revision,
       png,
@@ -176,7 +181,7 @@ async function cacheImage(
       createdAt: new Date().toISOString(),
     }),
   );
-  return { png };
+  return png;
 }
 
 /**
@@ -201,7 +206,7 @@ export async function makeCard(
   const packages = await workspace();
   const { findStoryCard, insertStoryCard } = packages.database;
   try {
-    const story = await resolveStory(runtime, key);
+    const story = await runtime.database.withTransaction((tx) => resolveStoryOn(tx, key), SNAPSHOT);
     if (story === null) throw notShareable();
     const existing = await runtime.database.withClient((client) => findStoryCard(client, key));
     if (existing !== null) return { id: existing.id, created: false };
@@ -241,7 +246,7 @@ export async function makeCard(
         subjectId: card.id,
       });
       try {
-        await cacheImage(runtime, toPublicStoryCard({ id: card.id, ...story }));
+        await storeImage(runtime, toPublicStoryCard({ id: card.id, ...story }));
       } catch {
         // The image route rasterizes on its first request instead.
       }
@@ -263,7 +268,12 @@ async function publicCard(
   runtime: Runtime,
   id: unknown,
   networkKey: string,
-): Promise<{ readonly card: PublicStoryCard; readonly key: StoryKey }> {
+  withImage: boolean,
+): Promise<{
+  readonly card: PublicStoryCard;
+  readonly key: StoryKey;
+  readonly cached: Uint8Array | null;
+}> {
   if (typeof id !== 'string' || !CARD_ID_SHAPE.test(id)) throw notShareable();
   const decision = runtime.limits.cardNetwork.check(`network:${networkKey}`, seconds());
   if (!decision.allowed) {
@@ -282,19 +292,32 @@ async function publicCard(
     throw new DashboardError('throttled', 'card_views_limited', 'Too many requests; wait a while.');
   }
   const packages = await workspace();
-  const record = await runtime.database.withClient((client) =>
-    packages.database.getStoryCard(client, id),
-  );
-  if (record === null) throw notShareable();
-  const key: StoryKey = {
-    weekRunId: record.weekRunId,
-    category: record.category,
-    output: record.output,
-    entryIndex: record.entryIndex,
-  };
-  const story = await resolveStory(runtime, key);
-  if (story === null) throw notShareable();
-  return { card: toPublicStoryCard({ id: record.id, ...story }), key };
+  // The card, the current publication, the revision's text and the cached
+  // image are read in one snapshot (the owner's condition of 23 October
+  // 2026): the image served is the one stored for the revision this read
+  // found current, and a render uses this read's text.
+  const read = await runtime.database.withTransaction(async (tx) => {
+    const record = await packages.database.getStoryCard(tx, id);
+    if (record === null) return null;
+    const key: StoryKey = {
+      weekRunId: record.weekRunId,
+      category: record.category,
+      output: record.output,
+      entryIndex: record.entryIndex,
+    };
+    const story = await resolveStoryOn(tx, key);
+    if (story === null) return null;
+    const cached = withImage
+      ? await packages.database.getStoryCardImage(tx, record.id, story.revision)
+      : null;
+    return {
+      key,
+      card: toPublicStoryCard({ id: record.id, ...story }),
+      cached: cached?.png ?? null,
+    };
+  }, SNAPSHOT);
+  if (read === null) throw notShareable();
+  return read;
 }
 
 /** The public card page: no session; limited per source; one origin view counted. */
@@ -305,7 +328,7 @@ export async function cardPage(
 ): Promise<CardPageDto> {
   const packages = await workspace();
   try {
-    const { card, key } = await publicCard(runtime, id, networkKey);
+    const { card, key } = await publicCard(runtime, id, networkKey, false);
     const views = await runtime.database.withTransaction((tx) =>
       packages.database.countStoryCardView(tx, card.id),
     );
@@ -328,11 +351,9 @@ export async function cardImage(
 ): Promise<{ readonly body: Uint8Array | string; readonly revision: number }> {
   const packages = await workspace();
   try {
-    const { card } = await publicCard(runtime, id, networkKey);
+    const { card, cached } = await publicCard(runtime, id, networkKey, format === 'png');
     if (format === 'svg') return { body: cardSvg(card), revision: card.revision };
-    const image = await cacheImage(runtime, card);
-    if (image === null) throw notShareable();
-    return { body: image.png, revision: card.revision };
+    return { body: cached ?? (await storeImage(runtime, card)), revision: card.revision };
   } catch (error) {
     if (error instanceof Error && error.name === 'RasterError') {
       throw new DashboardError(

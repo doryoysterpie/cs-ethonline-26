@@ -168,21 +168,22 @@ describe('migration runner against a fresh schema', () => {
       '0019_signup_supersession.sql',
       '0020_checkout_attempts.sql',
       '0021_story_cards.sql',
+      '0022_publication_sequence.sql',
     ]);
     expect(first.alreadyApplied).toBe(0);
-    expect(first.total).toBe(21);
+    expect(first.total).toBe(22);
     const tables = await isolated.base.withClient((c) => listTables(c, isolated.name));
     expect(tables).toEqual(EXPECTED_TABLES);
 
     const second = await runMigrations(isolated.db);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied).toBe(21);
+    expect(second.alreadyApplied).toBe(22);
 
     const status = await migrationStatus(isolated.db);
     expect(status.pending).toEqual([]);
     expect(status.drift).toEqual([]);
     expect(status.applied.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
     ]);
     expect(status.applied[0]?.appliedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
@@ -213,6 +214,7 @@ describe('migration runner against a fresh schema', () => {
         '0019_signup_supersession.sql',
         '0020_checkout_attempts.sql',
         '0021_story_cards.sql',
+        '0022_publication_sequence.sql',
       ]);
       expect(upgrade.alreadyApplied).toBe(10);
 
@@ -296,6 +298,7 @@ describe('migration runner against a fresh schema', () => {
         '0019_signup_supersession.sql',
         '0020_checkout_attempts.sql',
         '0021_story_cards.sql',
+        '0022_publication_sequence.sql',
       ]);
       expect(upgrade.alreadyApplied).toBe(1);
       expect(await isolated.db.withClient(countAllRows)).toEqual(counts);
@@ -399,12 +402,12 @@ describe('migration runner against a fresh schema', () => {
       const [a, b] = await Promise.all([runMigrations(isolated.db), runMigrations(other)]);
       // Every migration is applied exactly once in total, whichever runner
       // won the lock; the loser finds nothing pending.
-      expect(a.applied.length + b.applied.length).toBe(21);
+      expect(a.applied.length + b.applied.length).toBe(22);
       expect(Math.min(a.applied.length, b.applied.length)).toBe(0);
       const rows = await isolated.db.withClient((c) =>
         c.query<{ count: string }>('SELECT count(*)::text AS count FROM schema_migrations'),
       );
-      expect(rows.rows[0]?.count).toBe('21');
+      expect(rows.rows[0]?.count).toBe('22');
     } finally {
       await other.end();
     }

@@ -892,6 +892,8 @@ section 7), corrected and **pending the re-review**.
   the marked revision through the sanitiser and nothing else.
 - **`robots.txt` disallows the known AI crawlers** from a fixed, versioned list, a convention
   they may ignore; the limits are the protection, and the hosting layer is assumed to add none.
+  Since CAS-009 (`robots-policy@2`, D48) every other agent may fetch `/cards/` and nothing else,
+  so a preview bot can read a card's image and a search engine can see its `noindex`.
 
 ## 22. The supporter tier, the webhook boundary and donations (CAS-008)
 
@@ -992,6 +994,13 @@ pending an independent audit**.
   per card and revision.
 - **Counting stores nothing about anyone**: one integer per card, raised on each origin view of
   the page; no client beacon, no viewer identity, no address.
+- **One snapshot per read; a monotonic publication order.** The card, the current publication,
+  the revision's text and the cached image are read in one repeatable-read transaction, and an
+  image is stored only from that read's text under that read's revision; the current publication
+  is the greatest database-assigned `seq` (migration 0022), never an application timestamp.
+- **"Not found at once" holds at the origin.** The images are cacheable for five minutes, so a
+  downstream cache may serve an unpublished card's image that long, and platforms cache link
+  previews for their own periods; the card page itself is never cached.
 
 ## Reporting a vulnerability
 

@@ -174,17 +174,26 @@ SVG escaping every text; the public path in the proxy. In the browser: a reader 
 and a fresh, signed-out context opens it and downloads the SVG. Then the verify loop, a clean
 clone and CI.
 
-### 1.9 A question the build raised: the robots file
+### 1.9 A question the build raised: the robots file, resolved
 
-CAS-007's `robots.txt` (`robots-policy@1`) disallows every path for every agent, the AI crawlers
+CAS-007's `robots.txt` (`robots-policy@1`) disallowed every path for every agent, the AI crawlers
 by name and everyone else under `User-agent: *`. The social preview bots that read a card's
-`og:image` (X's, LinkedIn's, Slack's, and most others) honour that file, so under it a shared card
-is a bare link on the platforms decision 2 names, which is the gap the decision was made to
-close. Changing it changes CAS-007's merged policy, so it is put to the owner rather than
-applied: (a) `Allow: /cards/` under `User-agent: *` ahead of its `Disallow: /`, the AI crawlers'
-groups unchanged, so they stay out of cards too, and the pages stay unindexed by `X-Robots-Tag`;
-(b) the same allowance for the named preview bots only; (c) no change, previews only where a
-platform ignores the file. The build ships with the file unchanged.
+`og:image` honour that file, so under it a shared card was a bare link on the platforms decision
+2 names. Changing it changes CAS-007's merged policy, so it was put to the owner, who resolved it
+on 23 October 2026 (D48, 8): (a). The file (`robots-policy@2`) adds `Allow: /cards/` under
+`User-agent: *` ahead of `Disallow: /`; the named AI crawlers' groups are unchanged, so they stay
+out of cards as out of everything. The owner's grounds go beyond previews: under the old file a
+search engine could not fetch a card and so never saw its `noindex`, while a card linked from
+elsewhere could still be indexed as a bare address; allowing the path is what makes `noindex`
+effective. The `Allow` line comes first for parsers that take the first match; under RFC 9309
+the longest match gives the same answer. The condition, that the preview images resolve under
+`/cards/` as absolute addresses, holds: `og:image` and `twitter:image` are both
+`<DASHBOARD_PUBLIC_URL>/cards/<id>/image.png`, asserted in the browser.
+
+**A known limit, recorded (D48, 9).** "Not found at once" holds at the origin. The images are
+cacheable for five minutes, so a downstream cache may serve an unpublished card's image for up
+to five minutes, and platforms cache link previews for their own periods, outside the product's
+control. The card page itself is sent `no-store` and is never cached by the dashboard's headers.
 
 ## 2. Stack check and data contract, S1 and S2 (steps 3 and 4)
 
@@ -217,7 +226,11 @@ story (unique on week run, category, output and entry index; an article's entry 
 character URL-safe identifier from 128 random bits, the maker and the instant, and a view count
 that only rises; `story_card_images`, one PNG per card and revision, at most 1 MiB, with its
 digest, append-only; the audit kind `card_created`. Guards refuse every other update and every
-delete. The public field set is a contract in `@cas/contracts` (`story-card@1`,
+delete. Migration 0022 (`0022_publication_sequence.sql`, SHA-256 `40079de7f3b5a31159bb9a9609943c9a03cdc45b34a99c8fd6edf7a433d67f70`), added after the owner's review
+of the open image-cache failure (section 7): `output_publications` gains `seq`, a number
+PostgreSQL assigns at insert from one sequence, unique, never supplied by the application, and
+the current publication is the record with the greatest `seq` rather than the greatest
+`created_at`, an instant the application writes from its own clock. The public field set is a contract in `@cas/contracts` (`story-card@1`,
 `toPublicStoryCard`): it copies exactly the eight allowlisted fields, each shape-checked, and drops
 anything else on its input.
 
@@ -304,10 +317,32 @@ five minutes; unknown and malformed addresses 404; a reader sees the published r
 stories with a card button each). A card rendered through the compiled modules was looked at and
 matches section 1.3.
 
-One run of the full database suite failed once on the image-cache case: after a correction was
-published, the cache held only the first revision's image. It passed alone four times and in two
-further full runs; the cause was not found in the code. The case now asserts the published
-revision and the image's revision before it checks the cache, so a recurrence names the step
-that disagrees. Recorded here rather than claimed fixed.
+**The open image-cache failure.** One run of the full database suite failed once on the
+image-cache case: after a correction was published, the cache held only the first revision's
+image. It passed alone four times and in three further full runs. The owner set the merge
+condition on 23 October 2026: the current revision and the cache key must come from one read in
+one transaction, and the render must use that same read, or a stale read could store and serve a
+corrected-away headline. Before the change the key and the rendered text already came from one
+in-memory read, so a revision's key could never hold another revision's text; but that read was
+several statements outside one transaction, and the current publication was chosen by the
+greatest `created_at`, which the application stamps from its own clock. Two changes make the
+condition literal:
+
+- **One snapshot.** The card's record, the current publication, the revision's text and the
+  cached image are read in one repeatable-read transaction (`publicCard`, and `makeCard`'s
+  resolution). An image is stored only from that read's text under that read's revision
+  (`storeImage`), and a cached image is served only for the revision the same read found
+  current. Test: a sentinel image stored under revision 2 before revision 2 is published is
+  served exactly while revision 2 is current, and revision 1's image before and after.
+- **A monotonic order.** Migration 0022: the current publication is the record with the greatest
+  database-assigned `seq`. Test: three records with one timestamp, and one stamped earlier than
+  all of them but written last, each decide in turn as they are written. This rules out the
+  owner's hypothesis, a timestamp tie, and also a clock that steps back or two instances whose
+  clocks disagree.
+
+The failure itself was not reproduced, so its cause is not established; the timestamp order is
+the likeliest and is now removed. It stays recorded as open until **ten consecutive full runs of
+`corepack pnpm test:db`**, a number named here before the first of them, pass at the head offered
+for review; the result is recorded below and on the tracker.
 
 The clean clone, the CI run and the pull request are on the tracker's evidence record.
