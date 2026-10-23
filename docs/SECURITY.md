@@ -970,6 +970,29 @@ Rules the presentation keeps while the look changes (D47).
   developer names (`DASHBOARD_LOCAL_EMAIL_FILE`, mode 600) or dropped; production uses the
   PostgreSQL store and the Resend provider, where the variable has no effect.
 
+## 24. Story cards (CAS-009)
+
+Rules the dashboard's first public page implements (D6, D48). The unit is **in review and
+pending an independent audit**.
+
+- **A card carries the allowlist and nothing else**: the published headline, the publishers'
+  host names, the week, the category, the output and its current revision (`story-card@1` in
+  `@cas/contracts`), each shape-checked; no summary, no source address, no citation, no stored
+  title, no editor note. A deterministic revision, whose headlines are the sources' own titles,
+  never renders as a card.
+- **A card follows the published text.** It is bound to its output and entry, never to a
+  revision: an unpublished output, a removed entry or a superseded headline is never shown, from
+  the next request.
+- **The page needs no session and is never indexed**: the address is 128 random bits; the proxy
+  adds `X-Robots-Tag: noindex, nofollow`; the page says the same; cards are in no sitemap and no
+  index anywhere. Pages and images are limited per network source; new cards per account; one
+  count-only trip event per window each.
+- **The image is the dashboard's own**: an SVG of text only, every string XML-escaped, rasterized
+  in process by WebAssembly with no network and two pinned font files, bounded at 1 MiB, cached
+  per card and revision.
+- **Counting stores nothing about anyone**: one integer per card, raised on each origin view of
+  the page; no client beacon, no viewer identity, no address.
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,

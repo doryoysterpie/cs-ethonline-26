@@ -33,6 +33,7 @@ import {
   unpublishOutput,
 } from './readers.ts';
 import { shellStatus } from './shell.ts';
+import { cardImage, cardPage, makeCard } from './cards.ts';
 import {
   donationsView,
   openBillingPortal,
@@ -306,6 +307,31 @@ describe('data-access layer authorization without a database', () => {
       networkKey: 'direct',
     });
     expect(oversized).toEqual({ status: 400, code: 'webhook_too_large' });
+  });
+
+  it('lets every principal who may read published outputs ask for a card, and no one without a session; the public card reads no session at all (CAS-009)', async () => {
+    const { runtime, principals } = await runtimeFor();
+    const input = {
+      weekRunId: ID,
+      category: 'cyberattack',
+      output: 'roundup',
+      entryIndex: 0,
+    };
+    expect(await kindOf(makeCard(runtime, null, input))).toBe('authentication');
+    for (const role of ROLES) {
+      // The gate opens for every role holding view:published; the memory stores then refuse,
+      // since a card names its maker as an account row.
+      expect(await kindOf(makeCard(runtime, principals[role], input)), role).toBe('validation');
+      expect(
+        await kindOf(makeCard(runtime, principals[role], { ...input, entryIndex: -1 })),
+        role,
+      ).toBe('validation');
+    }
+    // The public card: a malformed address is refused before any read; a well-formed one reaches the
+    // (untouchable) database with no principal at all.
+    expect(await kindOf(cardPage(runtime, 'not-an-address', 'direct'))).toBe('not_found');
+    expect(await kindOf(cardPage(runtime, 'A'.repeat(22), 'direct'))).toBe('unavailable');
+    expect(await kindOf(cardImage(runtime, 'A'.repeat(22), 'png', 'direct'))).toBe('unavailable');
   });
 
   it('validates identifiers before touching anything, with fixed codes', async () => {

@@ -31,6 +31,8 @@ const NOTICES: Readonly<Record<string, string>> = {
     'A checkout is already being prepared for this account. Try again in a moment.',
   support_already_active:
     'This account already has a subscription. Manage it from the billing portal.',
+  card_limited: 'Too many cards made. Wait a while and try again.',
+  story_not_shareable: 'That story cannot be shared now.',
   support_not_configured: 'Card support is not set up yet.',
   no_supporter_record: 'No support record exists for this account yet.',
   unselected: 'Set aside for this issue.',
@@ -76,6 +78,8 @@ export function isErrorNotice(code: unknown): boolean {
     code === 'checkout_limited' ||
     code === 'checkout_in_progress' ||
     code === 'support_already_active' ||
+    code === 'card_limited' ||
+    code === 'story_not_shareable' ||
     code === 'support_not_configured' ||
     code === 'no_supporter_record'
   );

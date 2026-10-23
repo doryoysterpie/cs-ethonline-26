@@ -31,6 +31,16 @@ const PUBLIC_PATHS = new Set([
   '/api/logout',
 ]);
 
+/**
+ * Paths served without a session (CAS-009, D48): a story card and its two
+ * images, at an unguessable address. Never indexed (`X-Robots-Tag`), never in
+ * a sitemap; the images may be cached for five minutes, the page never, so
+ * each view of it reaches the origin and is counted.
+ */
+const PUBLIC_PREFIXES = ['/cards/'];
+const CARD_IMAGE = /^\/cards\/[A-Za-z0-9_-]{22}\/image\.(?:png|svg)$/u;
+const CARD_IMAGE_CACHE = 'public, max-age=300';
+
 function nonce(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
@@ -51,7 +61,8 @@ export function proxy(request: NextRequest): NextResponse {
   const path = request.nextUrl.pathname;
   const hasCookie = request.cookies.has(sessionCookieName(environment));
   let response: NextResponse;
-  if (!hasCookie && !PUBLIC_PATHS.has(path) && !path.startsWith('/api/')) {
+  const publicPrefix = PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
+  if (!hasCookie && !PUBLIC_PATHS.has(path) && !publicPrefix && !path.startsWith('/api/')) {
     const target = request.nextUrl.clone();
     target.pathname = '/login';
     target.search = '';
@@ -61,7 +72,8 @@ export function proxy(request: NextRequest): NextResponse {
   }
 
   for (const [name, headerValue] of Object.entries(policy)) response.headers.set(name, headerValue);
-  response.headers.set('Cache-Control', NO_STORE);
+  response.headers.set('Cache-Control', CARD_IMAGE.test(path) ? CARD_IMAGE_CACHE : NO_STORE);
+  if (publicPrefix) response.headers.set('X-Robots-Tag', 'noindex, nofollow');
   return response;
 }
 
