@@ -74,13 +74,15 @@ CAS-004, the round-up generated through the rundown template and edited by the o
 (migration 0015, `@cas/roundup`, the `owner` role), merged at `6f25fb0` after four review rounds
 and a PASS at `fcdf88c` (`docs/CAS-004-REPORT.md`, section 7).
 
-In review, stacked in order: CAS-005, the article written from the full sources behind the
-system's first outbound fetch under the fetch policy adopted as D36 (migration 0016,
-`@cas/source-reader`, `@cas/article`), on pull request 26 (`docs/CAS-005-REPORT.md`); CAS-007,
-reader sign-up with owner approval, the `reader` role in place of `judge`, the published mark
-and scrape protection (migration 0017), on pull request 27 (`docs/CAS-007-REPORT.md`); CAS-008,
-the supporter tier through Stripe's hosted Checkout and signed webhooks, with the pinned
-donation page (migration 0018, `qrcode-generator`), on pull request 28 (`docs/CAS-008-REPORT.md`).
+Merged into `main` on 22 October 2026 as one train, before independent review, with one combined
+audit of `main` at `881d5a3` requested (`docs/AUDIT-LEDGER.md`): CAS-005, the article written
+from the full sources behind the system's first outbound fetch under the fetch policy adopted as
+D36 (migration 0016, `@cas/source-reader`, `@cas/article`), on pull request 26
+(`docs/CAS-005-REPORT.md`); CAS-007, reader sign-up with owner approval, the `reader` role in
+place of `judge`, the published mark and scrape protection (migration 0017), on pull request 27
+(`docs/CAS-007-REPORT.md`); CAS-008, the supporter tier through Stripe's hosted Checkout and
+signed webhooks, with the pinned donation page (migration 0018, `qrcode-generator`), on pull
+request 28 (`docs/CAS-008-REPORT.md`).
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up
