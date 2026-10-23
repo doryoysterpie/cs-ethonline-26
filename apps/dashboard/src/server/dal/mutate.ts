@@ -454,8 +454,8 @@ function assertUsername(value: unknown): string {
 }
 
 function assertRoleExpiry(role: Role, expiresAt: string | null, now: Date): void {
-  if (role === 'judge' && expiresAt === null) {
-    throw validation('judge_expiry_required', 'A judge account requires an expiry instant.');
+  if (role === 'reader' && expiresAt === null) {
+    throw validation('reader_expiry_required', 'A reader account requires an expiry instant.');
   }
   if (expiresAt !== null && Date.parse(expiresAt) <= now.getTime()) {
     throw validation('expiry_in_past', 'The expiry instant must be in the future.');

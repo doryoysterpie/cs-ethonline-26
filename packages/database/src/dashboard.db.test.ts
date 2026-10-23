@@ -23,7 +23,7 @@ import { openIsolatedSchema, type IsolatedSchema } from './test-support.js';
  * The dashboard reads against a migrated schema.
  *
  * Two properties matter more than the shape of the rows. First, a read made
- * without `withText` must return no text at all, because that is how a judge
+ * without `withText` must return no text at all, because that is how a reader
  * is kept away from source text: the database never sends it. Second, a read
  * scoped by run and incident must return nothing for an incident that belongs
  * to a different run, however valid the identifier is.

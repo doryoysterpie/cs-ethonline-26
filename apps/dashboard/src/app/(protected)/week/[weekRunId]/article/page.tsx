@@ -4,6 +4,7 @@ import { Csrf, Instant, Notice, Origin } from '../../../../../components/ui.tsx'
 import { csrfFor, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { articleView } from '../../../../../server/dal/read.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../../page-support.ts';
+import { publishAction, unpublishAction } from '../publish-actions.ts';
 import { generateArticleAction, readSourcesAction, saveArticleAction } from './actions.ts';
 
 export const dynamic = 'force-dynamic';
@@ -134,6 +135,7 @@ export default async function ArticlePage({
               <th>Words</th>
               <th>Naming</th>
               <th>Sources read / partly / not</th>
+              <th>Readers</th>
             </tr>
           </thead>
           <tbody>
@@ -162,6 +164,34 @@ export default async function ArticlePage({
                   {revision.provenance === null
                     ? ''
                     : `${revision.provenance.sourcesRead} / ${revision.provenance.sourcesPartlyRead} / ${revision.provenance.sourcesNotRead}`}
+                </td>
+                <td>
+                  {view.publishedRevision === revision.revision ? (
+                    view.canPublish ? (
+                      <form action={unpublishAction} className="inline">
+                        <Csrf token={token} />
+                        <input type="hidden" name="weekRunId" value={view.week.id} />
+                        <input type="hidden" name="category" value={view.category} />
+                        <input type="hidden" name="output" value="article" />
+                        <button type="submit" className="quiet">
+                          Published · unpublish
+                        </button>
+                      </form>
+                    ) : (
+                      'published'
+                    )
+                  ) : view.canPublish ? (
+                    <form action={publishAction} className="inline">
+                      <Csrf token={token} />
+                      <input type="hidden" name="weekRunId" value={view.week.id} />
+                      <input type="hidden" name="category" value={view.category} />
+                      <input type="hidden" name="output" value="article" />
+                      <input type="hidden" name="revision" value={String(revision.revision)} />
+                      <button type="submit">Publish this revision</button>
+                    </form>
+                  ) : (
+                    ''
+                  )}
                 </td>
               </tr>
             ))}

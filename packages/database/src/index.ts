@@ -338,3 +338,21 @@ export {
   type NamingBasis,
   type NewArticleRevision,
 } from './article.js';
+export {
+  currentPublication,
+  decideSignupRequest,
+  findOpenSignupRequest,
+  getSignupRequest,
+  insertPublication,
+  insertSignupRequest,
+  listPendingSignupRequests,
+  listPublished,
+  recordSignupAttempt,
+  verifySignupRequest,
+  type NewPublication,
+  type NewSignupRequest,
+  type PublicationRecord,
+  type PublishedOutput,
+  type SignupDecision,
+  type SignupRequestRecord,
+} from './readers.js';

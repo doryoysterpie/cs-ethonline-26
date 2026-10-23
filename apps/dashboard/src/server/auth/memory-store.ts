@@ -119,8 +119,8 @@ export function assertSeedAccount(value: unknown): AccountRecord {
   }
   const disabledAt = instantOrNull(record.disabledAt, 'seed_account_disabled');
   const expiresAt = instantOrNull(record.expiresAt, 'seed_account_expiry');
-  if (record.role === 'judge' && expiresAt === null) {
-    throw configuration('seed_judge_expiry', 'a judge account in the seed has no expiry');
+  if (record.role === 'reader' && expiresAt === null) {
+    throw configuration('seed_reader_expiry', 'a reader account in the seed has no expiry');
   }
   return {
     id: record.id,

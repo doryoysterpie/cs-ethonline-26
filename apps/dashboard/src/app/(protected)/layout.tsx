@@ -48,9 +48,19 @@ export default async function ProtectedLayout({ children }: { readonly children:
           <li>
             <Link href="/drafts">Drafts</Link>
           </li>
+          {holds(principal, 'view:published') ? (
+            <li>
+              <Link href="/published">Published</Link>
+            </li>
+          ) : null}
           {holds(principal, 'admin:accounts') ? (
             <li>
               <Link href="/admin/accounts">Accounts and sessions</Link>
+            </li>
+          ) : null}
+          {holds(principal, 'admin:accounts') ? (
+            <li>
+              <Link href="/admin/requests">Access requests</Link>
             </li>
           ) : null}
         </ul>

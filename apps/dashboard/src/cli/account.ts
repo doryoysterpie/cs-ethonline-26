@@ -13,7 +13,7 @@ import { workspace } from '../server/packages.ts';
  * Administrator account operations with no secret to protect, so unlike
  * `provision.ts` this needs no TTY and no interactive entry.
  *
- *   corepack pnpm --filter @cas/dashboard account invite --email <email> --role <judge|editor|admin|owner> [--expires-at <instant>]
+ *   corepack pnpm --filter @cas/dashboard account invite --email <email> --role <reader|editor|admin|owner> [--expires-at <instant>]
  *   corepack pnpm --filter @cas/dashboard account disable --username <name>
  *
  * `disable` is the transition's containment step: it disables a
@@ -67,7 +67,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const [command, ...rest] = argv;
   if (command !== 'invite' && command !== 'disable') {
     stderr.write(
-      'usage: account invite --email <email> --role <judge|editor|admin|owner> [--expires-at <instant>]\n' +
+      'usage: account invite --email <email> --role <reader|editor|admin|owner> [--expires-at <instant>]\n' +
         '       account disable --username <name>\n',
     );
     return 2;

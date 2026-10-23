@@ -55,7 +55,7 @@ describe('memory stores', () => {
   });
 
   it('validates every seed account as a closed record', async () => {
-    const good = (await syntheticAccount('judge')).record;
+    const good = (await syntheticAccount('reader')).record;
     expect(assertSeedAccount(good)).toEqual(good);
     const codeOf = (value: unknown): string => {
       try {
@@ -71,7 +71,7 @@ describe('memory stores', () => {
     expect(
       codeOf({ ...good, passwordHash: good.passwordHash.replace('m=19456', 'm=9999999') }),
     ).toBe('seed_account_hash');
-    expect(codeOf({ ...good, expiresAt: null })).toBe('seed_judge_expiry');
+    expect(codeOf({ ...good, expiresAt: null })).toBe('seed_reader_expiry');
     expect(codeOf({ ...good, username: 'Bad Name' })).toBe('seed_account_username');
     expect(codeOf({ ...good, createdAt: 'yesterday' })).toBe('seed_account_created');
     expect(codeOf([])).toBe('seed_account_shape');

@@ -13,7 +13,7 @@ import { DatabaseError } from './errors.js';
  *      can carry a title, a derived summary or a URL takes a `withText` flag.
  *      When it is false the statement selects `NULL` in those positions, so the
  *      text never leaves the database for a caller that is not allowed to show
- *      it. The dashboard's data-access layer passes `false` for a judge.
+ *      it. The dashboard's data-access layer passes `false` for a reader.
  *
  *   2. **An object is read under the run that owns it.** `getIncidentCluster`
  *      and `listIncidentMembers` require both the clustering run and the

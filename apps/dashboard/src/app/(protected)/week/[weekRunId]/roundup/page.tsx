@@ -4,6 +4,7 @@ import { Csrf, Instant, Notice, Origin } from '../../../../../components/ui.tsx'
 import { csrfFor, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { roundupView } from '../../../../../server/dal/read.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../../page-support.ts';
+import { publishAction, unpublishAction } from '../publish-actions.ts';
 import { generateAction, saveRoundupAction } from './actions.ts';
 
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,7 @@ export default async function RoundupPage({
               <th>Model</th>
               <th>Tokens in / out</th>
               <th>Cost</th>
+              <th>Readers</th>
             </tr>
           </thead>
           <tbody>
@@ -96,6 +98,34 @@ export default async function RoundupPage({
                   {revision.provenance === null
                     ? ''
                     : dollars(revision.provenance.costMicrodollars)}
+                </td>
+                <td>
+                  {view.publishedRevision === revision.revision ? (
+                    view.canPublish ? (
+                      <form action={unpublishAction} className="inline">
+                        <Csrf token={token} />
+                        <input type="hidden" name="weekRunId" value={view.week.id} />
+                        <input type="hidden" name="category" value={view.category} />
+                        <input type="hidden" name="output" value="roundup" />
+                        <button type="submit" className="quiet">
+                          Published · unpublish
+                        </button>
+                      </form>
+                    ) : (
+                      'published'
+                    )
+                  ) : view.canPublish ? (
+                    <form action={publishAction} className="inline">
+                      <Csrf token={token} />
+                      <input type="hidden" name="weekRunId" value={view.week.id} />
+                      <input type="hidden" name="category" value={view.category} />
+                      <input type="hidden" name="output" value="roundup" />
+                      <input type="hidden" name="revision" value={String(revision.revision)} />
+                      <button type="submit">Publish this revision</button>
+                    </form>
+                  ) : (
+                    ''
+                  )}
                 </td>
               </tr>
             ))}

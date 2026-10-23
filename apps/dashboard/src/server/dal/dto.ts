@@ -379,6 +379,10 @@ export interface RoundupViewDto {
   readonly modelConfigured: boolean;
   readonly canGenerate: boolean;
   readonly canEdit: boolean;
+  /** The owner may mark a revision published (D42). */
+  readonly canPublish: boolean;
+  /** The revision readers see, or null. */
+  readonly publishedRevision: number | null;
 }
 
 // ------------------------------------------------------------ the article (CAS-005)
@@ -430,4 +434,6 @@ export interface ArticleViewDto {
   readonly canRead: boolean;
   readonly canGenerate: boolean;
   readonly canEdit: boolean;
+  readonly canPublish: boolean;
+  readonly publishedRevision: number | null;
 }

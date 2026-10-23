@@ -849,6 +849,37 @@ audit**.
   editable; a selection past the row bound is refused whole before any page is fetched, never
   cut to a prefix; a generated rendering past the stored bound is refused, billed and recorded.
 
+## 21. Reader sign-up, approval and the published mark (CAS-007)
+
+Rules the sign-up entry point and the reader role implement (D42, D43). The unit is **in
+review and pending an independent audit**.
+
+- **Sign-up answers every address the same way.** The request step redirects to the same
+  screen with the same notice whether the address is unknown, pending, already an account or
+  malformed; a code is sent only where one is due, and the send is not awaited, so neither the
+  response nor its timing says which. The verify step answers a wrong code the same way whether
+  or not the request exists.
+- **Sign-up is limited at the address and at the source**: three requests per address and ten
+  per network source in fifteen minutes; over the limit the step does nothing and answers as
+  before; five wrong codes lock the request. One count-only audit event per window.
+- **The request record holds the normalised address and the code's HMAC digest, never the
+  code.** The address is Restricted data as an account's is; no page shows it to anyone but an
+  admin; no audit event, log or error carries it.
+- **Approval is an admin's act, audited, through the existing invitation path**; the reader
+  account requires an expiry (one year by default); the approval email names the dashboard's
+  address as text and carries no link that signs in.
+- **A reader is deny-by-default**: the four sanitized views (no source headline, link, text,
+  note or draft) and the published outputs; every mutation, every editorial read and every
+  administrative function is refused with a fixed code, enumerated in the authorization test.
+- **Readers are rate-limited per account at every read they can reach** (600 in fifteen
+  minutes), with a fixed refusal and the wait, and one count-only event per window.
+- **Nothing generated is public without the owner's mark** (D42): the published mark is per
+  revision, owner-only, append-only; a later generation or edit changes nothing public until
+  marked; unmarking is a record and takes effect on the next request; the public page renders
+  the marked revision through the sanitiser and nothing else.
+- **`robots.txt` disallows the known AI crawlers** from a fixed, versioned list, a convention
+  they may ignore; the limits are the protection, and the hosting layer is assumed to add none.
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,
