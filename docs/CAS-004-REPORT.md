@@ -428,3 +428,8 @@ recorded slot and rejected in a model-written one; thirteen characters across on
 reduce to the thirteen letters; the export's set held equal to the file's by a test, and the
 hygiene check's table held to the file by its own. The reviewer also observed U+180E surviving; the repository's policy does
 not prohibit it, so it is not added here and is noted for the owner.
+
+Counts at the third corrected head, from the runner, 22 October 2026: `verify` exit 0, 1,096
+offline tests (round-up 15, dashboard 87, worker 275), 32 tool tests (the policy-file test
+added); `test:db` exit 0, 307 (database 104, worker 119, dashboard 35, mcp-server 49). The
+clean-clone reproduction and the CI run are recorded on the tracker.

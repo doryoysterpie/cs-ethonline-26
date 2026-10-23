@@ -53,8 +53,8 @@ colour is one of the nine tokens of `apps/dashboard/src/app/globals.css`.
 - **Footer bar.** The filters as links that set query parameters (the categories and states
   a page already filters by), the sort by, the page size where a page has one, and the search
   field where a page searches today (the week table). The template's "press / to search" is
-  not written unless the shortcut exists; the shortcut needs script, and the decision is the
-  owner's (section 1.4).
+  not written: the shortcut would need script, and the owner chose to omit both the shortcut
+  and the label (decision 2).
 - **Typography.** A monospaced system stack for the whole shell (`ui-monospace`, `SFMono-Regular`,
   `Menlo`, `Consolas`, `Liberation Mono`, `monospace`): zero bytes downloaded, and `font-src
 'self'` stays as it is. Section titles are set in capitals by `text-transform`, so the
@@ -83,21 +83,24 @@ colour is one of the nine tokens of `apps/dashboard/src/app/globals.css`.
 Routes and pages, the data-access layer and its DTOs, the Markdown sanitiser, the capability
 table (D42, D43), the limits, the content security policy (no inline style, no new script
 origin, `font-src 'self'`), the dependency set (nothing added), the sign-in pages' behaviour.
-The sign-in pages sit outside the shell; whether they take the treatment is the owner's call
-(section 1.4).
+The sign-in pages sit outside the shell; they take the grid and the typeface so the first
+screen matches, and no status block: no build hash and no principal on a page before
+authentication (decision 5).
 
-### 1.4 Decisions this note raises, for the owner before S1
+### 1.4 Decisions this note raised, resolved by the owner on 22 October 2026
 
-1. **The clock.** A static server instant labelled "as of" (recommended: no script), or a
-   ticking clock through a small nonce-bearing inline script.
-2. **The search shortcut.** Omit the "/" shortcut and its label (recommended), or add it through
-   the same small script.
-3. **The status block.** The build hash, the latest week and the principal (recommended), or
-   more; uptime, load and log level are refused as unmeasured.
-4. **The typeface.** The system monospaced stack (recommended: zero bytes, the policy
-   unchanged), or one self-hosted font file.
-5. **The sign-in pages.** The same treatment (recommended, so the first screen matches), or
-   untouched.
+1. **The clock: (a), amended.** One instant, labelled "as of", static, in America/Toronto with
+   the UTC offset shown, matching D10's clock; and it is the data instant, the completion of
+   the last successful import, not the render instant, since freshness is the only thing a
+   reader needs from it.
+2. **The search shortcut: (a).** Omitted, label included: a label without the script would
+   promise a shortcut that does not exist.
+3. **The status block: (a).** The build, the latest week, the principal, and the "as of"
+   instant of decision 1, which covers "last import" without a separate line.
+4. **The typeface: (a).** The system monospaced stack; the policy unchanged.
+5. **The sign-in pages: (a), amended.** The same grid and typeface so the first screen
+   matches, and no status block before authentication: no build hash and no principal on a
+   pre-authentication page.
 
 ### 1.5 Files touched, and not touched
 
