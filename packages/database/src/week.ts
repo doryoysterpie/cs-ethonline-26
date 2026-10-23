@@ -383,6 +383,78 @@ export async function listLatestIssueSelections(
 }
 
 /**
+ * The carried incidents a round-up must flag (re-review of 22 October 2026,
+ * RR4): every incident of the run that is carried and not in the window,
+ * whose latest selection for the week and category is neither `selected` nor
+ * an `unselected` with a note (those are the omitted entries), in the sift
+ * table's posted order. Not a page of the sift table: the caller passes its
+ * bound plus one and refuses a full result, so nothing is dropped silently.
+ */
+export async function listCarriedIncidents(
+  client: Queryable,
+  input: {
+    readonly clusteringRunId: string;
+    readonly weekRunId: string;
+    readonly category: string;
+    readonly windowStart: string;
+    readonly windowEnd: string;
+    readonly limit: number;
+  },
+): Promise<{ readonly incidentId: string; readonly title: string }[]> {
+  if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 20_000) {
+    throw new DatabaseError('query', 'carried page size out of range');
+  }
+  const result = await client.query<{ incident_id: string; title: string | null }>(
+    `WITH members AS (
+       SELECT m.incident_cluster_id AS incident_id, s.posted_at, s.row_hash
+         FROM incident_memberships m
+         JOIN source_rows s ON s.id = m.source_row_id AND s.batch_id = m.batch_id
+        WHERE m.clustering_run_id = $1
+     ), first_seen AS (
+       SELECT s.row_hash, min(coalesce(r.read_completed_at, b.completed_at)) AS first_seen_at
+         FROM source_rows s
+         JOIN import_batches b ON b.id = s.batch_id
+         LEFT JOIN sheets_import_reads r ON r.batch_id = b.id
+        WHERE s.row_hash IN (SELECT row_hash FROM members)
+        GROUP BY s.row_hash
+     ), per_incident AS (
+       SELECT mm.incident_id,
+              bool_or(mm.posted_at > $2::timestamptz AND mm.posted_at <= $3::timestamptz
+                      AND fs.first_seen_at <= $3::timestamptz) AS in_window,
+              bool_or(mm.posted_at <= $2::timestamptz
+                      AND fs.first_seen_at > $2::timestamptz AND fs.first_seen_at <= $3::timestamptz) AS carried,
+              max(mm.posted_at) AS posted_to
+         FROM members mm JOIN first_seen fs ON fs.row_hash = mm.row_hash
+        GROUP BY mm.incident_id
+     ), latest AS (
+       SELECT DISTINCT ON (incident_id) incident_id, state, note
+         FROM issue_selections WHERE week_run_id = $4 AND category = $5
+        ORDER BY incident_id, revision DESC
+     )
+     SELECT c.id AS incident_id, rs.normalized_title AS title
+       FROM incident_clusters c
+       JOIN per_incident p ON p.incident_id = c.id
+       JOIN source_rows rs ON rs.id = c.representative_source_row_id
+       LEFT JOIN latest l ON l.incident_id = c.id
+      WHERE c.clustering_run_id = $1
+        AND p.carried AND NOT p.in_window
+        AND (l.state IS NULL OR l.state <> 'selected')
+        AND NOT (l.state = 'unselected' AND l.note IS NOT NULL)
+      ORDER BY p.posted_to DESC NULLS LAST, c.member_count DESC, c.id
+      LIMIT $6`,
+    [
+      input.clusteringRunId,
+      input.windowStart,
+      input.windowEnd,
+      input.weekRunId,
+      input.category,
+      input.limit,
+    ],
+  );
+  return result.rows.map((row) => ({ incidentId: row.incident_id, title: row.title ?? '' }));
+}
+
+/**
  * The sift table for one clustering run and one window (D10 resolution).
  * An incident is in the week when a member row was posted inside the window
  * and first seen by the freeze; it is carried only when no member qualifies

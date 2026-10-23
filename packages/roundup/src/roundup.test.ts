@@ -354,6 +354,15 @@ describe('the Markdown boundary (review F2)', () => {
       'see https:\\/\\/evil.example/x and www\\.evil.example',
     );
     expect(urlsIn(escapeInline('see https://evil.example/x'))).toEqual([]);
+    // Every control goes, not the first alone, and the invisible steering
+    // characters with them (re-review RR5).
+    const invisible = 'A\u0007B\u0008C\u200eD\u202eE\u2066F\u200bG\ufeffH\u061cI';
+    expect([...escapeInline(invisible)].map((c) => c.codePointAt(0))).toEqual(
+      [...'ABCDEFGHI'].map((c) => c.codePointAt(0)),
+    );
+    expect(inlineSlotTextIssue('fine \u202e text')).toBe('control_character');
+    expect(inlineSlotTextIssue('fine \u200b text')).toBe('control_character');
+    expect(inlineSlotTextIssue('fine text')).toBeNull();
     expect(
       urlsIn('Sources:\nhttps://a.example/1\nhttps://b.example/2 and (https://c.example)'),
     ).toEqual(['https://a.example/1', 'https://b.example/2', 'https://c.example']);
@@ -641,6 +650,28 @@ describe('generation through the transport seam', () => {
     expect(
       await codeOfAsync(() => generateRoundup(input, loaded, bad, { spentThisMonth: 0 })),
     ).toBe('response_extras_differs');
+    // A transport that answered before failing carries the billed usage by
+    // shape (re-review RR1); the package keeps it on its own error.
+    const billedRefusal = {
+      generate: async () => {
+        throw Object.assign(new Error('declined'), {
+          code: 'model_refused',
+          billed: { model: 'claude-opus-5-5', inputTokens: 321, outputTokens: 12 },
+        });
+      },
+    };
+    let refusal: unknown;
+    try {
+      await generateRoundup(input, loaded, billedRefusal, { spentThisMonth: 0 });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(isRoundupError(refusal) && refusal.code).toBe('model_refused');
+    expect(isRoundupError(refusal) && refusal.billed).toEqual({
+      model: 'claude-opus-5-5',
+      inputTokens: 321,
+      outputTokens: 12,
+    });
     const failing = {
       generate: async () => {
         throw new Error('provider body that must not surface');
