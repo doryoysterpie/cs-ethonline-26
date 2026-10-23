@@ -29,6 +29,9 @@ const ids = {
   r2: '3b4e28ba-2fa1-4d3b-9c3e-0a1b2c3d4e62',
   r3: '3b4e28ba-2fa1-4d3b-9c3e-0a1b2c3d4e63',
   r4: '3b4e28ba-2fa1-4d3b-9c3e-0a1b2c3d4e64',
+  i3: '2b4e28ba-2fa1-4d3b-9c3e-0a1b2c3d4e53',
+  r5: '3b4e28ba-2fa1-4d3b-9c3e-0a1b2c3d4e65',
+  r6: '3b4e28ba-2fa1-4d3b-9c3e-0a1b2c3d4e66',
   outside: '3b4e28ba-2fa1-4d3b-9c3e-0a1b2c3d4e99',
 };
 
@@ -419,6 +422,67 @@ describe('validation of a model response against the selection as read', () => {
       ),
     });
     expect(validateArticle(styled, input).paragraphs[1]?.text).toContain('precaution');
+  });
+});
+
+describe('the export numbers every citation (train review F3)', () => {
+  /** The selection widened by two read sources no paragraph cites. */
+  function widened(): ArticleInput {
+    const input = cyberInput();
+    return {
+      ...input,
+      incidents: [
+        ...input.incidents,
+        {
+          incidentId: ids.i3,
+          rows: [
+            row(ids.r5, 'statement.example.org', PAGE_1),
+            row(ids.r6, 'second.example.net', PAGE_2),
+          ],
+        },
+      ],
+    };
+  }
+  /** Every `[n]` marker in the export and every numbered Sources line. */
+  function markersAndSources(markdown: string): { markers: number[]; sources: number[] } {
+    const markers = [...markdown.matchAll(/\[(\d+)\]/gu)].map((m) => Number(m[1]));
+    const block = markdown.slice(markdown.indexOf('## Sources'));
+    const sources = [...block.matchAll(/^(\d+)\. /gmu)].map((m) => Number(m[1]));
+    return { markers, sources };
+  }
+
+  it('gives a source cited only by the naming sentence its Sources line, on a primary statement and on two independent reports', () => {
+    const input = widened();
+    const cases: ArticleSlots['victimNaming'][] = [
+      {
+        named: true,
+        basis: 'primary_statement',
+        organization: 'Northwind Traders',
+        citations: [ids.r5],
+      },
+      {
+        named: true,
+        basis: 'two_independent',
+        organization: 'Northwind Traders',
+        citations: [ids.r5, ids.r6],
+      },
+    ];
+    for (const victimNaming of cases) {
+      const slots = validateArticle(golden(input, { victimNaming }), input);
+      const markdown = renderMarkdown(slots, input);
+      const { markers, sources } = markersAndSources(markdown);
+      expect(sources).toEqual(sources.map((_, i) => i + 1));
+      expect(markers.every((n) => sources.includes(n))).toBe(true);
+      const naming = markdown.split('\n').find((line) => line.startsWith('_Named: ')) ?? '';
+      const namingMarkers = [...naming.matchAll(/\[(\d+)\]/gu)].map((m) => Number(m[1]));
+      expect(namingMarkers).toHaveLength(victimNaming.citations.length);
+      for (const n of namingMarkers) {
+        expect(markdown).toMatch(
+          new RegExp(`^${n}\\. (statement\\.example\\.org|second\\.example\\.net): `, 'mu'),
+        );
+      }
+      expect(markdown).toContain('statement.example.org');
+    }
   });
 });
 

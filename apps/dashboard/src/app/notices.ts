@@ -27,6 +27,10 @@ const NOTICES: Readonly<Record<string, string>> = {
   checkout_cancelled: 'Checkout cancelled. Nothing was charged.',
   checkout_unavailable: 'The payment provider did not answer. Try again later.',
   checkout_limited: 'Too many checkout attempts. Wait a while and try again.',
+  checkout_in_progress:
+    'A checkout is already being prepared for this account. Try again in a moment.',
+  support_already_active:
+    'This account already has a subscription. Manage it from the billing portal.',
   support_not_configured: 'Card support is not set up yet.',
   no_supporter_record: 'No support record exists for this account yet.',
   unselected: 'Set aside for this issue.',
@@ -70,6 +74,8 @@ export function isErrorNotice(code: unknown): boolean {
     code === 'code_expired' ||
     code === 'checkout_unavailable' ||
     code === 'checkout_limited' ||
+    code === 'checkout_in_progress' ||
+    code === 'support_already_active' ||
     code === 'support_not_configured' ||
     code === 'no_supporter_record'
   );

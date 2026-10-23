@@ -287,6 +287,97 @@ describe('rules R9 to R11: the body is bounded in type, size and time', () => {
     expect(reading.totals.bytes).toBe(200 + 200 + 199 + 200);
   });
 
+  it('refuses a declared length over the bound before the first byte, fails closed on a malformed or conflicting declaration, reads a body exactly at the bound whole and cuts one byte over (train review F1, F2)', async () => {
+    const small = limits({ bodyBytes: 200, textCharsPerSource: 10_000 });
+    const pulled = new Set<string>();
+    /** A body that records whether anything ever pulled from it, in the chunks given. */
+    const lazy = (name: string, ...parts: string[]): AsyncIterable<Uint8Array> => ({
+      async *[Symbol.asyncIterator]() {
+        pulled.add(name);
+        for (const part of parts) yield new TextEncoder().encode(part);
+      },
+    });
+    const text = { 'content-type': 'text/plain' };
+    const transport = recordedTransport({
+      ...robots,
+      'https://news.example.org/declared-over': {
+        headers: { ...text, 'content-length': '201' },
+        body: lazy('declared-over', 'x'.repeat(201)),
+      },
+      'https://news.example.org/declared-at': {
+        headers: { ...text, 'content-length': '200' },
+        body: lazy('declared-at', 'x'.repeat(200)),
+      },
+      'https://news.example.org/malformed': {
+        headers: { ...text, 'content-length': 'abc' },
+        body: lazy('malformed', 'x'),
+      },
+      'https://news.example.org/conflicting': {
+        headers: { ...text, 'content-length': '10, 20' },
+        body: lazy('conflicting', 'x'),
+      },
+      'https://news.example.org/exact': { headers: text, body: 'w'.repeat(200) },
+      'https://news.example.org/exact-chunks': {
+        headers: text,
+        body: lazy('exact-chunks', 'w'.repeat(100), 'w'.repeat(100)),
+      },
+      'https://news.example.org/over-chunks': {
+        headers: text,
+        body: lazy('over-chunks', 'w'.repeat(100), 'w'.repeat(101)),
+      },
+      'https://news.example.org/one-over': { headers: text, body: 'w'.repeat(201) },
+    });
+    const names = [
+      'declared-over',
+      'declared-at',
+      'malformed',
+      'conflicting',
+      'exact',
+      'exact-chunks',
+      'over-chunks',
+      'one-over',
+    ];
+    const reading = await readSources(
+      names.map((p) => ({ sourceRowId: p, url: `https://news.example.org/${p}` })),
+      { transport, resolver: r(), userAgent: UA, limits: small },
+    );
+    const byId = new Map(reading.outcomes.map((o) => [o.sourceRowId, o]));
+    // R10: over the bound by declaration, refused whole; the body is never opened.
+    expect(byId.get('declared-over')).toMatchObject({
+      status: 'not_read',
+      code: 'body_limit',
+      bytes: 0,
+    });
+    // A declaration that is not one number fails closed, before the first byte.
+    expect(byId.get('malformed')).toMatchObject({
+      status: 'not_read',
+      code: 'content_length_invalid',
+      bytes: 0,
+    });
+    expect(byId.get('conflicting')).toMatchObject({
+      status: 'not_read',
+      code: 'content_length_invalid',
+      bytes: 0,
+    });
+    expect([...pulled].sort()).toEqual(['declared-at', 'exact-chunks', 'over-chunks']);
+    // At the bound, whole: by declaration, in one chunk, and across chunks.
+    expect(byId.get('declared-at')).toMatchObject({ status: 'read', code: null, bytes: 200 });
+    expect(byId.get('exact')).toMatchObject({ status: 'read', code: null, bytes: 200 });
+    expect(byId.get('exact-chunks')).toMatchObject({ status: 'read', code: null, bytes: 200 });
+    // One byte over, cut to the bound and said so.
+    expect(byId.get('over-chunks')).toMatchObject({
+      status: 'partly_read',
+      code: 'body_limit',
+      bytes: 200,
+    });
+    expect(byId.get('one-over')).toMatchObject({
+      status: 'partly_read',
+      code: 'body_limit',
+      bytes: 200,
+    });
+    expect(reading.totals.bytes).toBe(200 * 5);
+  });
+
   it('reports a body that never completes as a timeout and closes it (test 6)', async () => {
     let closed = false;
     // A socket that only ends when the request's signal aborts it.

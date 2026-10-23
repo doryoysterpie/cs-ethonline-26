@@ -964,7 +964,7 @@ async function withGenerationLock<T>(
 }
 
 /** A transaction on one given connection, for work that must not take a second one. */
-async function transactionOn<T>(client: Queryable, work: () => Promise<T>): Promise<T> {
+export async function transactionOn<T>(client: Queryable, work: () => Promise<T>): Promise<T> {
   await client.query('BEGIN');
   try {
     const result = await work();

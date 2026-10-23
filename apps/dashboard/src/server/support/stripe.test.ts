@@ -28,9 +28,12 @@ describe('the Stripe client', () => {
     const session = await client.createCheckoutSession({
       priceId: 'price_Test00000001',
       accountId: '4f6a6e2e-1c2b-4a3d-8e5f-0123456789ab',
+      customerId: null,
       customerEmail: 'reader@example.org',
       successUrl: 'https://dashboard.example.org/support?notice=checkout_returned',
       cancelUrl: 'https://dashboard.example.org/support?notice=checkout_cancelled',
+      idempotencyKey: '0f6a6e2e-1c2b-4a3d-8e5f-0123456789ab',
+      expiresAtSeconds: 1_800_002_100,
     });
     expect(session).toEqual({
       id: 'cs_test_a1b2c3d4e5f6g7h8',
@@ -44,7 +47,8 @@ describe('the Stripe client', () => {
     expect(call?.init.headers['authorization']).toBe(`Bearer ${KEY}`);
     expect(call?.init.headers['content-type']).toBe('application/x-www-form-urlencoded');
     expect(call?.init.headers['stripe-version']).toBe(STRIPE_API_VERSION);
-    expect(call?.init.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/u);
+    // The attempt's key, not a fresh one: a retry of the same attempt answers the same session.
+    expect(call?.init.headers['idempotency-key']).toBe('0f6a6e2e-1c2b-4a3d-8e5f-0123456789ab');
     const form = new URLSearchParams(call?.init.body ?? '');
     expect(Object.fromEntries(form.entries())).toEqual({
       mode: 'subscription',
@@ -53,6 +57,7 @@ describe('the Stripe client', () => {
       success_url: 'https://dashboard.example.org/support?notice=checkout_returned',
       cancel_url: 'https://dashboard.example.org/support?notice=checkout_cancelled',
       client_reference_id: '4f6a6e2e-1c2b-4a3d-8e5f-0123456789ab',
+      expires_at: '1800002100',
       customer_email: 'reader@example.org',
     });
     expect(call?.init.signal).toBeInstanceOf(AbortSignal);
@@ -67,11 +72,30 @@ describe('the Stripe client', () => {
     await client.createCheckoutSession({
       priceId: 'price_Test00000001',
       accountId: 'a',
+      customerId: null,
       customerEmail: null,
       successUrl: 'https://d.example/s',
       cancelUrl: 'https://d.example/c',
+      idempotencyKey: '0f6a6e2e-1c2b-4a3d-8e5f-0123456789ab',
+      expiresAtSeconds: 1_800_002_100,
     });
     expect(new URLSearchParams(stripe.calls[0]?.init.body ?? '').has('customer_email')).toBe(false);
+    // A known customer is reused in place of the address (train review F7).
+    await client.createCheckoutSession({
+      priceId: 'price_Test00000001',
+      accountId: 'a',
+      customerId: 'cus_Test00000001',
+      customerEmail: 'reader@example.org',
+      successUrl: 'https://d.example/s',
+      cancelUrl: 'https://d.example/c',
+      idempotencyKey: '0f6a6e2e-1c2b-4a3d-8e5f-0123456789ab',
+      expiresAtSeconds: 1_800_002_100,
+    });
+    const bound = new URLSearchParams(stripe.calls[1]?.init.body ?? '');
+    expect([bound.get('customer'), bound.has('customer_email')]).toEqual([
+      'cus_Test00000001',
+      false,
+    ]);
     const portal = recorder(
       200,
       JSON.stringify({ url: 'https://billing.stripe.com/p/session?secret=x' }),
@@ -129,9 +153,12 @@ describe('the Stripe client', () => {
         await client.createCheckoutSession({
           priceId: 'price_Test00000001',
           accountId: 'a',
+          customerId: null,
           customerEmail: null,
           successUrl: 'https://d/s',
           cancelUrl: 'https://d/c',
+          idempotencyKey: '0f6a6e2e-1c2b-4a3d-8e5f-0123456789ab',
+          expiresAtSeconds: 1_800_002_100,
         });
       } catch (error) {
         caught = error;

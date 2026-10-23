@@ -13,6 +13,7 @@ import {
   getSignupRequest,
   insertPublication,
   insertSignupRequest,
+  lockSignupRequest,
   listPendingSignupRequests,
   listPublished,
   recordSignupAttempt,
@@ -268,6 +269,110 @@ describe('reader sign-up requests and the published mark (migration 0017)', () =
         ),
       ),
     ).toBe('23514');
+  });
+
+  it('supersedes an unverified open request past its expiry when the address asks again, and never a live or a verified one (train review F4)', async () => {
+    const t0 = Date.parse('2026-10-23T12:00:00.000Z');
+    const at = (seconds: number) => new Date(t0 + seconds * 1000).toISOString();
+    const stale = {
+      id: randomUUID(),
+      normalizedEmail: 'again@example.org',
+      codeDigest: hash('a1'),
+      requestedAt: at(0),
+      expiresAt: at(600),
+    };
+    expect(await isolated.db.withTransaction((tx) => insertSignupRequest(tx, stale))).toBe(
+      'inserted',
+    );
+    // Before the expiry the address is held to its open request.
+    expect(
+      await isolated.db.withTransaction((tx) =>
+        insertSignupRequest(tx, {
+          ...stale,
+          id: randomUUID(),
+          codeDigest: hash('a2'),
+          requestedAt: at(599),
+          expiresAt: at(1199),
+        }),
+      ),
+    ).toBe('open_exists');
+    // At the expiry a new request supersedes it; the old one is closed in every path.
+    const fresh = {
+      ...stale,
+      id: randomUUID(),
+      codeDigest: hash('a3'),
+      requestedAt: at(600),
+      expiresAt: at(1200),
+    };
+    expect(await isolated.db.withTransaction((tx) => insertSignupRequest(tx, fresh))).toBe(
+      'inserted',
+    );
+    const old = await isolated.db.withClient((c) => getSignupRequest(c, stale.id));
+    expect(Date.parse(old?.supersededAt ?? '')).toBe(Date.parse(at(600)));
+    expect(
+      (await isolated.db.withClient((c) => findOpenSignupRequest(c, stale.normalizedEmail)))?.id,
+    ).toBe(fresh.id);
+    expect(await isolated.db.withTransaction((tx) => recordSignupAttempt(tx, stale.id))).toBeNull();
+    expect(
+      await isolated.db.withTransaction((tx) => verifySignupRequest(tx, stale.id, at(601))),
+    ).toBe(false);
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE signup_requests SET verified_at = now() WHERE id = $1`, [stale.id]),
+      ),
+    ).toBe('P0001');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE signup_requests SET superseded_at = NULL WHERE id = $1`, [stale.id]),
+      ),
+    ).toBe('P0001');
+    // The fresh request is live: it verifies, and a verified request is never superseded.
+    expect(
+      await isolated.db.withTransaction((tx) => verifySignupRequest(tx, fresh.id, at(700))),
+    ).toBe(true);
+    expect(
+      await isolated.db.withTransaction((tx) =>
+        insertSignupRequest(tx, {
+          ...stale,
+          id: randomUUID(),
+          codeDigest: hash('a4'),
+          requestedAt: at(5_000),
+          expiresAt: at(5_600),
+        }),
+      ),
+    ).toBe('open_exists');
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE signup_requests SET superseded_at = now() WHERE id = $1`, [fresh.id]),
+      ),
+    ).toBe('P0001');
+    // A live, unverified request is not superseded by hand before its expiry either.
+    const live = {
+      ...stale,
+      id: randomUUID(),
+      normalizedEmail: 'live@example.org',
+      codeDigest: hash('a5'),
+      requestedAt: at(0),
+      expiresAt: at(600),
+    };
+    expect(await isolated.db.withTransaction((tx) => insertSignupRequest(tx, live))).toBe(
+      'inserted',
+    );
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE signup_requests SET superseded_at = $2::timestamptz WHERE id = $1`, [
+          live.id,
+          at(599),
+        ]),
+      ),
+    ).toBe('P0001');
+    // The lock returns the row for the caller's transaction.
+    expect((await isolated.db.withTransaction((tx) => lockSignupRequest(tx, fresh.id)))?.id).toBe(
+      fresh.id,
+    );
+    expect(
+      await isolated.db.withTransaction((tx) => lockSignupRequest(tx, randomUUID())),
+    ).toBeNull();
   });
 
   it('marks a revision that exists, decides by the latest record, unmarks by a new record, and never rewrites', async () => {

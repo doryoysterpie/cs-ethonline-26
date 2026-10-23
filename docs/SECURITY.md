@@ -270,7 +270,11 @@ consumer of the store inherits:
   `database` job (security-foundation track, pending audit) starts a PostgreSQL 17 service
   pinned by digest inside the job, with trust authentication on the job's own loopback and a
   credential-free URL, applies every migration, reruns them as a no-op, checks drift and
-  runs the complete `test:db` suite, then discards the database with the job.
+  runs the complete `test:db` suite, then discards the database with the job. A second job,
+  `database-password`, runs the same steps against the same image under scram password
+  authentication with a synthetic per-run password that exists only inside the job (pull
+  request 33's re-review, N1), so a test that loses a credential fails there as it would
+  against a real server, which trust authentication cannot show.
 - A file that crosses an import limit (`RESOURCE_LIMITS.import`, decision D27, pending
   audit) is refused as a whole at the first chunk, header, cell or row that crosses it, with
   a fixed message and numeric details, before any write; see section 15.
@@ -805,8 +809,9 @@ The unit is **in review and pending an independent audit**.
 ## 20. The source reader and the article (CAS-005)
 
 Rules the system's first outbound fetch implements (`docs/FETCH-POLICY.md`, adopted at S0 as
-D36; D41; the D9 resolution for the article). The unit is **in review and pending an independent
-audit**.
+D36; D41; the D9 resolution for the article). The unit was merged in the train of 22 October
+2026; the train's review found three defects here (`docs/CAS-005-REPORT.md`, section 8), corrected
+and **pending the re-review**.
 
 - **Only a selected source's canonical URL is ever fetched** (R13): the reading stage takes its
   list from the persisted selection record; no link, image, script or subresource on a page is
@@ -820,9 +825,12 @@ audit**.
   three are followed, and never from `https` to `http`.
 - **The request carries nothing** (R8): `GET`, the fixed user agent naming the product and the
   dashboard's address, `Accept` for HTML and plain text only, no cookie, no credential.
-- **The body is bounded in type, size and time** (R9 to R12): HTML, XHTML and plain text only; at
-  most 2 MiB after decompression, a page past it cut and listed as partly read; 15 seconds per
-  fetch and 5 minutes per reading stage; four in flight.
+- **The body is bounded in type, size and time** (R9 to R12): HTML, XHTML and plain text only; a
+  declared length over the bound is refused before the first byte, a declaration that is not one
+  number fails closed (`content_length_invalid`), and a declared length below the bound is not
+  trusted; at most 2 MiB after decompression, a page past it cut and listed as partly read and a
+  page exactly at it read whole; 15 seconds per fetch and 5 minutes per reading stage; four in
+  flight.
 - **Fetched text is hostile and transient** (R15, O-1): never logged, never in an error, an
   audit event, a ledger row or a table; held in the dashboard's memory for ten minutes and in
   the request to the model as quoted material under a prompt that names it as such; its digest
@@ -851,8 +859,9 @@ audit**.
 
 ## 21. Reader sign-up, approval and the published mark (CAS-007)
 
-Rules the sign-up entry point and the reader role implement (D42, D43). The unit is **in
-review and pending an independent audit**.
+Rules the sign-up entry point and the reader role implement (D42, D43). The unit was merged in
+the train of 22 October 2026; the train's review found two defects here (`docs/CAS-007-REPORT.md`,
+section 7), corrected and **pending the re-review**.
 
 - **Sign-up answers every address the same way.** The request step redirects to the same
   screen with the same notice whether the address is unknown, pending, already an account or
@@ -861,13 +870,17 @@ review and pending an independent audit**.
   or not the request exists.
 - **Sign-up is limited at the address and at the source**: three requests per address and ten
   per network source in fifteen minutes; over the limit the step does nothing and answers as
-  before; five wrong codes lock the request. One count-only audit event per window.
+  before; five wrong codes lock the request. One count-only audit event per window. One request
+  is open per address, and an unverified request past its expiry is superseded by the next, so a
+  lapsed code never holds an address (migration 0019).
 - **The request record holds the normalised address and the code's HMAC digest, never the
   code.** The address is Restricted data as an account's is; no page shows it to anyone but an
   admin; no audit event, log or error carries it.
-- **Approval is an admin's act, audited, through the existing invitation path**; the reader
-  account requires an expiry (one year by default); the approval email names the dashboard's
-  address as text and carries no link that signs in.
+- **Approval is an admin's act, audited, and one transaction**: the request locked and
+  re-checked, the account created, the decision recorded and both audit events written together,
+  or none of them, the email sent after the commit; the reader account requires an expiry (one
+  year by default); the approval email names the dashboard's address as text and carries no link
+  that signs in.
 - **A reader is deny-by-default**: the four sanitized views (no source headline, link, text,
   note or draft) and the published outputs; every mutation, every editorial read and every
   administrative function is refused with a fixed code, enumerated in the authorization test.
@@ -882,8 +895,9 @@ review and pending an independent audit**.
 
 ## 22. The supporter tier, the webhook boundary and donations (CAS-008)
 
-Rules the payment boundary implements (D44, D45, D46). The unit is **in review and pending an
-independent audit**.
+Rules the payment boundary implements (D44, D45, D46). The unit was merged in the train of
+22 October 2026; the train's review found two defects here (`docs/CAS-008-REPORT.md`, section 7),
+corrected and **pending the re-review**.
 
 - **No card data touches this service.** Checkout and the billing portal are Stripe-hosted
   pages; the dashboard redirects to them and never renders a card field, reads a card number,
@@ -891,7 +905,8 @@ independent audit**.
   capability reads the supporter mark, and a supporter sees what every reader sees.
 - **The key travels in one header to one host.** `STRIPE_SECRET_KEY` (a restricted key by
   preference) is sent only as `Authorization: Bearer` to `api.stripe.com`, with the API version
-  pinned (`STRIPE_API_VERSION`) and an idempotency key per request; it is never in a URL, a
+  pinned (`STRIPE_API_VERSION`) and, on a checkout request, the attempt's own idempotency key,
+  reused on a retry; it is never in a URL, a
   log, an audit event or an error. A provider failure of any kind is one fixed code
   (`checkout_unavailable`); Stripe's response body is never surfaced. The URL Stripe returns is
   followed only when it is https on a `stripe.com` host; the content security policy admits
@@ -908,11 +923,22 @@ independent audit**.
 - **The supporter record is append-only and bodiless.** `supporter_events` keeps identifiers,
   instants, the status the event carried and the SHA-256 of the raw body; the body itself is
   never stored. The mark is derived from the events by the event's own instant, then by
-  arrival, so delivery order cannot grant or revoke it out of sequence; a change of mark is its
-  own audit event.
-- **Hand-offs are limited per account** (five in fifteen minutes) with one count-only trip
-  event per window; each hand-off is recorded against the account before the redirect, so a
-  later webhook resolves to the account whatever Stripe's object carries.
+  arrival, so delivery order cannot grant or revoke it out of sequence; an event counts for an
+  account when it carries the account or names a subscription or customer any event bound to
+  it, so a status delivered before its binding counts once the binding lands; the status is kept
+  per subscription and the account's standing is the best of them, so a cancelled subscription
+  never hides one still billing; a change of mark is its own audit event.
+- **One subscription per account, and one hand-off at a time.** An account whose standing is
+  a supporter's or past due is not sent to Checkout again (`support_already_active`); a hand-off
+  is a durable attempt (migration 0020), one open per account, with its idempotency key fixed
+  at creation, so a double submission, a retry after a lost answer or a second tab reaches the
+  same session and never a second subscription; the attempt runs under a per-account advisory
+  lock, a concurrent submission refused at once (`checkout_in_progress`); the customer the
+  account is bound to is reused in place of the address; the hosted session expires with the
+  attempt. Hand-offs are limited per account (five in fifteen minutes) with one count-only trip
+  event per window; each session is recorded against the account before the redirect, so a
+  later webhook resolves to the account whatever Stripe's object carries. The owner enables
+  Stripe's one-subscription-per-customer setting as the provider-side half of the invariant.
 - **A donation address changes only by a reviewed commit.** The policy file is read at build
   time; the page refuses to render (`donation_policy_drift`) when the entries' digest differs
   from the constant pinned in code; every EVM address must carry its EIP-55 checksum and every

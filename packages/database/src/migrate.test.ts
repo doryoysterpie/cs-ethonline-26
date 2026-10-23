@@ -35,6 +35,8 @@ describe('loadMigrations', () => {
       '0016_article.sql',
       '0017_readers.sql',
       '0018_support.sql',
+      '0019_signup_supersession.sql',
+      '0020_checkout_attempts.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));
