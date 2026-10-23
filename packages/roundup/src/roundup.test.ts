@@ -22,7 +22,7 @@ import {
   renderMarkdown,
 } from './render.js';
 import { ModelSlotsSchema, RoundupSlotsSchema, slotsJsonSchema } from './schema.js';
-import { escapeInline, inlineSlotTextIssue, urlsIn } from './text.js';
+import { escapeInline, inlineSlotTextIssue, prohibitedCodePoints, urlsIn } from './text.js';
 import { loadTemplate, parseTemplate, sectionOf } from './template.js';
 import { recordedTransport } from './transport.js';
 import { validateResponse } from './validate.js';
@@ -343,7 +343,7 @@ describe('validation of a model response against the selection', () => {
 });
 
 describe('the Markdown boundary (review F2)', () => {
-  it('escapes every slot text into one structureless line and breaks bare URLs', () => {
+  it('escapes every slot text into one structureless line and breaks bare URLs', async () => {
     expect(escapeInline('Line one\nLine two')).toBe('Line one Line two');
     expect(escapeInline('# not a heading')).toBe('\\# not a heading');
     expect(escapeInline('- not a list')).toBe('\\- not a list');
@@ -356,13 +356,35 @@ describe('the Markdown boundary (review F2)', () => {
     expect(urlsIn(escapeInline('see https://evil.example/x'))).toEqual([]);
     // Every control goes, not the first alone, and the invisible steering
     // characters with them (re-review RR5).
-    const invisible = 'A\u0007B\u0008C\u200eD\u202eE\u2066F\u200bG\ufeffH\u061cI';
+    const invisible =
+      'A\u0007B\u0008C\u200eD\u202eE\u2066F\u200bG\ufeffH\u061cI\u2060J\ufff9K\ufdd0L\u{1fffe}M';
     expect([...escapeInline(invisible)].map((c) => c.codePointAt(0))).toEqual(
-      [...'ABCDEFGHI'].map((c) => c.codePointAt(0)),
+      [...'ABCDEFGHIJKLM'].map((c) => c.codePointAt(0)),
     );
+    // The word joiner the third review named (U+2060) in both directions.
+    expect(escapeInline('A\u2060B')).toBe('AB');
+    expect(inlineSlotTextIssue('A\u2060B')).toBe('control_character');
     expect(inlineSlotTextIssue('fine \u202e text')).toBe('control_character');
     expect(inlineSlotTextIssue('fine \u200b text')).toBe('control_character');
     expect(inlineSlotTextIssue('fine text')).toBeNull();
+    // The export's table is the repository's hygiene policy, code point for code point,
+    // except the three whitespace controls (tab, line feed, carriage return) and the two
+    // line separators, which the line-break collapse handles.
+    const file = JSON.parse(
+      await readFile(new URL('../../../data/policy/prohibited-text.json', import.meta.url), 'utf8'),
+    ) as { rules: { rule: string; ranges: [string, string][] }[] };
+    const policy = file.rules
+      .filter((entry) => entry.rule !== 'line_separator')
+      .flatMap((entry) =>
+        entry.ranges.flatMap(([from, to]) => {
+          const out: number[] = [];
+          for (let c = Number.parseInt(from, 16); c <= Number.parseInt(to, 16); c += 1) out.push(c);
+          return out;
+        }),
+      )
+      .sort((x, y) => x - y);
+    expect([...prohibitedCodePoints()].sort((x, y) => x - y)).toEqual(policy);
+    expect(policy).toContain(0x2060);
     expect(
       urlsIn('Sources:\nhttps://a.example/1\nhttps://b.example/2 and (https://c.example)'),
     ).toEqual(['https://a.example/1', 'https://b.example/2', 'https://c.example']);

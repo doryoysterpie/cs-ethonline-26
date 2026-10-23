@@ -57,8 +57,9 @@ dashboard serves traffic.
 **What is on `main`, and what is in review.** Four post-event units merged on 22 October
 2026, each at a head an independent review passed. CAS-001, the living feed imported from the
 authorized Google Sheets workbook, at `9c03a35` after a PASS at `2ad714d`; its first real
-import into the hosted database follows the deploy into the database recreated after the
-Railway platform incident of 21 to 22 October (`docs/INCIDENT_RESPONSE.md`, section 7).
+import into the hosted database follows, the database having been recreated and `main`
+redeployed on 22 October 2026 after the Railway platform incident of 21 to 22 October
+(`docs/INCIDENT_RESPONSE.md`, section 7; `docs/RUNBOOK-HOSTING.md`).
 CAS-002, one classification run per category bound to a policy registry (migration 0013), at
 `b4c8270`, with its second correction at `592d3bc` after a PASS at `2c87946`
 (`docs/CAS-002-REPORT.md`, section 7). CAS-006's release-blocker corrections: pull request 17
@@ -507,3 +508,5 @@ audit and nothing in it is accepted.
 | `docs/FETCH-POLICY.md`                    | proposed contract for fetching source pages: rules, reason codes, threat-model rows, required tests, owner decisions   |
 | `docs/tcu/CAS-001.md` to `CAS-009.md`     | one tracker per unit: steps in order, standard steps, acceptance, evidence record, walk-through log                    |
 | `LICENSE`                                 | Apache License 2.0                                                                                                     |
+| `docs/RUNBOOK-HOSTING.md`                 | the hosted service on Railway: what runs, the variables, the rebuild after a provider incident, the plan, the proxy    |
+| `docs/CAS-010-REPORT.md`                  | CAS-010 report: the dashboard's terminal grid, the S0 design note against D47 and the decisions it raises              |

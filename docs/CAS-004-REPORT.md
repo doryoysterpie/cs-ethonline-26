@@ -411,3 +411,20 @@ Counts at the second corrected head, from the runner, 22 October 2026: `verify` 
 offline tests (round-up 15, dashboard 87, worker 275), 31 tool tests; `test:db` exit 0, 307
 (database 104, worker 119, dashboard 35, mcp-server 49). The clean-clone reproduction and the
 CI run are recorded on the tracker.
+
+### 7.3 Third round, at `d7d4e7e`: CHANGES REQUIRED, one P2
+
+Codex reviewed the second correction on 22 October 2026 (record
+`2026-10-22-CAS-004-roundup-pr24-third-review.md`): RR1 to RR4 correct; RR5 incomplete, because
+U+2060 WORD JOINER, which the repository's own hygiene policy classifies as zero-width, survived
+the export and passed a model-written slot. Correction, the same day: the export's table is now
+the hygiene policy's table itself, code point for code point: both the hygiene check over
+tracked files (`tools/checks/hygiene.ts`) and the export (`text.ts`) now read one policy file,
+`data/policy/prohibited-text.json`, so the two cannot drift: the C0 and C1
+controls except tab, line feed and carriage return (the line-break collapse handles those and
+the two line separators), the bidirectional controls, the zero-width characters including
+U+2060, the interlinear annotation characters, the noncharacters. Tests: U+2060 removed from a
+recorded slot and rejected in a model-written one; thirteen characters across one recorded slot
+reduce to the thirteen letters; the export's set held equal to the file's by a test, and the
+hygiene check's table held to the file by its own. The reviewer also observed U+180E surviving; the repository's policy does
+not prohibit it, so it is not added here and is noted for the owner.

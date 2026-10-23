@@ -765,8 +765,10 @@ The unit is **in review and pending an independent audit**.
   headline and summary is plain inline prose (no line break, HTML, link, URL, block marker or
   code: review F2). One violation rejects the whole response with a fixed code, and nothing is
   written. Every slot text, model-written or recorded, is escaped into one structureless line on
-  export, every control character and every invisible steering character (the bidirectional
-  controls, the zero-width characters, the byte-order mark) removed from it, and the rendered
+  export, every code point the repository's prohibited-text policy names
+  (`data/policy/prohibited-text.json`: the controls, the bidirectional controls, the zero-width
+  characters including the word joiner, the interlinear annotation characters, the
+  noncharacters; the one table the hygiene check reads too) removed from it, and the rendered
   Markdown is checked to carry exactly the selection's URLs before it is kept. Stored text keeps
   such characters exactly; the export is a rendering, and removal is its escape.
 - **The key is read by name and goes nowhere.** `ANTHROPIC_API_KEY` is read when the runtime is
