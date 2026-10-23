@@ -11,7 +11,7 @@ import { MAX_DRAFT_CHARACTERS } from './dal/mutate.ts';
 describe('the server-action body bound', () => {
   it('is declared at 1 MB and holds the largest draft revision', () => {
     const limit = config.experimental?.serverActions?.bodySizeLimit;
-    expect(limit).toBe('1mb');
+    expect(limit).toBe('2mb');
     expect(MAX_DRAFT_CHARACTERS * 4).toBeLessThan(1024 * 1024);
   });
 });

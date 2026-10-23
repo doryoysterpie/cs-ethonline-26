@@ -5,16 +5,36 @@ import type { GenerationRequest, GenerationResponse, RoundupTransport } from '@c
 
 import type { ModelConfig } from './config.ts';
 
-/** A coded failure the round-up package maps to its own error by code. */
-class ModelTransportError extends Error {
+/** What a request that reached the model cost, carried on a failure after a response (re-review RR1). */
+export interface BilledUsage {
+  readonly model: string;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
+/**
+ * A coded failure the round-up package maps to its own error by code. When
+ * the provider answered before the failure (a refusal, an output that did not
+ * fit, text that was not JSON), `billed` carries the usage that answer cost,
+ * so the ledger records it; the package reads it by shape, never by class.
+ */
+export class ModelTransportError extends Error {
   constructor(
     readonly code: 'model_failed' | 'model_refused' | 'response_invalid',
     message: string,
     readonly status: number | null = null,
+    readonly billed: BilledUsage | null = null,
   ) {
     super(message);
     this.name = 'ModelTransportError';
   }
+}
+
+/** The one call this transport makes, as an interface so a test can answer it. */
+export interface MessagesClient {
+  readonly messages: {
+    create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
+  };
 }
 
 /**
@@ -26,8 +46,14 @@ class ModelTransportError extends Error {
  * fallback to another model: D9 names one, and a refusal is surfaced to the
  * owner rather than rerouted.
  */
-export function createAnthropicTransport(config: ModelConfig): RoundupTransport {
-  const client = new Anthropic({ apiKey: config.apiKey, timeout: config.timeoutMs, maxRetries: 2 });
+export function createAnthropicTransport(
+  config: ModelConfig,
+  client: MessagesClient = new Anthropic({
+    apiKey: config.apiKey,
+    timeout: config.timeoutMs,
+    maxRetries: 2,
+  }),
+): RoundupTransport {
   return {
     async generate(request: GenerationRequest): Promise<GenerationResponse> {
       let message: Anthropic.Message;
@@ -50,13 +76,27 @@ export function createAnthropicTransport(config: ModelConfig): RoundupTransport 
           error instanceof Anthropic.APIError ? (error.status ?? null) : null,
         );
       }
+      // From here the provider has answered and billed the answer, whatever
+      // is done with it: every failure below carries that usage.
+      const billed: BilledUsage = {
+        model: message.model,
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens,
+      };
       if (message.stop_reason === 'refusal') {
-        throw new ModelTransportError('model_refused', 'the model declined the request');
+        throw new ModelTransportError(
+          'model_refused',
+          'the model declined the request',
+          null,
+          billed,
+        );
       }
       if (message.stop_reason === 'max_tokens') {
         throw new ModelTransportError(
           'model_failed',
           'the response did not fit the output allowance',
+          null,
+          billed,
         );
       }
       const text = message.content
@@ -67,7 +107,12 @@ export function createAnthropicTransport(config: ModelConfig): RoundupTransport 
       try {
         raw = JSON.parse(text);
       } catch {
-        throw new ModelTransportError('response_invalid', 'the response was not JSON');
+        throw new ModelTransportError(
+          'response_invalid',
+          'the response was not JSON',
+          null,
+          billed,
+        );
       }
       return {
         raw,

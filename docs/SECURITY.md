@@ -765,8 +765,10 @@ The unit is **in review and pending an independent audit**.
   headline and summary is plain inline prose (no line break, HTML, link, URL, block marker or
   code: review F2). One violation rejects the whole response with a fixed code, and nothing is
   written. Every slot text, model-written or recorded, is escaped into one structureless line on
-  export, and the rendered Markdown is checked to carry exactly the selection's URLs before it is
-  kept.
+  export, every control character and every invisible steering character (the bidirectional
+  controls, the zero-width characters, the byte-order mark) removed from it, and the rendered
+  Markdown is checked to carry exactly the selection's URLs before it is kept. Stored text keeps
+  such characters exactly; the export is a rendering, and removal is its escape.
 - **The key is read by name and goes nowhere.** `ANTHROPIC_API_KEY` is read when the runtime is
   built and travels in the client only. Absent, the generation fails closed with
   `model_key_missing` before any request; the dashboard serves everything else. No log, audit
@@ -776,9 +778,13 @@ The unit is **in review and pending an independent audit**.
   and the usage is recorded after it in an append-only ledger with the cost in microdollars.
   A refused request is a ledger row with zero tokens and its code; a response the validator
   rejected was billed all the same and is a failed row at its real cost (review F3); every row
-  of the month counts toward the cap. One generation runs at a time per schema, under an
-  advisory lock held from the claim through the request to the record (review F4), and the
-  ledger row is written before the revisions, so a billed request keeps its record. A
+  of the month counts toward the cap, a provider refusal or overflow after an answer included
+  (re-review RR1). One generation runs at a time per schema: the advisory lock is tried, never
+  waited for, a concurrent submission is refused at once with a fixed conflict, and every
+  protected read and write runs on the one connection that holds the lock, so a generation
+  holds one pooled connection whatever the pool size (review F4, re-review RR2); the ledger row
+  is written before the revisions, so a billed request keeps its record. The owner's editor
+  accepts what storage accepts (400,000 characters), so every generated revision is editable. A
   selection past the row bound is refused whole, never cut to a prefix (review F5); a flagged
   section past the stored bound is refused before any request (review F6); a selection whose
   smallest rendering exceeds the stored revision bound is refused before any request, and a
