@@ -433,3 +433,14 @@ Counts at the third corrected head, from the runner, 22 October 2026: `verify` e
 offline tests (round-up 15, dashboard 87, worker 275), 32 tool tests (the policy-file test
 added); `test:db` exit 0, 307 (database 104, worker 119, dashboard 35, mcp-server 49). The
 clean-clone reproduction and the CI run are recorded on the tracker.
+
+### 7.4 Fourth round, at `fcdf88c`: PASS
+
+Codex reviewed the third correction on 22 October 2026 (record
+`2026-10-22-CAS-004-roundup-pr24-fourth-review.md`): PASS, no findings. The reviewer enumerated
+every code point of the policy file independently: all 148 export-prohibited code points removed
+and rejected, the two line separators collapsed and rejected as line breaks, all 150
+hygiene-prohibited code points producing their declared rule, no duplicate, the policy resolved
+from another working directory, U+2060 removed and rejected, U+180E surviving as the report
+states. The owner merged pull request 24 at `6f25fb0` the same day. Step 12, the first real
+round-up over a past week's selection, remains the owner's.

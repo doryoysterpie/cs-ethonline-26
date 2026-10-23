@@ -70,9 +70,11 @@ the sift table where the owner selects stories per incident (migration 0014, `we
 (`docs/CAS-003-REPORT.md`). The Next.js advisories of the same day closed at `5d583f4`
 (pull request 25). Every verdict names its head in `docs/AUDIT-LEDGER.md`.
 
-In review, stacked in order: CAS-004, the round-up generated through the rundown template and
-edited by the owner (migration 0015, `@cas/roundup`, the `owner` role), on pull request 24
-(`docs/CAS-004-REPORT.md`); CAS-005, the article written from the full sources behind the
+CAS-004, the round-up generated through the rundown template and edited by the owner
+(migration 0015, `@cas/roundup`, the `owner` role), merged at `6f25fb0` after four review rounds
+and a PASS at `fcdf88c` (`docs/CAS-004-REPORT.md`, section 7).
+
+In review, stacked in order: CAS-005, the article written from the full sources behind the
 system's first outbound fetch under the fetch policy adopted as D36 (migration 0016,
 `@cas/source-reader`, `@cas/article`), on pull request 26 (`docs/CAS-005-REPORT.md`); CAS-007,
 reader sign-up with owner approval, the `reader` role in place of `judge`, the published mark
