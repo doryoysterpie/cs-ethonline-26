@@ -491,6 +491,7 @@ audit and nothing in it is accepted.
 | `docs/SHEETS-INTAKE.md`                   | read-only Google Sheets intake: sharing model, Drive prohibition, editorial lineage, limits                           |
 | `docs/RUNBOOK-WEEKLY-IMPORT.md`           | the weekly Sheets import: the command, what it needs, what it prints, exit codes                                      |
 | `docs/RUNBOOK-HOSTING.md`                 | the hosted service on Railway: what runs, the variables, the rebuild after a provider incident, the plan, the proxy   |
+| `docs/CAS-010-REPORT.md`                  | CAS-010 report: the dashboard's terminal grid, the S0 design note against D47 and the decisions it raises             |
 | `docs/CAS-001-REPORT.md`                  | CAS-001 report: design note, reference implementation, import path, local run                                         |
 | `docs/CAS-004-REPORT.md`                  | CAS-004 report: the round-up design note, prompt contract, migration 0015, the model boundary, tests, verification    |
 | `docs/THREAT_MODEL.md`                    | assets, boundaries, roles, entry points, flows, adversaries, abuse cases, mitigations mapped to tests, residual risks |

@@ -418,6 +418,22 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 - **Nothing else is specified here.** The unit is a placeholder with its decisions listed so
   the idea is not lost.
 
+### CAS-010: The dashboard's terminal grid (S0 only)
+
+**Tracker:** `docs/tcu/CAS-010.md`. **Issue, live status:** [#30](https://github.com/doryoysterpie/cs-ethonline-26/issues/30).
+
+- **Objective.** The dashboard's presentation follows the terminal-grid template of D47 in the
+  existing palette, with effects CSS alone provides; nothing about what any role sees changes.
+- **Admitted.** By the owner on 22 October 2026, for its S0 design note only, in the parallel
+  slot, on two grounds: the note adds nothing to the review queue until S1, and CAS-009's
+  story cards need a grid to land in. Condition: no implementation pull request opens until
+  the review queue of pull requests 24 to 28 is back under a day.
+- **Decisions before any build.** The five the note raises (`docs/CAS-010-REPORT.md`, section
+  1.4): the clock, the search shortcut, the status block's content, the typeface, the sign-in
+  pages.
+- **Depends on.** Nothing for S0; the queue condition for the implementation. **Blocks:**
+  CAS-009.
+
 ## 6. Interruption tolerance
 
 Every tracker step is resumable on its own. When a unit is suspended, the tracker records the
