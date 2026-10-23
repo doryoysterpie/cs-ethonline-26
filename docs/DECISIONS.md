@@ -1495,7 +1495,7 @@ Decided by the owner on 22 October 2026 (CAS-003, step 1). The editorial timezon
 - **Decided by:** Project owner, on the plan's recommendation.
 - **Supersedes:** none.
 
-## D39 The dashboard's layout direction: the terminal grid, in the existing palette
+## D47 The dashboard's layout direction: the terminal grid, in the existing palette
 
 - **Date:** 2026-10-22
 - **Status:** ACCEPTED
@@ -1519,4 +1519,6 @@ Decided by the owner on 22 October 2026 (CAS-003, step 1). The editorial timezon
   light as it is: no client-side framework for the look, no font loaded from a third party (a
   system monospaced stack, or one self-hosted file).
 - **Decided by:** Project owner, 22 October 2026, from the template he supplied in chat.
-- **Supersedes:** nothing; refines the dashboard's presentation under D28.
+- **Supersedes:** nothing; refines the dashboard's presentation under D28. Numbered past
+  D46 because D39 to D46 are recorded on the pull requests still in review (24, 26, 27, 28)
+  and this entry merges to `main` ahead of them.
