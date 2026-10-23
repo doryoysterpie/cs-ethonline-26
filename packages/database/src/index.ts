@@ -239,6 +239,7 @@ export {
   insertReviewSnapshot,
   insertRowIssues,
   insertSourceRows,
+  latestCompletedImportBatch,
   listImportBatches,
   MAX_ROWS_PER_INSERT,
   summarizeReviewSnapshot,

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Instant, Notice, Origin } from '../../../components/ui.tsx';
+import { Instant, Notice, Origin, SectionBlock } from '../../../components/ui.tsx';
 import { currentPrincipal } from '../../../server/dal/principal.ts';
 import { publishedList } from '../../../server/dal/readers.ts';
 import { attempt, escalate } from '../../page-support.ts';
@@ -22,37 +22,40 @@ export default async function PublishedPage() {
       {entries.length === 0 ? (
         <p>Nothing is published yet.</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Week</th>
-              <th>Category</th>
-              <th>Output</th>
-              <th>Published</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => (
-              <tr key={`${entry.week.id}-${entry.category}-${entry.output}`}>
-                <td>
-                  <Instant value={entry.week.windowStart} /> to{' '}
-                  <Instant value={entry.week.windowEnd} /> <Origin value={entry.week.dataOrigin} />
-                </td>
-                <td>{entry.category}</td>
-                <td>
-                  <Link
-                    href={`/published/${entry.week.id}?category=${encodeURIComponent(entry.category)}&output=${entry.output}`}
-                  >
-                    {entry.output === 'roundup' ? 'Round-up' : 'Article'}
-                  </Link>
-                </td>
-                <td>
-                  <Instant value={entry.publishedAt} />
-                </td>
+        <SectionBlock title="Published outputs">
+          <table>
+            <thead>
+              <tr>
+                <th>Week</th>
+                <th>Category</th>
+                <th>Output</th>
+                <th>Published</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={`${entry.week.id}-${entry.category}-${entry.output}`}>
+                  <td>
+                    <Instant value={entry.week.windowStart} /> to{' '}
+                    <Instant value={entry.week.windowEnd} />{' '}
+                    <Origin value={entry.week.dataOrigin} />
+                  </td>
+                  <td>{entry.category}</td>
+                  <td>
+                    <Link
+                      href={`/published/${entry.week.id}?category=${encodeURIComponent(entry.category)}&output=${entry.output}`}
+                    >
+                      {entry.output === 'roundup' ? 'Round-up' : 'Article'}
+                    </Link>
+                  </td>
+                  <td>
+                    <Instant value={entry.publishedAt} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </SectionBlock>
       )}
     </section>
   );

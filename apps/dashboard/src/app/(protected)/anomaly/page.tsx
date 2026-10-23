@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Instant, Notice, Origin } from '../../../components/ui.tsx';
+import { Instant, Notice, Origin, SectionBlock } from '../../../components/ui.tsx';
 import { currentPrincipal } from '../../../server/dal/principal.ts';
 import { commandCenter } from '../../../server/dal/read.ts';
 import { attempt, escalate } from '../../page-support.ts';
@@ -17,38 +17,40 @@ export default async function AnomalyRunsPage() {
       <p className="small">
         Choose a Graph signal run. The feed is built from stored signals; nothing is fetched.
       </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Signal run</th>
-            <th>Origin</th>
-            <th>Status</th>
-            <th>Gateway host</th>
-            <th>Signals</th>
-            <th>Started</th>
-          </tr>
-        </thead>
-        <tbody>
-          {result.value.signalRuns.map((run) => (
-            <tr key={run.id}>
-              <td>
-                <Link href={`/anomaly/${run.id}`} className="mono">
-                  {run.id}
-                </Link>
-              </td>
-              <td>
-                <Origin value={run.dataOrigin} />
-              </td>
-              <td>{run.status}</td>
-              <td className="mono">{run.gatewayHost}</td>
-              <td>{run.signalCount}</td>
-              <td>
-                <Instant value={run.startedAt} />
-              </td>
+      <SectionBlock title="Signal runs">
+        <table>
+          <thead>
+            <tr>
+              <th>Signal run</th>
+              <th>Origin</th>
+              <th>Status</th>
+              <th>Gateway host</th>
+              <th>Signals</th>
+              <th>Started</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {result.value.signalRuns.map((run) => (
+              <tr key={run.id}>
+                <td>
+                  <Link href={`/anomaly/${run.id}`} className="mono">
+                    {run.id}
+                  </Link>
+                </td>
+                <td>
+                  <Origin value={run.dataOrigin} />
+                </td>
+                <td>{run.status}</td>
+                <td className="mono">{run.gatewayHost}</td>
+                <td>{run.signalCount}</td>
+                <td>
+                  <Instant value={run.startedAt} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionBlock>
     </section>
   );
 }

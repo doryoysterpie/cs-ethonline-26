@@ -23,6 +23,7 @@ import {
 import { recordedTransport, sectionOf, loadTemplate, MAX_MARKDOWN_CHARACTERS } from '@cas/roundup';
 import { recordedTransport as recordedPages, type RawTransport } from '@cas/source-reader';
 import { ReadingCache } from './readings.ts';
+import { shellStatus } from './shell.ts';
 import { insertRoundupRevision } from '@cas/database';
 import type { EmailMessage } from '../auth/email-provider.ts';
 import { WindowLimiter } from '../http/limits.ts';
@@ -146,6 +147,7 @@ describe('data-access layer against PostgreSQL', () => {
         databaseSchema: isolated.name,
         trustForwardedFor: false,
         trustedProxyHops: 1,
+        buildCommit: null,
       },
       stores,
       isolated.db,
@@ -774,6 +776,7 @@ describe('data-access layer against PostgreSQL', () => {
           databaseSchema: isolated.name,
           trustForwardedFor: false,
           trustedProxyHops: 1,
+          buildCommit: null,
         },
         persistent,
         isolated.db,
@@ -899,6 +902,7 @@ describe('data-access layer against PostgreSQL', () => {
         databaseSchema: schema.name,
         trustForwardedFor: false,
         trustedProxyHops: 1,
+        buildCommit: null,
       },
       persistent,
       schema.db,
@@ -942,6 +946,31 @@ describe('data-access layer against PostgreSQL', () => {
     }
     return { rt, persisted, persistent };
   }
+
+  describe('the shell status (CAS-010)', () => {
+    it('states the build, the latest week and the last successful import as the data instant, for every role, and refuses nobody signed in', async () => {
+      const { rt, persisted } = await persistentRuntime(null, isolated, null);
+      for (const role of ROLES) {
+        const status = await shellStatus(rt, persisted[role]);
+        expect(status.build).toBe('local');
+        expect(status.latestWeek).toBeNull();
+        // The seeded pipeline's import completed: its instant is the data instant.
+        const batch = await isolated.db.withClient((c) =>
+          c.query<{ completed_at: string }>(
+            `SELECT to_json(completed_at) #>> '{}' AS completed_at FROM import_batches WHERE id = $1`,
+            [seeded.batchId],
+          ),
+        );
+        expect(Date.parse(status.asOf ?? '')).toBe(Date.parse(batch.rows[0]?.completed_at ?? ''));
+      }
+      expect(await kindOf(shellStatus(rt, null))).toBe('authentication');
+      // A week run, once one exists, is the latest by its window.
+      const week = await seedWeek(isolated.db);
+      const after = await shellStatus(rt, persisted.reader);
+      expect(after.latestWeek?.id).toBe(week.weekRunId);
+      expect(JSON.stringify(after)).not.toContain(HOSTILE_TITLE.slice(0, 8));
+    });
+  });
 
   describe('the round-up (CAS-004)', () => {
     it('holds the stored rendering bound equal across the package and the layer (the migration refuses the 400,001st character)', () => {
@@ -2705,6 +2734,7 @@ describe('data-access layer against PostgreSQL', () => {
             databaseSchema: own.name,
             trustForwardedFor: false,
             trustedProxyHops: 1,
+            buildCommit: null,
           },
           stores,
           own.db,

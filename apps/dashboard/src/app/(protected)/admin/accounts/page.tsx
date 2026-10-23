@@ -1,4 +1,4 @@
-import { Csrf, Instant, Notice } from '../../../../components/ui.tsx';
+import { Csrf, Instant, Notice, SectionBlock } from '../../../../components/ui.tsx';
 import { csrfFor, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { administration } from '../../../../server/dal/read.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../page-support.ts';
@@ -32,99 +32,101 @@ export default async function AccountsPage({
         only as Argon2id hashes with a fresh salt each; nothing on this page can show one. A reader
         account must carry an expiry.
       </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Created</th>
-            <th>Password changed</th>
-            <th>Expires</th>
-            <th>Disabled</th>
-            <th>Live sessions</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {view.accounts.map((account) => (
-            <tr key={account.id}>
-              <td className="mono">{account.username}</td>
-              <td>{account.role}</td>
-              <td>
-                <Instant value={account.createdAt} />
-              </td>
-              <td>
-                <Instant value={account.passwordChangedAt} />
-              </td>
-              <td>
-                <Instant value={account.expiresAt} />
-              </td>
-              <td>
-                <Instant value={account.disabledAt} />
-              </td>
-              <td>{account.liveSessions}</td>
-              <td>
-                <form action={revokeSessionsAction} className="inline">
-                  <Csrf token={token} />
-                  <input type="hidden" name="accountId" value={account.id} />
-                  <button type="submit" className="quiet">
-                    Revoke sessions
-                  </button>
-                </form>{' '}
-                {account.disabledAt === null &&
-                principal !== null &&
-                account.id !== principal.accountId ? (
-                  <form action={disableAction} className="inline">
+      <SectionBlock title="Accounts">
+        <table>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th>Password changed</th>
+              <th>Expires</th>
+              <th>Disabled</th>
+              <th>Live sessions</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.accounts.map((account) => (
+              <tr key={account.id}>
+                <td className="mono">{account.username}</td>
+                <td>{account.role}</td>
+                <td>
+                  <Instant value={account.createdAt} />
+                </td>
+                <td>
+                  <Instant value={account.passwordChangedAt} />
+                </td>
+                <td>
+                  <Instant value={account.expiresAt} />
+                </td>
+                <td>
+                  <Instant value={account.disabledAt} />
+                </td>
+                <td>{account.liveSessions}</td>
+                <td>
+                  <form action={revokeSessionsAction} className="inline">
                     <Csrf token={token} />
                     <input type="hidden" name="accountId" value={account.id} />
-                    <button type="submit" className="danger">
-                      Disable
+                    <button type="submit" className="quiet">
+                      Revoke sessions
                     </button>
-                  </form>
-                ) : null}
-                {principal !== null && account.id !== principal.accountId ? (
-                  <form action={assignRoleAction} className="stack">
+                  </form>{' '}
+                  {account.disabledAt === null &&
+                  principal !== null &&
+                  account.id !== principal.accountId ? (
+                    <form action={disableAction} className="inline">
+                      <Csrf token={token} />
+                      <input type="hidden" name="accountId" value={account.id} />
+                      <button type="submit" className="danger">
+                        Disable
+                      </button>
+                    </form>
+                  ) : null}
+                  {principal !== null && account.id !== principal.accountId ? (
+                    <form action={assignRoleAction} className="stack">
+                      <Csrf token={token} />
+                      <input type="hidden" name="accountId" value={account.id} />
+                      <label>
+                        Role
+                        <select name="role" defaultValue={account.role}>
+                          <option value="reader">reader</option>
+                          <option value="editor">editor</option>
+                          <option value="admin">admin</option>
+                        </select>
+                      </label>
+                      <label>
+                        Expiry (UTC; required for a reader)
+                        <input
+                          name="expiresAt"
+                          defaultValue={account.expiresAt ?? ''}
+                          placeholder="2026-09-14T00:00:00Z"
+                        />
+                      </label>
+                      <button type="submit">Assign role</button>
+                    </form>
+                  ) : null}
+                  <form action={setExpiryAction} className="stack">
                     <Csrf token={token} />
                     <input type="hidden" name="accountId" value={account.id} />
                     <label>
-                      Role
-                      <select name="role" defaultValue={account.role}>
-                        <option value="reader">reader</option>
-                        <option value="editor">editor</option>
-                        <option value="admin">admin</option>
-                      </select>
-                    </label>
-                    <label>
-                      Expiry (UTC; required for a reader)
+                      Set expiry only (UTC; empty clears it, except for a reader)
                       <input
                         name="expiresAt"
                         defaultValue={account.expiresAt ?? ''}
                         placeholder="2026-09-14T00:00:00Z"
                       />
                     </label>
-                    <button type="submit">Assign role</button>
+                    <button type="submit" className="quiet">
+                      Set expiry
+                    </button>
                   </form>
-                ) : null}
-                <form action={setExpiryAction} className="stack">
-                  <Csrf token={token} />
-                  <input type="hidden" name="accountId" value={account.id} />
-                  <label>
-                    Set expiry only (UTC; empty clears it, except for a reader)
-                    <input
-                      name="expiresAt"
-                      defaultValue={account.expiresAt ?? ''}
-                      placeholder="2026-09-14T00:00:00Z"
-                    />
-                  </label>
-                  <button type="submit" className="quiet">
-                    Set expiry
-                  </button>
-                </form>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionBlock>
 
       <h3>Provision an account</h3>
       <p className="small">
@@ -188,35 +190,36 @@ export default async function AccountsPage({
         <button type="submit">Provision</button>
       </form>
 
-      <h3>Security audit (newest first, last 100)</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>At</th>
-            <th>Kind</th>
-            <th>Outcome</th>
-            <th>Code</th>
-            <th>Actor</th>
-            <th>Subject</th>
-            <th>Network</th>
-          </tr>
-        </thead>
-        <tbody>
-          {view.audit.map((event, index) => (
-            <tr key={`${event.at}:${index}`}>
-              <td>
-                <Instant value={event.at} />
-              </td>
-              <td>{event.kind}</td>
-              <td>{event.outcome}</td>
-              <td className="mono">{event.code}</td>
-              <td className="mono">{event.actor ?? '—'}</td>
-              <td className="mono">{event.subject ?? '—'}</td>
-              <td className="mono">{event.networkKey ?? '—'}</td>
+      <SectionBlock title="Security audit (newest first, last 100)">
+        <table>
+          <thead>
+            <tr>
+              <th>At</th>
+              <th>Kind</th>
+              <th>Outcome</th>
+              <th>Code</th>
+              <th>Actor</th>
+              <th>Subject</th>
+              <th>Network</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {view.audit.map((event, index) => (
+              <tr key={`${event.at}:${index}`}>
+                <td>
+                  <Instant value={event.at} />
+                </td>
+                <td>{event.kind}</td>
+                <td>{event.outcome}</td>
+                <td className="mono">{event.code}</td>
+                <td className="mono">{event.actor ?? '—'}</td>
+                <td className="mono">{event.subject ?? '—'}</td>
+                <td className="mono">{event.networkKey ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionBlock>
     </section>
   );
 }

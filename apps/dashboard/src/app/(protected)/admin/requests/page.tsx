@@ -1,4 +1,4 @@
-import { Csrf, Instant, Notice } from '../../../../components/ui.tsx';
+import { Csrf, Instant, Notice, SectionBlock } from '../../../../components/ui.tsx';
 import { csrfFor, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { pendingSignups, READER_EXPIRY_DEFAULT_DAYS } from '../../../../server/dal/readers.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../page-support.ts';
@@ -30,47 +30,49 @@ export default async function RequestsPage({
       {pending.length === 0 ? (
         <p>No request is waiting.</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Email</th>
-              <th>Requested</th>
-              <th>Verified</th>
-              <th>Decision</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pending.map((request) => (
-              <tr key={request.requestId}>
-                <td className="mono">{request.email}</td>
-                <td>
-                  <Instant value={request.requestedAt} />
-                </td>
-                <td>
-                  <Instant value={request.verifiedAt} />
-                </td>
-                <td>
-                  <form action={approveAction} className="inline">
-                    <Csrf token={token} />
-                    <input type="hidden" name="requestId" value={request.requestId} />
-                    <label>
-                      Expiry (UTC; empty for one year)
-                      <input name="expiresAt" type="text" placeholder="2027-10-22T00:00:00Z" />
-                    </label>
-                    <button type="submit">Approve</button>
-                  </form>
-                  <form action={denyAction} className="inline">
-                    <Csrf token={token} />
-                    <input type="hidden" name="requestId" value={request.requestId} />
-                    <button type="submit" className="quiet">
-                      Deny
-                    </button>
-                  </form>
-                </td>
+        <SectionBlock title="Pending requests">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Requested</th>
+                <th>Verified</th>
+                <th>Decision</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pending.map((request) => (
+                <tr key={request.requestId}>
+                  <td className="mono">{request.email}</td>
+                  <td>
+                    <Instant value={request.requestedAt} />
+                  </td>
+                  <td>
+                    <Instant value={request.verifiedAt} />
+                  </td>
+                  <td>
+                    <form action={approveAction} className="inline">
+                      <Csrf token={token} />
+                      <input type="hidden" name="requestId" value={request.requestId} />
+                      <label>
+                        Expiry (UTC; empty for one year)
+                        <input name="expiresAt" type="text" placeholder="2027-10-22T00:00:00Z" />
+                      </label>
+                      <button type="submit">Approve</button>
+                    </form>
+                    <form action={denyAction} className="inline">
+                      <Csrf token={token} />
+                      <input type="hidden" name="requestId" value={request.requestId} />
+                      <button type="submit" className="quiet">
+                        Deny
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </SectionBlock>
       )}
     </section>
   );
