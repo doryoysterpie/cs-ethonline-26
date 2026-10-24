@@ -53,15 +53,24 @@ repository's own reports and the sprint board. CAS-006 step 1, 22 October 2026.
 | CAS-008 supporter tier, PR #28 merged             | `4ad5a9a` in `881d5a3`     | Codex                          | CHANGES REQUIRED in the same audit: F6 (Medium), F7 (High); corrected on `train/26-28-corrections`                                                                                                                 | 23 Oct 2026      | `2026-10-23-prs-26-28-merged-train.md`                   |
 | Train corrections, PR #33                         | `68cd92b` (code `224e82a`) | Codex                          | CHANGES REQUIRED: F1 to F7 closed; one new Medium, N1 (the MCP privilege test rotates its reader password and verifies with the stale one; trust-authenticated CI could not show it); corrected on the same branch | 23 Oct 2026      | `2026-10-23-pr-33-corrections-rereview.md`               |
 | Train corrections second re-review, PR #33 merged | `8f06193` in `1dcca0a`     | Codex                          | PASS, no findings; N1 closed, F1 to F7 closed at `68cd92b`                                                                                                                                                         | 23 Oct 2026      | `2026-10-23-pr-33-corrections-second-rereview.md`        |
+| CAS-010 layout, PR #34                            | `e80a714`                  | none                           | not audited                                                                                                                                                                                                        |                  | `docs/CAS-010-REPORT.md`                                 |
+| Browser harness, PR #36                           | `ac9a722`                  | none                           | not audited                                                                                                                                                                                                        |                  | PR #36                                                   |
+| CAS-009 cards, PR #35                             | `4268c17`                  | none                           | not audited                                                                                                                                                                                                        |                  | `docs/CAS-009-REPORT.md`                                 |
+| Readiness endpoint, PR #50                        | `657c1e0`                  | none                           | not audited                                                                                                                                                                                                        |                  | PR #50                                                   |
+| Backup and restore drill, PR #51                  | `d484f12`                  | none                           | not audited                                                                                                                                                                                                        |                  | PR #51                                                   |
+| Main ruleset and browser integration, PR #52      | `2899f63`                  | none                           | not audited; hosted Browser E2E failed before tests because Playwright was resolved from the monorepo root; correction pending on the same branch                                                                  | 24 Oct 2026      | PR #52                                                   |
 
 ## What this means for the deployed service
 
-Everything the Railway dashboard runs today is on `main` at `83bcb8e` or later. Of the code it
-runs, Sprints 0 to 4 were accepted by an independent reviewer at the commits above; the Sprint
+The deployable production history is `main` through `978d6cc`; the ledger does not infer which
+exact commit Railway currently serves. Of the code on `main`, Sprints 0 to 4 were accepted by an
+independent reviewer at the commits above; the Sprint
 5 correction, the security foundation, the dashboard, the Sheets connector, the MCP tooling
 correction, the release integration and both 13 September pull requests were not. CAS-006
 step 12 is the owner's decision, per unaudited track, between requesting an independent review
-now and recording an accepted risk here with a review date.
+now and recording an accepted risk here with a review date. The open PR heads listed above are
+not part of the deployed service and remain not audited until a reviewer issues a verdict on an
+exact commit.
 
 ## How a row changes
 
