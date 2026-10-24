@@ -7,7 +7,8 @@ import { defineConfig, devices } from '@playwright/test';
  * PostgreSQL schema seeded by the real pipeline, provisions three synthetic
  * accounts into a memory-store seed file with passwords drawn from the CSPRNG,
  * and starts `next start`. Requires `DATABASE_URL` and a completed `pnpm build`
- * (`pnpm test:browser` does both). Never part of `pnpm test` or CI.
+ * (`pnpm test:browser` does both). It is separate from `pnpm test`; CI runs it
+ * as the required `Browser E2E` job.
  */
 export const BROWSER_PORT = 3419;
 export const BASE_URL = `http://127.0.0.1:${BROWSER_PORT}`;

@@ -29,6 +29,7 @@ import {
 } from './hygiene.ts';
 import { formatFinding } from './lib/report.ts';
 import { repositoryRoot, trackedEntries } from './lib/tracked.ts';
+import { scanMainRuleset, scanMainRulesetText, workflowJobNames } from './rulesets.ts';
 import { scanSecrets, scanTextForSecrets } from './secrets.ts';
 import { checkToolchain, readToolchainExpectation } from './toolchain.ts';
 import { scanWorkflowText, scanWorkflows } from './workflows.ts';
@@ -425,6 +426,85 @@ describe('workflows', () => {
     expect(rules(scanWorkflowText('x.yml', 'on: push\njobs: {}\n'))).toEqual([
       'permissions_missing',
     ]);
+  });
+});
+
+describe('main ruleset', () => {
+  const rulesetPath = path.join(REPO, '.github/rulesets/main.json');
+  const workflowTexts = {
+    '.github/workflows/ci.yml': readFileSync(path.join(REPO, '.github/workflows/ci.yml'), 'utf8'),
+    '.github/workflows/codeql.yml': readFileSync(
+      path.join(REPO, '.github/workflows/codeql.yml'),
+      'utf8',
+    ),
+  };
+
+  it('requires the protected-main controls and every emitted release-check context', () => {
+    expect(scanMainRuleset(REPO).findings.map(formatFinding)).toEqual([]);
+  });
+
+  it('extracts literal job display names, which are the required-check contexts', () => {
+    expect(workflowJobNames(workflowTexts['.github/workflows/codeql.yml'])).toEqual([
+      'Analyze (javascript-typescript)',
+    ]);
+    expect(workflowJobNames(workflowTexts['.github/workflows/ci.yml'])).toEqual([
+      'Verify',
+      'PostgreSQL integration',
+      'PostgreSQL integration, password authentication',
+      'Browser E2E',
+      'Supply chain',
+    ]);
+  });
+
+  it('reports weakened review, ref, force-push, deletion and status-check controls', () => {
+    const ruleset = JSON.parse(readFileSync(rulesetPath, 'utf8')) as {
+      conditions: { ref_name: { include: string[] } };
+      rules: Array<{ type: string; parameters?: Record<string, unknown> }>;
+    };
+    ruleset.conditions.ref_name.include = ['refs/heads/release'];
+    ruleset.rules = ruleset.rules.filter(
+      (rule) => rule.type !== 'deletion' && rule.type !== 'non_fast_forward',
+    );
+    const pull = ruleset.rules.find((rule) => rule.type === 'pull_request')?.parameters;
+    if (pull === undefined) throw new Error('fixture has no pull request rule');
+    pull.required_approving_review_count = 0;
+    pull.dismiss_stale_reviews_on_push = false;
+    pull.require_last_push_approval = false;
+    pull.required_review_thread_resolution = false;
+    const status = ruleset.rules.find((rule) => rule.type === 'required_status_checks')?.parameters;
+    if (status === undefined) throw new Error('fixture has no required status rule');
+    status.strict_required_status_checks_policy = false;
+    status.required_status_checks = [
+      { context: 'Verify', integration_id: 1 },
+      { context: 'Invented check', integration_id: 15368 },
+    ];
+
+    expect(rules(scanMainRulesetText(JSON.stringify(ruleset), workflowTexts))).toEqual([
+      'deletion_rule_missing',
+      'independent_last_push_review_not_required',
+      'main_condition_mismatch',
+      'non_fast_forward_rule_missing',
+      'one_review_not_required',
+      'required_check_missing',
+      'required_status_check_source_mismatch',
+      'required_status_checks_mismatch',
+      'review_thread_resolution_not_required',
+      'stale_reviews_not_dismissed',
+      'strict_status_policy_not_required',
+    ]);
+  });
+
+  it('reports a required context whose workflow job was renamed', () => {
+    const renamed = {
+      ...workflowTexts,
+      '.github/workflows/ci.yml': workflowTexts['.github/workflows/ci.yml'].replace(
+        '    name: Browser E2E',
+        '    name: Browser suite',
+      ),
+    };
+    expect(rules(scanMainRulesetText(readFileSync(rulesetPath, 'utf8'), renamed))).toContain(
+      'required_check_missing',
+    );
   });
 });
 
