@@ -306,7 +306,7 @@ That is equivalent to `corepack pnpm install --frozen-lockfile` followed by
 `corepack pnpm mcp:build`. Every third-party version is pinned exactly through the pnpm
 catalog and the lockfile, and the workspace refuses any package version published less than
 24 hours ago. The MCP SDK is `@modelcontextprotocol/server` 2.3.1 (protocol revision
-2026-07-28) with `zod` 4.5.4. Verify with:
+2026-07-28) with `zod` 4.6.7. Verify with:
 
 ```bash
 corepack pnpm mcp:test
