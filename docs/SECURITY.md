@@ -950,6 +950,26 @@ corrected and **pending the re-review**.
   `support_not_configured` and the webhook answers `503`, so Stripe retries once the secret is
   set. The key's own prefix says whether Stripe is in test mode, and the support page says so.
 
+## 23. The terminal grid (CAS-010)
+
+Rules the presentation keeps while the look changes (D47).
+
+- **No script and no fetch for the look.** The effects are CSS alone; the typeface is the
+  system stack; the stylesheet names no `url(`, `@import` or `@font-face`; the content security
+  policy is unchanged (`style-src 'self'`, `font-src 'self'`); no inline style exists. The
+  scanline overlay is a fixed pseudo-element with `pointer-events: none`, so it can never take a
+  click or a focus from a control beneath it.
+- **The status block states only what is measured.** The build (the deployed commit's first
+  seven characters, public on the repository), the latest week run, the last successful import's
+  completion and the principal; no uptime, no load, no clock that ticks. Readers see it as every
+  role does; it carries no source text and is not a reader-reachable read of its own.
+- **The current section is marked without client script**: the proxy sets `x-cas-pathname` to
+  the request's path for the server component; the header is never rendered.
+- **The local email file is a memory-store seam only.** With the memory store, which the
+  configuration refuses outside `local`, the one-time code's message is appended to the file the
+  developer names (`DASHBOARD_LOCAL_EMAIL_FILE`, mode 600) or dropped; production uses the
+  PostgreSQL store and the Resend provider, where the variable has no effect.
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,

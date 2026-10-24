@@ -15,7 +15,7 @@ test.describe('cross-site request forgery', () => {
     request,
   }) => {
     const { accounts } = await credentials();
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     const token =
       (await page.context().cookies()).find((cookie) => cookie.name === SESSION_COOKIE)?.value ??
       '';
@@ -71,7 +71,7 @@ test.describe('cross-site request forgery', () => {
     request,
   }) => {
     const { accounts } = await credentials();
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     const token =
       (await page.context().cookies()).find((cookie) => cookie.name === SESSION_COOKIE)?.value ??
       '';

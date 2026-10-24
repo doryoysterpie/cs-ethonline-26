@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Notice, Origin } from '../../../../components/ui.tsx';
+import { Notice, Origin, SectionBlock } from '../../../../components/ui.tsx';
 import { currentPrincipal } from '../../../../server/dal/principal.ts';
 import { incidentExplorer } from '../../../../server/dal/read.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../page-support.ts';
@@ -34,40 +34,42 @@ export default async function IncidentExplorerPage({
         {view.reviewRevision} · {view.effectiveIncidents} effective incidents · batch{' '}
         <span className="mono">{view.run.batchId}</span>
       </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Incident</th>
-            <th>Origin</th>
-            <th>Kind</th>
-            <th>Members</th>
-            <th>Reason codes</th>
-            <th>Recorded subject</th>
-          </tr>
-        </thead>
-        <tbody>
-          {view.incidents.map((incident) => (
-            <tr key={incident.id}>
-              <td>
-                <Link href={`/incidents/${view.run.id}/${incident.id}`} className="mono">
-                  {incident.id}
-                </Link>
-              </td>
-              <td>
-                <Origin value={incident.dataOrigin} />
-              </td>
-              <td>{incident.kind}</td>
-              <td>{incident.memberCount}</td>
-              <td className="mono">{incident.reasonCodes.join(', ')}</td>
-              <td className="mono">
-                {incident.subjectChain === null
-                  ? '—'
-                  : `${incident.subjectChain}:${incident.subjectProtocolSlug}`}
-              </td>
+      <SectionBlock title="Incidents">
+        <table>
+          <thead>
+            <tr>
+              <th>Incident</th>
+              <th>Origin</th>
+              <th>Kind</th>
+              <th>Members</th>
+              <th>Reason codes</th>
+              <th>Recorded subject</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {view.incidents.map((incident) => (
+              <tr key={incident.id}>
+                <td>
+                  <Link href={`/incidents/${view.run.id}/${incident.id}`} className="mono">
+                    {incident.id}
+                  </Link>
+                </td>
+                <td>
+                  <Origin value={incident.dataOrigin} />
+                </td>
+                <td>{incident.kind}</td>
+                <td>{incident.memberCount}</td>
+                <td className="mono">{incident.reasonCodes.join(', ')}</td>
+                <td className="mono">
+                  {incident.subjectChain === null
+                    ? '—'
+                    : `${incident.subjectChain}:${incident.subjectProtocolSlug}`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionBlock>
       {view.nextAfterId === null ? null : (
         <p>
           <Link href={`/incidents/${view.run.id}?after=${view.nextAfterId}`}>Next page</Link>

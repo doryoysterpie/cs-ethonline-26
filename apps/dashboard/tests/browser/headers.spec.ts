@@ -46,7 +46,7 @@ test.describe('browser controls', () => {
       if (message.text().includes('Content Security Policy')) violations.push(message.text());
     });
     const { accounts } = await credentials();
-    await signIn(page, accounts.judge.username, accounts.judge.password);
+    await signIn(page, accounts.reader.email);
     await page.goto('/incidents');
     await expect(page.getByRole('heading', { name: 'Incident explorer' })).toBeVisible();
     expect(violations).toEqual([]);
@@ -80,10 +80,10 @@ test.describe('browser controls', () => {
     browser,
   }) => {
     const { accounts, seeded } = await credentials();
-    for (const role of ['judge', 'editor', 'admin'] as const) {
+    for (const role of ['reader', 'editor', 'admin'] as const) {
       const context = await browser.newContext();
       const page = await context.newPage();
-      await signIn(page, accounts[role].username, accounts[role].password);
+      await signIn(page, accounts[role].email);
       const token =
         (await context.cookies()).find((cookie) => cookie.name === 'cas_session')?.value ?? '';
       for (const url of [

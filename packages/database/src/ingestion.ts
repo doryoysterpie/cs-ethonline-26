@@ -196,6 +196,19 @@ export async function getImportBatch(
   return row === undefined ? null : toBatchRecord(row);
 }
 
+/** The most recently completed import, by its completion instant; null before the first. */
+export async function latestCompletedImportBatch(
+  client: Queryable,
+): Promise<ImportBatchRecord | null> {
+  const result = await client.query<BatchRow>(
+    `SELECT ${BATCH_COLUMNS} FROM import_batches
+      WHERE status = 'completed' AND completed_at IS NOT NULL
+      ORDER BY completed_at DESC, id DESC LIMIT 1`,
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : toBatchRecord(row);
+}
+
 export async function listImportBatches(client: Queryable): Promise<ImportBatchRecord[]> {
   const result = await client.query<BatchRow>(
     `SELECT ${BATCH_COLUMNS} FROM import_batches ORDER BY started_at, id`,

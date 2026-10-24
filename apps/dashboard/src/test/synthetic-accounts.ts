@@ -27,6 +27,8 @@ export async function syntheticAccount(
     readonly expiresAt?: string | null | undefined;
     readonly disabledAt?: string | null | undefined;
     readonly now?: Date | undefined;
+    /** An already-normalized address, for the passwordless path; null by default. */
+    readonly email?: string | null | undefined;
   } = {},
 ): Promise<SyntheticAccount> {
   const now = (options.now ?? new Date()).toISOString();
@@ -48,7 +50,7 @@ export async function syntheticAccount(
       passwordChangedAt: now,
       disabledAt: options.disabledAt ?? null,
       expiresAt,
-      normalizedEmail: null,
+      normalizedEmail: options.email ?? null,
     },
   };
 }

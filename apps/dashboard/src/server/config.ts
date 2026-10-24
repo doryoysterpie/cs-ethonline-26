@@ -49,9 +49,19 @@ export interface DashboardConfig {
    * release blocker 3). Railway's edge is one hop.
    */
   readonly trustedProxyHops: number;
+  /**
+   * The deployed commit's first seven hexadecimal characters, from the
+   * variable Railway sets on every deployment (`RAILWAY_GIT_COMMIT_SHA`);
+   * null when unset or not a commit hash, and the shell then says "local"
+   * (CAS-010). Shown to signed-in principals only; it is public on the
+   * repository in any case.
+   */
+  readonly buildCommit: string | null;
 }
 
 export const ACCOUNT_STORE_VARIABLE = 'DASHBOARD_ACCOUNT_STORE';
+export const BUILD_COMMIT_VARIABLE = 'RAILWAY_GIT_COMMIT_SHA';
+const COMMIT_SHAPE = /^[0-9a-f]{40}$/u;
 
 /** The read side's default schema, the same value `@cas/database` defaults to. */
 export const DEFAULT_APPLICATION_SCHEMA = 'public';
@@ -149,6 +159,9 @@ export function loadDashboardConfig(
     trustedProxyHops = Number(hopsText);
   }
 
+  const commit = read(env, BUILD_COMMIT_VARIABLE)?.toLowerCase() ?? null;
+  const buildCommit = commit !== null && COMMIT_SHAPE.test(commit) ? commit.slice(0, 7) : null;
+
   return {
     environment: environment as DashboardEnvironment,
     accountStore: accountStore as AccountStoreKind,
@@ -156,5 +169,6 @@ export function loadDashboardConfig(
     databaseSchema,
     trustForwardedFor: trust === 'true',
     trustedProxyHops,
+    buildCommit,
   };
 }
