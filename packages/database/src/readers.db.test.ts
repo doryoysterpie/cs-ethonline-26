@@ -507,6 +507,39 @@ describe('reader sign-up requests and the published mark (migration 0017)', () =
         )
       )?.revision,
     ).toBe(0);
+    // The order of records is the order they were written (migration 0022), whatever instant
+    // the application stamped: three records with one timestamp, and one stamped earlier than
+    // all of them but written last, each decide in turn as they are written.
+    const tie = '2026-10-22T11:00:00.000Z';
+    for (const revision of [1, 0, 1]) {
+      await isolated.db.withTransaction((tx) =>
+        insertPublication(tx, mark('roundup', revision, 'publish', tie)),
+      );
+      expect(
+        (
+          await isolated.db.withClient((c) =>
+            currentPublication(c, weekRunId, 'cyberattack', 'roundup'),
+          )
+        )?.revision,
+      ).toBe(revision);
+    }
+    await isolated.db.withTransaction((tx) =>
+      insertPublication(tx, mark('roundup', 0, 'publish', '2026-10-21T00:00:00.000Z')),
+    );
+    expect(
+      (
+        await isolated.db.withClient((c) =>
+          currentPublication(c, weekRunId, 'cyberattack', 'roundup'),
+        )
+      )?.revision,
+    ).toBe(0);
+    expect(
+      await expectRejected(isolated.db, (tx) =>
+        tx.query(`UPDATE output_publications SET seq = seq + 100 WHERE week_run_id = $1`, [
+          weekRunId,
+        ]),
+      ),
+    ).not.toBe('');
     expect(
       await expectRejected(isolated.db, (tx) =>
         tx.query(`UPDATE output_publications SET revision = 1 WHERE week_run_id = $1`, [weekRunId]),

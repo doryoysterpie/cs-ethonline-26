@@ -268,11 +268,15 @@ interface PublicationRow {
 }
 
 const CURRENT = `SELECT DISTINCT ON (week_run_id, category, output)
-    week_run_id, category, output, revision, action,
+    week_run_id, category, output, revision, action, seq,
     to_json(created_at) #>> '{}' AS created_at, actor_account_id
   FROM output_publications`;
 
-/** The revision readers see for one output, or null when none is marked. */
+/**
+ * The revision readers see for one output, or null when none is marked: the
+ * record with the greatest `seq`, the order PostgreSQL wrote them in (migration
+ * 0022), never an application timestamp.
+ */
 export async function currentPublication(
   client: Queryable,
   weekRunId: string,
@@ -281,7 +285,7 @@ export async function currentPublication(
 ): Promise<PublicationRecord | null> {
   const result = await client.query<PublicationRow>(
     `${CURRENT} WHERE week_run_id = $1 AND category = $2 AND output = $3
-      ORDER BY week_run_id, category, output, created_at DESC, id DESC`,
+      ORDER BY week_run_id, category, output, seq DESC`,
     [weekRunId, category, output],
   );
   const row = result.rows[0];
@@ -305,8 +309,8 @@ export async function listPublished(
     throw new DatabaseError('query', 'limit out of range');
   }
   const result = await client.query<PublicationRow>(
-    `SELECT * FROM (${CURRENT} ORDER BY week_run_id, category, output, created_at DESC, id DESC) current
-      WHERE action = 'publish' ORDER BY created_at DESC LIMIT $1`,
+    `SELECT * FROM (${CURRENT} ORDER BY week_run_id, category, output, seq DESC) current
+      WHERE action = 'publish' ORDER BY seq DESC LIMIT $1`,
     [limit],
   );
   return result.rows.map((row) => ({

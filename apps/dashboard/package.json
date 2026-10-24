@@ -26,6 +26,8 @@
     "@cas/roundup": "workspace:*",
     "@cas/source-reader": "workspace:*",
     "@cas/worker": "workspace:*",
+    "@expo-google-fonts/jetbrains-mono": "catalog:",
+    "@resvg/resvg-wasm": "catalog:",
     "argon2": "catalog:",
     "hast-util-sanitize": "catalog:",
     "hast-util-to-jsx-runtime": "catalog:",

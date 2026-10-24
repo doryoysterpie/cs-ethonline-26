@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { Queryable } from '@cas/database';
+import { STORY_CARD_FIELDS } from '@cas/contracts';
+import { insertStoryCardImage, type Queryable } from '@cas/database';
 
 import { openMigratedSchema, type IsolatedSchema } from '../../test/isolated-schema.ts';
 import {
@@ -22,11 +23,12 @@ import {
 } from '@cas/article';
 import { recordedTransport, sectionOf, loadTemplate, MAX_MARKDOWN_CHARACTERS } from '@cas/roundup';
 import { recordedTransport as recordedPages, type RawTransport } from '@cas/source-reader';
+import { cardImage, cardPage, makeCard } from './cards.ts';
 import { ReadingCache } from './readings.ts';
 import { shellStatus } from './shell.ts';
 import { insertRoundupRevision } from '@cas/database';
 import type { EmailMessage } from '../auth/email-provider.ts';
-import { WindowLimiter } from '../http/limits.ts';
+import { WindowLimiter, type Limits } from '../http/limits.ts';
 import { signPayload } from '../support/signature.ts';
 import type { StripeClient } from '../support/stripe.ts';
 import {
@@ -2788,6 +2790,8 @@ describe('data-access layer against PostgreSQL', () => {
           signupNetwork: new WindowLimiter(3, 900),
           readerReads: new WindowLimiter(2, 900),
           checkoutAccount: new WindowLimiter(5, 900),
+          cardAccount: new WindowLimiter(50, 900),
+          cardNetwork: new WindowLimiter(500, 900),
         },
       });
       const outcomes: string[] = [];
@@ -2882,8 +2886,11 @@ describe('data-access layer against PostgreSQL', () => {
         'output',
         'publishedAt',
         'revision',
+        'stories',
         'week',
       ]);
+      // A deterministic revision's headlines are the sources' own titles: nothing to share (D48, 3).
+      expect(page.stories).toEqual([]);
       // Editors and the owner may read the public page; nobody but the owner unmarks it.
       expect(
         (await publishedOutput(rt, persisted.editor, week.weekRunId, 'cyberattack', 'roundup'))
@@ -3098,6 +3105,8 @@ describe('data-access layer against PostgreSQL', () => {
           signupNetwork: new WindowLimiter(10, 900),
           readerReads: new WindowLimiter(600, 900),
           checkoutAccount: new WindowLimiter(1, 900),
+          cardAccount: new WindowLimiter(50, 900),
+          cardNetwork: new WindowLimiter(500, 900),
         },
       });
       const editor = persisted.editor;
@@ -3226,6 +3235,8 @@ describe('data-access layer against PostgreSQL', () => {
           signupNetwork: new WindowLimiter(50, 900),
           readerReads: new WindowLimiter(50, 900),
           checkoutAccount: new WindowLimiter(50, 900),
+          cardAccount: new WindowLimiter(50, 900),
+          cardNetwork: new WindowLimiter(500, 900),
         },
       });
       const editor = persisted.editor;
@@ -3332,6 +3343,337 @@ describe('data-access layer against PostgreSQL', () => {
         .map((e) => e.code)
         .reverse();
       expect(changes).toEqual(['supporter', 'none']);
+      await own.close();
+    });
+  });
+
+  describe('story cards (CAS-009)', () => {
+    /** A round-up of three one-row stories, generated through the real path and published at revision 1. */
+    async function publishedRoundup(own: IsolatedSchema, limits?: Limits) {
+      const week = await seedLargeWeek(own.db, 3, 1);
+      const loaded = await loadTemplate();
+      const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+      const transport = {
+        async generate(request: { user: string; model: string }) {
+          const seen = JSON.parse(request.user) as {
+            incidents: { rows: { url: string; sourceRowId: string }[] }[];
+          };
+          return {
+            raw: {
+              rundown: seen.incidents.map((incident, i) => ({
+                headline: `Card headline ${i + 1}`,
+                summary: 'A summary the card never carries.',
+                sources: incident.rows.map((row) => row.url),
+                citations: incident.rows.map((row) => row.sourceRowId),
+              })),
+              extras: marker,
+            },
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: request.model,
+          };
+        },
+      };
+      const { rt, persisted, persistent } = await persistentRuntime(
+        transport,
+        own,
+        null,
+        limits === undefined ? {} : { limits },
+      );
+      const table = await weekTable(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        undefined,
+        undefined,
+      );
+      expect(table.rows.length).toBe(3);
+      for (const row of table.rows) {
+        await selectStory(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          clusteringRunId: week.clusteringRunId,
+          incidentId: row.incidentId,
+          state: 'selected',
+          note: null,
+        });
+      }
+      await generateRoundup(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedTemplateHash: loaded.hash,
+      });
+      const target = { weekRunId: week.weekRunId, category: 'cyberattack', output: 'roundup' };
+      await publishOutput(rt, persisted.owner, { ...target, revision: 1 });
+      return { week, rt, persisted, persistent, target };
+    }
+    const story = (weekRunId: string, entryIndex: number) => ({
+      weekRunId,
+      category: 'cyberattack',
+      output: 'roundup',
+      entryIndex,
+    });
+    const kindCode = async (call: Promise<unknown>): Promise<string> => {
+      try {
+        await call;
+      } catch (error) {
+        return isDashboardError(error) ? `${error.kind}:${error.code}` : 'unexpected';
+      }
+      return 'succeeded';
+    };
+
+    it('makes one card per story for anyone who may read published outputs, serves it without a session from the published text, and counts each origin view', async () => {
+      const own = await openMigratedSchema();
+      const { week, rt, persisted, persistent } = await publishedRoundup(own);
+      const made = await makeCard(rt, persisted.reader, story(week.weekRunId, 0));
+      expect(made.created).toBe(true);
+      expect(made.id).toMatch(/^[A-Za-z0-9_-]{22}$/u);
+      // The same story again, by anyone: the same address, nothing new.
+      for (const role of ['editor', 'owner', 'reader'] as const) {
+        expect(await makeCard(rt, persisted[role], story(week.weekRunId, 0))).toEqual({
+          id: made.id,
+          created: false,
+        });
+      }
+      expect(await kindCode(makeCard(rt, null, story(week.weekRunId, 0)))).toBe(
+        'authentication:session_required',
+      );
+      for (const bad of [
+        { ...story(week.weekRunId, 0), entryIndex: 'x' },
+        { ...story(week.weekRunId, 0), output: 'draft' },
+        { ...story(week.weekRunId, 0), output: 'article', entryIndex: 1 },
+        { ...story(week.weekRunId, 0), category: 'Not A Category' },
+      ]) {
+        expect((await kindCode(makeCard(rt, persisted.reader, bad))).split(':')[0]).toBe(
+          'validation',
+        );
+      }
+      expect(await kindCode(makeCard(rt, persisted.reader, story(week.weekRunId, 99)))).toBe(
+        'not_found:story_not_shareable',
+      );
+      // The public read: the allowlist and nothing else, the published headline, the hosts.
+      const first = await cardPage(rt, made.id, 'direct');
+      expect(Object.keys(first.card)).toEqual([...STORY_CARD_FIELDS]);
+      expect(first.card).toMatchObject({
+        id: made.id,
+        output: 'roundup',
+        category: 'cyberattack',
+        revision: 1,
+        headline: 'Card headline 1',
+      });
+      expect(first.card.publishers.length).toBeGreaterThan(0);
+      expect(JSON.stringify(first.card)).not.toMatch(/summary the card|https?:|citation/u);
+      expect(first.views).toBe(1);
+      expect((await cardPage(rt, made.id, 'direct')).views).toBe(2);
+      expect(first.publishedPath).toBe(
+        `/published/${week.weekRunId}?category=cyberattack&output=roundup`,
+      );
+      expect(await kindCode(cardPage(rt, 'A'.repeat(22), 'direct'))).toBe(
+        'not_found:story_not_shareable',
+      );
+      expect(await kindCode(cardPage(rt, 'not-a-card', 'direct'))).toBe(
+        'not_found:story_not_shareable',
+      );
+      // The published page lists the stories it can share, as the published text states them.
+      const view = await publishedOutput(
+        rt,
+        persisted.reader,
+        week.weekRunId,
+        'cyberattack',
+        'roundup',
+      );
+      expect(view.stories.map((s) => [s.entryIndex, s.headline])).toEqual([
+        [0, 'Card headline 1'],
+        [1, 'Card headline 2'],
+        [2, 'Card headline 3'],
+      ]);
+      // One audit event for the card made, with its identifier and kind, no text.
+      const made_ = (await persistent.audit.list(200)).filter((e) => e.kind === 'card_created');
+      expect(made_.map((e) => [e.code, e.subjectId, e.actorAccountId])).toEqual([
+        ['roundup', made.id, persisted.reader.accountId],
+      ]);
+      expect(JSON.stringify(made_)).not.toContain('Card headline');
+      await own.close();
+    });
+
+    it('follows the current published revision: a correction shows at the same address, and a removed entry, a deterministic revision or an unpublished output answers not found', async () => {
+      const own = await openMigratedSchema();
+      const { week, rt, persisted, target } = await publishedRoundup(own);
+      const { id } = await makeCard(rt, persisted.reader, story(week.weekRunId, 1));
+      const published = await publishedOutput(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        'roundup',
+      );
+      const corrected = published.markdown.replace('**Card headline 2**', '**Corrected headline**');
+      expect(corrected).not.toBe(published.markdown);
+      expect(
+        await saveRoundupRevision(rt, persisted.owner, {
+          weekRunId: week.weekRunId,
+          category: 'cyberattack',
+          expectedRevision: 1,
+          markdown: corrected,
+        }),
+      ).toEqual({ revision: 2 });
+      // Revision 2 exists but is not published: the card still shows revision 1.
+      expect((await cardPage(rt, id, 'direct')).card).toMatchObject({
+        revision: 1,
+        headline: 'Card headline 2',
+      });
+      await publishOutput(rt, persisted.owner, { ...target, revision: 2 });
+      expect((await cardPage(rt, id, 'direct')).card).toMatchObject({
+        id,
+        revision: 2,
+        headline: 'Corrected headline',
+      });
+      // The owner removes that story's block: the card answers not found, and no card can be made for it.
+      const start = corrected.indexOf('**Corrected headline**');
+      const end = corrected.indexOf('**Card headline 3**');
+      const removed = corrected.slice(0, start) + corrected.slice(end);
+      await saveRoundupRevision(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedRevision: 2,
+        markdown: removed,
+      });
+      await publishOutput(rt, persisted.owner, { ...target, revision: 3 });
+      expect(await kindCode(cardPage(rt, id, 'direct'))).toBe('not_found:story_not_shareable');
+      expect(await kindCode(makeCard(rt, persisted.reader, story(week.weekRunId, 1)))).toBe(
+        'not_found:story_not_shareable',
+      );
+      // The deterministic revision carries the sources' own titles: never a card (D48, 3).
+      await publishOutput(rt, persisted.owner, { ...target, revision: 0 });
+      expect(await kindCode(cardPage(rt, id, 'direct'))).toBe('not_found:story_not_shareable');
+      // Back to the correction: the same address serves again.
+      await publishOutput(rt, persisted.owner, { ...target, revision: 2 });
+      expect((await cardPage(rt, id, 'direct')).card.headline).toBe('Corrected headline');
+      // Unpublished: not found at once.
+      await unpublishOutput(rt, persisted.owner, target);
+      expect(await kindCode(cardPage(rt, id, 'direct'))).toBe('not_found:story_not_shareable');
+      expect(await kindCode(cardImage(rt, id, 'png', 'direct'))).toBe(
+        'not_found:story_not_shareable',
+      );
+      await own.close();
+    });
+
+    it('serves the image stored for the revision the same read found current, never another revision’s (the owner’s merge condition)', async () => {
+      const own = await openMigratedSchema();
+      const { week, rt, persisted, target } = await publishedRoundup(own);
+      const { id } = await makeCard(rt, persisted.reader, story(week.weekRunId, 0));
+      const first = (await cardImage(rt, id, 'png', 'direct')).body as Uint8Array;
+      const published = await publishedOutput(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        'roundup',
+      );
+      await saveRoundupRevision(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedRevision: 1,
+        markdown: published.markdown.replace('**Card headline 1**', '**Corrected headline**'),
+      });
+      // A sentinel stored under revision 2 before revision 2 is published.
+      const sentinel = new Uint8Array([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x53, 0x45, 0x4e, 0x54,
+      ]);
+      await own.db.withTransaction((tx) =>
+        insertStoryCardImage(tx, {
+          cardId: id,
+          revision: 2,
+          png: sentinel,
+          pngSha256: 'f'.repeat(64),
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      const bytes = async () => [
+        ...((await cardImage(rt, id, 'png', 'direct')).body as Uint8Array),
+      ];
+      // Revision 1 current: revision 1's image, never revision 2's.
+      expect(await bytes()).toEqual([...first]);
+      // Revision 2 current: exactly what is stored under revision 2.
+      await publishOutput(rt, persisted.owner, { ...target, revision: 2 });
+      expect(await bytes()).toEqual([...sentinel]);
+      // Revision 1 current again: revision 1's image again.
+      await publishOutput(rt, persisted.owner, { ...target, revision: 1 });
+      expect(await bytes()).toEqual([...first]);
+      await own.close();
+    });
+
+    it('rasterizes the PNG once per card and published revision, serves the SVG, and limits views per source and new cards per account', async () => {
+      const own = await openMigratedSchema();
+      const { week, rt, persisted, persistent, target } = await publishedRoundup(own, {
+        signupAddress: new WindowLimiter(50, 900),
+        signupNetwork: new WindowLimiter(50, 900),
+        readerReads: new WindowLimiter(500, 900),
+        checkoutAccount: new WindowLimiter(50, 900),
+        cardAccount: new WindowLimiter(1, 900),
+        cardNetwork: new WindowLimiter(5, 900),
+      });
+      const { id } = await makeCard(rt, persisted.reader, story(week.weekRunId, 0));
+      const images = async () =>
+        (
+          await own.db.withClient((c) =>
+            c.query<{ revision: number }>(
+              `SELECT revision FROM story_card_images WHERE card_id = $1 ORDER BY revision`,
+              [id],
+            ),
+          )
+        ).rows.map((r) => r.revision);
+      // Rasterized at creation, served from the cache after.
+      expect(await images()).toEqual([1]);
+      const png = await cardImage(rt, id, 'png', 'source-a');
+      expect(Buffer.from((png.body as Uint8Array).subarray(0, 8)).toString('hex')).toBe(
+        '89504e470d0a1a0a',
+      );
+      await cardImage(rt, id, 'png', 'source-a');
+      expect(await images()).toEqual([1]);
+      // A correction published: one more rasterization, for the new revision.
+      const published = await publishedOutput(
+        rt,
+        persisted.owner,
+        week.weekRunId,
+        'cyberattack',
+        'roundup',
+      );
+      await saveRoundupRevision(rt, persisted.owner, {
+        weekRunId: week.weekRunId,
+        category: 'cyberattack',
+        expectedRevision: 1,
+        markdown: published.markdown.replace(
+          '**Card headline 1**',
+          '**A \\<corrected\\> & quoted headline**',
+        ),
+      });
+      await publishOutput(rt, persisted.owner, { ...target, revision: 2 });
+      expect(
+        (await publishedOutput(rt, persisted.owner, week.weekRunId, 'cyberattack', 'roundup'))
+          .revision,
+      ).toBe(2);
+      expect((await cardImage(rt, id, 'png', 'source-a')).revision).toBe(2);
+      expect(await images()).toEqual([1, 2]);
+      const svg = await cardImage(rt, id, 'svg', 'source-a');
+      expect(svg.body).toContain('A &lt;corrected&gt; &amp; quoted headline');
+      // Four requests from source-a so far; the fifth is the last allowed, the sixth refused.
+      expect((await cardPage(rt, id, 'source-a')).card.revision).toBe(2);
+      expect(await kindCode(cardPage(rt, id, 'source-a'))).toBe('throttled:card_views_limited');
+      expect(await kindCode(cardImage(rt, id, 'png', 'source-a'))).toBe(
+        'throttled:card_views_limited',
+      );
+      expect((await cardPage(rt, id, 'source-b')).card.id).toBe(id);
+      // One new card per account in the window: the existing one is returned without spending it.
+      expect(await kindCode(makeCard(rt, persisted.reader, story(week.weekRunId, 2)))).toBe(
+        'throttled:card_limited',
+      );
+      expect(await makeCard(rt, persisted.reader, story(week.weekRunId, 0))).toEqual({
+        id,
+        created: false,
+      });
+      expect((await makeCard(rt, persisted.editor, story(week.weekRunId, 2))).created).toBe(true);
+      const trips = (await persistent.audit.list(200)).filter((e) => e.kind === 'limit_tripped');
+      expect(trips.map((e) => e.code).sort()).toEqual(['card_account', 'card_network']);
       await own.close();
     });
   });

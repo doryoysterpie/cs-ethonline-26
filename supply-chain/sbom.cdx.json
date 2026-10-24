@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "246a0af66c8aa2493234c666a5882cefa034fe9acf8d8b50f19e9849101ba7cc"
+        "value": "99505393cd124d2eef774d3b88e49aa4bb95a0f41222a00718a907bc1e130ca5"
       },
       {
         "name": "cas:lockfile:version",
@@ -812,6 +812,30 @@
           "license": {
             "id": "Apache-2.0"
           }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40expo-google-fonts/jetbrains-mono@0.4.1",
+      "name": "@expo-google-fonts/jetbrains-mono",
+      "version": "0.4.1",
+      "purl": "pkg:npm/%40expo-google-fonts/jetbrains-mono@0.4.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "0ac9400abb4c39c470a165c23bb38c108fbdc377ee9164a806dbcdcf8e8ea8fa28804baea18d2d9036353bcb05ba693cb74a42e82c745ebf793b44ce421a64ba"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT AND OFL-1.1"
         }
       ],
       "properties": [
@@ -2246,6 +2270,32 @@
         {
           "name": "cas:pnpm:hasBin",
           "value": "true"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40resvg/resvg-wasm@2.6.2",
+      "name": "@resvg/resvg-wasm",
+      "version": "2.6.2",
+      "purl": "pkg:npm/%40resvg/resvg-wasm@2.6.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "16a00b98723c0f8a3a964fcb4560e7870f79cf978ef9e01ae8e463560d3d61147b06470cea83c753dbb20b482d406e6fa452ef829794e3ecc4033d87f003c737"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MPL-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
         }
       ]
     },
@@ -9708,6 +9758,10 @@
       ]
     },
     {
+      "ref": "pkg:npm/%40expo-google-fonts/jetbrains-mono@0.4.1",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/%40humanfs/core@0.19.2",
       "dependsOn": [
         "pkg:npm/%40humanfs/types@0.15.0"
@@ -9961,6 +10015,10 @@
       "dependsOn": [
         "pkg:npm/playwright@1.63.0"
       ]
+    },
+    {
+      "ref": "pkg:npm/%40resvg/resvg-wasm@2.6.2",
+      "dependsOn": []
     },
     {
       "ref": "pkg:npm/%40rolldown/binding-android-arm-eabi@1.2.7",
@@ -11755,7 +11813,9 @@
       "ref": "workspace:@cas/dashboard",
       "dependsOn": [
         "pkg:npm/%40anthropic-ai/sdk@1.0.0",
+        "pkg:npm/%40expo-google-fonts/jetbrains-mono@0.4.1",
         "pkg:npm/%40playwright/test@1.63.0",
+        "pkg:npm/%40resvg/resvg-wasm@2.6.2",
         "pkg:npm/%40types/hast@3.0.5",
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/%40types/react-dom@19.2.7",

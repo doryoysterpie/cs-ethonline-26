@@ -16,6 +16,8 @@ export interface Credentials {
     readonly hostileIncidentId: string;
     readonly subjectIncidentId: string;
   };
+  /** CAS-009: the card the launcher made for the first story of a published round-up. */
+  readonly cards: { readonly roundup: string; readonly weekRunId: string };
   readonly accounts: Readonly<
     Record<
       'reader' | 'editor' | 'admin',

@@ -1756,3 +1756,51 @@ disabled on this model, so effort is the only control.
 - **Supersedes:** nothing; refines the dashboard's presentation under D28. Numbered past
   D46 because D39 to D46 are recorded on the pull requests still in review (24, 26, 27, 28)
   and this entry merges to `main` ahead of them.
+
+## D48 Story cards: one public card per published story
+
+- **Date:** 2026-10-23
+- **Status:** ACCEPTED
+- **Decision:** A signed-in principal who may view published outputs makes a card for one story
+  (one entry of a published round-up, or a published article) and receives a public address
+  that works without signing in. Resolved by the owner on 23 October 2026, the seven questions
+  of `docs/CAS-009-REPORT.md`, section 1.5:
+  1. **Fields.** The published headline and the publishers' names per story, the week, the
+     category, the output and its current published revision, nothing else; no summary, no
+     URL, no citation, no stored title.
+  2. **Rendering.** A page at a public address and a PNG for `og:image`, under the stack check:
+     rasterized from the application's own SVG, text only, no external fetch, no user-supplied
+     bytes; the PNG cached and served from the cache. Had the rasterizer failed the stack check,
+     the page and the SVG alone would have shipped with the gap recorded.
+  3. **Third-party headlines.** Never; publishers' names are the attribution.
+  4. **Measured.** An audit event per card made; a per-card view counter that counts origin
+     hits; no client beacon, no identity, no address stored.
+  5. **A public page.** Yes, with `X-Robots-Tag: noindex`, and in no sitemap; the address is
+     unguessable but public once shared, and the fields on it are allowlisted.
+  6. **Lifetime.** Unpublishing the output answers 404 at once. A card is bound to its output
+     and entry, not to a revision: it re-renders from the current published revision at the
+     same address, never shows retracted text, and answers 404 when the entry is absent from
+     the current revision; the revision shown is the current one.
+  7. **Who.** Every principal holding `view:published`, readers included, with no new
+     capability; creation is idempotent per output and entry, so a second request returns the
+     existing address, the limit is not spent on duplicates, and the counter stays whole.
+  8. **The robots file** (raised by the build, `docs/CAS-009-REPORT.md`, section 1.9), resolved
+     the same day: (a). `Allow: /cards/` under `User-agent: *`, ahead of its `Disallow: /`; the
+     named AI crawlers' groups keep their own `Disallow: /`, which covers cards, since a crawler
+     with its own group ignores the `*` group. Under the old file a search engine could not
+     fetch a card, so it never saw `noindex`, and a card linked from elsewhere could be indexed
+     as a bare address: allowing the path is what makes `noindex` effective. The `Allow` line
+     comes first for parsers that take the first match. Condition: the preview images resolve
+     under `/cards/` as absolute addresses.
+  9. **A known limit, recorded, not changed.** "Not found at once" holds at the origin. The
+     images are cacheable for five minutes, so a downstream cache may serve an unpublished
+     card's image for up to five minutes, and platforms cache link previews for their own
+     periods, outside the product's control. The card page itself is never cached.
+- **Rationale:** The owner's. The card is the hook, not the content: the summary is what sign-in
+  or the newsletter delivers, and generated text on a public address would be published outside
+  D6's publication act. A card without an image is a bare link on every platform that matters.
+- **Consequences:** CAS-009 builds it (`docs/CAS-009-REPORT.md`). D6's allowlist is a contract in
+  `@cas/contracts`. The dashboard serves its first page without a session. A deterministic
+  revision, whose headlines are the sources' own titles, never renders as a card.
+- **Decided by:** Project owner, 23 October 2026, in chat.
+- **Supersedes:** nothing; extends D6 and D42 to the card.

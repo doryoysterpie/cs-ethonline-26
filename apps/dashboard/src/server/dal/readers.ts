@@ -19,6 +19,7 @@ import type { Runtime } from '../runtime.ts';
 import { mapFailure } from './failures.ts';
 import { requireCapability } from './guard.ts';
 import { enforceReaderLimit } from './reader-limit.ts';
+import { shareableStories } from './cards.ts';
 import { weekRunDto } from './read.ts';
 import type { WeekRunDto } from './dto.ts';
 
@@ -579,6 +580,8 @@ export interface PublishedEntryDto {
 
 export interface PublishedOutputDto extends PublishedEntryDto {
   readonly markdown: string;
+  /** The stories a card can be made for, as the published text states them (CAS-009). */
+  readonly stories: readonly { readonly entryIndex: number; readonly headline: string }[];
 }
 
 /** Every published output, newest mark first, for a principal who may view them. */
@@ -638,7 +641,12 @@ export async function publishedOutput(
     if (current === null || week === null) {
       throw new DashboardError('not_found', 'output_not_published', 'Nothing is published there.');
     }
-    const revisions: readonly { readonly revision: number; readonly markdown: string }[] =
+    const revisions: readonly {
+      readonly revision: number;
+      readonly kind: string;
+      readonly slots: unknown;
+      readonly markdown: string;
+    }[] =
       wantedOutput === 'roundup'
         ? await runtime.database.withClient((client) =>
             listRoundupRevisions(client, id, wantedCategory),
@@ -657,6 +665,7 @@ export async function publishedOutput(
       revision: current.revision,
       publishedAt: current.publishedAt,
       markdown: revision.markdown,
+      stories: shareableStories(wantedOutput, revision),
     };
   } catch (error) {
     throw mapFailure(error, packages);
