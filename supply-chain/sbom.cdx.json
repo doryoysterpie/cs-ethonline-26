@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "37e79d8f4fb6eb62db94da2a193bdaa68bd3665586d2eb1b82c992719f4e0eda"
+        "value": "246a0af66c8aa2493234c666a5882cefa034fe9acf8d8b50f19e9849101ba7cc"
       },
       {
         "name": "cas:lockfile:version",
@@ -9568,14 +9568,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/zod@4.5.4",
+      "bom-ref": "pkg:npm/zod@4.6.7",
       "name": "zod",
-      "version": "4.5.4",
-      "purl": "pkg:npm/zod@4.5.4",
+      "version": "4.6.7",
+      "purl": "pkg:npm/zod@4.6.7",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "b02f79b53e621c71fd82da63e80f35921f8d11a44050537eaa550f0d46d17ce32f35fe50081aac6f75a0be7a55b4ae58fb851f03a2aab9fa2db93bcc1a24e5b0"
+          "content": "83c5b60f6914e9af2e9ed734e777d7d6e5412b333bcaa0315bfdf3c24f37fba472176f9228eb95f9cd30043854c335753da19aa66647fab99c5333dffb7086c2"
         }
       ],
       "licenses": [
@@ -9626,7 +9626,7 @@
         "pkg:npm/%40opentelemetry/api@1.10.0",
         "pkg:npm/json-schema-to-ts@3.1.1",
         "pkg:npm/standardwebhooks@1.1.1",
-        "pkg:npm/zod@4.5.4"
+        "pkg:npm/zod@4.6.7"
       ]
     },
     {
@@ -9892,20 +9892,20 @@
         "pkg:npm/eventsource@3.0.7",
         "pkg:npm/jose@6.2.12",
         "pkg:npm/pkce-challenge@5.0.1",
-        "pkg:npm/zod@4.5.4"
+        "pkg:npm/zod@4.6.7"
       ]
     },
     {
       "ref": "pkg:npm/%40modelcontextprotocol/core@2.3.1",
       "dependsOn": [
-        "pkg:npm/zod@4.5.4"
+        "pkg:npm/zod@4.6.7"
       ]
     },
     {
       "ref": "pkg:npm/%40modelcontextprotocol/server@2.3.1",
       "dependsOn": [
         "pkg:npm/%40modelcontextprotocol/core@2.3.1",
-        "pkg:npm/zod@4.5.4"
+        "pkg:npm/zod@4.6.7"
       ]
     },
     {
@@ -11708,7 +11708,7 @@
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/zod@4.5.4",
+      "ref": "pkg:npm/zod@4.6.7",
       "dependsOn": []
     },
     {
@@ -11721,7 +11721,7 @@
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
-        "pkg:npm/zod@4.5.4"
+        "pkg:npm/zod@4.6.7"
       ]
     },
     {
@@ -11834,7 +11834,7 @@
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
-        "pkg:npm/zod@4.5.4",
+        "pkg:npm/zod@4.6.7",
         "workspace:@cas/contracts",
         "workspace:@cas/database",
         "workspace:@cas/drafting",
@@ -11854,7 +11854,7 @@
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
-        "pkg:npm/zod@4.5.4"
+        "pkg:npm/zod@4.6.7"
       ]
     },
     {
