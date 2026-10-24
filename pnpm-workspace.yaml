@@ -42,7 +42,7 @@ catalog:
   typescript: 6.0.3
   typescript-eslint: 8.69.0
   vitest: 4.1.12
-  zod: 4.5.4
+  zod: 4.6.7
 
 # Supply-chain control: refuse to resolve any version published less than
 # 24 hours ago (value in minutes). Do not lower this to install a dependency.
