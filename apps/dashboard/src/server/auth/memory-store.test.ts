@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -24,9 +24,16 @@ describe('memory stores', () => {
     const stores = await openMemoryStores(seed);
     const editor = await syntheticAccount('editor');
     await stores.accounts.insert(editor.record);
-    const mode = (await stat(seed)).mode & 0o777;
-    expect(mode).toBe(0o600);
-    const text = await readFile(seed, 'utf8');
+    // One open handle: the mode and the bytes come from the same file, so the
+    // check cannot race the read (code-scanning alert 9, js/file-system-race).
+    const handle = await open(seed, 'r');
+    let text: string;
+    try {
+      expect((await handle.stat()).mode & 0o777).toBe(0o600);
+      text = await handle.readFile('utf8');
+    } finally {
+      await handle.close();
+    }
     expect(text).toContain(SEED_FORMAT);
     expect(text).not.toContain(editor.password);
     const reopened = await openMemoryStores(seed);

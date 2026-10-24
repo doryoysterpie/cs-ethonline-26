@@ -213,8 +213,13 @@ reserved `.test` domain, and the memory store's email path, which dropped every 
 appends each one to a local file the developer names (`DASHBOARD_LOCAL_EMAIL_FILE`, memory store
 only, so local only; mode 600; `local-email.test.ts`), from which the specs read the one-time
 code. A developer running the memory store locally can sign in the same way, which was not
-possible before. The older specs were moved to the code sign-in and the reader role so they type-
-check; their password-era assertions are a follow-up, not this unit's. Screenshots are written
+possible before. The older specs were moved to the code sign-in and the reader role so they type-check; their
+password-era assertions were a follow-up, closed on the pull request stacked on this one
+(`tests/browser-harness`): the specs now sign in by code, share one session per address so the
+login throttle's thirty requests per source are never reached across a run, assert the grid's
+headings by level, and provision without the password-era second sign-in; every browser spec
+passes (27 of 27). The same pull request closes code-scanning alert 9 and bounds two tests that
+flaked under CI contention, recorded as CAS-006 follow-ups. Screenshots are written
 under `test-results/browser/layout/` for the owner to look at and are not checked in: the
 repository's hygiene scan refuses binary files, so the design note's "checked-in references" are
 replaced by the assertions the spec makes on layout, computed style and behaviour.

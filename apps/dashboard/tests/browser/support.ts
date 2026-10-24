@@ -50,8 +50,42 @@ export async function lastCodeFor(email: string): Promise<string> {
   return code;
 }
 
+/**
+ * Sessions already opened in this run, by address. The login throttle admits
+ * thirty code requests per network source in fifteen minutes, and every
+ * request from the runner is one source, so the specs share one session per
+ * address: a cached cookie is tried first and replaced by a fresh sign-in
+ * when the server no longer honours it. A spec that tests sessions
+ * themselves asks for a fresh one.
+ */
+const sessions = new Map<string, string>();
+
 /** Signs in by one-time code: the address, then the code the local email path wrote. */
-export async function signIn(page: Page, email: string): Promise<void> {
+export async function signIn(
+  page: Page,
+  email: string,
+  options: { readonly fresh?: boolean | undefined } = {},
+): Promise<void> {
+  const cached = options.fresh === true ? undefined : sessions.get(email);
+  if (cached !== undefined) {
+    await page.context().addCookies([
+      {
+        name: SESSION_COOKIE,
+        value: cached,
+        domain: '127.0.0.1',
+        path: '/',
+        httpOnly: true,
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/command-center');
+    if (!page.url().includes('/login')) {
+      await expect(page.getByRole('heading', { name: 'Command center' })).toBeVisible();
+      return;
+    }
+    sessions.delete(email);
+    await page.context().clearCookies();
+  }
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Send me a code' }).click();
@@ -60,6 +94,8 @@ export async function signIn(page: Page, email: string): Promise<void> {
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL('**/command-center');
   await expect(page.getByRole('heading', { name: 'Command center' })).toBeVisible();
+  const token = await sessionCookie(page);
+  if (token !== null) sessions.set(email, token);
 }
 
 export async function sessionCookie(page: Page): Promise<string | null> {
