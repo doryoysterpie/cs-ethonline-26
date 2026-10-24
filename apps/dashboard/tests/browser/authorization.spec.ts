@@ -3,11 +3,11 @@ import { expect, test } from '@playwright/test';
 import { credentials, rawGet, signIn, SESSION_COOKIE } from './support.ts';
 
 test.describe('role boundaries in the browser', () => {
-  test('a judge sees sanitized views only: no queue, no administration, no source text, no mutation forms', async ({
+  test('a reader sees sanitized views only: no queue, no administration, no source text, no mutation forms', async ({
     page,
   }) => {
     const { accounts, seeded } = await credentials();
-    await signIn(page, accounts.judge.username, accounts.judge.password);
+    await signIn(page, accounts.reader.email);
     await expect(page.getByRole('link', { name: 'Review queue' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Accounts and sessions' })).toHaveCount(0);
 
@@ -20,7 +20,7 @@ test.describe('role boundaries in the browser', () => {
     expect(admin?.status()).toBe(403);
 
     await page.goto(`/incidents/${seeded.clusteringRunId}/${seeded.hostileIncidentId}`);
-    await expect(page.getByRole('heading', { name: /^Incident/u })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: /^Incident/u })).toBeVisible();
     await expect(page.getByText('Source text is not shown for this role')).toBeVisible();
     const html = await page.content();
     expect(html).not.toContain('reversed');
@@ -30,15 +30,15 @@ test.describe('role boundaries in the browser', () => {
     await expect(page.getByRole('button', { name: 'Record split' })).toHaveCount(0);
 
     await page.goto(`/evidence/${seeded.evidenceRunId}`);
-    await expect(page.getByRole('heading', { name: /^Evidence run/u })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: /^Evidence run/u })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Record decision' })).toHaveCount(0);
     await expect(
       page.getByText('A suggestion is not evidence until a named person accepts it.'),
     ).toBeVisible();
 
-    // Draft preview is withdrawn from the judge role entirely: no headline, no
+    // Draft preview is withdrawn from the reader role entirely: no headline, no
     // source link, no source text, no editor note and no unsanitized draft
-    // content of any kind reaches a judge, so the page itself refuses.
+    // content of any kind reaches a reader, so the page itself refuses.
     const draft = await page.goto(
       `/drafts/${seeded.evidenceRunId}?start=2026-09-01T00:00:00Z&end=2026-09-08T00:00:00Z`,
     );
@@ -48,7 +48,7 @@ test.describe('role boundaries in the browser', () => {
 
   test('an editor reviews but cannot administer', async ({ page }) => {
     const { accounts, seeded } = await credentials();
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     await expect(page.getByRole('link', { name: 'Review queue' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Accounts and sessions' })).toHaveCount(0);
     const admin = await page.goto('/admin/accounts');
@@ -70,12 +70,9 @@ test.describe('role boundaries in the browser', () => {
     await expect(page.getByRole('button', { name: 'Save revision 2' })).toBeVisible();
   });
 
-  test('an administrator provisions, disables and revokes through the page', async ({
-    page,
-    browser,
-  }) => {
+  test('an administrator provisions, disables and revokes through the page', async ({ page }) => {
     const { accounts } = await credentials();
-    await signIn(page, accounts.admin.username, accounts.admin.password);
+    await signIn(page, accounts.admin.email);
     await page.goto('/admin/accounts');
     await expect(page.getByRole('heading', { name: 'Accounts and sessions' })).toBeVisible();
     const username = `syn_ui_${Date.now().toString(36)}`;
@@ -92,12 +89,8 @@ test.describe('role boundaries in the browser', () => {
     const row = accountsTable.getByRole('row', { name: new RegExp(username, 'u') });
     await expect(row).toBeVisible();
 
-    // The new account can sign in elsewhere.
-    const other = await browser.newContext();
-    const otherPage = await other.newPage();
-    await signIn(otherPage, username, password);
-
-    // Disabling it ends that session at once.
+    // A username account provisioned here cannot sign in by code (it carries
+    // no address); disabling it is recorded all the same.
     await page.goto('/admin/accounts');
     await page
       .getByRole('table')
@@ -106,9 +99,6 @@ test.describe('role boundaries in the browser', () => {
       .getByRole('button', { name: 'Disable' })
       .click();
     await page.waitForURL('**/admin/accounts?notice=disabled');
-    const me = await otherPage.request.get('/api/me');
-    expect(me.status()).toBe(401);
-    await other.close();
 
     // The audit trail names kinds and actors, never a password.
     const html = await page.content();
@@ -124,33 +114,33 @@ test.describe('role boundaries in the browser', () => {
   }) => {
     const { accounts, seeded } = await credentials();
     const url = `/incidents/${seeded.clusteringRunId}/${seeded.hostileIncidentId}`;
-    const judge = await browser.newContext();
-    const judgePage = await judge.newPage();
-    await signIn(judgePage, accounts.judge.username, accounts.judge.password);
-    const judgeResponse = await judgePage.goto(url);
-    expect(judgeResponse?.headers()['cache-control']).toContain('no-store');
-    const judgeHtml = await judgePage.content();
-    expect(judgeHtml).toContain('Source text is not shown for this role');
+    const reader = await browser.newContext();
+    const readerPage = await reader.newPage();
+    await signIn(readerPage, accounts.reader.email);
+    const readerResponse = await readerPage.goto(url);
+    expect(readerResponse?.headers()['cache-control']).toContain('no-store');
+    const readerHtml = await readerPage.content();
+    expect(readerHtml).toContain('Source text is not shown for this role');
 
     const editor = await browser.newContext();
     const editorPage = await editor.newPage();
-    await signIn(editorPage, accounts.editor.username, accounts.editor.password);
+    await signIn(editorPage, accounts.editor.email);
     const editorResponse = await editorPage.goto(url);
     expect(editorResponse?.headers()['cache-control']).toContain('no-store');
     const editorHtml = await editorPage.content();
     expect(editorHtml).not.toContain('Source text is not shown for this role');
     expect(editorHtml).toContain('Record merge');
 
-    // And a judge visiting after the editor still gets the judge rendering.
-    await judgePage.goto(url);
-    expect(await judgePage.content()).toContain('Source text is not shown for this role');
+    // And a reader visiting after the editor still gets the reader rendering.
+    await readerPage.goto(url);
+    expect(await readerPage.content()).toContain('Source text is not shown for this role');
 
-    const judgeToken =
-      (await judge.cookies()).find((cookie) => cookie.name === SESSION_COOKIE)?.value ?? '';
-    const direct = await rawGet(request, url, { cookie: `${SESSION_COOKIE}=${judgeToken}` });
+    const readerToken =
+      (await reader.cookies()).find((cookie) => cookie.name === SESSION_COOKIE)?.value ?? '';
+    const direct = await rawGet(request, url, { cookie: `${SESSION_COOKIE}=${readerToken}` });
     expect(direct.status()).toBe(200);
     expect(await direct.text()).toContain('Source text is not shown for this role');
-    await judge.close();
+    await reader.close();
     await editor.close();
   });
 });

@@ -29,6 +29,7 @@ describe('dashboard configuration', () => {
       databaseSchema: 'public',
       trustForwardedFor: false,
       trustedProxyHops: 1,
+      buildCommit: null,
     });
     expect(
       loadDashboardConfig({
@@ -95,5 +96,19 @@ describe('dashboard configuration', () => {
         error.kind === 'configuration' &&
         error.code === 'postgres_store_requires_database',
     );
+  });
+
+  it('keeps the first seven characters of a commit hash Railway sets, and nothing else (CAS-010)', () => {
+    expect(
+      loadDashboardConfig({
+        ...base,
+        RAILWAY_GIT_COMMIT_SHA: 'ABCDEF0123456789abcdef0123456789abcdef01',
+      }).buildCommit,
+    ).toBe('abcdef0');
+    for (const value of ['', ' ', 'abcdef0', 'not a hash', 'g'.repeat(40)]) {
+      expect(
+        loadDashboardConfig({ ...base, RAILWAY_GIT_COMMIT_SHA: value }).buildCommit,
+      ).toBeNull();
+    }
   });
 });

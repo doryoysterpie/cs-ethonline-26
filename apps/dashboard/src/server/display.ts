@@ -55,3 +55,31 @@ export function safeText(value: unknown, maxLength: number = DISPLAY_MAX_LENGTH)
   if (escaped.length <= maxLength) return escaped;
   return `${escaped.slice(0, maxLength)}…[+${escaped.length - maxLength} chars]`;
 }
+
+/** The editorial clock (D10): one zone, always shown with its offset so the instant is unambiguous. */
+export const EDITORIAL_TIME_ZONE = 'America/Toronto';
+
+/**
+ * An instant for the shell's "as of" line (CAS-010, decision 1): the
+ * calendar date and minute in the editorial zone, the zone's name and its
+ * UTC offset at that instant, so a reader anywhere can place it. Null, or an
+ * instant that does not parse, renders as a dash: nothing is invented.
+ */
+export function formatAsOf(instant: string | null): string {
+  if (instant === null) return '—';
+  const at = Date.parse(instant);
+  if (Number.isNaN(at)) return '—';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: EDITORIAL_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'longOffset',
+  }).formatToParts(new Date(at));
+  const part = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  const offset = part('timeZoneName').replace(/^GMT/u, 'UTC').replace(/^UTC$/u, 'UTC+00:00');
+  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')} ${EDITORIAL_TIME_ZONE} (${offset})`;
+}

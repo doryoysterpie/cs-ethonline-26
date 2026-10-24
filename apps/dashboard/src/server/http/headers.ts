@@ -20,6 +20,8 @@ import type { DashboardEnvironment } from '../environment.ts';
  */
 
 export const NONCE_HEADER = 'x-cas-nonce';
+/** The request's path, set by the proxy for the shell to mark the current section without client script (CAS-010). */
+export const PATHNAME_HEADER = 'x-cas-pathname';
 
 export function contentSecurityPolicy(nonce: string): string {
   return [

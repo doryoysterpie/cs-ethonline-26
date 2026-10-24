@@ -1,6 +1,13 @@
 import Link from 'next/link';
 
-import { Csrf, Instant, Notice, Origin, Text } from '../../../../../components/ui.tsx';
+import {
+  Csrf,
+  Instant,
+  Notice,
+  Origin,
+  SectionBlock,
+  Text,
+} from '../../../../../components/ui.tsx';
 import { csrfFor, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { incidentDetail } from '../../../../../server/dal/read.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../../page-support.ts';
@@ -49,52 +56,54 @@ export default async function IncidentDetailPage({
           Source text is not shown for this role. Identifiers, decisions and provenance are.
         </p>
       )}
-      <table>
-        <thead>
-          <tr>
-            <th>Membership</th>
-            <th>Source row</th>
-            <th>Row</th>
-            <th>Origin</th>
-            <th>Decision</th>
-            <th>Posted</th>
-            {showText ? <th>Title (stored text, escaped)</th> : null}
-            {showText ? <th>Publisher</th> : null}
-            {showText ? <th>URL (not linked)</th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {view.members.map((member) => (
-            <tr key={member.membershipId}>
-              <td className="mono">{member.membershipId}</td>
-              <td className="mono">{member.sourceRowId.slice(0, 8)}</td>
-              <td>{member.rowNumber}</td>
-              <td>
-                <Origin value={member.dataOrigin} />
-              </td>
-              <td>{member.decision}</td>
-              <td>
-                <Instant value={member.postedAt} />
-              </td>
-              {showText ? (
-                <td>
-                  <Text value={member.title} />
-                </td>
-              ) : null}
-              {showText ? (
-                <td>
-                  <Text value={member.publisher} max={80} />
-                </td>
-              ) : null}
-              {showText ? (
-                <td className="mono">
-                  <Text value={member.url} />
-                </td>
-              ) : null}
+      <SectionBlock title="Member sources">
+        <table>
+          <thead>
+            <tr>
+              <th>Membership</th>
+              <th>Source row</th>
+              <th>Row</th>
+              <th>Origin</th>
+              <th>Decision</th>
+              <th>Posted</th>
+              {showText ? <th>Title (stored text, escaped)</th> : null}
+              {showText ? <th>Publisher</th> : null}
+              {showText ? <th>URL (not linked)</th> : null}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {view.members.map((member) => (
+              <tr key={member.membershipId}>
+                <td className="mono">{member.membershipId}</td>
+                <td className="mono">{member.sourceRowId.slice(0, 8)}</td>
+                <td>{member.rowNumber}</td>
+                <td>
+                  <Origin value={member.dataOrigin} />
+                </td>
+                <td>{member.decision}</td>
+                <td>
+                  <Instant value={member.postedAt} />
+                </td>
+                {showText ? (
+                  <td>
+                    <Text value={member.title} />
+                  </td>
+                ) : null}
+                {showText ? (
+                  <td>
+                    <Text value={member.publisher} max={80} />
+                  </td>
+                ) : null}
+                {showText ? (
+                  <td className="mono">
+                    <Text value={member.url} />
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionBlock>
 
       {view.canReview && principal !== null ? (
         <>

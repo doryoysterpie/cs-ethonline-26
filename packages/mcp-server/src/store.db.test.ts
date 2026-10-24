@@ -586,7 +586,10 @@ describe('F8: one tool call reads one snapshot', () => {
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.error.code).toBe('call_cancelled');
     await runtime.close();
-    expect(await readerBackends(database)).toBe(0);
+    // The runtime waited for its cancel connection; the server's own exit of a
+    // closed backend lags by milliseconds, more under CI contention, so the
+    // count is polled within one second rather than read once.
+    expect(await eventually(async () => (await readerBackends(database)) === 0, 1000)).toBe(true);
   });
 
   it('owns the cancelling connection of a verification too, and of a caller that registers none', async () => {
@@ -618,7 +621,7 @@ describe('F8: one tool call reads one snapshot', () => {
         aborted = error;
       }
       expect(isToolError(aborted) && aborted.code).toBe('call_cancelled');
-      expect(await readerBackends(database)).toBe(0);
+      expect(await eventually(async () => (await readerBackends(database)) === 0, 1000)).toBe(true);
 
       // Start-up privilege verification opens a connection of the provider's,
       // so its cancel is the provider's to wait for as well.
@@ -637,7 +640,7 @@ describe('F8: one tool call reads one snapshot', () => {
       }
       expect(isToolError(refused) && refused.code).toBe('call_cancelled');
       await provider.close();
-      expect(await readerBackends(database)).toBe(0);
+      expect(await eventually(async () => (await readerBackends(database)) === 0, 1000)).toBe(true);
     }
   });
 });

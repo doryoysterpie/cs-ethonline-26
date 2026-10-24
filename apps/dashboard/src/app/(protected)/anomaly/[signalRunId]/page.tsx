@@ -1,4 +1,4 @@
-import { Limitation, Notice, Origin } from '../../../../components/ui.tsx';
+import { Limitation, Notice, Origin, SectionBlock } from '../../../../components/ui.tsx';
 import { currentPrincipal } from '../../../../server/dal/principal.ts';
 import { anomalyView } from '../../../../server/dal/read.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../page-support.ts';
@@ -76,46 +76,48 @@ export default async function AnomalyPage({
             {result.value.stats.stale} · missing {result.value.stats.missing} · bounded{' '}
             {result.value.stats.boundsReached}
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Label</th>
-                <th>Subject</th>
-                <th>Origin</th>
-                <th>Observation window (unix s)</th>
-                <th>Baseline window</th>
-                <th>Value</th>
-                <th>Threshold</th>
-                <th>Reason codes</th>
-                <th>Provenance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.value.entries.map((entry) => (
-                <tr key={`${entry.signalType}:${entry.subjectId}`}>
-                  <td>{entry.signalType}</td>
-                  <td className={`label-${entry.label}`}>{entry.label}</td>
-                  <td className="mono">{entry.subjectId}</td>
-                  <td>
-                    <Origin value={entry.dataOrigin} />
-                  </td>
-                  <td className="mono">
-                    {entry.observationWindow.startsAt}..{entry.observationWindow.endsAt}
-                  </td>
-                  <td className="mono">
-                    {entry.baselineWindow === null
-                      ? '—'
-                      : `${entry.baselineWindow.startsAt}..${entry.baselineWindow.endsAt}`}
-                  </td>
-                  <td className="mono">{entry.value}</td>
-                  <td className="mono">{entry.threshold}</td>
-                  <td className="mono">{entry.reasonCodes.join(', ') || '—'}</td>
-                  <td className="mono">{entry.provenanceId.slice(0, 8)}</td>
+          <SectionBlock title="Anomaly windows">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Label</th>
+                  <th>Subject</th>
+                  <th>Origin</th>
+                  <th>Observation window (unix s)</th>
+                  <th>Baseline window</th>
+                  <th>Value</th>
+                  <th>Threshold</th>
+                  <th>Reason codes</th>
+                  <th>Provenance</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {result.value.entries.map((entry) => (
+                  <tr key={`${entry.signalType}:${entry.subjectId}`}>
+                    <td>{entry.signalType}</td>
+                    <td className={`label-${entry.label}`}>{entry.label}</td>
+                    <td className="mono">{entry.subjectId}</td>
+                    <td>
+                      <Origin value={entry.dataOrigin} />
+                    </td>
+                    <td className="mono">
+                      {entry.observationWindow.startsAt}..{entry.observationWindow.endsAt}
+                    </td>
+                    <td className="mono">
+                      {entry.baselineWindow === null
+                        ? '—'
+                        : `${entry.baselineWindow.startsAt}..${entry.baselineWindow.endsAt}`}
+                    </td>
+                    <td className="mono">{entry.value}</td>
+                    <td className="mono">{entry.threshold}</td>
+                    <td className="mono">{entry.reasonCodes.join(', ') || '—'}</td>
+                    <td className="mono">{entry.provenanceId.slice(0, 8)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </SectionBlock>
           {result.value.entries.map((entry) => (
             <Limitation key={`limitation:${entry.signalType}:${entry.subjectId}`}>
               <span className="mono">{entry.subjectId}</span>: {entry.evidenceLimitation}

@@ -34,11 +34,15 @@ const isolated = await openMigratedSchema();
 const seeded = await seedPipeline(isolated.db);
 await isolated.db.end();
 
+// Each account carries a synthetic address on the reserved `.test` domain, so
+// the specs sign in by one-time code: the memory store's local email path
+// appends every message to a mode-600 file under test-results (CAS-010).
 const accounts = {
-  judge: await syntheticAccount('judge'),
-  editor: await syntheticAccount('editor'),
-  admin: await syntheticAccount('admin'),
+  reader: await syntheticAccount('reader', { email: 'reader@dashboard.test' }),
+  editor: await syntheticAccount('editor', { email: 'editor@dashboard.test' }),
+  admin: await syntheticAccount('admin', { email: 'admin@dashboard.test' }),
 };
+const emailPath = path.join(output, 'email.jsonl');
 
 await mkdir(output, { recursive: true, mode: 0o700 });
 await writeFile(
@@ -59,7 +63,12 @@ await writeFile(
       accounts: Object.fromEntries(
         Object.entries(accounts).map(([role, account]) => [
           role,
-          { username: account.record.username, password: account.password, id: account.record.id },
+          {
+            username: account.record.username,
+            password: account.password,
+            id: account.record.id,
+            email: account.record.normalizedEmail,
+          },
         ]),
       ),
     },
@@ -77,6 +86,7 @@ const env = {
   DASHBOARD_MEMORY_STORE_SEED: seedPath,
   DASHBOARD_DATABASE_SCHEMA: isolated.name,
   DASHBOARD_TRUST_FORWARDED_FOR: 'false',
+  DASHBOARD_LOCAL_EMAIL_FILE: emailPath,
   PORT: port,
 };
 delete env.NODE_OPTIONS;

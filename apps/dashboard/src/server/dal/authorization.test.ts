@@ -32,6 +32,7 @@ import {
   publishOutput,
   unpublishOutput,
 } from './readers.ts';
+import { shellStatus } from './shell.ts';
 import {
   donationsView,
   openBillingPortal,
@@ -83,6 +84,7 @@ async function runtimeFor(): Promise<{ runtime: Runtime; principals: Record<Role
       databaseSchema: 'public',
       trustForwardedFor: false,
       trustedProxyHops: 1,
+      buildCommit: null,
     },
     stores,
     untouchable,
@@ -119,6 +121,7 @@ const READS: Readonly<Record<string, Call>> = {
   publishedList: (r, p) => publishedList(r, p),
   publishedOutput: (r, p) => publishedOutput(r, p, ID, 'cyberattack', 'roundup'),
   pendingSignups: (r, p) => pendingSignups(r, p),
+  shellStatus: (r, p) => shellStatus(r, p),
 };
 
 const MUTATIONS: Readonly<Record<string, Call>> = {
