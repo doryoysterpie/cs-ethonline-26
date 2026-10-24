@@ -1,10 +1,10 @@
 # Incident response
 
-**Status: speculative.** Security-foundation track, branch `parallel/s6-security-foundation`,
-pending independent audit. This is the preparation the project can make before any hosted
-component exists: who decides, what counts as an incident, what to do first in each case, and
-what must be written down afterwards. Every runbook uses only commands and controls that exist
-on this branch; nothing here assumes a dashboard, an MCP server, a feed or a deployment.
+**Status: operational with named unverified controls.** This document began on the
+security-foundation track; the dashboard and PostgreSQL service now exist on Railway, while
+backup activation remains unverified until the owner records provider evidence under
+`RUNBOOK-HOSTING.md`, section 6. Every runbook distinguishes a control the repository proves
+from a provider setting only the owner can verify.
 
 ## 1. Roles
 
@@ -22,7 +22,7 @@ a branch, Codex audits, and neither agent merges.
 
 | Level | Meaning                                                                                                    | First response within |
 | ----- | ---------------------------------------------------------------------------------------------------------- | --------------------- |
-| S1    | A secret is exposed, or a published statement is false or names someone the sourcing does not support      | 1 hour                |
+| S1    | A secret is exposed; the only live data copy is lost; or a published statement is false or unsupported     | 1 hour                |
 | S2    | Integrity of stored evidence or of the repository is in doubt (drift, tampering, a compromised dependency) | 4 hours               |
 | S3    | Availability: the pipeline cannot run, or a hostile input keeps a command from completing                  | 1 day                 |
 | S4    | A weakness reported with no evidence of exploitation                                                       | 5 days                |
@@ -42,6 +42,9 @@ Times are targets for a one-person project during the event, not promises.
 - A draft or a published issue is found to name an organisation or a person the sourcing does
   not support, or to state an incident that did not happen.
 - A vulnerability report arrives.
+- A scheduled backup is missing, PITR reports an unhealthy archive, a restore refuses, or the
+  restore drill reports a pending/drifting migration or a per-table row-count mismatch.
+- The only live database, volume, or Railway project is deleted or becomes unreadable.
 
 ## 4. Runbooks
 
@@ -124,6 +127,34 @@ re-minted at its own provider and the old one revoked there, `main` redeployed, 
 migrations inspected, the first account re-invited, and the log row written with codes and
 dates and no value. Added after the 21 to 22 October 2026 incident.
 
+### Runbook 8: single-copy database loss or failed recovery (S1/S2)
+
+1. Stop every writer and record the last known-good application timestamp. Do not migrate,
+   re-import, delete a service, wipe a volume, or restore over the source.
+2. Owner inspects the Railway Backups tab for the newest healthy PITR point, volume backup,
+   and their timestamps. If the archive or volume is missing, open Railway support at once;
+   keep the project, failed service, and volume unchanged for provider investigation.
+3. Restore PITR to a new sibling service or restore a volume backup as a staged change. For a
+   logical dump, restore only to a local `cas_restore_*` database by following
+   `RUNBOOK-HOSTING.md`, section 7. The source stays read-only throughout the drill.
+4. Verify the restored target before any cutover: every committed migration is applied,
+   `pending=0`, `drift=0`, and every exact per-table row count matches the source snapshot or
+   the backup manifest. A missing source makes count comparison impossible; record that limit
+   and reconcile the restored counts against the last successful drill instead.
+5. Record actual RPO as the interval from the incident's last known-good timestamp to the
+   newest verified restored record; record actual RTO from incident declaration to a verified
+   cutover candidate. Exceeding `RUNBOOK-HOSTING.md`, section 6's objectives is an incident
+   finding, not a reason to alter the figures.
+6. Owner alone approves a connection-string swap. Keep the old service and volume intact
+   until the application passes sign-in and read-path checks against the restored target; do
+   not delete either copy during the incident.
+7. If no restorable copy exists, reconstruct from the weekly copy-ready exports and replayable
+   inputs; name every unrecoverable human decision and the affected interval. The incident
+   remains S1 until the owner accepts or remediates that loss.
+8. Record the incident, the provider ticket identifier, backup timestamp, measured RPO/RTO,
+   migration result, table-count result, cutover decision, and owners; record no credential,
+   connection string, or row content.
+
 ## 5. Records
 
 Every incident, including a false alarm, gets an entry in this document's log below and,
@@ -141,6 +172,8 @@ text.
 - No lowering of the release-age gate, the resource limits or the credential policy to make
   a fix land faster.
 - No message to a reporter, a provider or the public from an agent; the owner speaks.
+- No in-place restore over a source database and no deletion of a failed source before a
+  verified recovery copy exists.
 
 ## 7. Log
 
