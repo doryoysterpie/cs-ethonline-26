@@ -21,6 +21,12 @@ export interface Queryable {
 
 export interface DatabaseOptions {
   readonly maxConnections?: number | undefined;
+  /** Maximum time spent opening or waiting for a pooled connection. */
+  readonly connectionTimeoutMillis?: number | undefined;
+  /** PostgreSQL-enforced ceiling for every statement on this handle. */
+  readonly statementTimeoutMillis?: number | undefined;
+  /** Driver-enforced ceiling while waiting for a query response. */
+  readonly queryTimeoutMillis?: number | undefined;
   /**
    * How a pooled client is acquired. Defaults to the pool's own `connect`.
    *
@@ -85,6 +91,9 @@ export class Database {
       max: options.maxConnections ?? 4,
       application_name: 'cas-database',
       options: startupOptions.join(' '),
+      connectionTimeoutMillis: options.connectionTimeoutMillis,
+      statement_timeout: options.statementTimeoutMillis,
+      query_timeout: options.queryTimeoutMillis,
     });
     // An idle client can drop its connection; without a listener the pool
     // would raise it as an uncaught error. Nothing is logged here because a
@@ -108,6 +117,68 @@ export class Database {
       return await fn(wrap(client));
     } finally {
       client.release();
+    }
+  }
+
+  /**
+   * Executes the deployment-readiness query on one client. A failed or timed
+   * out probe destroys that client instead of returning an uncertain socket
+   * to the pool. The SQL is deliberately constant, read-only and independent
+   * of application tables or migration metadata.
+   */
+  async readinessProbe(timeoutMillis: number): Promise<void> {
+    if (!Number.isSafeInteger(timeoutMillis) || timeoutMillis <= 0) {
+      throw new DatabaseError('configuration', 'database readiness timeout is invalid');
+    }
+
+    const deadline = Date.now() + timeoutMillis;
+    const remaining = (): number => Math.max(1, deadline - Date.now());
+    const acquisition = this.acquire();
+    let acquisitionTimer: ReturnType<typeof setTimeout> | undefined;
+    let acquisitionTimedOut = false;
+    let client: pg.PoolClient;
+    try {
+      client = await Promise.race([
+        acquisition,
+        new Promise<never>((_resolve, reject) => {
+          acquisitionTimer = setTimeout(() => {
+            acquisitionTimedOut = true;
+            reject(new DatabaseError('connection', 'database readiness probe timed out'));
+          }, remaining());
+        }),
+      ]);
+    } catch (error) {
+      if (acquisitionTimedOut) {
+        // `Promise.race` cannot cancel a custom/injected acquisition. If it
+        // eventually resolves, destroy the late client rather than leak it.
+        void acquisition.then(
+          (late) => late.release(true),
+          () => undefined,
+        );
+      }
+      throw error;
+    } finally {
+      if (acquisitionTimer !== undefined) clearTimeout(acquisitionTimer);
+    }
+
+    let destroy = false;
+    let queryTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        wrap(client).query('SELECT 1'),
+        new Promise<never>((_resolve, reject) => {
+          queryTimer = setTimeout(() => {
+            destroy = true;
+            reject(new DatabaseError('connection', 'database readiness probe timed out'));
+          }, remaining());
+        }),
+      ]);
+    } catch (error) {
+      destroy = true;
+      throw error;
+    } finally {
+      if (queryTimer !== undefined) clearTimeout(queryTimer);
+      client.release(destroy);
     }
   }
 
@@ -169,4 +240,30 @@ export class Database {
 
 export function openDatabase(config: DatabaseConfig, options: DatabaseOptions = {}): Database {
   return new Database(config, options);
+}
+
+export interface DatabaseReadinessOptions {
+  readonly timeoutMillis: number;
+}
+
+/**
+ * Opens a dedicated one-connection pool for one bounded readiness query and
+ * always closes it. Application request traffic never waits behind this
+ * probe, and the probe never consumes a slot in the application's pool.
+ */
+export async function probeDatabaseReadiness(
+  config: DatabaseConfig,
+  options: DatabaseReadinessOptions,
+): Promise<void> {
+  const database = openDatabase(config, {
+    maxConnections: 1,
+    connectionTimeoutMillis: options.timeoutMillis,
+    statementTimeoutMillis: options.timeoutMillis,
+    queryTimeoutMillis: options.timeoutMillis,
+  });
+  try {
+    await database.readinessProbe(options.timeoutMillis);
+  } finally {
+    await database.end();
+  }
 }

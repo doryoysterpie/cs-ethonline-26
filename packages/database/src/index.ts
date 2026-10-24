@@ -170,6 +170,8 @@ export {
 export {
   Database,
   openDatabase,
+  probeDatabaseReadiness,
+  type DatabaseReadinessOptions,
   type DatabaseOptions,
   type IsolationLevel,
   type Queryable,
