@@ -272,6 +272,7 @@ export {
   loadMigrations,
   MIGRATIONS_DIRECTORY,
   migrationStatus,
+  migrationStatusForClient,
   runMigrations,
   type AppliedMigration,
   type MigrationDrift,
@@ -281,6 +282,14 @@ export {
 } from './migrate.js';
 export { connectionSecrets, createRedactor, REDACTED, type Redactor } from './redact.js';
 export { createSchema, dropSchema, listTables, quoteIdentifier } from './schema.js';
+export {
+  assertRestoreDrillSafety,
+  compareTableRowCounts,
+  countSchemaRows,
+  parseRestoreDrillTimeout,
+  type RowCountDifference,
+  type TableRowCount,
+} from './restore.js';
 export {
   completeWeekRun,
   findCompletedWeekRunByKey,

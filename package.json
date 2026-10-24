@@ -28,6 +28,7 @@
     "graph:test:live": "pnpm --filter @cas/graph-evidence test:live",
     "db:migrate": "pnpm -s --filter @cas/worker cli db migrate",
     "db:check": "pnpm -s --filter @cas/worker cli db check",
+    "db:restore-drill": "pnpm --filter @cas/database restore:drill",
     "editorial:validate": "pnpm -s --filter @cas/worker cli editorial validate",
     "editorial:import": "pnpm -s --filter @cas/worker cli editorial import",
     "editorial:report": "pnpm -s --filter @cas/worker cli editorial report",

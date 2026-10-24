@@ -20,7 +20,7 @@ One project (`cs`), one environment (`production`), two services:
   address is the service's Railway domain over https.
 - **Postgres**, Railway's managed PostgreSQL with one volume. The dashboard reaches it over
   Railway's private network through a variable reference; no public TCP proxy is enabled on it
-  (section 6).
+  (section 8).
 
 Nothing else is deployed: the weekly pipeline runs from the owner's machine (D37), the MCP
 server is not hosted, and no cron service exists.
@@ -98,27 +98,115 @@ applying and apply only what the step names.
 
 10. **Record.** A row in `INCIDENT_RESPONSE.md`, section 7, with dates and codes and no value.
 
-## 4. The two checks CAS-006 owes the live service
+## 4. The checks CAS-006 owes the live service
 
 - **The trusted-proxy proof (step 7, the owner's half).** From a second network (mobile data),
   request a sign-in code for one address and enter wrong codes until the request locks; from
   the first network, request one normally. The first network still receives a code when the
   proxy settings key clients apart. Record the date.
-- **Backups (step 11).** On Railway, creating backups, scheduling them and point-in-time
-  recovery need the Pro plan; Hobby can view and restore backups that already exist. The
-  owner's decision of 22 October 2026 defers the upgrade to the launch: the refined dashboard
-  opened to the public for reader sign-up and the supporter tier (CAS-007, CAS-008). Until then
-  the hosted database has no backup and the weekly copy-ready export is the copy
-  (`RISK_REGISTER.md`, K21). Backups are on before the first public account exists; the
-  restore-to-scratch check runs then.
+- **Backups (step 11).** The required schedule, evidence, and restore drill are in sections
+  5–7. As of 23 October 2026, the repository proves the local logical-dump drill; it does not
+  prove that any Railway backup switch is on. The owner verifies the Backups tab and records
+  the evidence before K21 can close.
 
 ## 5. Plan
 
 Hobby, USD 5 a month (D30): one small service and one small database; the volume may grow to
-5 GB, roughly nine times the populated local database. Pro (USD 20) is the plan with backups.
-A plan change is a change to D30, recorded there.
+5 GB, roughly nine times the populated local database. The earlier runbook said backups and
+point-in-time recovery required Pro. Railway's documentation checked on 23 October 2026 no
+longer states that prerequisite and instead describes usage billing. The Railway project UI
+and invoice remain authoritative for this account; an owner records any plan change as an
+amendment to D30.
 
-## 6. The public TCP proxy
+## 6. Backup policy, RPO and RTO
+
+The production policy uses three independent recovery layers. Volume snapshots recover a bad
+deploy or volume state; point-in-time recovery (PITR) recovers a timestamp between snapshots;
+a provider-independent logical dump remains available if the Railway project or its volumes
+are deleted. One layer is not a backup policy.
+
+| Layer                             | Required schedule and retention                                                                                       | Recovery point objective                                                                                                 | Recovery time objective                                               |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| Railway volume backups            | Daily every 24 hours, retained 6 days; weekly every 7 days, retained 27 days; monthly every 30 days, retained 89 days | 24 hours when PITR is unavailable                                                                                        | 4 hours to restore, verify, and present a cutover decision            |
+| Railway PostgreSQL PITR           | Continuous WAL archive; daily differential and weekly full base backups; last 4 full backups, approximately 4 weeks   | 5 minutes while Railway reports the archiver healthy; 24 hours after an archiver fault until the fault is resolved       | 4 hours to create and verify the sibling restore service              |
+| Provider-independent logical dump | Daily at 03:00 UTC; encrypted object retention 35 days; one manual dump before every schema migration                 | 24 hours for project or volume deletion; the manual pre-migration dump bounds migration rollback to the migration window | 8 hours to provision PostgreSQL, restore, verify, and prepare cutover |
+
+These are operating objectives, not provider guarantees. A drill falsifies the policy when
+the measured recovery point exceeds the applicable RPO, the measured recovery time exceeds
+the applicable RTO, any migration is pending or drifting, or any per-table count differs.
+Railway currently documents the volume schedules and retention above in its
+[volume backup reference](https://docs.railway.com/volumes/backups), and documents the PITR
+base-backup cycle and restore behaviour in its
+[PostgreSQL backup guide](https://docs.railway.com/guides/postgres-backups-restores).
+
+### Owner-only activation and evidence
+
+1. In the Postgres service's **Backups** tab, enable daily, weekly, and monthly volume
+   schedules; record a screenshot or exported settings record that shows all three schedules
+   and the date, without a connection string.
+2. Enable PITR; wait for the first base backup and the datetime picker; record the earliest and
+   latest restorable timestamps and the archiver's healthy state.
+3. Configure the daily logical dump to a separately controlled, S3-compatible object store;
+   use a database credential restricted to `CONNECT` and `SELECT`, and apply a 35-day object
+   lifecycle. Neither credential is stored in this repository.
+4. Trigger a manual volume backup before every migration-bearing deployment. Do not apply the
+   deployment until that backup reports complete.
+5. Run the isolated restore drill in section 7 monthly and after any database engine, provider,
+   backup policy, or migration-runner change. Record the backup timestamp, start/end time,
+   migration result, table count, and mismatches; never record row contents or credentials.
+
+Hosted activation is a human-owned Railway change. Repository code cannot prove that the
+switches are on, and this runbook does not mark them enabled without the evidence in steps
+1–2.
+
+### Escalation
+
+- A confirmed loss of the only live copy, a deleted project/volume, or no restorable backup is
+  S1: the project owner becomes incident lead within one hour, freezes writes, opens Railway
+  support concurrently, and follows `INCIDENT_RESPONSE.md`, Runbook 8.
+- A missed scheduled backup, unhealthy PITR archive, restore refusal, migration mismatch, or
+  row-count mismatch is S2: freeze schema changes, preserve the failed artefact, notify the
+  owner within four hours, and do not cut over.
+- Only the owner approves a connection-string swap, source deletion, disclosure, or provider
+  escalation. The implementer builds evidence on a scratch target; the auditor reviews that
+  evidence independently.
+
+## 7. Isolated logical restore drill
+
+Install PostgreSQL 17 client tools (`pg_dump`, `pg_restore`, `createdb`, and `dropdb`). Reach a
+hosted source through `railway connect postgres --tunnel-only` or another owner-approved
+read-only path. Create a separate local database whose name begins `cas_restore_`; the script
+refuses a remote target, the source database itself, an unsafe target name, or a target schema
+that already contains a table.
+
+```bash
+createdb --maintenance-db="$LOCAL_POSTGRES_ADMIN_URL" cas_restore_yyyymmdd
+
+BACKUP_SOURCE_DATABASE_URL="$READ_ONLY_SOURCE_URL" \
+RESTORE_DATABASE_URL="$LOCAL_RESTORE_URL" \
+corepack pnpm db:restore-drill
+
+dropdb --maintenance-db="$LOCAL_POSTGRES_ADMIN_URL" cas_restore_yyyymmdd
+```
+
+Keep every value above in the shell or an ignored local environment file; do not paste a URL
+into a ticket, log, or transcript. `BACKUP_SOURCE_SCHEMA` defaults to `public`.
+`RESTORE_DRILL_TIMEOUT_SECONDS` defaults to 300 and accepts 30–3600.
+
+The command opens the source at `REPEATABLE READ, READ ONLY`, exports that snapshot to
+`pg_dump`, restores the custom-format dump to the empty local target in one transaction, and
+then checks both databases against the committed migration files. A pass reports the current
+migration count, `pending=0`, `drift=0`, and exact source/restored counts for every table. It
+does not print a connection string or row contents; its temporary dump and restore list are
+removed on both success and failure. The command never drops a schema or database.
+
+Local evidence on 23 October 2026, PostgreSQL client/server 17: a deliberately seeded source
+restored in 999 ms; 20 migrations were current, pending and drift were zero, 45 table counts
+matched, and `url_groups` reconciled `1` to `1`. A second run against the populated target
+refused before restore with `schema is not empty (tables=45)`. This proves the tool and its
+overwrite guard locally; it does not prove that a hosted Railway backup exists or restores.
+
+## 8. The public TCP proxy
 
 The database has no public address today. A TCP proxy on the Postgres service gives it one,
 protected by the database password alone, reachable from the whole internet; the service that
@@ -127,7 +215,7 @@ database: the weekly import (CAS-001 step 14) and the manual pipeline runs (D37)
 then, on the Postgres service's "Settings", "Networking", and prefer leaving it off between
 runs; the decision is recorded when it is first taken.
 
-## 7. What is never done
+## 9. What is never done
 
 - A secret value in a chat, a commit, an issue, a log excerpt or a screenshot. Deploy logs
   print fixed codes for this reason.
@@ -135,3 +223,5 @@ runs; the decision is recorded when it is first taken.
 - Railway's "Diagnose" button on a failed deployment: it sends the log to a third-party
   assistant, and the log already names the cause.
 - A deploy while Railway's status banner is up.
+- A restore over the source database, a remote target, or a target with existing application
+  tables.
