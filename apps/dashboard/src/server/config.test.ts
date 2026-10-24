@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { openStores } from './auth/stores.ts';
-import { loadDashboardConfig } from './config.ts';
+import { loadDashboardConfig, loadDashboardRuntimeConfig } from './config.ts';
 import { isDashboardError } from './errors.ts';
 
 const base = {
@@ -95,5 +95,21 @@ describe('dashboard configuration', () => {
         error.kind === 'configuration' &&
         error.code === 'postgres_store_requires_database',
     );
+  });
+
+  it('validates the required production integration configuration as one unit', () => {
+    const production = {
+      DASHBOARD_ENVIRONMENT: 'production',
+      DASHBOARD_ACCOUNT_STORE: 'postgres',
+    };
+    expect(() => loadDashboardRuntimeConfig(production)).toThrowError(/RESEND_API_KEY is not set/);
+    expect(
+      loadDashboardRuntimeConfig({
+        ...production,
+        RESEND_API_KEY: 'test-provider-key',
+        AUTH_EMAIL_FROM: 'access@example.test',
+        AUTH_OTP_PEPPER: 'a'.repeat(32),
+      }).dashboard,
+    ).toMatchObject({ environment: 'production', accountStore: 'postgres' });
   });
 });

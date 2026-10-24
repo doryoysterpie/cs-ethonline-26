@@ -1,7 +1,11 @@
 import 'server-only';
 
+import { loadOtpEmailConfig, type OtpEmailConfig } from './auth/email-config.ts';
 import { ENVIRONMENTS, ENVIRONMENT_VARIABLE, type DashboardEnvironment } from './environment.ts';
 import { DashboardError } from './errors.ts';
+import { loadModelConfig, type ModelConfig } from './model/config.ts';
+import { loadReaderConfig, type ReaderConfig } from './model/reader.ts';
+import { loadSupportConfig, type SupportConfig } from './support/config.ts';
 
 /**
  * Dashboard runtime configuration, read from the environment once and
@@ -67,6 +71,16 @@ export const TRUST_FORWARDED_FOR_VARIABLE = 'DASHBOARD_TRUST_FORWARDED_FOR';
 export const TRUSTED_PROXY_HOPS_VARIABLE = 'DASHBOARD_TRUSTED_PROXY_HOPS';
 export const DEFAULT_TRUSTED_PROXY_HOPS = 1;
 const MAXIMUM_TRUSTED_PROXY_HOPS = 8;
+/** One ceiling for connection acquisition and the read-only readiness query. */
+export const READINESS_TIMEOUT_MILLIS = 2_000;
+
+export interface DashboardRuntimeConfig {
+  readonly dashboard: DashboardConfig;
+  readonly otpEmail: OtpEmailConfig | null;
+  readonly model: ModelConfig | null;
+  readonly reader: ReaderConfig | null;
+  readonly support: SupportConfig | null;
+}
 
 function configuration(code: string, message: string): DashboardError {
   return new DashboardError('configuration', code, message);
@@ -157,4 +171,24 @@ export function loadDashboardConfig(
     trustForwardedFor: trust === 'true',
     trustedProxyHops,
   };
+}
+
+/**
+ * Validates every configuration group the dashboard composition root reads.
+ * Optional integrations remain optional, but a partially configured one is
+ * rejected. Production's PostgreSQL account store also requires the complete
+ * passwordless-email configuration; local memory-backed development does not.
+ */
+export function loadDashboardRuntimeConfig(
+  env: Readonly<Record<string, string | undefined>>,
+): DashboardRuntimeConfig {
+  const dashboard = loadDashboardConfig(env);
+  const otpEmail = dashboard.accountStore === 'postgres' ? loadOtpEmailConfig(env) : null;
+  const model = loadModelConfig(env);
+  const reader = loadReaderConfig(env);
+  // The composition root constructs this URL too. Do it during validation so
+  // readiness cannot pass a value that would make the first request fail.
+  if (reader !== null) new URL(reader.publicUrl);
+  const support = loadSupportConfig(env);
+  return { dashboard, otpEmail, model, reader, support };
 }

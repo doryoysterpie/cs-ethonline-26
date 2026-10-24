@@ -15,8 +15,9 @@ One project (`cs`), one environment (`production`), two services:
   on Debian bookworm-slim, a frozen-lockfile install, a Turborepo build of the dashboard, the
   dashboard's `start` on port 3000). `railway.json` sets the Dockerfile builder, a pre-deploy
   command that runs the worker's `db migrate` then `db check` so the database is at the commit's
-  migration set before any traffic moves, the health check at `/api/healthz` with a 120-second
-  timeout, restart on failure at most three times, one replica. Region EU West. The public
+  migration set before any traffic moves, the readiness check at `/api/readyz` with a 120-second
+  platform timeout (the endpoint's database probe is bounded to two seconds), restart on failure
+  at most three times, one replica. `/api/healthz` remains the process-liveness check. Region EU West. The public
   address is the service's Railway domain over https.
 - **Postgres**, Railway's managed PostgreSQL with one volume. The dashboard reaches it over
   Railway's private network through a variable reference; no public TCP proxy is enabled on it

@@ -8,7 +8,7 @@
     "preDeployCommand": [
       "node apps/worker/dist/cli.js db migrate && node apps/worker/dist/cli.js db check"
     ],
-    "healthcheckPath": "/api/healthz",
+    "healthcheckPath": "/api/readyz",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3,
