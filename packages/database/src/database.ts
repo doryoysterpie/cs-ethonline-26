@@ -40,6 +40,12 @@ export type IsolationLevel = 'repeatable read';
 
 export interface TransactionOptions {
   readonly isolationLevel?: IsolationLevel | undefined;
+  /**
+   * Makes PostgreSQL reject every write in the transaction. Restore
+   * verification uses this for the live source snapshot: the type is a
+   * boolean because read-write remains PostgreSQL's default everywhere else.
+   */
+  readonly readOnly?: boolean | undefined;
 }
 
 function wrap(client: pg.PoolClient): Queryable {
@@ -129,11 +135,14 @@ export class Database {
     const tx = wrap(client);
     let destroy = false;
     try {
-      await tx.query(
-        options.isolationLevel === 'repeatable read'
-          ? 'BEGIN ISOLATION LEVEL REPEATABLE READ'
-          : 'BEGIN',
-      );
+      const begin = [
+        'BEGIN',
+        options.isolationLevel === 'repeatable read' ? 'ISOLATION LEVEL REPEATABLE READ' : null,
+        options.readOnly === true ? 'READ ONLY' : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(' ');
+      await tx.query(begin);
       const result = await fn(tx);
       await tx.query('COMMIT');
       return result;
