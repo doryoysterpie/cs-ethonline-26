@@ -14,5 +14,10 @@ export default defineConfig({
   },
   test: {
     exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/*.db.test.ts', 'tests/**'],
+    // The authorization enumeration hashes a synthetic password per role with
+    // Argon2id before every case, CPU-bound work that the runner's 5-second
+    // default cut off when `verify` built the other packages beside it (a
+    // CAS-006 follow-up). The bound stays well under the database suite's.
+    testTimeout: 30_000,
   },
 });
