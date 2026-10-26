@@ -12,6 +12,8 @@
 #                 no-op rerun, the drift check, and the complete test:db suite.
 #                 The service holds no credential: trust authentication on the
 #                 job's own loopback, a role name and a database name only.
+#   browser       the production dashboard build and Playwright suite against
+#                 a fresh PostgreSQL 17 service on the job's own loopback.
 #   supply-chain  the dependency audit and the byte-for-byte reproduction of
 #                 the committed bill of materials and licence inventory,
 #                 cross-checked against pnpm's own generator.
@@ -237,6 +239,54 @@ jobs:
 
       - name: PostgreSQL integration suite
         run: pnpm test:db
+
+  browser:
+    name: Browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17.11@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+        env:
+          POSTGRES_USER: cas_ci
+          POSTGRES_DB: cas_ci
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cas_ci -d cas_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+    env:
+      DATABASE_URL: postgresql://cas_ci@127.0.0.1:5432/cas_ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          check-latest: false
+          cache: pnpm
+
+      - name: Install with frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the pinned Chromium runtime
+        run: pnpm --filter @cas/dashboard exec playwright install --with-deps chromium
+
+      - name: Build browser workspace dependencies
+        run: pnpm exec turbo run build --filter=@cas/dashboard^...
+
+      - name: Browser suite
+        run: pnpm --filter @cas/dashboard test:browser
 
   supply-chain:
     name: Supply chain

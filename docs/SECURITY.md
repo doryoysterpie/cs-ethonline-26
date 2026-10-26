@@ -108,10 +108,10 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
 - CodeQL runs over the TypeScript sources on every push, pull request and weekly
   (`.github/workflows/codeql.yml`).
 - GitHub secret scanning, push protection, Dependabot alerts, private vulnerability
-  reporting, branch protection on `main` and required SHA pinning are repository settings.
-  They cannot be enabled from code; the owner-facing list is in
-  `SECURITY-FOUNDATION-REPORT.md` section 7, and the first-party scans above are the
-  readiness step that runs whether or not they are on.
+  reporting, the `main` ruleset and required SHA pinning are repository settings. They cannot
+  be enabled from code; `.github/rulesets/main.json` defines the intended branch rules,
+  `RUNBOOK-SECURITY.md` defines the owner-only activation and read-back, and the first-party
+  scans above are the readiness step that runs whether or not the live settings are on.
 
 ## 9. Chain posture
 

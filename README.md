@@ -38,6 +38,12 @@ commit is recorded in `docs/AUDIT-LEDGER.md`, and the short version is this: Spr
 were accepted by an independent reviewer; everything after Sprint 4, including the code the
 deployed dashboard runs, is **not audited** in those words until a reviewer says otherwise.
 
+As of 24 October 2026, `origin/main` is `978d6cc`. The following work is open and is not on
+`main`: CAS-010 layout (PR #34), the repaired browser harness (PR #36), CAS-009 cards (PR #35),
+the readiness endpoint (PR #50), backup/restore operations (PR #51), and the local ruleset plus
+Browser E2E integration (PR #52). None of those open heads has an independent PASS recorded in
+the audit ledger. PR #52 intentionally stacks PRs #34 and #36; PR #35 remains a dependent branch.
+
 **What runs on `main`.** Editorial ingestion from CSV (Sprint 2), a deterministic high-recall
 classifier (Sprint 3, D21), deterministic clustering into provisional incidents with a human
 merge-and-split layer (Sprint 4, D22), the Graph evidence, anomaly and deterministic drafting
@@ -175,7 +181,7 @@ import command was run against the live workbook into a local database on 21 Oct
 | `apps/sunday-agent`       | `@cas/sunday-agent`   | placeholder                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `apps/payer-agent`        | `@cas/payer-agent`    | placeholder, Sprint 8 conditional on the gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `packages/contracts`      | `@cas/contracts`      | editorial and import enums, the chain set, the Graph evidence contracts and the versioned resource limits (`resource-limits@1`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `packages/database`       | `@cas/database`       | implemented: migration runner, seventeen migrations, ingestion, classification, clustering, evidence and claim ops, Sheets provenance, run categories, the editorial week (manifest, children, selections), the round-up and article revisions, the model ledger, sign-up requests and the published mark                                                                                                                                                                                                                                                                                                                                                       |
+| `packages/database`       | `@cas/database`       | implemented: migration runner, twenty migrations, ingestion, classification, clustering, evidence and claim ops, Sheets provenance, run categories, the editorial week (manifest, children, selections), the round-up and article revisions, the model ledger, sign-up requests and the published mark                                                                                                                                                                                                                                                                                                                                                          |
 | `packages/roundup`        | `@cas/roundup`        | CAS-004: the rundown template, slot schema, prompt contract, deterministic rendering, response validation and cost rules; pure, no socket                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `packages/source-reader`  | `@cas/source-reader`  | CAS-005: the fetch policy of `docs/FETCH-POLICY.md` over an injected transport and resolver, `robots.txt`, bounded bodies, text extraction; the one Node transport apart                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `packages/article`        | `@cas/article`        | CAS-005: the article contract, input from a reading, slot schema, prompt contract (D41, D4), validation against the selection as read, Markdown export, cost rules; pure, no socket                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -234,14 +240,17 @@ and `build`. None of these steps touches the network or needs a secret.
 Set `TURBO_TELEMETRY_DISABLED=1` to silence Turborepo telemetry locally.
 
 Continuous integration (`.github/workflows/ci.yml`) runs on every push to `main`, a
-`sprint-*`, `parallel/*` or `release/*` branch and on every pull request, in three jobs: `Verify`
+`sprint-*`, `parallel/*` or `release/*` branch and on every pull request, in five jobs: `Verify`
 (the sequence above, preceded by the toolchain assertion and followed by the offline suite
-rerun under an enforced network denial), `PostgreSQL integration` (a fresh, digest-pinned
-PostgreSQL 17 service: every migration applied, a no-op rerun, the drift check and the
-complete `test:db` suite, with a credential-free loopback URL) and `Supply chain`
-(`pnpm audit` and the byte-for-byte reproduction of `supply-chain/`). A separate CodeQL
-workflow analyses the TypeScript sources. Every action is pinned to a full commit SHA. The
-CI additions belong to the security-foundation track and are pending an independent audit.
+rerun under enforced network denial); PostgreSQL 17 integration once with loopback trust and
+once with SCRAM password authentication; `Browser E2E` against a production Next build and an
+isolated, migrated PostgreSQL schema; and `Supply chain` (`pnpm audit` plus byte-for-byte
+reproduction of `supply-chain/`). The browser lane installs the dashboard workspace's pinned
+Chromium, runs one worker, and has `retries: 0`. A separate CodeQL workflow analyses the
+TypeScript sources. Every action is pinned to a full commit SHA. The local ruleset specification
+requires all six check contexts, including `Browser E2E`; activating and reading back that
+ruleset on GitHub remains an owner-only CAS-006 step. These controls are pending an independent
+audit.
 
 Two further commands exist for the same purpose locally: `corepack pnpm test:offline-enforced` (Linux; proves the network denial with a loopback control, then runs the default suite inside it) and `corepack pnpm test:denied` (macOS). Both run every default test except `redirect.stdio.test.ts`, which needs a listening socket that a strict denial refuses; it runs in the ordinary `Test` step and, on macOS, under `corepack pnpm test:localhost`.
 `corepack pnpm supply-chain:generate` regenerates the bill of materials after a lockfile
@@ -351,13 +360,15 @@ run only through `corepack pnpm test:db`, need `DATABASE_URL`, and create and dr
 schemas named `cas_test_<random>` in that database. Rules are in `docs/SECURITY.md`
 sections 11 and 15 and `docs/DATA_INPUTS.md` section 14.
 
-## Dashboard (parallel Sprint 6 track, speculative)
+## Dashboard
 
-The Next.js dashboard and its authentication live on `parallel/s6-dashboard-auth` (decision
-D28) and are **pending an independent audit**. Account persistence is paused until the next
-migration number is allocated after the Sprint 5 correction, so the track runs only with the
-in-memory store in the `local` environment. No account is provisioned. Set the four
-`DASHBOARD_*` variables from `.env.example`, then:
+The Next.js dashboard and its authentication are integrated on `main` and remain **pending an
+independent audit** except where the ledger names a later reviewed correction. Production uses
+the PostgreSQL account store; the memory store is restricted to local development and tests.
+The closed runtime roles are `reader`, `editor`, `admin` and `owner`; the retired `judge` role is
+not valid. `.env.example` is the canonical environment reference. In production, passwordless
+email requires `RESEND_API_KEY`, `AUTH_EMAIL_FROM` and an `AUTH_OTP_PEPPER` of at least 32
+characters in addition to the database and dashboard settings.
 
 ```bash
 corepack pnpm --filter @cas/dashboard build
@@ -371,9 +382,13 @@ corepack pnpm --filter @cas/dashboard start
 corepack pnpm --filter @cas/dashboard provision --username <name> --role <reader|editor|admin|owner> --expires-at <instant>
 ```
 
-The provisioning command reads the password on the terminal without echo, validates it,
-stores an Argon2id hash under a fresh salt and nothing else. `--rotate` replaces an existing
-account's hash and revokes every session of that account. A judge requires `--expires-at`.
+The legacy provisioning command reads a password on the terminal without echo, validates it,
+and stores only its Argon2id hash. `--rotate` replaces an existing account's hash and revokes
+every session of that account. New passwordless accounts are invited by email instead:
+
+```bash
+corepack pnpm --filter @cas/dashboard account invite --email <address> --role <reader|editor|admin|owner> --expires-at <instant>
+```
 
 ```bash
 set -a && . ./.env && set +a && corepack pnpm --filter @cas/dashboard test:db
@@ -384,10 +399,13 @@ set -a && . ./.env && set +a && corepack pnpm --filter @cas/dashboard test:brows
 ```
 
 The browser suite builds the production bundle, migrates and seeds an isolated schema through
-the real pipeline, provisions synthetic accounts with random passwords into a temporary seed
-file, runs Playwright against `next start`, then drops the schema and deletes the files. Rules
-are in `docs/SECURITY.md` section 15; the handoff for the audit is
-`docs/SPRINT-6-DASHBOARD-AUTH-HANDOFF.md`.
+the real pipeline, seeds only valid `reader`, `editor` and `admin` test accounts on the reserved
+`.test` domain, signs in through the passwordless one-time-code path, and runs Playwright against
+`next start`. Teardown drops the schema and deletes the mode-600 seed, credential and local email
+files. The current Railway health check is `/api/healthz`, a process-liveness probe; PostgreSQL
+connectivity, migration count and zero drift are enforced by the pre-deploy `db:migrate` and
+`db:check` commands and by both CI database lanes. The bounded `/api/readyz` probe is still open
+on PR #50 and is not described as deployed. Rules are in `docs/SECURITY.md` section 15.
 
 ## MCP tooling track (parallel, rejected candidate, corrections pending re-audit)
 
@@ -442,11 +460,12 @@ without the project owner's instruction.
 
 ## Live integrations
 
-The Graph is live as of Sprint 1. A local PostgreSQL is used as of Sprint 2, through
-`@cas/database` only; no live database target is chosen (D8). Nothing in this repository
-talks to Anthropic, Hedera, an x402 facilitator or Bazantic yet. `.env.example` declares only the variable names
-an existing architectural need already fixes; every other configuration category is listed
-there without a name until the sprint that introduces it.
+The Graph is live as of Sprint 1. PostgreSQL 17 is used locally and by the hosted Railway
+dashboard through `@cas/database`. The dashboard has bounded provider clients for Anthropic,
+Resend and Stripe; each remains disabled or fails closed when its documented configuration is
+absent. No Hedera, x402-facilitator or Bazantic integration is enabled. `.env.example` is the
+complete environment-name reference for shipped code and distinguishes required, optional,
+local-only and platform-supplied values.
 
 ## Hackathon non-goals
 
@@ -481,6 +500,7 @@ audit and nothing in it is accepted.
 
 | Document                                  | Content                                                                                                                           |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `.env.example`                            | canonical environment-variable reference: runtime, local-only and platform-supplied names                                         |
 | `docs/ARCHITECTURE.md`                    | components, runtime data flow, contract boundary, dependency rules                                                                |
 | `docs/DATA_INPUTS.md`                     | editorial data, schemas, human versus machine labels, ingestion rules                                                             |
 | `docs/PRIOR_INPUTS.md`                    | the pre-existing corpus, its permitted uses, and the submission disclosure                                                        |
@@ -519,4 +539,5 @@ audit and nothing in it is accepted.
 | `docs/tcu/CAS-001.md` to `CAS-009.md`     | one tracker per unit: steps in order, standard steps, acceptance, evidence record, walk-through log                               |
 | `LICENSE`                                 | Apache License 2.0                                                                                                                |
 | `docs/RUNBOOK-HOSTING.md`                 | the hosted service on Railway: what runs, the variables, the rebuild after a provider incident, the plan, the proxy               |
+| `docs/RUNBOOK-SECURITY.md`                | owner-run activation and validation procedure for rulesets and repository security controls                                       |
 | `docs/CAS-010-REPORT.md`                  | CAS-010 report: the dashboard's terminal grid, the S0 design note against D47 and the decisions it raises                         |
