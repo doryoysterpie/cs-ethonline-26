@@ -60,12 +60,18 @@ export const SIGNUP_PER_NETWORK = 10;
 export const READS_PER_READER = 600;
 /** Hosted-checkout hand-offs one account may start per window (CAS-008). */
 export const CHECKOUTS_PER_ACCOUNT = 5;
+/** Cards made per account in a window; a card that already exists is returned without spending one (D48, 7). */
+export const CARDS_PER_ACCOUNT = 20;
+/** Card pages and images served per network source in a window (D48, 5). */
+export const CARD_VIEWS_PER_NETWORK = 300;
 
 export interface Limits {
   readonly signupAddress: WindowLimiter;
   readonly signupNetwork: WindowLimiter;
   readonly readerReads: WindowLimiter;
   readonly checkoutAccount: WindowLimiter;
+  readonly cardAccount: WindowLimiter;
+  readonly cardNetwork: WindowLimiter;
 }
 
 export function defaultLimits(): Limits {
@@ -74,5 +80,7 @@ export function defaultLimits(): Limits {
     signupNetwork: new WindowLimiter(SIGNUP_PER_NETWORK, LIMIT_WINDOW_SECONDS),
     readerReads: new WindowLimiter(READS_PER_READER, LIMIT_WINDOW_SECONDS),
     checkoutAccount: new WindowLimiter(CHECKOUTS_PER_ACCOUNT, LIMIT_WINDOW_SECONDS),
+    cardAccount: new WindowLimiter(CARDS_PER_ACCOUNT, LIMIT_WINDOW_SECONDS),
+    cardNetwork: new WindowLimiter(CARD_VIEWS_PER_NETWORK, LIMIT_WINDOW_SECONDS),
   };
 }

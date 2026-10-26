@@ -50,6 +50,17 @@ async function listen(server: http.Server | https.Server): Promise<number> {
   return (server.address() as AddressInfo).port;
 }
 
+/** Waits for a child-process log record that may trail the protocol response. */
+async function waitForLog(chunks: Buffer[], needle: string, timeoutMs = 20_000): Promise<string> {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    const text = Buffer.concat(chunks).toString('utf8');
+    if (text.includes(needle)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 function certificate(directory: string): { key: string; cert: string } {
   execFileSync(
     'openssl',
@@ -284,7 +295,7 @@ describe('the built entry point against real synthetic redirects', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     expect(servers.stalled.every((s) => s.closed)).toBe(true);
-    const log = Buffer.concat(stderr).toString('utf8');
+    const log = await waitForLog(stderr, 'outcome=call_cancelled');
     expect(log).toContain('outcome=call_cancelled');
     // Capacity is intact: four concurrent calls are admitted and answered.
     servers.mode = { kind: 'payload' };

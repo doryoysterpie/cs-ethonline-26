@@ -18,6 +18,119 @@ import { seedPipeline } from '../../dist/test/seed-pipeline.js';
 import { syntheticAccount } from '../../dist/test/synthetic-accounts.js';
 import { SEED_FORMAT } from '../../dist/server/auth/memory-store.js';
 
+/**
+ * CAS-009: one published round-up of three stories and one story card,
+ * through the real data-access layer on PostgreSQL stores (a card names its
+ * maker as an account row, which the memory store the browser signs in
+ * through does not hold). The model is a recorded answer; nothing is fetched.
+ */
+async function seedPublishedCard(schema) {
+  const { randomUUID } = await import('node:crypto');
+  const { openPostgresStores } = await import('../../dist/server/auth/postgres-store.js');
+  const { createRuntime } = await import('../../dist/server/runtime.js');
+  const { generateRoundup, selectStory } = await import('../../dist/server/dal/mutate.js');
+  const { weekTable } = await import('../../dist/server/dal/read.js');
+  const { publishOutput } = await import('../../dist/server/dal/readers.js');
+  const { makeCard } = await import('../../dist/server/dal/cards.js');
+  const { seedLargeWeek } = await import('../../dist/test/seed-pipeline.js');
+  const { insertSynthetic } = await import('../../dist/test/synthetic-accounts.js');
+  const { loadTemplate, sectionOf } = await import('@cas/roundup');
+  const loaded = await loadTemplate();
+  const marker = sectionOf(loaded.template, 'extras').marker ?? '';
+  const stores = openPostgresStores(schema.db);
+  const runtime = createRuntime(
+    {
+      environment: 'local',
+      accountStore: 'memory',
+      memorySeedPath: null,
+      databaseSchema: schema.name,
+      trustForwardedFor: false,
+      trustedProxyHops: 1,
+      buildCommit: null,
+    },
+    stores,
+    schema.db,
+    {
+      model: {
+        async generate(request) {
+          const seen = JSON.parse(request.user);
+          return {
+            raw: {
+              rundown: seen.incidents.map((incident, i) => ({
+                headline: `Card headline ${i + 1}`,
+                summary: 'A summary the card never carries.',
+                sources: incident.rows.map((row) => row.url),
+                citations: incident.rows.map((row) => row.sourceRowId),
+              })),
+              extras: marker,
+            },
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: request.model,
+          };
+        },
+      },
+    },
+  );
+  const account = await syntheticAccount('owner');
+  await insertSynthetic(stores, account);
+  // A session row for the principal: audit events name their session.
+  const sessionId = randomUUID();
+  await stores.sessions.insert({
+    id: sessionId,
+    accountId: account.record.id,
+    tokenHash: randomUUID().replace(/-/gu, '').padEnd(64, '0').slice(0, 64),
+    createdAt: new Date().toISOString(),
+    lastSeenAt: new Date().toISOString(),
+    absoluteExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    revokedAt: null,
+    revokedReason: null,
+  });
+  const owner = {
+    accountId: account.record.id,
+    username: account.record.username,
+    normalizedEmail: null,
+    role: 'owner',
+    sessionId,
+    sessionToken: 'c'.repeat(43),
+  };
+  const week = await seedLargeWeek(schema.db, 3, 1);
+  const table = await weekTable(
+    runtime,
+    owner,
+    week.weekRunId,
+    'cyberattack',
+    undefined,
+    undefined,
+  );
+  for (const row of table.rows) {
+    await selectStory(runtime, owner, {
+      weekRunId: week.weekRunId,
+      clusteringRunId: row.clusteringRunId,
+      incidentId: row.incidentId,
+      state: 'selected',
+      note: null,
+    });
+  }
+  await generateRoundup(runtime, owner, {
+    weekRunId: week.weekRunId,
+    category: 'cyberattack',
+    expectedTemplateHash: loaded.hash,
+  });
+  await publishOutput(runtime, owner, {
+    weekRunId: week.weekRunId,
+    category: 'cyberattack',
+    output: 'roundup',
+    revision: 1,
+  });
+  const { id } = await makeCard(runtime, owner, {
+    weekRunId: week.weekRunId,
+    category: 'cyberattack',
+    output: 'roundup',
+    entryIndex: 0,
+  });
+  return { roundup: id, weekRunId: week.weekRunId };
+}
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(here, '../..');
 const output = path.join(appRoot, 'test-results', 'browser');
@@ -32,6 +145,7 @@ if (process.env.DATABASE_URL === undefined || process.env.DATABASE_URL.trim() ==
 
 const isolated = await openMigratedSchema();
 const seeded = await seedPipeline(isolated.db);
+const cards = await seedPublishedCard(isolated);
 await isolated.db.end();
 
 // Each account carries a synthetic address on the reserved `.test` domain, so
@@ -60,6 +174,7 @@ await writeFile(
     {
       schema: isolated.name,
       seeded,
+      cards,
       accounts: Object.fromEntries(
         Object.entries(accounts).map(([role, account]) => [
           role,
@@ -87,6 +202,8 @@ const env = {
   DASHBOARD_DATABASE_SCHEMA: isolated.name,
   DASHBOARD_TRUST_FORWARDED_FOR: 'false',
   DASHBOARD_LOCAL_EMAIL_FILE: emailPath,
+  // The public address the card's preview tags name (CAS-009); nothing is fetched from it.
+  DASHBOARD_PUBLIC_URL: 'https://dashboard.example.org',
   PORT: port,
 };
 delete env.NODE_OPTIONS;
