@@ -10,6 +10,7 @@ const base: DashboardConfig = {
   databaseSchema: 'public',
   trustForwardedFor: false,
   trustedProxyHops: 1,
+  buildCommit: null,
 };
 
 describe('network key', () => {
@@ -28,6 +29,7 @@ describe('network key', () => {
       networkKey(new Headers({ 'x-forwarded-for': 'spoofed, 198.51.100.7, 10.0.0.1' }), {
         ...trusted,
         trustedProxyHops: 2,
+        buildCommit: null,
       }),
     ).toBe('198.51.100.7');
     // Fewer entries than trusted hops: the header did not come through the chain.
@@ -35,6 +37,7 @@ describe('network key', () => {
       networkKey(new Headers({ 'x-forwarded-for': '198.51.100.7' }), {
         ...trusted,
         trustedProxyHops: 2,
+        buildCommit: null,
       }),
     ).toBe('malformed');
     expect(networkKey(new Headers({ 'x-forwarded-for': '2001:DB8::1' }), trusted)).toBe(

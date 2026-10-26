@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Instant, Notice, Origin } from '../../../components/ui.tsx';
+import { Instant, Notice, Origin, SectionBlock } from '../../../components/ui.tsx';
 import { requireCapability } from '../../../server/dal/guard.ts';
 import { currentPrincipal } from '../../../server/dal/principal.ts';
 import { commandCenter } from '../../../server/dal/read.ts';
@@ -49,38 +49,40 @@ export default async function QueueRunsPage({
       {shown.length === 0 && filter !== undefined ? (
         <p className="small">No listed run carries that category.</p>
       ) : null}
-      <table>
-        <thead>
-          <tr>
-            <th>Classification run</th>
-            <th>Category</th>
-            <th>Origin</th>
-            <th>Batch</th>
-            <th>Needs review</th>
-            <th>Started</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((run) => (
-            <tr key={run.id}>
-              <td>
-                <Link href={`/queue/${run.id}`} className="mono">
-                  {run.id}
-                </Link>
-              </td>
-              <td>{run.category ?? <span className="small">none recorded</span>}</td>
-              <td>
-                <Origin value={run.dataOrigin} />
-              </td>
-              <td className="mono">{run.batchId.slice(0, 8)}</td>
-              <td>{run.reviewCount}</td>
-              <td>
-                <Instant value={run.startedAt} />
-              </td>
+      <SectionBlock title="Classification runs">
+        <table>
+          <thead>
+            <tr>
+              <th>Classification run</th>
+              <th>Category</th>
+              <th>Origin</th>
+              <th>Batch</th>
+              <th>Needs review</th>
+              <th>Started</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {shown.map((run) => (
+              <tr key={run.id}>
+                <td>
+                  <Link href={`/queue/${run.id}`} className="mono">
+                    {run.id}
+                  </Link>
+                </td>
+                <td>{run.category ?? <span className="small">none recorded</span>}</td>
+                <td>
+                  <Origin value={run.dataOrigin} />
+                </td>
+                <td className="mono">{run.batchId.slice(0, 8)}</td>
+                <td>{run.reviewCount}</td>
+                <td>
+                  <Instant value={run.startedAt} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionBlock>
     </section>
   );
 }

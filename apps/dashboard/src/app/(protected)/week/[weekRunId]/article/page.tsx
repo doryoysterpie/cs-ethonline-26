@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Csrf, Instant, Notice, Origin } from '../../../../../components/ui.tsx';
+import { Csrf, Instant, Notice, Origin, SectionBlock } from '../../../../../components/ui.tsx';
 import { csrfFor, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { articleView } from '../../../../../server/dal/read.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../../page-support.ts';
@@ -122,81 +122,83 @@ export default async function ArticlePage({
         </>
       )}
       {view.revisions.length > 0 ? (
-        <table>
-          <thead>
-            <tr>
-              <th>Revision</th>
-              <th>Kind</th>
-              <th>By</th>
-              <th>At</th>
-              <th>Model</th>
-              <th>Tokens in / out</th>
-              <th>Cost</th>
-              <th>Words</th>
-              <th>Naming</th>
-              <th>Sources read / partly / not</th>
-              <th>Readers</th>
-            </tr>
-          </thead>
-          <tbody>
-            {view.revisions.map((revision) => (
-              <tr key={revision.revision}>
-                <td>{revision.revision}</td>
-                <td>{revision.kind}</td>
-                <td className="mono">{revision.savedBy}</td>
-                <td>
-                  <Instant value={revision.savedAt} />
-                </td>
-                <td className="mono">{revision.provenance?.model ?? ''}</td>
-                <td>
-                  {revision.provenance === null
-                    ? ''
-                    : `${revision.provenance.inputTokens} / ${revision.provenance.outputTokens}`}
-                </td>
-                <td>
-                  {revision.provenance === null
-                    ? ''
-                    : dollars(revision.provenance.costMicrodollars)}
-                </td>
-                <td>{revision.provenance?.wordCount ?? ''}</td>
-                <td>{revision.provenance?.namingBasis ?? ''}</td>
-                <td>
-                  {revision.provenance === null
-                    ? ''
-                    : `${revision.provenance.sourcesRead} / ${revision.provenance.sourcesPartlyRead} / ${revision.provenance.sourcesNotRead}`}
-                </td>
-                <td>
-                  {view.publishedRevision === revision.revision ? (
-                    view.canPublish ? (
-                      <form action={unpublishAction} className="inline">
+        <SectionBlock title="Revisions">
+          <table>
+            <thead>
+              <tr>
+                <th>Revision</th>
+                <th>Kind</th>
+                <th>By</th>
+                <th>At</th>
+                <th>Model</th>
+                <th>Tokens in / out</th>
+                <th>Cost</th>
+                <th>Words</th>
+                <th>Naming</th>
+                <th>Sources read / partly / not</th>
+                <th>Readers</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.revisions.map((revision) => (
+                <tr key={revision.revision}>
+                  <td>{revision.revision}</td>
+                  <td>{revision.kind}</td>
+                  <td className="mono">{revision.savedBy}</td>
+                  <td>
+                    <Instant value={revision.savedAt} />
+                  </td>
+                  <td className="mono">{revision.provenance?.model ?? ''}</td>
+                  <td>
+                    {revision.provenance === null
+                      ? ''
+                      : `${revision.provenance.inputTokens} / ${revision.provenance.outputTokens}`}
+                  </td>
+                  <td>
+                    {revision.provenance === null
+                      ? ''
+                      : dollars(revision.provenance.costMicrodollars)}
+                  </td>
+                  <td>{revision.provenance?.wordCount ?? ''}</td>
+                  <td>{revision.provenance?.namingBasis ?? ''}</td>
+                  <td>
+                    {revision.provenance === null
+                      ? ''
+                      : `${revision.provenance.sourcesRead} / ${revision.provenance.sourcesPartlyRead} / ${revision.provenance.sourcesNotRead}`}
+                  </td>
+                  <td>
+                    {view.publishedRevision === revision.revision ? (
+                      view.canPublish ? (
+                        <form action={unpublishAction} className="inline">
+                          <Csrf token={token} />
+                          <input type="hidden" name="weekRunId" value={view.week.id} />
+                          <input type="hidden" name="category" value={view.category} />
+                          <input type="hidden" name="output" value="article" />
+                          <button type="submit" className="quiet">
+                            Published · unpublish
+                          </button>
+                        </form>
+                      ) : (
+                        'published'
+                      )
+                    ) : view.canPublish ? (
+                      <form action={publishAction} className="inline">
                         <Csrf token={token} />
                         <input type="hidden" name="weekRunId" value={view.week.id} />
                         <input type="hidden" name="category" value={view.category} />
                         <input type="hidden" name="output" value="article" />
-                        <button type="submit" className="quiet">
-                          Published · unpublish
-                        </button>
+                        <input type="hidden" name="revision" value={String(revision.revision)} />
+                        <button type="submit">Publish this revision</button>
                       </form>
                     ) : (
-                      'published'
-                    )
-                  ) : view.canPublish ? (
-                    <form action={publishAction} className="inline">
-                      <Csrf token={token} />
-                      <input type="hidden" name="weekRunId" value={view.week.id} />
-                      <input type="hidden" name="category" value={view.category} />
-                      <input type="hidden" name="output" value="article" />
-                      <input type="hidden" name="revision" value={String(revision.revision)} />
-                      <button type="submit">Publish this revision</button>
-                    </form>
-                  ) : (
-                    ''
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      ''
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </SectionBlock>
       ) : null}
       {view.latest === null ? null : (
         <>

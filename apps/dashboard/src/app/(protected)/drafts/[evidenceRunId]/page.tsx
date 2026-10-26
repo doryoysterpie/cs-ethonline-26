@@ -1,5 +1,12 @@
 import { SafeMarkdown } from '../../../../components/SafeMarkdown.tsx';
-import { Csrf, Instant, Limitation, Notice, Origin } from '../../../../components/ui.tsx';
+import {
+  Csrf,
+  Instant,
+  Limitation,
+  Notice,
+  Origin,
+  SectionBlock,
+} from '../../../../components/ui.tsx';
 import { csrfFor, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { draftView } from '../../../../server/dal/read.ts';
 import { attempt, escalate, single, type SearchParams } from '../../../page-support.ts';
@@ -42,57 +49,60 @@ export default async function DraftPage({
         claim is <span className="mono">reported</span>; every name is withheld under the
         provisional naming policy (D4). Nothing is published from this page.
       </Limitation>
-      <table>
-        <thead>
-          <tr>
-            <th>Incidents</th>
-            <th>Claims written</th>
-            <th>Claims omitted (no source)</th>
-            <th>Names withheld</th>
-            <th>Contradicted incidents</th>
-            <th>Latest in Crypto</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>{view.counts.incidents}</td>
-            <td>{view.counts.claimsWritten}</td>
-            <td>{view.counts.claimsOmitted}</td>
-            <td>{view.counts.namesWithheld}</td>
-            <td className="state-contradicted">{view.counts.contradicted}</td>
-            <td className="feed-crypto">
-              <span className="feed-name">{view.counts.cryptoIncidents}</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <SectionBlock title="Draft record">
+        <table>
+          <thead>
+            <tr>
+              <th>Incidents</th>
+              <th>Claims written</th>
+              <th>Claims omitted (no source)</th>
+              <th>Names withheld</th>
+              <th>Contradicted incidents</th>
+              <th>Latest in Crypto</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{view.counts.incidents}</td>
+              <td>{view.counts.claimsWritten}</td>
+              <td>{view.counts.claimsOmitted}</td>
+              <td>{view.counts.namesWithheld}</td>
+              <td className="state-contradicted">{view.counts.contradicted}</td>
+              <td className="feed-crypto">
+                <span className="feed-name">{view.counts.cryptoIncidents}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </SectionBlock>
 
       <h3>Preview (sanitized rendering of stored Markdown)</h3>
       <SafeMarkdown markdown={view.markdown} />
 
       {view.revisions.length > 0 ? (
         <>
-          <h3>Revisions</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Revision</th>
-                <th>Saved by</th>
-                <th>Saved at</th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.revisions.map((revision) => (
-                <tr key={revision.revision}>
-                  <td>{revision.revision}</td>
-                  <td className="mono">{revision.savedBy}</td>
-                  <td>
-                    <Instant value={revision.savedAt} />
-                  </td>
+          <SectionBlock title="Revisions">
+            <table>
+              <thead>
+                <tr>
+                  <th>Revision</th>
+                  <th>Saved by</th>
+                  <th>Saved at</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {view.revisions.map((revision) => (
+                  <tr key={revision.revision}>
+                    <td>{revision.revision}</td>
+                    <td className="mono">{revision.savedBy}</td>
+                    <td>
+                      <Instant value={revision.savedAt} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </SectionBlock>
         </>
       ) : null}
 

@@ -13,7 +13,7 @@ test.describe('draft evidence wording', () => {
     page,
   }) => {
     const { accounts, seeded } = await credentials();
-    await signIn(page, accounts.editor.username, accounts.editor.password);
+    await signIn(page, accounts.editor.email);
     // A period no other browser test writes a revision to, so the page shows
     // the freshly generated draft rather than a previously saved one.
     const url = `/drafts/${seeded.evidenceRunId}?start=2026-09-04T00:00:00Z&end=2026-09-11T00:00:00Z`;

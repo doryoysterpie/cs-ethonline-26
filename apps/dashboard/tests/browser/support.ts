@@ -18,8 +18,13 @@ export interface Credentials {
   };
   readonly accounts: Readonly<
     Record<
-      'judge' | 'editor' | 'admin',
-      { readonly username: string; readonly password: string; readonly id: string }
+      'reader' | 'editor' | 'admin',
+      {
+        readonly username: string;
+        readonly password: string;
+        readonly id: string;
+        readonly email: string;
+      }
     >
   >;
 }
@@ -34,10 +39,24 @@ export async function credentials(): Promise<Credentials> {
 
 export const SESSION_COOKIE = 'cas_session';
 
-export async function signIn(page: Page, username: string, password: string): Promise<void> {
+/** The last one-time code the local email path wrote for an address. */
+export async function lastCodeFor(email: string): Promise<string> {
+  const file = path.join(APP_ROOT, 'test-results', 'browser', 'email.jsonl');
+  const lines = (await readFile(file, 'utf8')).trimEnd().split('\n');
+  const messages = lines.map((line) => JSON.parse(line) as { to: string; text: string });
+  const last = messages.filter((message) => message.to === email).at(-1);
+  const code = /\b(\d{6})\b/u.exec(last?.text ?? '')?.[1];
+  if (code === undefined) throw new Error(`no code was written for ${email}`);
+  return code;
+}
+
+/** Signs in by one-time code: the address, then the code the local email path wrote. */
+export async function signIn(page: Page, email: string): Promise<void> {
   await page.goto('/login');
-  await page.getByLabel('Username').fill(username);
-  await page.getByLabel('Password').fill(password);
+  await page.getByLabel('Email').fill(email);
+  await page.getByRole('button', { name: 'Send me a code' }).click();
+  await page.waitForURL('**/login/verify**');
+  await page.getByLabel('Code').fill(await lastCodeFor(email));
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL('**/command-center');
   await expect(page.getByRole('heading', { name: 'Command center' })).toBeVisible();

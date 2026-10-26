@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { sessionCookieName } from './server/auth/cookie.ts';
 import { readEnvironment } from './server/environment.ts';
-import { NO_STORE, NONCE_HEADER, securityHeaders } from './server/http/headers.ts';
+import { NO_STORE, NONCE_HEADER, PATHNAME_HEADER, securityHeaders } from './server/http/headers.ts';
 
 /**
  * The request proxy: per-request nonce, security headers on every response,
@@ -46,6 +46,7 @@ export function proxy(request: NextRequest): NextResponse {
   // Next reads the nonce for its own inline bootstrap from the request's CSP.
   requestHeaders.set('content-security-policy', policy['Content-Security-Policy'] ?? '');
   requestHeaders.set(NONCE_HEADER, value);
+  requestHeaders.set(PATHNAME_HEADER, request.nextUrl.pathname);
 
   const path = request.nextUrl.pathname;
   const hasCookie = request.cookies.has(sessionCookieName(environment));
