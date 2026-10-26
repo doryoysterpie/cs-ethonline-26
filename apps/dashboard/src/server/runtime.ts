@@ -3,31 +3,30 @@ import 'server-only';
 import type { Database } from '@cas/database';
 
 import type { EmailProvider } from './auth/email-provider.ts';
-import { loadOtpEmailConfig, type OtpEmailConfig } from './auth/email-config.ts';
+import type { OtpEmailConfig } from './auth/email-config.ts';
 import { LOCAL_EMAIL_FILE_VARIABLE, localEmailProvider } from './auth/local-email.ts';
 import { SessionService, type SessionServiceOptions } from './auth/session.ts';
 import type { Stores } from './auth/store.ts';
 import { openStores } from './auth/stores.ts';
 import type { RoundupTransport } from '@cas/roundup';
 
-import { loadDashboardConfig, type DashboardConfig } from './config.ts';
+import { loadDashboardRuntimeConfig, type DashboardConfig } from './config.ts';
 import { ReadingCache } from './dal/readings.ts';
 import { createAnthropicTransport } from './model/anthropic.ts';
-import { loadModelConfig } from './model/config.ts';
-import { createNodeReader, loadReaderConfig, type SourceReaderDeps } from './model/reader.ts';
+import { createNodeReader, type SourceReaderDeps } from './model/reader.ts';
 import { defaultLimits, type Limits } from './http/limits.ts';
-import { loadSupportConfig, type StripeMode } from './support/config.ts';
+import type { StripeMode } from './support/config.ts';
 import { createStripeClient, type StripeClient } from './support/stripe.ts';
 import { workspace } from './packages.ts';
 
 /**
- * The memory store is already restricted to `local` by `loadDashboardConfig`
+ * The memory store is already restricted to `local` by the runtime config
  * (development and tests, never production); this is the same restriction
  * applied to email delivery, so a developer or a test does not also need a
  * real Resend key and a real pepper just to load the runtime. The provider
  * writes each message to the local file the developer names, or drops it
  * when none is named (CAS-010); production always uses the PostgreSQL store,
- * which always requires `loadOtpEmailConfig`.
+ * whose aggregate configuration always requires real email delivery.
  */
 function localOtpEmailConfig(env: Readonly<Record<string, string | undefined>>): OtpEmailConfig {
   const file = env[LOCAL_EMAIL_FILE_VARIABLE]?.trim();
@@ -132,20 +131,18 @@ export function getRuntime(): Promise<Runtime> {
   const state = holder();
   if (state.shared === null) {
     state.shared = (async () => {
-      const config = loadDashboardConfig(process.env);
+      const loadedConfig = loadDashboardRuntimeConfig(process.env);
+      const config = loadedConfig.dashboard;
       const { database: databasePackage, sourceReader } = await workspace();
       const database = databasePackage.openDatabase(
         databasePackage.parseDatabaseConfig(process.env, { schema: config.databaseSchema }),
         { maxConnections: 4 },
       );
       const stores = await openStores(config, database);
-      const otp =
-        config.accountStore === 'memory'
-          ? localOtpEmailConfig(process.env)
-          : loadOtpEmailConfig(process.env);
-      const modelConfig = loadModelConfig(process.env);
-      const readerConfig = loadReaderConfig(process.env);
-      const supportConfig = loadSupportConfig(process.env);
+      const otp = loadedConfig.otpEmail ?? localOtpEmailConfig(process.env);
+      const modelConfig = loadedConfig.model;
+      const readerConfig = loadedConfig.reader;
+      const supportConfig = loadedConfig.support;
       return createRuntime(config, stores, database, {
         emailProvider: otp.provider,
         otpPepper: otp.pepper,
