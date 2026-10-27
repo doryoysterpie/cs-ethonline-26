@@ -22,7 +22,7 @@ describe('read-only restore inspection', () => {
       { isolationLevel: 'repeatable read', readOnly: true },
     );
     expect(counts.map((row) => row.table)).toContain('schema_migrations');
-    expect(counts.find((row) => row.table === 'schema_migrations')?.rows).toBe('20');
+    expect(counts.find((row) => row.table === 'schema_migrations')?.rows).toBe('22');
 
     await expect(
       isolated.db.withTransaction(
