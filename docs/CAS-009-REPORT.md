@@ -359,3 +359,36 @@ mcp-server 49). The failure is closed on that count; its cause is still not esta
 same clone ran `corepack pnpm verify` exit 0 (1,184 offline tests, 32 tool tests) and
 `playwright test` 30 of 30 against the production build, the three card specs among them, with
 the PNG's first eight bytes checked against the PNG signature.
+
+## 8. Corrections after the combined audit of `main` at `8105678` (31 October 2026)
+
+The combined audit of the train merged after pull request 33 (pull requests 37, 34, 36, 35 and 50) returned CHANGES REQUIRED with three findings; F1 and F2 are against this unit, F3 against
+CAS-010 (`docs/CAS-010-REPORT.md`, section 8). The report is in the vault,
+`03_Audits/cs-ethonline-26/2026-10-31-combined-merge-train-8105678.md`. Both are corrected on
+`train/34-50-corrections`, each with a test that fails on `main`'s code.
+
+- **F1 (High): migration 0022 numbered the existing records in scan order.** Adding `seq` to a
+  populated table numbers the rows in the order PostgreSQL scans them, so an upgrade could make an
+  older or an unpublished revision current, and a card would then show it. Migration 0022 is not
+  edited: the deploy step applies migrations and the runner refuses a changed checksum, so a
+  database that already ran 0022 would stop the next deploy. Migration 0023
+  (`0023_publication_order_backfill.sql`, SHA-256 `1b35b1788896f0579c77296c340b67bcb8545187dc2b991403cbf91d258fec37`) locks the table and gives the records
+  0022 numbered the order the readers used before it: by `created_at`, then by `id`, the latest
+  last, the pre-0022 tie rule. The records 0022 numbered are those written before its `applied_at`
+  in `schema_migrations`; every record up to the greatest `seq` among them is renumbered, with the
+  same set of numbers, so records written after 0022 keep their order and the sequence is
+  untouched. The append-only guard is set aside for the two updates inside the migration's
+  transaction and restored before it commits. `publication-order.db.test.ts`: a schema stopped at
+  0021 holds a round-up published, corrected and unpublished, and an article whose last two records
+  share one instant; the table is stored newest first; 0022 alone makes the round-up read as
+  published again; 0023 restores every output's current record and the exact written order; the
+  guard and the generated column are back; a record written after an earlier deploy's 0022 keeps
+  its place; an empty table is untouched.
+- **F2 (Medium): concurrent duplicate requests spent the account's limit.** The existence check,
+  the limit and the insert were three steps, so simultaneous requests for one new story all
+  found no card and all spent the limit. They are now one decision under a transaction advisory
+  lock keyed on the story (`lockStoryCard`), at read committed, so a second request waits, then
+  finds the card the first made and spends nothing; the trip's audit event and the refusal follow
+  the transaction. The test in `dal.db.test.ts`: six simultaneous requests for one story with a
+  limit of two receive one address and one `created`; a different story is still made and a
+  third is refused. On `main`'s code four of the six are throttled.

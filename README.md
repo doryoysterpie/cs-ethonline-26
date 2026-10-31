@@ -51,7 +51,7 @@ amendment of 22 October 2026).
 after its independent review and is not re-audited; no document may read as saying otherwise
 (`docs/SPRINT-5-REPORT.md`, section 16). Its rules stand as written: a file can be ingested as
 fixture or replay only; live evidence comes from the Graph client, never from a file; a claim
-is a record, not a UUID. Migrations 0001 to 0022 are applied by the deploy step before the
+is a record, not a UUID. Migrations 0001 to 0023 are applied by the deploy step before the
 dashboard serves traffic.
 
 **What is on `main`, and what is in review.** Four post-event units merged on 22 October

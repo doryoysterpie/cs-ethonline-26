@@ -266,3 +266,15 @@ and a table scrolling inside its block; reduced motion and more contrast); six s
 current-section mark standing still after a client-side navigation, which section 3 records with
 its resolution. The clean clone, the CI run and the pull request are on the tracker's evidence
 record.
+
+## 8. Correction after the combined audit of `main` at `8105678` (31 October 2026)
+
+The combined audit's F3 (Low) is against this unit; F1 and F2 are against CAS-009
+(`docs/CAS-009-REPORT.md`, section 8). The local email file was created mode 600, but appending
+to a file that already existed kept its wider mode, so a `0644` file stayed readable by other
+local users. The provider now opens the file without following a symbolic link and without
+blocking on a pipe, refuses anything but a regular file, and narrows it to mode 600 through the
+same handle before each line is written. `local-email.test.ts`: an existing `0644` file is
+narrowed and keeps what it held; a symbolic link and a directory are refused and nothing is
+written through the link. Both fail on `main`'s code. The provider still runs only with the
+memory store, which the configuration refuses outside `local`.

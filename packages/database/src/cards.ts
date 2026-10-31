@@ -58,6 +58,21 @@ export async function getStoryCard(client: Queryable, id: string): Promise<Story
   return row === undefined ? null : toRecord(row);
 }
 
+/**
+ * Holds, until the caller's transaction ends, the one lock a story's card is
+ * decided under (the combined audit of `main` at 8105678, F2): whether a card
+ * exists, whether the account may make one, and the insert are one decision,
+ * so a second request for the same story waits, then finds the card the first
+ * made. The lock is a transaction advisory lock keyed on the story; two
+ * stories whose keys hash alike only wait for each other.
+ */
+export async function lockStoryCard(client: Queryable, story: StoryKey): Promise<void> {
+  await client.query(
+    'SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1::text), pg_catalog.hashtext($2::text))',
+    ['story_card', `${story.weekRunId}:${story.category}:${story.output}:${story.entryIndex}`],
+  );
+}
+
 /** The card already made for a story, if any. */
 export async function findStoryCard(
   client: Queryable,

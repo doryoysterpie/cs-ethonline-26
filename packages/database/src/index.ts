@@ -391,6 +391,7 @@ export {
   getStoryCardImage,
   insertStoryCard,
   insertStoryCardImage,
+  lockStoryCard,
   type CardOutput,
   type NewStoryCard,
   type StoryCardImage,

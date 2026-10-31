@@ -3676,5 +3676,36 @@ describe('data-access layer against PostgreSQL', () => {
       expect(trips.map((e) => e.code).sort()).toEqual(['card_account', 'card_network']);
       await own.close();
     });
+
+    it('decides a story’s card once under concurrent requests: one card, one spent from the account’s limit, the same address for every caller (combined audit F2)', async () => {
+      const own = await openMigratedSchema();
+      const { week, rt, persisted } = await publishedRoundup(own, {
+        signupAddress: new WindowLimiter(50, 900),
+        signupNetwork: new WindowLimiter(50, 900),
+        readerReads: new WindowLimiter(500, 900),
+        checkoutAccount: new WindowLimiter(50, 900),
+        cardAccount: new WindowLimiter(2, 900),
+        cardNetwork: new WindowLimiter(500, 900),
+      });
+      const outcomes = await Promise.all(
+        Array.from({ length: 6 }, async () => {
+          try {
+            return await makeCard(rt, persisted.reader, story(week.weekRunId, 1));
+          } catch (error) {
+            return isDashboardError(error) ? `${error.kind}:${error.code}` : 'unexpected';
+          }
+        }),
+      );
+      expect(outcomes.filter((o) => typeof o === 'string')).toEqual([]);
+      const made = outcomes as { id: string; created: boolean }[];
+      expect(new Set(made.map((m) => m.id)).size).toBe(1);
+      expect(made.filter((m) => m.created)).toHaveLength(1);
+      // The six spent one of the two: a different story is still made, and a third is refused.
+      expect((await makeCard(rt, persisted.reader, story(week.weekRunId, 2))).created).toBe(true);
+      expect(await kindCode(makeCard(rt, persisted.reader, story(week.weekRunId, 0)))).toBe(
+        'throttled:card_limited',
+      );
+      await own.close();
+    });
   });
 });
