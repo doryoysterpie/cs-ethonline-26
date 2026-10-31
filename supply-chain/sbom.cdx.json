@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "99505393cd124d2eef774d3b88e49aa4bb95a0f41222a00718a907bc1e130ca5"
+        "value": "28393e44bb48a236c92f540f6200b261348c73180d6d2832bf18abd5feb7cf1c"
       },
       {
         "name": "cas:lockfile:version",
@@ -1748,6 +1748,32 @@
         {
           "name": "cas:license:source",
           "value": "not-inventoried:platform-constrained"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40isaacs/nonrecursive-glob-match@1.0.3",
+      "name": "@isaacs/nonrecursive-glob-match",
+      "version": "1.0.3",
+      "purl": "pkg:npm/%40isaacs/nonrecursive-glob-match@1.0.3",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "488ee4c8a1eae175c3468cf0fabf4695166489ad59905ae92d6f7caf6202d81a6bf18905184ddfbe3ce6c421b4c7bf00fbeebd1e60cdac3bd23180599871a928"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "BlueOak-1.0.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
         }
       ]
     },
@@ -7274,14 +7300,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/minimatch@10.2.6",
+      "bom-ref": "pkg:npm/minimatch@11.0.1",
       "name": "minimatch",
-      "version": "10.2.6",
-      "purl": "pkg:npm/minimatch@10.2.6",
+      "version": "11.0.1",
+      "purl": "pkg:npm/minimatch@11.0.1",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "be92d012cf952c2af59d4d015d2d3b99a628170943007d209e042ebadb71230bad0c510c1ead9b957fbcbe98310dd2b72753f08c22627a9efb3a2b536782e5d4"
+          "content": "b7e567e835f8c0f0b14b6df2d370b4ba117b4b58e98b519fa8fae79448a9089680db292235b3245650eeb59b66bcb7d171437a47c018565cd3b10ad3e116682d"
         }
       ],
       "licenses": [
@@ -9725,7 +9751,7 @@
       "dependsOn": [
         "pkg:npm/%40eslint/object-schema@3.0.5",
         "pkg:npm/debug@4.4.3",
-        "pkg:npm/minimatch@10.2.6"
+        "pkg:npm/minimatch@11.0.1"
       ]
     },
     {
@@ -9919,6 +9945,10 @@
     },
     {
       "ref": "pkg:npm/%40img/sharp-win32-x64@0.35.5",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40isaacs/nonrecursive-glob-match@1.0.3",
       "dependsOn": []
     },
     {
@@ -10281,7 +10311,7 @@
         "pkg:npm/%40typescript-eslint/types@8.69.0",
         "pkg:npm/%40typescript-eslint/visitor-keys@8.69.0",
         "pkg:npm/debug@4.4.3",
-        "pkg:npm/minimatch@10.2.6",
+        "pkg:npm/minimatch@11.0.1",
         "pkg:npm/semver@7.8.5",
         "pkg:npm/tinyglobby@0.2.17",
         "pkg:npm/ts-api-utils@2.5.0",
@@ -10598,7 +10628,7 @@
         "pkg:npm/imurmurhash@0.1.4",
         "pkg:npm/is-glob@4.0.3",
         "pkg:npm/json-stable-stringify-without-jsonify@1.0.1",
-        "pkg:npm/minimatch@10.2.6",
+        "pkg:npm/minimatch@11.0.1",
         "pkg:npm/natural-compare@1.4.0",
         "pkg:npm/optionator@0.9.4"
       ]
@@ -11198,8 +11228,9 @@
       ]
     },
     {
-      "ref": "pkg:npm/minimatch@10.2.6",
+      "ref": "pkg:npm/minimatch@11.0.1",
       "dependsOn": [
+        "pkg:npm/%40isaacs/nonrecursive-glob-match@1.0.3",
         "pkg:npm/brace-expansion@5.0.12"
       ]
     },
