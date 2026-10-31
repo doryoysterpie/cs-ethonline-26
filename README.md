@@ -86,6 +86,13 @@ place of `judge`, the published mark and scrape protection (migration 0017), on 
 signed webhooks, with the pinned donation page (migration 0018, `qrcode-generator`), on pull
 request 28 (`docs/CAS-008-REPORT.md`).
 
+Merged into `main` from 24 to 26 October 2026 with no PASS; one combined audit of `main` at
+`8105678` is pending (`docs/AUDIT-LEDGER.md`): the Zod advisory, on pull request 37; CAS-010, the
+dashboard's terminal grid under D47, on pull request 34 (`docs/CAS-010-REPORT.md`); the browser
+harness brought to the passwordless sign-in, on pull request 36; CAS-009, shareable story cards
+under D48 (migrations 0021 and 0022), on pull request 35 (`docs/CAS-009-REPORT.md`); and the
+bounded readiness endpoint, on pull request 50.
+
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up
 generated through the rundown template, edited by the owner and pasted into Substack by the
