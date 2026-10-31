@@ -1,4 +1,14 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -29,14 +39,25 @@ describe('the local email file (memory store only)', () => {
 
   it('narrows a file that already exists with wider permissions to mode 600, keeping what it held (combined audit F3)', async () => {
     const file = path.join(await directory, 'existing.jsonl');
-    await writeFile(file, 'earlier line\n', { mode: 0o644 });
-    await chmod(file, 0o644);
-    expect((await stat(file)).mode & 0o777).toBe(0o644);
+    const seeded = await open(file, 'w', 0o644);
+    try {
+      await seeded.write('earlier line\n');
+      await seeded.chmod(0o644);
+      expect((await seeded.stat()).mode & 0o777).toBe(0o644);
+    } finally {
+      await seeded.close();
+    }
     await localEmailProvider(file).send(message);
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
-    const lines = (await readFile(file, 'utf8')).trimEnd().split('\n');
-    expect(lines[0]).toBe('earlier line');
-    expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ text: 'code 123456' });
+    // The mode and the content are read through one handle, so both describe the same file.
+    const written = await open(file, 'r');
+    try {
+      expect((await written.stat()).mode & 0o777).toBe(0o600);
+      const lines = (await written.readFile('utf8')).trimEnd().split('\n');
+      expect(lines[0]).toBe('earlier line');
+      expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ text: 'code 123456' });
+    } finally {
+      await written.close();
+    }
   });
 
   it('refuses a symbolic link and anything that is not a regular file, and writes nothing through them (combined audit F3)', async () => {
