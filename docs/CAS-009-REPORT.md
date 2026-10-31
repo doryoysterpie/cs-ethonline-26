@@ -346,3 +346,16 @@ the likeliest and is now removed. It stays recorded as open until **ten consecut
 for review; the result is recorded below and on the tracker.
 
 The clean clone, the CI run and the pull request are on the tracker's evidence record.
+
+**The count, 31 October 2026: the failure is closed.** After the count was named, the branch
+took the Zod 4.6.7 bump (pull request 37) and was rebased onto `main` with one test fix, the
+bounded wait for the cancellation log in the MCP redirect test (`d992b71`); the merged tree
+differs from `8da115d` by that bump and that test alone. At `8da115d` runs 1 to 7 passed and the
+record of runs 8 to 10 was lost before it was read, so that count is not claimed. The ten runs
+were made again in a clean clone of `main` at `8105678`, which carries the unit as merged
+(`1c5bfab`) and the readiness endpoint (pull request 50): ten consecutive runs of
+`corepack pnpm test:db` exit 0, 341 tests each (database 117, worker 119, dashboard 56,
+mcp-server 49). The failure is closed on that count; its cause is still not established. The
+same clone ran `corepack pnpm verify` exit 0 (1,184 offline tests, 32 tool tests) and
+`playwright test` 30 of 30 against the production build, the three card specs among them, with
+the PNG's first eight bytes checked against the PNG signature.
