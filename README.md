@@ -2,8 +2,10 @@
 
 Onchain incident intelligence for the weekly **Cyberattack Sunday** workflow, with a
 crypto-focused editorial feed, **Latest in Crypto**. Repository: `doryoysterpie/cs-ethonline-26`.
-Licence: Apache License 2.0 (`LICENSE`). `CAS Chainwatch` was the working name; it survives only
-in machine identifiers such as the `@cas/` scope and the `cas-chainwatch-mcp` server name (D5).
+Licence: Apache License 2.0 (`LICENSE`), which covers the code and not the name: the "Cyberattack
+Sunday" name and marks are not licensed under it (D53). `CAS Chainwatch` was the working name; it
+survives only in machine identifiers such as the `@cas/` scope and the `cas-chainwatch-mcp` server
+name (D5).
 
 An ETHOnline 2026 project that imports the current cybersecurity news feed, classifies it
 automatically with high recall into an include, exclude or needs-review queue, clusters the
@@ -103,12 +105,18 @@ short write in the fix mode), corrected in pull request 60, which passed at `934
 at `12ce7a7`. CAS-012's design note and D50
 merged the same day (pull request 59, `docs/CAS-012-REPORT.md`), documents only.
 
-**In review, not merged.** CAS-012, every character list on the prohibited-text rule (D50;
-`docs/CAS-012-REPORT.md`): the nine lists outside CAS-011's consumers escape, refuse or scan
-through the rule in one escape form, the save path removes the invisible characters a paste
-brings and names each, and `text:scan` reads the stored revisions; on `cas-012/lists`, pull
-request 61; the review of `db10902` returned changes, corrected on the branch; re-review
-pending, not audited. A refusal's notice and its audit record (the D50 amendment 2, migration 0025) are on `cas-012/refusal-record`, stacked on it; not audited.
+**Merged on 1 November 2026 and accepted.** CAS-012, every character list on the
+prohibited-text rule (D50 and its two amendments; `docs/CAS-012-REPORT.md`): the nine lists
+outside CAS-011's consumers escape, refuse or scan through the rule in one escape form, the save
+path removes the invisible characters a paste brings and names each, a refusal's audit event
+keeps every refused code point (migration 0025), and `text:scan` reads the stored revisions.
+Pull requests 61 and 63 passed at `d1751e5` and `58b5f27` and merged at `59df7da`. The `main`
+ruleset definition and the `Browser E2E` job (pull request 64, carried from 52 under D51) passed
+at `8464611` and merged at `37e7857`; the ruleset is not active.
+
+**In review, not merged.** The `main` ruleset for one GitHub identity (D52: no approval rule, a
+seventh required check, `Codex verdict`) with the backup restore drill carried from pull request
+51 (D51); not audited.
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up

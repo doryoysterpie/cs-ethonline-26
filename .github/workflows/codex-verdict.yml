@@ -1,0 +1,53 @@
+# The Codex verdict, enforced (D52). Sets the commit status `Codex verdict` on
+# a pull request's head from its comments: success only when the last verdict
+# line naming that exact head is `Codex verdict: PASS at <commit>`
+# (`tools/ci/codex-verdict.ts`). The `main` ruleset requires the status, so a
+# new push, which makes a head no verdict names, blocks the merge until Codex
+# passes it. A comment event runs this file and the recorder as they are on
+# `main`, which a pull request cannot change for its own run; a pull-request
+# event runs the pull request's own copy, and only ever records what its
+# comments say. No credential is stored: the ephemeral Actions token reads the
+# pull request and writes the one status.
+name: Codex verdict
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions: {}
+
+concurrency:
+  group: codex-verdict-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Codex verdict record
+    if: github.event_name == 'pull_request' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          check-latest: false
+
+      - name: Record the verdict on the head commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PULL_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          STATUS_CONTEXT: Codex verdict
+        run: node tools/ci/codex-verdict.ts

@@ -135,9 +135,11 @@ export function summarizeConnection(connectionString: string): ConnectionSummary
     url.hostname.startsWith('%2F') ||
     url.hostname.startsWith('/') ||
     (url.hostname.length === 0 && hostParameter === null);
+  // A `host` parameter overrides the authority for libpq and the Node client alike, so the
+  // classification reads the host the connection reaches, not the one the URL appears to name.
   const transport: ConnectionTransport = socket
     ? 'unix-socket'
-    : LOOPBACK_HOSTS.has(url.hostname.toLowerCase())
+    : LOOPBACK_HOSTS.has((hostParameter ?? url.hostname).toLowerCase())
       ? 'loopback-tcp'
       : 'remote-tcp';
   const sslmode = url.searchParams.get('sslmode');

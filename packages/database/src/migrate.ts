@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { Database, Queryable } from './database.js';
 import { DatabaseError } from './errors.js';
+import { assertSchemaName } from './config.js';
 import { quoteIdentifier } from './schema.js';
 
 /**
@@ -126,6 +127,27 @@ async function readApplied(client: Queryable, schema: string): Promise<AppliedMi
     checksum: row.checksum,
     appliedAt: row.applied_at,
   }));
+}
+
+/**
+ * Inspects migration state without creating a table or taking a write-capable
+ * advisory lock. Callers can place this inside a read-only transaction and
+ * use it safely against a live backup source.
+ */
+export async function migrationStatusForClient(
+  client: Queryable,
+  schema: string,
+  options: { readonly directory?: string | undefined } = {},
+): Promise<MigrationStatus> {
+  assertSchemaName(schema);
+  const files = await loadMigrations(options.directory);
+  const applied = await readApplied(client, schema);
+  const appliedVersions = new Set(applied.map((row) => row.version));
+  return {
+    applied,
+    pending: files.filter((file) => !appliedVersions.has(file.version)).map((f) => f.fileName),
+    drift: detectDrift(applied, files),
+  };
 }
 
 function detectDrift(

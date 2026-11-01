@@ -2065,3 +2065,117 @@ ruling of the same day: it need not, under five conditions.
   from the directory and mark their written-out lists as the tripwire.
 - **Decided by:** Project owner, 1 November 2026, in chat.
 - **Supersedes:** nothing.
+
+## D52 The main ruleset for one GitHub identity
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED; the ruleset is defined and validated in the repository, not yet active
+- **Decision:** The `main` ruleset keeps the rules that do not depend on a second identity and
+  enforces the Codex review with a status check instead of an approval count. The owner's ruling
+  of 1 November 2026, option (a), with four conditions:
+  1. **No approval rule.** Required approvals 0 and no last-push approval; the pull-request
+     requirement, the six checks, no force-push and no deletion stay. It rides with the carry of
+     pull request 51.
+  2. **A seventh required check, `Codex verdict`.** A workflow on pull-request pushes and comment
+     events sets a commit status on the pull request's head, success only when the last verdict
+     line naming that exact head is `Codex verdict: PASS at <commit>`, written by an account
+     with write access; a new push makes a head no verdict names, and the status turns to
+     failure until Codex passes it. It recovers what the dismiss-stale and last-push rules were
+     for, without a second identity and without a stored credential, since the workflow runs on
+     the ephemeral Actions token. Until the check is active, the verdict is enforced by the
+     process alone.
+  3. **Conversation resolution required**, so every Codex review thread is addressed before a
+     merge, which is the part of the verdict the check cannot see.
+  4. **The bypass list stays empty.** With one identity the only way around the gate is to edit
+     the ruleset, and the ruleset's own history records that. This limit is written down in
+     `docs/RUNBOOK-SECURITY.md`, section 1.2, not papered over.
+- **Rationale:** The owner's. The rules worth having here are the ones that need no second
+  identity, and leaving the ruleset off would keep all of them off for a rule that can never be
+  met. The review separation this project runs is author against Codex, not one GitHub user
+  against another, so an approval count is the wrong instrument and a status check the right
+  one.
+- **Why not the alternatives.** A machine account's approval is the same person approving twice.
+  A GitHub App that approves on a PASS needs a private key held somewhere, a long-lived
+  credential that can approve anything if it leaks, the class of risk the key-locality rule
+  exists for. Keeping the ruleset as written and inactive blocks nothing and protects nothing.
+- **Consequences:** `.github/rulesets/main.json`, `tools/checks/rulesets.ts`,
+  `.github/workflows/codex-verdict.yml`, `tools/ci/codex-verdict.ts` and
+  `docs/RUNBOOK-SECURITY.md` change together. A verdict is posted by Codex or by the owner, never
+  by the engineering agent. Activation and its read-back stay the owner's (CAS-006, step 6).
+- **Decided by:** Project owner, 1 November 2026, in chat.
+- **Supersedes:** pull request 52's approval rules (one approval, last-push approval), never
+  active.
+
+## D53 The repository stays public under Apache-2.0
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 3: the repository stays
+  public under Apache-2.0. Conditions:
+  1. **A record names a gap, never a reproduction, and the record of an exploitable gap is pushed
+     after its fix lands, not before.** Decision records and reports stay public, and recording
+     gaps stays the practice; the ordering is what changes.
+  2. **The licence covers the code, not the name.** The README states that the "Cyberattack
+     Sunday" name and marks are not licensed under Apache-2.0.
+  3. **Nothing else changes.** Secrets stay in the environment and the repository scans keep
+     enforcing it.
+- **Rationale:** GitHub's documentation, read on 1 November 2026: repository rulesets are
+  enforced in public repositories on GitHub Free and in private repositories only on Pro, Team or
+  Enterprise Cloud; code scanning on a private repository needs a paid GitHub Code Security
+  licence; secret scanning on a personal account's private repository is not available outside
+  Enterprise Managed Users. Going private would switch off the ruleset of D52 and the scans the
+  project relies on. Versions already published stay licensed to whoever fetched them.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D54 The dispositions of the hackathon components (P-3)
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED; executed by CAS-006, step 5
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 4, transcribing P-3:
+  - `apps/payer-agent`, `apps/sunday-agent` and `packages/feed-api`: **remove**. Each is a
+    placeholder of nine lines; a public feed, if one is ever wanted, is a unit of its own.
+  - `@cas/graph-evidence` and the live Graph path: **park**. It fails closed without
+    `GRAPH_API_KEY`; its tests run without the key or skip with the reason recorded; it stays out
+    of the deployed image; its dependencies stay in the bill of materials and advisories keep
+    applying while it is parked.
+  - `@cas/evidence` and the anomaly layer: **keep**.
+  - `packages/mcp-server`: decided on use, not size: kept if it is wired into an AI client the
+    owner uses in the editorial workflow, otherwise parked; absent that fact, **park**. Parked,
+    CAS-006 step 8 is not applicable, and unparking is a unit with its own audit, not a
+    status-line edit. Kept, step 8 runs as the fix list from its audit under D55, and it stays a
+    consumer of D49's rule and D50's escapes.
+- **Conditions on the removal:** if migration 0008 or 0009 created a table that only a removed
+  placeholder reads, a new migration drops it in the same unit, since an empty table with no
+  reader is a place for data nobody checks; no workspace entry, path alias, CI matrix row or
+  bill-of-materials line refers to a removed package, which the clean-clone gate proves; the
+  README's hackathon section keeps one line naming what was submitted to ETHOnline and that it
+  was removed or parked at CAS-006, so the history stays true. Migrations 0008 and 0009 stay,
+  since applied migrations are never edited.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D55 One audit of main, in scoped prompts
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 12: the code that exists is
+  audited at one head, `main` once pull request 65 merges, and that commit is recorded in the
+  ledger as the audit head. Every "not audited" code row closes against it; code merged afterwards
+  is covered by its own review, so the rows never reopen. Conditions:
+  1. **Scoped prompts, not one.** One prompt over the whole of `main` gives a shallow audit with a
+     confident verdict. The audit is scoped by trust boundary against the same head, in this order:
+     authentication, sessions, roles and the dashboard's capability checks; then intake and the
+     worker (the Sheets intake, the source scanner, and the path from untrusted text through the
+     model to a stored draft); then the MCP server if it is kept; then the rest (the security
+     foundation, the release integration and the dependency posture).
+  2. **Invariants, not "audit this".** Each prompt lists the invariants from the decision records
+     (secrets from the environment and the key-locality rule, D6's publication act, the reader
+     role, D49's rule and its consumers, D50's escapes, the audit-event rule) and asks, for each,
+     where it is enforced and which test would fail if it were broken.
+  3. **Documents-only rows** (pull requests 12, 54 and 59) are an accepted risk with the public
+     launch as the review date: their risk is a wrong decision, not an exploit, and those
+     decisions have since been built and reviewed in code.
+  4. **Findings become units.** A ledger row reads "audited at `<head>`, findings in CAS-0xx",
+     never PASS alone.
+- **Rationale:** The owner's. Per-track audits would review code since rewritten; accepting the
+  risk would leave the authentication path unaudited at launch.
+- **Decided by:** Project owner, 1 November 2026, in chat.

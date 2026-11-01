@@ -2,7 +2,11 @@ import { conclude, finding, isMain, type Finding } from './lib/report.ts';
 import { readTracked, repositoryRoot, trackedEntries } from './lib/tracked.ts';
 
 const RULESET_PATH = '.github/rulesets/main.json';
-const WORKFLOW_PATHS = ['.github/workflows/ci.yml', '.github/workflows/codeql.yml'] as const;
+const WORKFLOW_PATHS = [
+  '.github/workflows/ci.yml',
+  '.github/workflows/codeql.yml',
+  '.github/workflows/codex-verdict.yml',
+] as const;
 const GITHUB_ACTIONS_INTEGRATION_ID = 15368;
 
 export const REQUIRED_MAIN_CHECKS = [
@@ -12,7 +16,18 @@ export const REQUIRED_MAIN_CHECKS = [
   'Browser E2E',
   'Supply chain',
   'Analyze (javascript-typescript)',
+  'Codex verdict',
 ] as const;
+
+/**
+ * Required checks that are commit statuses rather than jobs, each with the
+ * workflow that sets it, which names the context in its `STATUS_CONTEXT`
+ * (D52: `Codex verdict` is set on the head commit from the pull request's
+ * comments, not published by a job of that name).
+ */
+export const STATUS_CONTEXTS: Readonly<Record<string, string>> = {
+  'Codex verdict': '.github/workflows/codex-verdict.yml',
+};
 
 type JsonObject = Record<string, unknown>;
 
@@ -114,14 +129,16 @@ export function scanMainRulesetText(
   if (pull === null) {
     findings.push(finding(RULESET_PATH, null, 'pull_request_rule_missing'));
   } else {
-    if (pull.required_approving_review_count !== 1) {
-      findings.push(finding(RULESET_PATH, null, 'one_review_not_required'));
+    // D52: one GitHub identity cannot approve its own pull request, so an approval count could
+    // never be met; the review is enforced by the `Codex verdict` status on the head instead.
+    if (pull.required_approving_review_count !== 0) {
+      findings.push(finding(RULESET_PATH, null, 'approval_count_unsatisfiable'));
     }
     if (pull.dismiss_stale_reviews_on_push !== true) {
       findings.push(finding(RULESET_PATH, null, 'stale_reviews_not_dismissed'));
     }
-    if (pull.require_last_push_approval !== true) {
-      findings.push(finding(RULESET_PATH, null, 'independent_last_push_review_not_required'));
+    if (pull.require_last_push_approval !== false) {
+      findings.push(finding(RULESET_PATH, null, 'last_push_approval_unsatisfiable'));
     }
     if (pull.required_review_thread_resolution !== true) {
       findings.push(finding(RULESET_PATH, null, 'review_thread_resolution_not_required'));
@@ -173,6 +190,19 @@ export function scanMainRulesetText(
     findings.push(finding('.github/workflows', null, 'duplicate_job_name', name));
   }
   for (const context of contexts ?? REQUIRED_MAIN_CHECKS) {
+    const statusWorkflow = STATUS_CONTEXTS[context];
+    if (statusWorkflow !== undefined) {
+      const text = workflowTexts[statusWorkflow] ?? '';
+      if (!text.split('\n').some((line) => line.trim() === `STATUS_CONTEXT: ${context}`)) {
+        findings.push(finding(statusWorkflow, null, 'required_status_not_set', context));
+      }
+      if (jobNames.includes(context)) {
+        findings.push(
+          finding('.github/workflows', null, 'status_context_shadowed_by_job', context),
+        );
+      }
+      continue;
+    }
     if (!jobNames.includes(context)) {
       findings.push(finding('.github/workflows', null, 'required_check_missing', context));
     }

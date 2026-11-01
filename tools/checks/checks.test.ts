@@ -437,6 +437,10 @@ describe('main ruleset', () => {
       path.join(REPO, '.github/workflows/codeql.yml'),
       'utf8',
     ),
+    '.github/workflows/codex-verdict.yml': readFileSync(
+      path.join(REPO, '.github/workflows/codex-verdict.yml'),
+      'utf8',
+    ),
   };
 
   it('requires the protected-main controls and every emitted release-check context', () => {
@@ -454,6 +458,10 @@ describe('main ruleset', () => {
       'Browser E2E',
       'Supply chain',
     ]);
+    // The verdict is a commit status, not a job of that name (D52).
+    expect(workflowJobNames(workflowTexts['.github/workflows/codex-verdict.yml'])).toEqual([
+      'Codex verdict record',
+    ]);
   });
 
   it('reports weakened review, ref, force-push, deletion and status-check controls', () => {
@@ -467,9 +475,10 @@ describe('main ruleset', () => {
     );
     const pull = ruleset.rules.find((rule) => rule.type === 'pull_request')?.parameters;
     if (pull === undefined) throw new Error('fixture has no pull request rule');
-    pull.required_approving_review_count = 0;
+    // D52: an approval one identity cannot give would block every merge.
+    pull.required_approving_review_count = 1;
     pull.dismiss_stale_reviews_on_push = false;
-    pull.require_last_push_approval = false;
+    pull.require_last_push_approval = true;
     pull.required_review_thread_resolution = false;
     const status = ruleset.rules.find((rule) => rule.type === 'required_status_checks')?.parameters;
     if (status === undefined) throw new Error('fixture has no required status rule');
@@ -480,11 +489,11 @@ describe('main ruleset', () => {
     ];
 
     expect(rules(scanMainRulesetText(JSON.stringify(ruleset), workflowTexts))).toEqual([
+      'approval_count_unsatisfiable',
       'deletion_rule_missing',
-      'independent_last_push_review_not_required',
+      'last_push_approval_unsatisfiable',
       'main_condition_mismatch',
       'non_fast_forward_rule_missing',
-      'one_review_not_required',
       'required_check_missing',
       'required_status_check_source_mismatch',
       'required_status_checks_mismatch',
@@ -505,6 +514,30 @@ describe('main ruleset', () => {
     expect(rules(scanMainRulesetText(readFileSync(rulesetPath, 'utf8'), renamed))).toContain(
       'required_check_missing',
     );
+  });
+
+  it('requires the Codex verdict status to be set by its workflow and never shadowed by a job (D52)', () => {
+    const verdict = workflowTexts['.github/workflows/codex-verdict.yml'];
+    const unset = {
+      ...workflowTexts,
+      '.github/workflows/codex-verdict.yml': verdict.replace(
+        'STATUS_CONTEXT: Codex verdict',
+        'STATUS_CONTEXT: Codex review',
+      ),
+    };
+    expect(rules(scanMainRulesetText(readFileSync(rulesetPath, 'utf8'), unset))).toEqual([
+      'required_status_not_set',
+    ]);
+    const shadowed = {
+      ...workflowTexts,
+      '.github/workflows/codex-verdict.yml': verdict.replace(
+        '    name: Codex verdict record',
+        '    name: Codex verdict',
+      ),
+    };
+    expect(rules(scanMainRulesetText(readFileSync(rulesetPath, 'utf8'), shadowed))).toEqual([
+      'status_context_shadowed_by_job',
+    ]);
   });
 });
 
