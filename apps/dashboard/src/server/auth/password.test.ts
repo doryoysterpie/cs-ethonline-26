@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { prohibitedCodePoints } from '@cas/contracts';
+
 import {
   ARGON2_PARAMETERS,
   VerificationGate,
@@ -33,6 +35,7 @@ describe('password policy', () => {
     expect(validatePassword(`long-enough-${String.fromCodePoint(0x1b)}x`, 'syn_user')).toEqual({
       ok: false,
       reason: 'password_control_character',
+      characters: [{ codePoint: 0x1b, rule: 'c0_control', line: 1, column: 13 }],
     });
     expect(validatePassword('contains-SYN_USER-inside', 'syn_user')).toEqual({
       ok: false,
@@ -129,5 +132,29 @@ describe('the length cap on verification', () => {
     const stored = await hashPassword(SAMPLE);
     expect(await verifyPassword(stored, 'a'.repeat(PASSWORD_MAX_LENGTH + 1))).toBe(false);
     expect(await verifyPassword(stored, SAMPLE)).toBe(true);
+  });
+
+  it('refuses the whole prohibited-text rule at set and change, on the normalised form, naming the character (D50)', () => {
+    for (const code of prohibitedCodePoints()) {
+      const result = validatePassword(
+        `correct-horse-battery${String.fromCodePoint(code)}`,
+        'syn_user',
+      );
+      expect([code, result.ok]).toEqual([code, false]);
+    }
+    // A trailing zero-width space from a password manager: refused, named, at its position.
+    let thrown: unknown;
+    try {
+      assertPassword(`correct-horse-battery${String.fromCodePoint(0x200b)}`, 'syn_user');
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as Error).message).toBe(
+      'refused character at password:1:22: default_ignorable \\u{200B} ZERO WIDTH SPACE',
+    );
+    // The selectors stay, as everywhere the rule applies.
+    expect(
+      validatePassword(`correct-horse-${String.fromCodePoint(0x2764, 0xfe0f)}`, 'syn_user').ok,
+    ).toBe(true);
   });
 });

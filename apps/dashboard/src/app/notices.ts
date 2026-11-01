@@ -127,12 +127,14 @@ export function noticeCharacters(at: unknown): NoticeCharacter[] {
     const match = ENTRY.exec(entry);
     if (match === null) return [];
     const codePoint = Number.parseInt(match[1] ?? '', 16);
+    // The range comes first: the rule's test cannot be asked about a value past U+10FFFF.
+    if (codePoint > 0x10ffff) return [];
     const named =
       codePoint === 0x09 ||
       codePoint === 0x0a ||
       codePoint === 0x0d ||
       prohibitedTextRule(codePoint) !== null;
-    if (codePoint > 0x10ffff || !named) return [];
+    if (!named) return [];
     out.push({ codePoint, line: Number(match[2]), column: Number(match[3]) });
   }
   return out;

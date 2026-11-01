@@ -97,8 +97,34 @@ test.describe('hostile stored content', () => {
     await page.goto(url);
     await page.getByLabel('Markdown').fill(`# ok ${String.fromCodePoint(0x202e)} reversed`);
     await page.getByRole('button', { name: /^Save revision/u }).click();
-    await page.waitForURL('**notice=invalid**');
-    await expect(page.getByText('The request was not valid.')).toBeVisible();
+    await page.waitForURL('**notice=invalid_character**');
+    // The refusal names the character by its escape, its name and where it stands (D50).
+    await expect(
+      page.getByText('Not saved. This text carries a character that is refused here:'),
+    ).toBeVisible();
+    await expect(page.getByText('RIGHT-TO-LEFT OVERRIDE, line 1, column 6')).toBeVisible();
+    await expect(page.locator('.notice .escaped')).toHaveText('\\u{202E}');
     await expect(page.getByRole('button', { name: 'Save revision 1' })).toBeVisible();
+  });
+
+  test('a draft body carrying a soft hyphen is saved without it, and the notice lists it (CAS-012)', async ({
+    page,
+  }) => {
+    const { accounts, seeded } = await credentials();
+    await signIn(page, accounts.editor.email);
+    const url = `/drafts/${seeded.evidenceRunId}?start=2026-09-03T00:00:00Z&end=2026-09-10T00:00:00Z`;
+    await page.goto(url);
+    const before = await page.getByRole('button', { name: /^Save revision/u }).textContent();
+    await page.getByLabel('Markdown').fill(`# co${String.fromCodePoint(0xad)}operate`);
+    await page.getByRole('button', { name: /^Save revision/u }).click();
+    await page.waitForURL('**notice=saved_cleaned**');
+    await expect(
+      page.getByText('Saved. These invisible characters were removed before saving:'),
+    ).toBeVisible();
+    await expect(page.getByText('SOFT HYPHEN, line 1, column 5')).toBeVisible();
+    await expect(page.getByLabel('Markdown')).toHaveValue('# cooperate');
+    expect(await page.getByRole('button', { name: /^Save revision/u }).textContent()).not.toBe(
+      before,
+    );
   });
 });

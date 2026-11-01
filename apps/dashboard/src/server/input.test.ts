@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { prohibitedCodePoints } from '@cas/contracts';
+
 import { isDashboardError } from './errors.ts';
 import {
   boundedText,
@@ -96,6 +98,26 @@ describe('field parsers', () => {
       code(() => boundedText(`a${String.fromCodePoint(0x2028)}b`, 'note', { min: 1, max: 4 })),
     ).toBe('note_control');
     expect(code(() => boundedText(1, 'note', { min: 1, max: 4 }))).toBe('note_invalid');
+    // The whole prohibited-text rule, and tab, line feed and carriage return, each named where
+    // it stands (CAS-012, D50, point 2).
+    for (const point of [...prohibitedCodePoints(), 0x09, 0x0d]) {
+      expect([
+        point,
+        code(() => boundedText(`a${String.fromCodePoint(point)}b`, 'note', { min: 1, max: 4 })),
+      ]).toEqual([point, 'note_control']);
+    }
+    let refused: unknown;
+    try {
+      boundedText(`ab${String.fromCodePoint(0x200b)}`, 'title', { min: 1, max: 10 });
+    } catch (error) {
+      refused = error;
+    }
+    expect((refused as { characters: unknown }).characters).toEqual([
+      { codePoint: 0x200b, rule: 'default_ignorable', line: 1, column: 3 },
+    ]);
+    expect((refused as Error).message).toBe(
+      'refused character at title:1:3: default_ignorable \\u{200B} ZERO WIDTH SPACE',
+    );
     expect(optionalText('', 'note', { min: 1, max: 4 })).toBeNull();
     expect(optionalText(null, 'note', { min: 1, max: 4 })).toBeNull();
   });

@@ -1721,7 +1721,10 @@ describe('data-access layer against PostgreSQL', () => {
       for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(await kindOf(saveRoundupRevision(rt, persisted[role], edit))).toBe('authorization');
       }
-      expect(await saveRoundupRevision(rt, persisted.owner, edit)).toEqual({ revision: 2 });
+      expect(await saveRoundupRevision(rt, persisted.owner, edit)).toEqual({
+        revision: 2,
+        removed: [],
+      });
       expect(await kindOf(saveRoundupRevision(rt, persisted.owner, edit))).toBe('conflict');
       expect(
         await kindOf(
@@ -1749,6 +1752,49 @@ describe('data-access layer against PostgreSQL', () => {
       ]);
       expect(edits.every((e) => e.subjectId === week.weekRunId)).toBe(true);
       expect(edits.every((e) => !e.code.includes('Edited'))).toBe(true);
+      // A soft hyphen and a zero-width space pasted from a page are removed before the revision is
+      // computed and listed for the notice; re-saving the cleaned text removes nothing; a
+      // bidirectional control refuses the save, named where it stands (CAS-012, D50, point 1).
+      const char = (code: number): string => String.fromCodePoint(code);
+      const pasted = `## Rundown\n\nco${char(0xad)}operate${char(0x200b)}\n`;
+      expect(
+        await saveRoundupRevision(rt, persisted.owner, {
+          ...edit,
+          expectedRevision: 2,
+          markdown: pasted,
+        }),
+      ).toEqual({
+        revision: 3,
+        removed: [
+          { codePoint: 0xad, rule: 'default_ignorable', line: 3, column: 3 },
+          { codePoint: 0x200b, rule: 'default_ignorable', line: 3, column: 11 },
+        ],
+      });
+      const cleaned = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(cleaned.latest).toEqual({ revision: 3, markdown: '## Rundown\n\ncooperate\n' });
+      expect(
+        await saveRoundupRevision(rt, persisted.owner, {
+          ...edit,
+          expectedRevision: 3,
+          markdown: cleaned.latest?.markdown ?? '',
+        }),
+      ).toEqual({ revision: 4, removed: [] });
+      let refused: unknown;
+      try {
+        await saveRoundupRevision(rt, persisted.owner, {
+          ...edit,
+          expectedRevision: 4,
+          markdown: `line one\nturn ${char(0x202e)}here\n`,
+        });
+      } catch (error) {
+        refused = error;
+      }
+      expect(isDashboardError(refused) && `${refused.kind}:${refused.code}`).toBe(
+        'validation:markdown_control',
+      );
+      expect(isDashboardError(refused) ? refused.characters : null).toEqual([
+        { codePoint: 0x202e, rule: 'bidi_control', line: 2, column: 6 },
+      ]);
     });
   });
 
@@ -2004,7 +2050,10 @@ describe('data-access layer against PostgreSQL', () => {
       for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(await kindOf(saveArticleRevision(rt, persisted[role], edit))).toBe('authorization');
       }
-      expect(await saveArticleRevision(rt, persisted.owner, edit)).toEqual({ revision: 2 });
+      expect(await saveArticleRevision(rt, persisted.owner, edit)).toEqual({
+        revision: 2,
+        removed: [],
+      });
       expect(await kindOf(saveArticleRevision(rt, persisted.owner, edit))).toBe('conflict');
       const edits = (await persistent.audit.list(200)).filter((e) => e.kind === 'article_edited');
       expect(edits.map((e) => `${e.outcome}:${e.code}`).sort()).toEqual([
@@ -2348,7 +2397,7 @@ describe('data-access layer against PostgreSQL', () => {
       );
       expect(
         await saveArticleRevision(rt, persisted.owner, { ...edit, markdown: 'a'.repeat(400_000) }),
-      ).toEqual({ revision: 2 });
+      ).toEqual({ revision: 2, removed: [] });
       // Behind the layer's bound, the database refuses the 400,001st character.
       let refused: unknown;
       try {
@@ -3515,7 +3564,7 @@ describe('data-access layer against PostgreSQL', () => {
           expectedRevision: 1,
           markdown: corrected,
         }),
-      ).toEqual({ revision: 2 });
+      ).toEqual({ revision: 2, removed: [] });
       // Revision 2 exists but is not published: the card still shows revision 1.
       expect((await cardPage(rt, id, 'direct')).card).toMatchObject({
         revision: 1,
