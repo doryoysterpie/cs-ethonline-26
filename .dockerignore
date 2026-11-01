@@ -13,3 +13,7 @@ test-results
 .env.*
 !.env.example
 *.log
+# Parked at CAS-006 (D54): kept in the repository and its bill of materials, out of the deployed
+# image. Neither the dashboard nor the worker depends on either.
+packages/graph-evidence
+packages/mcp-server
