@@ -1,4 +1,4 @@
-import { assertSchemaName, summarizeConnection } from './config.js';
+import { assertSchemaName, type ConnectionTransport } from './config.js';
 import type { Queryable } from './database.js';
 import { DatabaseError } from './errors.js';
 import { listTables, quoteIdentifier } from './schema.js';
@@ -34,45 +34,191 @@ function databaseName(connectionString: string): string {
   return name;
 }
 
-function databaseIdentity(connectionString: string): string {
-  const url = new URL(connectionString);
-  const hostParameter = url.searchParams.get('host');
-  const summary = summarizeConnection(connectionString);
-  const host =
-    summary.transport === 'remote-tcp'
-      ? (hostParameter ?? url.hostname.toLowerCase())
-      : 'local-postgres';
-  const port = url.port.length === 0 ? '5432' : url.port;
-  return `${host}\u0000${port}\u0000${databaseName(connectionString)}`;
+/**
+ * The libpq parameters a restore-drill URL may carry. Any other, `port`,
+ * `hostaddr`, `service` and `passfile` among them, could send one of the
+ * drill's clients somewhere the guard did not check, and refuses the URL.
+ */
+const DRILL_PARAMETERS: ReadonlySet<string> = new Set([
+  'application_name',
+  'channel_binding',
+  'connect_timeout',
+  'host',
+  'options',
+  'ssl',
+  'sslcert',
+  'sslcrl',
+  'sslkey',
+  'sslmode',
+  'sslrootcert',
+  'target_session_attrs',
+]);
+
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * Where one drill URL connects, read once. The guard checks this target, and
+ * the child tools are handed exactly it (`drillChildEnvironment`); the Node
+ * client reads the same URL to the same host, port and database, because
+ * every parameter that could make the two disagree is refused here.
+ */
+export interface DrillTarget {
+  readonly transport: ConnectionTransport;
+  /** The effective host: a host name, an address, or a socket directory. */
+  readonly host: string;
+  readonly port: string;
+  readonly database: string;
+  readonly user: string | null;
+  readonly password: string | null;
+  readonly parameters: ReadonlyMap<string, string>;
+}
+
+function drillRefusal(reason: string): DatabaseError {
+  return new DatabaseError('configuration', `restore drill URL rejected: ${reason}`);
+}
+
+function decoded(value: string, what: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw drillRefusal(`${what} is not valid percent-encoding`);
+  }
+}
+
+export function drillTarget(connectionString: string): DrillTarget {
+  let url: URL;
+  try {
+    url = new URL(connectionString);
+  } catch {
+    throw drillRefusal('not a URL');
+  }
+  if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
+    throw drillRefusal('scheme must be postgres or postgresql');
+  }
+  const parameters = new Map<string, string>();
+  for (const [key, value] of url.searchParams) {
+    if (!DRILL_PARAMETERS.has(key)) throw drillRefusal('it carries an unsupported libpq parameter');
+    if (parameters.has(key)) throw drillRefusal('it names a libpq parameter twice');
+    parameters.set(key, value);
+  }
+  // The `host` parameter overrides the authority, for libpq and the Node client alike.
+  const host = parameters.get('host') ?? decoded(url.hostname, 'the host');
+  parameters.delete('host');
+  if (host.length === 0) throw drillRefusal('it names no host');
+  if (host.includes(',')) throw drillRefusal('it names more than one host');
+  const transport: ConnectionTransport = host.startsWith('/')
+    ? 'unix-socket'
+    : LOOPBACK_HOSTS.has(host.toLowerCase())
+      ? 'loopback-tcp'
+      : 'remote-tcp';
+  return {
+    transport,
+    host,
+    port: url.port.length === 0 ? '5432' : url.port,
+    database: databaseName(connectionString),
+    user: url.username.length === 0 ? null : decoded(url.username, 'the user name'),
+    password: url.password.length === 0 ? null : decoded(url.password, 'the password'),
+    parameters,
+  };
+}
+
+function databaseIdentity(target: DrillTarget): string {
+  const host = target.transport === 'remote-tcp' ? target.host.toLowerCase() : 'local-postgres';
+  return `${host}\u0000${target.port}\u0000${target.database}`;
 }
 
 /**
  * Refuses any target that could plausibly be production. The drill may read a
- * remote source, but restores only to a separately named local database.
+ * remote source, but restores only to a separately named local database. Both
+ * URLs are read once, by `drillTarget`, so the host checked is the host every
+ * client of the drill connects to.
  */
 export function assertRestoreDrillSafety(
   sourceConnectionString: string,
   restoreConnectionString: string,
 ): void {
-  const target = summarizeConnection(restoreConnectionString);
+  const source = drillTarget(sourceConnectionString);
+  const target = drillTarget(restoreConnectionString);
   if (target.transport === 'remote-tcp') {
     throw new DatabaseError(
       'configuration',
       'restore target rejected: only loopback TCP or a local Unix socket is allowed',
     );
   }
-  if (!RESTORE_DATABASE_NAME.test(databaseName(restoreConnectionString))) {
+  if (!RESTORE_DATABASE_NAME.test(target.database)) {
     throw new DatabaseError(
       'configuration',
       'restore target rejected: database name must begin with cas_restore_',
     );
   }
-  if (databaseIdentity(sourceConnectionString) === databaseIdentity(restoreConnectionString)) {
+  if (databaseIdentity(source) === databaseIdentity(target)) {
     throw new DatabaseError(
       'configuration',
       'restore target rejected: source and target identify the same database',
     );
   }
+}
+
+/**
+ * Variables a child tool keeps from the drill's own environment: enough to
+ * find the tool, read the user's password file and format messages. Every
+ * other variable, and every libpq variable above all (`PGHOSTADDR`,
+ * `PGSERVICE`, `PGSERVICEFILE`, `PGSYSCONFDIR`, `PGPASSFILE`), is left out, so
+ * nothing inherited can send a tool anywhere but the target.
+ */
+const KEPT_VARIABLES = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'LC_MESSAGES',
+  'TZ',
+  'TMPDIR',
+];
+
+const PARAMETER_VARIABLES: ReadonlyArray<readonly [string, string]> = [
+  ['application_name', 'PGAPPNAME'],
+  ['channel_binding', 'PGCHANNELBINDING'],
+  ['connect_timeout', 'PGCONNECT_TIMEOUT'],
+  ['sslcert', 'PGSSLCERT'],
+  ['sslcrl', 'PGSSLCRL'],
+  ['sslkey', 'PGSSLKEY'],
+  ['sslrootcert', 'PGSSLROOTCERT'],
+  ['target_session_attrs', 'PGTARGETSESSIONATTRS'],
+];
+
+/** The environment `pg_dump` and `pg_restore` run with: the target, and nothing inherited that routes. */
+export function drillChildEnvironment(
+  target: DrillTarget,
+  readOnly: boolean,
+  inherited: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
+  const environment: Record<string, string> = {};
+  for (const name of KEPT_VARIABLES) {
+    const value = inherited[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  environment.PGHOST = target.host;
+  environment.PGPORT = target.port;
+  environment.PGDATABASE = target.database;
+  if (target.user !== null) environment.PGUSER = target.user;
+  if (target.password !== null) environment.PGPASSWORD = target.password;
+  const sslmode = target.parameters.get('sslmode');
+  if (sslmode !== undefined) environment.PGSSLMODE = sslmode;
+  else if (target.parameters.get('ssl') === 'true') environment.PGSSLMODE = 'require';
+  for (const [parameter, variable] of PARAMETER_VARIABLES) {
+    const value = target.parameters.get(parameter);
+    if (value !== undefined) environment[variable] = value;
+  }
+  const options = [
+    target.parameters.get('options'),
+    readOnly ? '-c default_transaction_read_only=on' : undefined,
+  ].filter((value): value is string => value !== undefined && value.length > 0);
+  if (options.length > 0) environment.PGOPTIONS = options.join(' ');
+  return environment;
 }
 
 /** Exact counts, not planner estimates, returned as decimal strings. */

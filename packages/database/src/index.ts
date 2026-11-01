@@ -290,7 +290,10 @@ export {
   assertRestoreDrillSafety,
   compareTableRowCounts,
   countSchemaRows,
+  drillChildEnvironment,
+  drillTarget,
   parseRestoreDrillTimeout,
+  type DrillTarget,
   type RowCountDifference,
   type TableRowCount,
 } from './restore.js';

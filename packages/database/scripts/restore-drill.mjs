@@ -6,12 +6,13 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { clearTimeout, setTimeout } from 'node:timers';
-import { URL } from 'node:url';
 
 import {
   assertRestoreDrillSafety,
   compareTableRowCounts,
   countSchemaRows,
+  drillChildEnvironment,
+  drillTarget,
   isDatabaseError,
   migrationStatusForClient,
   openDatabase,
@@ -84,76 +85,10 @@ function runTool(stage, command, args, environment, timeoutMs, sanitize, capture
   });
 }
 
-function childEnvironment(connectionString, readOnly) {
-  const url = new URL(connectionString);
-  const supportedParameters = new Set([
-    'application_name',
-    'channel_binding',
-    'connect_timeout',
-    'host',
-    'options',
-    'ssl',
-    'sslcert',
-    'sslcrl',
-    'sslkey',
-    'sslmode',
-    'sslrootcert',
-    'target_session_attrs',
-  ]);
-  for (const parameter of url.searchParams.keys()) {
-    if (!supportedParameters.has(parameter)) {
-      throw new Error('database URL contains an unsupported libpq parameter');
-    }
-  }
-  const decoded = (value, name) => {
-    try {
-      return decodeURIComponent(value);
-    } catch {
-      throw new Error(`${name} is not valid percent-encoding`);
-    }
-  };
-  const database = decoded(url.pathname.replace(/^\//, ''), 'database name');
-  const host = url.searchParams.get('host') ?? url.hostname;
-  const environment = {
-    ...process.env,
-    PGDATABASE: database,
-    PGHOST: decoded(host, 'database host'),
-    PGPORT: url.port || '5432',
-  };
-  delete environment[SOURCE_VARIABLE];
-  delete environment[TARGET_VARIABLE];
-  if (url.username.length > 0) environment.PGUSER = decoded(url.username, 'database username');
-  else delete environment.PGUSER;
-  if (url.password.length > 0) environment.PGPASSWORD = decoded(url.password, 'database password');
-  else delete environment.PGPASSWORD;
-  const sslmode = url.searchParams.get('sslmode');
-  if (sslmode !== null) environment.PGSSLMODE = sslmode;
-  else if (url.searchParams.get('ssl') === 'true') environment.PGSSLMODE = 'require';
-  else delete environment.PGSSLMODE;
-  for (const [parameter, variable] of [
-    ['application_name', 'PGAPPNAME'],
-    ['channel_binding', 'PGCHANNELBINDING'],
-    ['connect_timeout', 'PGCONNECT_TIMEOUT'],
-    ['sslcert', 'PGSSLCERT'],
-    ['sslcrl', 'PGSSLCRL'],
-    ['sslkey', 'PGSSLKEY'],
-    ['sslrootcert', 'PGSSLROOTCERT'],
-    ['target_session_attrs', 'PGTARGETSESSIONATTRS'],
-  ]) {
-    const value = url.searchParams.get(parameter);
-    if (value === null) delete environment[variable];
-    else environment[variable] = value;
-  }
-  if (readOnly) {
-    environment.PGOPTIONS = [url.searchParams.get('options'), '-c default_transaction_read_only=on']
-      .filter(Boolean)
-      .join(' ');
-  } else {
-    const options = url.searchParams.get('options');
-    if (options === null) delete environment.PGOPTIONS;
-    else environment.PGOPTIONS = options;
-  }
-  return environment;
+// The child tools connect to exactly the target the guard checked, with nothing inherited that
+// routes (`drillChildEnvironment`; the review of pull request 65 at aa6f519, H2).
+function childEnvironment(target, readOnly) {
+  return drillChildEnvironment(target, readOnly, process.env);
 }
 
 function assertCompleteMigrations(label, status) {
@@ -173,6 +108,8 @@ async function main() {
   const sourceConfig = parseDatabaseConfig({ DATABASE_URL: sourceUrl }, { schema });
   const targetConfig = parseDatabaseConfig({ DATABASE_URL: targetUrl }, { schema });
   assertRestoreDrillSafety(sourceUrl, targetUrl);
+  const sourceTarget = drillTarget(sourceUrl);
+  const restoreTarget = drillTarget(targetUrl);
 
   const source = openDatabase(sourceConfig, { maxConnections: 1 });
   const target = openDatabase(targetConfig, { maxConnections: 1 });
@@ -217,7 +154,7 @@ async function main() {
             `--snapshot=${snapshot}`,
             `--file=${dumpPath}`,
           ],
-          childEnvironment(sourceUrl, true),
+          childEnvironment(sourceTarget, true),
           timeoutMs,
           sanitize,
         );
@@ -238,7 +175,7 @@ async function main() {
         'pg_restore list',
         'pg_restore',
         ['--list', dumpPath],
-        childEnvironment(targetUrl, false),
+        childEnvironment(restoreTarget, false),
         timeoutMs,
         sanitize,
         true,
@@ -258,7 +195,7 @@ async function main() {
       'pg_restore',
       'pg_restore',
       restoreArgs,
-      childEnvironment(targetUrl, false),
+      childEnvironment(restoreTarget, false),
       timeoutMs,
       sanitize,
     );
