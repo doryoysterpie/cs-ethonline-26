@@ -3,6 +3,7 @@ import {
   replaceProhibitedText,
   type ProhibitedTextRule,
 } from './prohibited-text.js';
+import { UNICODE_NAMES } from './unicode-names.js';
 
 /**
  * One escape form for every character a reader has to see rather than meet
@@ -13,7 +14,7 @@ import {
  * escape copied from a report pastes into a test unchanged. Inside a displayed
  * value the escape is bare; a name follows it only on a line about the
  * character (a notice, a refusal, a log entry). Which characters are escaped
- * is the rule's alone: the names below are labels and decide nothing.
+ * is the rule's alone: the names are labels and decide nothing.
  *
  * This file holds none of the characters it names.
  */
@@ -24,67 +25,15 @@ export function escapeCodePoint(codePoint: number): string {
   return `\\u{${codePoint.toString(16).toUpperCase().padStart(4, '0')}}`;
 }
 
-const NAMES: ReadonlyMap<number, string> = new Map([
-  [0x0000, 'NULL'],
-  [0x0009, 'CHARACTER TABULATION'],
-  [0x000a, 'LINE FEED'],
-  [0x000d, 'CARRIAGE RETURN'],
-  [0x001b, 'ESCAPE'],
-  [0x007f, 'DELETE'],
-  [0x00ad, 'SOFT HYPHEN'],
-  [0x034f, 'COMBINING GRAPHEME JOINER'],
-  [0x061c, 'ARABIC LETTER MARK'],
-  [0x115f, 'HANGUL CHOSEONG FILLER'],
-  [0x1160, 'HANGUL JUNGSEONG FILLER'],
-  [0x17b4, 'KHMER VOWEL INHERENT AQ'],
-  [0x17b5, 'KHMER VOWEL INHERENT AA'],
-  [0x180b, 'MONGOLIAN FREE VARIATION SELECTOR ONE'],
-  [0x180c, 'MONGOLIAN FREE VARIATION SELECTOR TWO'],
-  [0x180d, 'MONGOLIAN FREE VARIATION SELECTOR THREE'],
-  [0x180e, 'MONGOLIAN VOWEL SEPARATOR'],
-  [0x180f, 'MONGOLIAN FREE VARIATION SELECTOR FOUR'],
-  [0x200b, 'ZERO WIDTH SPACE'],
-  [0x200c, 'ZERO WIDTH NON-JOINER'],
-  [0x200d, 'ZERO WIDTH JOINER'],
-  [0x200e, 'LEFT-TO-RIGHT MARK'],
-  [0x200f, 'RIGHT-TO-LEFT MARK'],
-  [0x2028, 'LINE SEPARATOR'],
-  [0x2029, 'PARAGRAPH SEPARATOR'],
-  [0x202a, 'LEFT-TO-RIGHT EMBEDDING'],
-  [0x202b, 'RIGHT-TO-LEFT EMBEDDING'],
-  [0x202c, 'POP DIRECTIONAL FORMATTING'],
-  [0x202d, 'LEFT-TO-RIGHT OVERRIDE'],
-  [0x202e, 'RIGHT-TO-LEFT OVERRIDE'],
-  [0x2060, 'WORD JOINER'],
-  [0x2061, 'FUNCTION APPLICATION'],
-  [0x2062, 'INVISIBLE TIMES'],
-  [0x2063, 'INVISIBLE SEPARATOR'],
-  [0x2064, 'INVISIBLE PLUS'],
-  [0x2066, 'LEFT-TO-RIGHT ISOLATE'],
-  [0x2067, 'RIGHT-TO-LEFT ISOLATE'],
-  [0x2068, 'FIRST STRONG ISOLATE'],
-  [0x2069, 'POP DIRECTIONAL ISOLATE'],
-  [0x3164, 'HANGUL FILLER'],
-  [0xfeff, 'ZERO WIDTH NO-BREAK SPACE'],
-  [0xffa0, 'HALFWIDTH HANGUL FILLER'],
-  [0xfff9, 'INTERLINEAR ANNOTATION ANCHOR'],
-  [0xfffa, 'INTERLINEAR ANNOTATION SEPARATOR'],
-  [0xfffb, 'INTERLINEAR ANNOTATION TERMINATOR'],
-  [0xe0001, 'LANGUAGE TAG'],
-  [0xe007f, 'CANCEL TAG'],
-]);
-
-/** The character's Unicode name, or its name alias for a control, when this table or a range knows it. */
+/**
+ * The character's Unicode name, or its control alias for a control, from the
+ * generated table (`unicode-names.ts`), which holds the code points the rule
+ * names and the three line characters; `null` for any other code point, and
+ * for those of them with no name: unassigned code points, noncharacters, and
+ * U+0080, U+0081 and U+0099.
+ */
 export function codePointName(codePoint: number): string | null {
-  const named = NAMES.get(codePoint);
-  if (named !== undefined) return named;
-  if (codePoint >= 0xfe00 && codePoint <= 0xfe0f) {
-    return `VARIATION SELECTOR-${codePoint - 0xfe00 + 1}`;
-  }
-  if (codePoint >= 0xe0100 && codePoint <= 0xe01ef) {
-    return `VARIATION SELECTOR-${codePoint - 0xe0100 + 17}`;
-  }
-  return null;
+  return UNICODE_NAMES.get(codePoint) ?? null;
 }
 
 /** The escape followed by the name when one is known: the form for a line about the character. */
@@ -150,6 +99,26 @@ export function escapedCut(escaped: string, max: number): number {
   const open = escaped.lastIndexOf('\\u{', max - 1);
   if (open >= 0 && escaped.indexOf('}', open) >= max) return open;
   return max;
+}
+
+/**
+ * The length of a value in Unicode code points, the measure of every bound
+ * that stands beside the rule: PostgreSQL's `length()` on a UTF-8 database
+ * counts the same, and a column counts in it too. JavaScript's `length` counts
+ * UTF-16 code units, two for each code point above U+FFFF.
+ */
+export function codePointLength(value: string): number {
+  let length = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    // A surrogate pair is one code point; a lone surrogate counts as one, as iteration counts it.
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) index += 1;
+    }
+    length += 1;
+  }
+  return length;
 }
 
 export interface LocatedCodePoint {

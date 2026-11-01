@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PERMITTED_DEFAULT_IGNORABLES, prohibitedCodePoints } from './prohibited-text.js';
 import {
+  codePointLength,
   codePointName,
   describeCodePoint,
   describeLocated,
@@ -36,7 +37,8 @@ describe('the one escape form (D50, point 3)', () => {
     expect(describeCodePoint(0x0a)).toBe('\\u{000A} LINE FEED');
     expect(describeCodePoint(0xfe00)).toBe('\\u{FE00} VARIATION SELECTOR-1');
     expect(describeCodePoint(0xe01ef)).toBe('\\u{E01EF} VARIATION SELECTOR-256');
-    expect(describeCodePoint(0xe0067)).toBe('\\u{E0067}');
+    expect(describeCodePoint(0xe0067)).toBe('\\u{E0067} TAG LATIN SMALL LETTER G');
+    expect(describeCodePoint(0x0080)).toBe('\\u{0080}');
     expect(codePointName(0x41)).toBeNull();
   });
 
@@ -110,5 +112,24 @@ describe('the one escape form (D50, point 3)', () => {
     expect(
       describeLocated('src/a.ts', { codePoint: 0x202e, rule: 'bidi_control', line: 3, column: 7 }),
     ).toBe('src/a.ts:3:7: bidi_control \\u{202E} RIGHT-TO-LEFT OVERRIDE');
+  });
+});
+
+describe('the code-point length (CAS-012, review of db10902)', () => {
+  it('counts code points, as PostgreSQL length() does, never UTF-16 code units', () => {
+    expect(codePointLength('')).toBe(0);
+    expect(codePointLength('a'.repeat(279) + char(0xe0067))).toBe(280);
+    expect(('a'.repeat(279) + char(0xe0067)).length).toBe(281);
+    expect(codePointLength(char(0x1f600) + char(0x10ffff))).toBe(2);
+    // A lone surrogate is one, as iteration counts it.
+    for (const value of [
+      '\ud800',
+      '\udc00',
+      'a\ud800b',
+      '\udc00\ud800',
+      char(0x1f600) + '\ud83d',
+    ]) {
+      expect([value.length, codePointLength(value)]).toEqual([value.length, [...value].length]);
+    }
   });
 });

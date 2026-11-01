@@ -307,6 +307,7 @@ export {
 } from './prohibited-text.js';
 export {
   TEXT_ESCAPE_CONTRACT,
+  codePointLength,
   codePointName,
   describeCodePoint,
   describeLocated,
