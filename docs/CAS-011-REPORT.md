@@ -127,10 +127,11 @@ Under Unicode 17.0 the rule names 4,305 code points: 4,172 default-ignorable one
   tracked file through one handle and checks the handle, not the path, before reading it: the
   file is regular with one link, its path resolves to the repository's real path plus the
   tracked path with no link in any component, and the file at that path is the handle's (device
-  and inode). Anything else is refused and nothing is read or written. A file that carries a
-  default-ignorable code point is reopened for writing under the same checks and rewritten from
-  what that handle holds; the command prints the path and the number removed, then runs the
-  check. A leading byte-order mark
+  and inode). Anything else is refused with one message. No existing file is ever written: the
+  corrected bytes go into a new file created beside the target with its mode, both files are
+  checked again, and a rename puts the new file in the target's place, so every link to the
+  original keeps the original bytes. The command prints the path and the number removed, then
+  runs the check. A leading byte-order mark
   is removed except in the one fixture exempt from that rule. Controls, separators,
   noncharacters, carriage returns and invalid UTF-8 stay findings for a person.
 - **The export.** `escapeInline` turns line breaks into spaces, removes what the rule names,
@@ -183,11 +184,13 @@ and `git diff --quiet README.md` exited 0: the file was restored byte for byte.
 ## 6. Security baseline (S6)
 
 - No secret, no network, no new input boundary. The rule is pure.
-- The fix mode writes only a file of this checkout. `O_NOFOLLOW` refuses a link in the last
-  component alone, so the containment is checked on the open handle: a link in any component, a
-  file linked from elsewhere, or a path swapped before the open is refused, and nothing outside
-  the repository is read or written (tests for each; section 9). Its output is a path and a
-  count.
+- The fix mode never writes to an existing file; it replaces a tracked file by renaming a new
+  file over it. A link in any path component, a file already linked from elsewhere, or a path
+  swapped before the open is refused, and a link made to the original at any moment keeps the
+  original bytes (tests for each; sections 9 and 10). The one case Node's path-based calls cannot
+  exclude is another process swapping a directory of the checkout between the last check and the
+  rename: a change to the checkout while the command runs is outside its threat model, a
+  developer's command over their own working tree. Its output is a path and a count.
 - The hygiene check never prints the character it found.
 - `pnpm audit` is clean at low (section 7).
 
@@ -231,3 +234,27 @@ same checks and rewritten from what that handle holds. The test replaces a track
 directory with a link to an outside directory, and in a second case replaces the file with a hard
 link to an outside file; both are refused with the outside file byte for byte unchanged. On
 `030c8d6`'s fix path the first case fails, the outside file rewritten. Tool tests: 36.
+
+## 10. Re-review of pull request 57 at `7ab3697` (1 November 2026)
+
+Codex re-reviewed `7ab3697` (the same record, its re-review section): CHANGES REQUIRED, one Medium
+and one Low; the first review's F1 closed, the regression failing on `030c8d6` as claimed.
+
+- **F1 (Medium): a hard link made after the link count was sampled saw the rewrite.**
+  `openTracked` sampled `nlink` once and the fix then rewrote that inode in place; the reviewer
+  made an outside link at the second check of the target and the outside name received the
+  corrected bytes. Corrected: no existing file is written any more. `replaceTracked` writes the
+  corrected bytes to a new file created beside the target (`O_CREAT | O_EXCL | O_NOFOLLOW`, the
+  target's mode), checks both files again, and renames the new one over the target, so the
+  original inode, and every link to it, keeps its bytes. The claim is narrowed to what the
+  replacement guarantees: a swap of a directory of the checkout between that last check and the
+  rename is outside the command's threat model (section 6). Test:
+  `tools/checks/hygiene-race.test.ts` wraps `statSync` and makes the outside link at the second
+  check of the target, the reviewer's moment; the outside bytes stay as they were and the
+  checkout's file is fixed. On `7ab3697` it fails, the outside name rewritten.
+- **F2 (Low): a link in the last component raised Node's own `ELOOP`.** The open now sits inside
+  the refusal: `ELOOP`, `ENOTDIR` and `ENOENT` on the way to a tracked file become
+  `hygiene fix refuses <path>: not a regular file of this checkout`, and any other error passes
+  through as itself. The final-component test asserts the exact message; on `7ab3697` it fails.
+
+Tool tests: 37.
