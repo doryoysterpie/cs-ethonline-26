@@ -1000,7 +1000,9 @@ pending an independent audit**.
   the revision's text and the cached image are read in one repeatable-read transaction, and an
   image is stored only from that read's text under that read's revision; the current publication
   is the greatest database-assigned `seq` (migration 0022), never an application timestamp; the
-  records written before 0022 carry the order they were written in (migration 0023).
+  records 0022 numbered, found by the transaction that numbered them and never by their
+  timestamps, carry the order they were written in, records written after it keep theirs, and
+  the migration refuses when that evidence is gone (migration 0023).
 - **"Not found at once" holds at the origin.** The images are cacheable for five minutes, so a
   downstream cache may serve an unpublished card's image that long, and platforms cache link
   previews for their own periods; the card page itself is never cached.

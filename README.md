@@ -92,7 +92,9 @@ browser harness brought to the passwordless sign-in, on pull request 36; CAS-009
 story cards under D48 (migrations 0021 and 0022), on pull request 35 (`docs/CAS-009-REPORT.md`);
 and the bounded readiness endpoint, on pull request 50. The combined audit of `main` at
 `8105678` returned CHANGES REQUIRED on 31 October 2026 (three findings, `docs/AUDIT-LEDGER.md`),
-corrected with tests and migration 0023 on `train/34-50-corrections`.
+corrected with tests and migration 0023 on `train/34-50-corrections`; the re-review at `2ff9a50`
+closed two and returned the third, migration 0023's boundary, on 1 November 2026, corrected the
+same day.
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up
