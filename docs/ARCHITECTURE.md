@@ -677,3 +677,16 @@ sanitiser already uses, lays the card out as SVG, and rasterizes it with `@resvg
 two TrueType files from `@expo-google-fonts/jetbrains-mono`; `server/dal/cards.ts` makes, serves
 and counts. Every request resolves the story from the current publication. The proxy admits
 `/cards/` without a session and marks it unindexed. The report is `docs/CAS-009-REPORT.md`.
+
+## 25. CAS-011: the prohibited-text rule
+
+`@cas/contracts` holds the one predicate for the code points no tracked file may carry, no
+round-up export keeps and no story card shows (`prohibited-text@2`, D49): every code point the
+running Node reports as Default_Ignorable_Code_Point but U+FE0E and U+FE0F, the C0 and C1
+controls but tab, line feed and carriage return, the line and paragraph separators, the
+interlinear annotation characters and the noncharacters. The set comes from the runtime's
+Unicode property, not a table; the bill of materials records the Unicode version
+(`cas:runtime:unicode`). Its consumers hold no list: `tools/checks/hygiene.ts` refuses (and
+removes the default-ignorable ones under `--fix`), `@cas/roundup`'s `text.ts` strips, the card's
+contract refuses and the dashboard's `server/cards/story.ts` strips. The hygiene check reads the
+module as source, since it runs before any build. The report is `docs/CAS-011-REPORT.md`.

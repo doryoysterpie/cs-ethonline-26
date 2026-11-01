@@ -103,8 +103,8 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
 - Every push scans every tracked file for token shapes and credential URLs
   (`tools/checks/secrets.ts`), for files the repository must never track
   (`tools/checks/forbidden-files.ts`), and for invalid UTF-8 and invisible or
-  direction-changing characters (`tools/checks/hygiene.ts`). A finding names the file, the
-  line and the rule and never the content.
+  direction-changing characters (`tools/checks/hygiene.ts`, under the prohibited-text rule of
+  section 25). A finding names the file, the line and the rule and never the content.
 - CodeQL runs over the TypeScript sources on every push, pull request and weekly
   (`.github/workflows/codeql.yml`).
 - GitHub secret scanning, push protection, Dependabot alerts, private vulnerability
@@ -769,12 +769,12 @@ The unit is **in review and pending an independent audit**.
   headline and summary is plain inline prose (no line break, HTML, link, URL, block marker or
   code: review F2). One violation rejects the whole response with a fixed code, and nothing is
   written. Every slot text, model-written or recorded, is escaped into one structureless line on
-  export, every code point the repository's prohibited-text policy names
-  (`data/policy/prohibited-text.json`: the controls, the bidirectional controls, the zero-width
-  characters including the word joiner, the interlinear annotation characters, the
-  noncharacters; the one table the hygiene check reads too) removed from it, and the rendered
-  Markdown is checked to carry exactly the selection's URLs before it is kept. Stored text keeps
-  such characters exactly; the export is a rendering, and removal is its escape.
+  export, every code point the prohibited-text rule names (D49, section 25: the controls, every
+  default-ignorable code point but the two emoji presentation selectors, the interlinear
+  annotation characters, the noncharacters; the one predicate the hygiene check and the story
+  card call too) removed from it, and the rendered Markdown is checked to carry exactly the
+  selection's URLs before it is kept. Stored text keeps such characters exactly; the export is a
+  rendering, and removal is its escape.
 - **The key is read by name and goes nowhere.** `ANTHROPIC_API_KEY` is read when the runtime is
   built and travels in the client only. Absent, the generation fails closed with
   `model_key_missing` before any request; the dashboard serves everything else. No log, audit
@@ -1001,6 +1001,34 @@ pending an independent audit**.
 - **"Not found at once" holds at the origin.** The images are cacheable for five minutes, so a
   downstream cache may serve an unpublished card's image that long, and platforms cache link
   previews for their own periods; the card page itself is never cached.
+
+## 25. The prohibited-text rule (CAS-011)
+
+One predicate, `prohibited-text@2` in `@cas/contracts` (D49), names the code points that no
+tracked file may carry, no round-up export keeps and no story card shows. Its consumers hold no
+list of their own, so they cannot drift apart, as the card's own list once did when it let
+U+061C through.
+
+- **The set is a Unicode property.** Every code point the running Node reports as
+  Default_Ignorable_Code_Point, the characters that render as nothing, except U+FE0E and
+  U+FE0F, which emoji need. The bidirectional controls of the "Trojan Source" class
+  (CVE-2021-42574) are inside it. With it: the C0 and C1 controls but tab, line feed and
+  carriage return, the line and paragraph separators, the interlinear annotation characters and
+  the noncharacters. Under Unicode 17.0 that is 4,305 code points.
+- **The set follows the runtime, and the runtime is recorded.** The bill of materials carries
+  the Unicode version (`cas:runtime:unicode`), so a Node upgrade that changes the set fails the
+  supply-chain check until the bill is regenerated. Each consumer's test walks every code point
+  the rule names.
+- **Refused or removed, never shown.** The hygiene check refuses a tracked file that carries
+  one; the round-up export removes them from every slot and refuses a model-written slot that
+  carries one; the card's contract refuses a headline that carries one, and its display text
+  removes them. Stored text is never altered (threat model RR13).
+- **The fix mode cannot be turned against the tree.** `corepack pnpm hygiene:fix` rewrites only
+  tracked regular files, through a handle opened without following a link, and removes only the
+  default-ignorable code points; every other finding stays for a person.
+- **Accepted losses.** Soft hyphens are stripped; joined emoji sequences decompose and
+  subdivision flags fall back to the black flag; U+200C, U+200E, U+200F and U+061C are stripped,
+  which affects Persian, Arabic and Hebrew names only.
 
 ## Reporting a vulnerability
 

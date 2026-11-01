@@ -438,6 +438,20 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 - **Depends on.** Nothing for S0; the queue condition for the implementation. **Blocks:**
   CAS-009.
 
+### CAS-011: One invisible-character rule
+
+**Tracker:** `docs/tcu/CAS-011.md`. **Issue, live status:** [#56](https://github.com/doryoysterpie/cs-ethonline-26/issues/56).
+
+- **Objective.** The hygiene check over tracked files, the round-up export and the story card
+  call one predicate in `@cas/contracts`: every Default_Ignorable_Code_Point but the two emoji
+  presentation selectors, with the controls, separators, interlinear annotation characters and
+  noncharacters the old table named. No consumer keeps a list of its own.
+- **Admitted.** By the owner on 1 November 2026, with his answer to the question the round-up's
+  third review left open (U+180E), recorded as D49 with its refinements and conditions.
+- **Decisions.** D49. Two questions the build raises (`docs/CAS-011-REPORT.md`, section 1.4):
+  the fixtures' path exemptions, and the four lists outside the three consumers.
+- **Depends on.** Nothing. **Blocks:** nothing.
+
 ## 6. Interruption tolerance
 
 Every tracker step is resumable on its own. When a unit is suspended, the tracker records the
