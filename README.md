@@ -51,7 +51,7 @@ amendment of 22 October 2026).
 after its independent review and is not re-audited; no document may read as saying otherwise
 (`docs/SPRINT-5-REPORT.md`, section 16). Its rules stand as written: a file can be ingested as
 fixture or replay only; live evidence comes from the Graph client, never from a file; a claim
-is a record, not a UUID. Migrations 0001 to 0023 are applied by the deploy step before the
+is a record, not a UUID. Migrations 0001 to 0024 are applied by the deploy step before the
 dashboard serves traffic.
 
 **What is on `main`, and what is in review.** Four post-event units merged on 22 October
@@ -103,8 +103,9 @@ nothing (D49; `docs/CAS-011-REPORT.md`): built on `cas-011/invisible-text`, not 
 **In review, not merged.** CAS-012, every character list on the prohibited-text rule (D50;
 `docs/CAS-012-REPORT.md`): the nine lists outside CAS-011's consumers escape, refuse or scan
 through the rule in one escape form, the save path removes the invisible characters a paste
-brings and names each, and `text:scan` reads the stored revisions; on `cas-012/lists`, not
-audited.
+brings and names each, and `text:scan` reads the stored revisions; on `cas-012/lists`, pull
+request 61; the review of `db10902` returned changes, corrected on the branch; re-review
+pending, not audited.
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up

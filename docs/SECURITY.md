@@ -1055,13 +1055,17 @@ characters remains in them.
 - **The refusals name the character where it stands.** A bounded single-line input, a password
   at set and change (after its normalisation; verification never runs the check), and the
   worker's review note and claim refuse everything the rule names and the three line
-  characters, naming the first by escape, name and position. The save path of drafts,
-  round-ups and articles refuses a control or a bidirectional control and removes every other
-  character the rule names before the revision is computed; the page's notice lists each
-  removed or refused character by code point, name, line and column.
+  characters, naming the first by escape, name and position; each applies the rule before its
+  length bound, which counts code points. The save path of drafts, round-ups and articles
+  refuses a control or a bidirectional control and removes every other character the rule names
+  before the revision is computed, then bounds the body as stored. The revision keeps every
+  removal as code points and positions (migration 0024), and the page lists each one by code
+  point, name, line and column; a refusal's notice lists the first twenty and states how many
+  more there were.
 - **The notice carries no text.** Its `at` parameter holds hexadecimal code points and
-  positions only, at most twenty, and is decoded only to characters the rule names or the three
-  line characters, so nothing a person typed travels through a query string.
+  positions only, and is decoded only to characters the rule names or the three line
+  characters; `more` and `revision` decode only to whole numbers. Nothing a person typed travels
+  through a query string, and the removal record holds no character.
 - **The scanner and the refusals read as one event.** The worker's source scanner and its note
   and claim refusals report in one form, `where:line:column: rule \u{XXXX} NAME`.
 - **Stored text is read, never rewritten.** `corepack pnpm text:scan` reports, read-only, which
