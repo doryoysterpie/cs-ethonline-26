@@ -89,7 +89,7 @@ describe('the Codex verdict recorder (D52)', () => {
       STATUS_CONTEXT: 'Codex verdict',
     };
 
-    it('reads the head and every page of comments, and posts one status on the head', async () => {
+    it('sets pending first, reads every page of comments, then posts the verdict on the head', async () => {
       const calls: Array<{ url: string; method: string; body: unknown; auth: string | null }> = [];
       const page = (n: number) =>
         Array.from({ length: n }, () => ({ author_association: 'OWNER', body: 'note' }));
@@ -102,8 +102,9 @@ describe('the Codex verdict recorder (D52)', () => {
           auth: headers.get('authorization'),
         });
         if (url.endsWith('/pulls/64')) return Response.json({ head: { sha: HEAD } });
-        if (url.includes('/issues/64/comments') && url.endsWith('page=1'))
+        if (url.includes('/issues/64/comments') && url.endsWith('page=1')) {
           return Response.json(page(100));
+        }
         if (url.includes('/issues/64/comments') && url.endsWith('page=2')) {
           return Response.json([
             ...page(3),
@@ -119,19 +120,27 @@ describe('the Codex verdict recorder (D52)', () => {
       });
       expect(calls.map((c) => `${c.method} ${c.url.replace('https://api.example', '')}`)).toEqual([
         'GET /repos/owner/repo/pulls/64',
+        `POST /repos/owner/repo/statuses/${HEAD}`,
         'GET /repos/owner/repo/issues/64/comments?per_page=100&page=1',
         'GET /repos/owner/repo/issues/64/comments?per_page=100&page=2',
         `POST /repos/owner/repo/statuses/${HEAD}`,
       ]);
-      expect(calls.at(-1)?.body).toEqual({
-        state: 'success',
-        context: 'Codex verdict',
-        description: 'Codex PASS recorded at aaaaaaa',
-      });
+      expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([
+        {
+          state: 'pending',
+          context: 'Codex verdict',
+          description: 'Reading the Codex verdict at aaaaaaa',
+        },
+        {
+          state: 'success',
+          context: 'Codex verdict',
+          description: 'Codex PASS recorded at aaaaaaa',
+        },
+      ]);
       expect(calls.every((c) => c.auth === 'Bearer ephemeral')).toBe(true);
     });
 
-    it('fails with a fixed line, never the response body, and posts nothing when a read fails', async () => {
+    it('posts nothing, and fails with a fixed line, when the head itself cannot be read', async () => {
       const posted: string[] = [];
       vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
         if ((init.method ?? 'GET') === 'POST') posted.push(url);
@@ -141,6 +150,70 @@ describe('the Codex verdict recorder (D52)', () => {
         /^GitHub API GET \/repos\/owner\/repo\/pulls\/64: 502$/u,
       );
       expect(posted).toEqual([]);
+    });
+
+    /**
+     * A head whose status an earlier run left green. `comments` answers each page; `statusFails`
+     * makes the status endpoint refuse the posts it names. Returns the head's status as GitHub
+     * would hold it after the run, and the run's error.
+     */
+    async function afterPriorSuccess(
+      comments: (page: number) => Response,
+      statusFails: ReadonlySet<string> = new Set(),
+    ): Promise<{ readonly state: string; readonly error: unknown }> {
+      let state = 'success';
+      vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+        if (url.endsWith('/pulls/64')) return Response.json({ head: { sha: HEAD } });
+        const match = /page=(\d+)$/u.exec(url);
+        if (url.includes('/issues/64/comments') && match !== null)
+          return comments(Number(match[1]));
+        if (url.endsWith(`/statuses/${HEAD}`)) {
+          const posted = (JSON.parse(String(init.body)) as { state: string }).state;
+          if (statusFails.has(posted)) return new Response('no', { status: 503 });
+          state = posted;
+          return new Response(null, { status: 201 });
+        }
+        return new Response('unexpected', { status: 404 });
+      });
+      let error: unknown = null;
+      try {
+        await record(ENV);
+      } catch (caught) {
+        error = caught;
+      }
+      return { state, error };
+    }
+
+    it('never leaves an earlier success standing when the comments cannot be read (review of aa6f519, H1)', async () => {
+      const full = Array.from({ length: 100 }, () => ({ author_association: 'OWNER', body: 'x' }));
+      for (const [label, comments] of [
+        ['the first page fails', () => new Response('down', { status: 502 })],
+        [
+          'a later page fails',
+          (n: number) => (n === 1 ? Response.json(full) : new Response('down', { status: 502 })),
+        ],
+        ['a page is not JSON', () => new Response('<html>', { status: 200 })],
+        ['a page is not a list', () => Response.json({ message: 'rate limited' })],
+        ['a comment is malformed', () => Response.json([{ author_association: 'OWNER', body: 7 }])],
+      ] as const) {
+        const { state, error } = await afterPriorSuccess(comments);
+        expect([label, state, error instanceof Error]).toEqual([label, 'failure', true]);
+      }
+    });
+
+    it('leaves the head pending, never green, when the verdict or the failure cannot be written', async () => {
+      const passed = () =>
+        Response.json([{ author_association: 'OWNER', body: `Codex verdict: PASS at ${HEAD}` }]);
+      expect(await afterPriorSuccess(passed, new Set(['success']))).toMatchObject({
+        state: 'pending',
+      });
+      const down = () => new Response('down', { status: 502 });
+      expect(await afterPriorSuccess(down, new Set(['failure']))).toMatchObject({
+        state: 'pending',
+      });
+      // Only when the status cannot be written at all does the earlier one stand, and the run fails.
+      const blocked = await afterPriorSuccess(down, new Set(['pending', 'failure']));
+      expect([blocked.state, blocked.error instanceof Error]).toEqual(['success', true]);
     });
   });
 });

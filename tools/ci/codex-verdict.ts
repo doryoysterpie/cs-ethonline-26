@@ -28,7 +28,7 @@ export interface ConversationEntry {
 }
 
 export interface Verdict {
-  readonly state: 'success' | 'failure';
+  readonly state: 'success' | 'failure' | 'pending';
   readonly description: string;
 }
 
@@ -100,6 +100,15 @@ async function github(env: Environment, path: string, init: RequestInit = {}): P
   return response;
 }
 
+function isEntry(value: unknown): value is ConversationEntry {
+  if (typeof value !== 'object' || value === null) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.author_association === 'string' &&
+    (typeof entry.body === 'string' || entry.body === null)
+  );
+}
+
 /** The pull request's comments, oldest first. A review is not read: a verdict is a comment. */
 async function conversation(env: Environment): Promise<ConversationEntry[]> {
   const entries: ConversationEntry[] = [];
@@ -108,22 +117,18 @@ async function conversation(env: Environment): Promise<ConversationEntry[]> {
       env,
       `/repos/${env.repository}/issues/${env.pull}/comments?per_page=100&page=${page}`,
     );
-    const batch = (await response.json()) as ConversationEntry[];
+    const batch: unknown = await response.json();
+    if (!Array.isArray(batch) || !batch.every(isEntry)) {
+      throw new Error('a page of comments is not a list of comments');
+    }
     entries.push(...batch);
     if (batch.length < 100) return entries;
   }
   throw new Error('the pull request has more than 5,000 comments');
 }
 
-export async function record(env: NodeJS.ProcessEnv = process.env): Promise<Verdict> {
-  const settings = environment(env);
-  const pull = (await (
-    await github(settings, `/repos/${settings.repository}/pulls/${settings.pull}`)
-  ).json()) as { head?: { sha?: unknown } };
-  const head = typeof pull.head?.sha === 'string' ? pull.head.sha : '';
-  if (!/^[0-9a-f]{40}$/u.test(head)) throw new Error('the pull request has no head commit');
-  const verdict = decide(head, await conversation(settings));
-  await github(settings, `/repos/${settings.repository}/statuses/${head}`, {
+async function setStatus(env: Environment, head: string, verdict: Verdict): Promise<void> {
+  await github(env, `/repos/${env.repository}/statuses/${head}`, {
     method: 'POST',
     body: JSON.stringify({
       state: verdict.state,
@@ -131,6 +136,39 @@ export async function record(env: NodeJS.ProcessEnv = process.env): Promise<Verd
       description: verdict.description,
     }),
   });
+}
+
+/**
+ * Records the verdict on the pull request's head. Once the head is known, the
+ * status is set to pending before anything is read, so a status an earlier run
+ * set never outlives this one (the review of pull request 65 at aa6f519, H1):
+ * if a read, a page or the decision fails, the head is left pending, or
+ * failure where that can still be written, and a merge stays blocked. Success
+ * is written only after every comment has been read and decided.
+ */
+export async function record(env: NodeJS.ProcessEnv = process.env): Promise<Verdict> {
+  const settings = environment(env);
+  const pull = (await (
+    await github(settings, `/repos/${settings.repository}/pulls/${settings.pull}`)
+  ).json()) as { head?: { sha?: unknown } };
+  const head = typeof pull.head?.sha === 'string' ? pull.head.sha : '';
+  if (!/^[0-9a-f]{40}$/u.test(head)) throw new Error('the pull request has no head commit');
+  const short = head.slice(0, 7);
+  await setStatus(settings, head, {
+    state: 'pending',
+    description: `Reading the Codex verdict at ${short}`,
+  });
+  let verdict: Verdict;
+  try {
+    verdict = decide(head, await conversation(settings));
+  } catch (error) {
+    await setStatus(settings, head, {
+      state: 'failure',
+      description: `The Codex verdict could not be read at ${short}`,
+    }).catch(() => undefined);
+    throw error;
+  }
+  await setStatus(settings, head, verdict);
   console.log(`codex-verdict: ${verdict.state} at ${head} (${verdict.description})`);
   return verdict;
 }
