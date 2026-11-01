@@ -280,7 +280,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install the pinned Chromium runtime
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm --filter @cas/dashboard exec playwright install --with-deps chromium
 
       - name: Build browser workspace dependencies
         run: pnpm exec turbo run build --filter=@cas/dashboard^...
