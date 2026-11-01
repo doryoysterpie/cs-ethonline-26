@@ -44,6 +44,20 @@ describe('password policy', () => {
     expect(() => assertPassword('short', 'syn_user')).toThrowError(/at least 12 characters/u);
   });
 
+  it('names a refused character wherever it stands, the length counted after it (review of db10902)', () => {
+    expect(
+      validatePassword(`${'x'.repeat(128)}${String.fromCodePoint(0x200b)}`, 'syn_user'),
+    ).toEqual({
+      ok: false,
+      reason: 'password_control_character',
+      characters: [{ codePoint: 0x200b, rule: 'default_ignorable', line: 1, column: 129 }],
+    });
+    expect(validatePassword('x'.repeat(257), 'syn_user')).toEqual({
+      ok: false,
+      reason: 'password_too_long',
+    });
+  });
+
   it('counts code points, not UTF-16 units', () => {
     const twelveAstral = '𝔘'.repeat(12);
     expect(validatePassword(twelveAstral, 'syn_user').ok).toBe(true);

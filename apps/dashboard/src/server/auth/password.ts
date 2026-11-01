@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 
 import argon2 from 'argon2';
 
-import { locateProhibitedText, type LocatedCodePoint } from '@cas/contracts';
+import { codePointLength, locateProhibitedText, type LocatedCodePoint } from '@cas/contracts';
 
 import { characterRefusal, validation } from '../errors.ts';
 
@@ -65,14 +65,18 @@ export function validatePassword(
       readonly characters?: readonly LocatedCodePoint[];
     } {
   const normalized = raw.normalize('NFKC');
-  const length = [...normalized].length;
-  if (length < PASSWORD_MIN_LENGTH) return { ok: false, reason: 'password_too_short' };
-  if (length > PASSWORD_MAX_LENGTH) return { ok: false, reason: 'password_too_long' };
+  // Code units first only to bound the walk: 128 code points are at most 256 code units.
+  if (normalized.length > PASSWORD_MAX_LENGTH * 2)
+    return { ok: false, reason: 'password_too_long' };
   // The whole rule, on the form that is hashed (D50, point 2): a password pasted with
   // an invisible character verifies at set time and fails when typed. Checked at set
   // and change only; verification never runs it, so a Node upgrade cannot lock anyone out.
+  // It runs before the length, so a refused character is named wherever it stands.
   const characters = locateProhibitedText(normalized, { oneLine: true });
   if (characters.length > 0) return { ok: false, reason: 'password_control_character', characters };
+  const length = codePointLength(normalized);
+  if (length < PASSWORD_MIN_LENGTH) return { ok: false, reason: 'password_too_short' };
+  if (length > PASSWORD_MAX_LENGTH) return { ok: false, reason: 'password_too_long' };
   if (username.length >= 3 && normalized.toLowerCase().includes(username.toLowerCase())) {
     return { ok: false, reason: 'password_contains_username' };
   }

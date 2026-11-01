@@ -89,7 +89,7 @@ describe('field parsers', () => {
     expect(code(() => enumOf(['a'], ['a', 'b'], 'x'))).toBe('x_invalid');
   });
 
-  it('boundedText: length in code units and no control characters', () => {
+  it('boundedText: a length bound and no control characters', () => {
     expect(boundedText('fine', 'note', { min: 1, max: 4 })).toBe('fine');
     expect(code(() => boundedText('', 'note', { min: 1, max: 4 }))).toBe('note_length');
     expect(code(() => boundedText('toolong', 'note', { min: 1, max: 4 }))).toBe('note_length');
@@ -120,6 +120,32 @@ describe('field parsers', () => {
     );
     expect(optionalText('', 'note', { min: 1, max: 4 })).toBeNull();
     expect(optionalText(null, 'note', { min: 1, max: 4 })).toBeNull();
+  });
+
+  it('boundedText: the rule runs before the bound, which counts code points (review of db10902)', () => {
+    const bounds = { min: 1, max: 280 } as const;
+    const tag = String.fromCodePoint(0xe0067);
+    const astral = String.fromCodePoint(0x1f600);
+    let refused: unknown;
+    try {
+      // 280 code points, 281 code units: the character is refused by its code point.
+      boundedText(`${'a'.repeat(279)}${tag}`, 'title', bounds);
+    } catch (error) {
+      refused = error;
+    }
+    expect(isDashboardError(refused) && refused.code).toBe('title_control');
+    expect((refused as Error).message).toBe(
+      'refused character at title:1:280: default_ignorable \\u{E0067} TAG LATIN SMALL LETTER G',
+    );
+    expect(boundedText(`${'a'.repeat(279)}${astral}`, 'title', bounds)).toHaveLength(281);
+    expect(code(() => boundedText(`${'a'.repeat(280)}${astral}`, 'title', bounds))).toBe(
+      'title_length',
+    );
+    // Past the bound but within the walk: the character is named, not the length.
+    expect(
+      code(() => boundedText(`${'a'.repeat(300)}${String.fromCodePoint(0x200b)}`, 'title', bounds)),
+    ).toBe('title_control');
+    expect(code(() => boundedText('a'.repeat(561), 'title', bounds))).toBe('title_length');
   });
 
   it('integer: whole numbers in range from numbers or decimal strings', () => {

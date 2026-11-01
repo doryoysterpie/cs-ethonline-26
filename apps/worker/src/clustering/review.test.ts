@@ -62,6 +62,17 @@ describe('the review note policy', () => {
     expect(() => assertReviewNote('a'.repeat(REVIEW_NOTE_MAX_LENGTH + 1))).toThrowError();
   });
 
+  it('names a refused astral character at the bound, and counts code points (review of db10902)', () => {
+    const tag = String.fromCodePoint(0xe0067);
+    expect(() => assertReviewNote(`${'a'.repeat(279)}${tag}`)).toThrowError(
+      'a review note must not contain note:1:280: default_ignorable \\u{E0067} TAG LATIN SMALL LETTER G',
+    );
+    // 280 code points, 281 code units.
+    const astral = `${'a'.repeat(279)}${String.fromCodePoint(0x1f600)}`;
+    expect(assertReviewNote(astral)).toBe(astral);
+    expect(() => assertReviewNote(`${astral}a`)).toThrowError(/between 1 and 280/u);
+  });
+
   it('refuses every prohibited character class', () => {
     for (const [name, value] of PROHIBITED) {
       for (const note of [value, `line${value}break`, `trailing${value}`, `${value}leading`]) {

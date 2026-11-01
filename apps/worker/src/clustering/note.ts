@@ -1,4 +1,4 @@
-import { describeLocated, locateProhibitedText } from '@cas/contracts';
+import { codePointLength, describeLocated, locateProhibitedText } from '@cas/contracts';
 
 import { IngestionError } from '../editorial/errors.js';
 
@@ -14,8 +14,10 @@ import { IngestionError } from '../editorial/errors.js';
  *
  * The policy:
  *
- *   - **Length.** One to 280 characters. The bound is characters, matching the
- *     database's `length(note)`, and it is the same 280 migration 0006 set.
+ *   - **Length.** One to 280 characters. The bound counts code points, as the
+ *     database's `length(note)` does, and it is the same 280 migration 0006 set.
+ *     It is checked after the prohibited characters, so a refused character
+ *     is named wherever it stands, even as the 280th.
  *   - **Absence.** `null` and `undefined` mean no note. An empty string is not
  *     a note and is refused rather than silently stored as absence, because
  *     absence and emptiness are distinguished in the canonical action payload
@@ -57,12 +59,15 @@ export function assertReviewNote(
   where: string = 'note',
 ): string | null {
   if (note === undefined || note === null) return null;
-  if (note.length < REVIEW_NOTE_MIN_LENGTH || note.length > REVIEW_NOTE_MAX_LENGTH) {
-    throw invalid('a review note must be between 1 and 280 characters');
-  }
+  const tooLong = (): IngestionError =>
+    invalid('a review note must be between 1 and 280 characters');
+  // Code units first only to bound the walk: 280 code points are at most 560 code units.
+  if (note.length > REVIEW_NOTE_MAX_LENGTH * 2) throw tooLong();
   const refused = locateProhibitedText(note, { oneLine: true })[0];
   if (refused !== undefined) {
     throw invalid(`a review note must not contain ${describeLocated(where, refused)}`);
   }
+  const length = codePointLength(note);
+  if (length < REVIEW_NOTE_MIN_LENGTH || length > REVIEW_NOTE_MAX_LENGTH) throw tooLong();
   return note;
 }
