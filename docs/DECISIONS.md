@@ -2037,3 +2037,31 @@ ruling of the same day: it need not, under five conditions.
   paste; they come from a binary or a hostile source, and the owner's action there is to copy the
   text again, not to remove twenty positions by hand.
 - **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D51 Carrying a stale pull request
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** A pull request that has fallen behind `main` and conflicts is carried by Claude
+  Code as a new pull request, never refreshed by the agent that wrote it. The owner's ruling of
+  1 November 2026 on pull requests 51 and 52, with three conditions:
+  1. **New pull requests, the originals closed and linked.** Each original is closed as
+     superseded once its replacement is open, with links both ways, so the earlier review
+     threads stay attached to the code they reviewed. The new description states the delta
+     beyond the rebase, and any unresolved review comment on the original is carried over as an
+     open item, so the review is of the delta, not from zero.
+  2. **Carry what does not depend on open work now.** Pull request 52 does not depend on CAS-012
+     and is carried at once. Pull request 51 is carried after pull request 61 merges, so its
+     restore test enters review at the migration count `main` then holds.
+  3. **Counts read from the directory.** A test that counts migrations derives the number from
+     the migrations directory. A literal kept on purpose, as a tripwire against a dropped
+     migration file, says so in the test.
+- **Rationale:** The owner's. A refreshed pull request has an author; if Codex refreshes a pull
+  request it wrote, Codex then reviews its own work, which breaks the independent review the
+  project adopted it for. Closing the two would lose two reviewed changes. A literal count goes
+  stale at every migration and someone must remember to edit it, as one just did.
+- **Consequences:** Pull request 52 is carried from `main` at `12ce7a7` (`ops/main-ruleset-controls-carry`);
+  pull request 51 waits on pull request 61. CAS-012's database tests read their migration counts
+  from the directory and mark their written-out lists as the tripwire.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+- **Supersedes:** nothing.
