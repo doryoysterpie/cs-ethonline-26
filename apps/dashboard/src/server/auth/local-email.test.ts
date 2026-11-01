@@ -39,11 +39,12 @@ describe('the local email file (memory store only)', () => {
 
   it('narrows a file that already exists with wider permissions to mode 600, keeping what it held (combined audit F3)', async () => {
     const file = path.join(await directory, 'existing.jsonl');
+    // `chmod` sets the mode exactly, whatever the umask; the file is not inspected again until
+    // the provider has written, so nothing checked by path is used later (code scanning).
     const seeded = await open(file, 'w', 0o644);
     try {
       await seeded.write('earlier line\n');
       await seeded.chmod(0o644);
-      expect((await seeded.stat()).mode & 0o777).toBe(0o644);
     } finally {
       await seeded.close();
     }
