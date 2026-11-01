@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  PERMITTED_DEFAULT_IGNORABLES,
+  escapeCodePoint,
+  prohibitedCodePoints,
+} from '@cas/contracts';
+
 import { hasControlCharacter, safeDisplay } from './display.js';
 import { REDACTED, createRedactor, stableDigest } from './redact.js';
 import { AUTHORIZED_ID } from './test-support.js';
@@ -112,10 +118,10 @@ describe('hostile workbook text cannot forge a line', () => {
   });
 
   it('shows what was escaped rather than dropping it', () => {
-    expect(safeDisplay('a\nb')).toBe('a\\nb');
-    expect(safeDisplay('a\tb')).toBe('a\\tb');
-    expect(safeDisplay(`a${String.fromCharCode(0x1b)}b`)).toBe('a\\x1bb');
-    expect(safeDisplay(`a${String.fromCharCode(0x2028)}b`)).toBe('a\\u2028b');
+    expect(safeDisplay('a\nb')).toBe('a\\u{000A}b');
+    expect(safeDisplay('a\tb')).toBe('a\\u{0009}b');
+    expect(safeDisplay(`a${String.fromCharCode(0x1b)}b`)).toBe('a\\u{001B}b');
+    expect(safeDisplay(`a${String.fromCharCode(0x2028)}b`)).toBe('a\\u{2028}b');
   });
 
   it('bounds a very long name with a visible marker', () => {
@@ -127,6 +133,22 @@ describe('hostile workbook text cannot forge a line', () => {
   it('leaves ordinary text exactly as it was', () => {
     for (const value of ['Cyberattack Sunday 2026-06-21', 'RSS Feed', 'Week 41 — candidates']) {
       expect(safeDisplay(value)).toBe(value);
+    }
+  });
+
+  it('escapes every code point the prohibited-text rule names, in the one form, and keeps the selectors (CAS-012, D50)', () => {
+    for (const code of prohibitedCodePoints()) {
+      expect([code, safeDisplay(`A${String.fromCodePoint(code)}B`, 100)]).toEqual([
+        code,
+        `A${escapeCodePoint(code)}B`,
+      ]);
+    }
+    for (const code of [0x09, 0x0a, 0x0d]) {
+      expect(safeDisplay(`A${String.fromCodePoint(code)}B`)).toBe(`A${escapeCodePoint(code)}B`);
+    }
+    for (const code of PERMITTED_DEFAULT_IGNORABLES) {
+      const heart = `A${String.fromCodePoint(0x2764, code)}B`;
+      expect(safeDisplay(heart)).toBe(heart);
     }
   });
 });

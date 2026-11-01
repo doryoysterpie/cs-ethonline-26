@@ -368,7 +368,7 @@ describe('cli configuration handling (no database)', () => {
         expect(line.includes(ESC)).toBe(false);
         expect(line.includes(LS)).toBe(false);
       }
-      expect(r.out[0]).toContain('file=a\\x1b[31m\\u2028b.csv');
+      expect(r.out[0]).toContain('file=a\\u{001B}[31m\\u{2028}b.csv');
       expect(r.out.join('\n').split('\n')).toHaveLength(8);
     } finally {
       await rm(dir, { recursive: true, force: true });

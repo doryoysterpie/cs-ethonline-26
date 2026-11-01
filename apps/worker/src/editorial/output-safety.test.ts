@@ -172,8 +172,8 @@ describe('output boundary against hostile metadata', () => {
       importOutcome('a.csv\nrows: parsed=0', `CS${ESCAPE_CHARACTER}[31m`),
       REDACT,
     );
-    expect(lines[0]).toContain('a.csv\\nrows: parsed=0');
-    expect(lines[0]).toContain('CS\\x1b[31m');
+    expect(lines[0]).toContain('a.csv\\u{000A}rows: parsed=0');
+    expect(lines[0]).toContain('CS\\u{001B}[31m');
   });
 
   it('bounds an excessively long basename with a visible marker', () => {

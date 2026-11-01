@@ -175,7 +175,7 @@ describe('classification output', () => {
     const lines = formatCalibration(calibration(hostile), REDACT);
     assertSafe(lines);
     expect(lines).toHaveLength(7);
-    expect(lines[0]).toContain('CS79\\x1b[31m\\nclassification:report: run=forged');
+    expect(lines[0]).toContain('CS79\\u{001B}[31m\\u{000A}classification:report: run=forged');
     expect(lines.join('\n').split('\n')).toHaveLength(7);
   });
 

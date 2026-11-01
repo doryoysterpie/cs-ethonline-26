@@ -302,8 +302,20 @@ export {
   prohibitedCodePoints,
   prohibitedTextRule,
   removeProhibitedText,
+  replaceProhibitedText,
   type ProhibitedTextRule,
 } from './prohibited-text.js';
+export {
+  TEXT_ESCAPE_CONTRACT,
+  codePointName,
+  describeCodePoint,
+  escapeCodePoint,
+  escapeMultiLine,
+  escapeOneLine,
+  escapedCut,
+  locateProhibitedText,
+  type LocatedCodePoint,
+} from './text-escape.js';
 export {
   REFERENCE_REJECTIONS,
   classifySourceReference,
