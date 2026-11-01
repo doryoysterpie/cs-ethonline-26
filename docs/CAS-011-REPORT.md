@@ -28,8 +28,9 @@ Out, unchanged: stored text (threat model RR13), the database and its migrations
 dashboard's display escapes (`apps/dashboard/src/server/display.ts`), the body refusal of
 drafts, round-ups and articles (`apps/dashboard/src/server/dal/mutate.ts`), the MCP server's
 escapes (`packages/mcp-server/src/safety/text.ts`), and the worker's source scanner with the
-stored-note refusal it mirrors (`apps/worker/src/hygiene/scan.ts`, migration 0007). Section 1.4
-puts the four lists to the owner.
+stored-note refusal it mirrors (`apps/worker/src/hygiene/scan.ts`, migration 0007), and five
+more lists of controls and separators found when the answer to section 1.4 was applied. D49
+names all nine by path; CAS-012 puts them on the rule.
 
 Files touched: the module and its test (added); `packages/contracts/src/index.ts`,
 `story-card.ts` and its test; `packages/roundup/package.json`, `src/text.ts`, `src/roundup.test.ts`;
@@ -50,11 +51,11 @@ the plan's section 5, `README.md`, `docs/ARCHITECTURE.md` section 25, `docs/SECU
 | One predicate, one module, three consumers         | `prohibitedTextRule`, `hasProhibitedText`, `removeProhibitedText`; the card's two lists deleted; the table removed                                                           |
 | From the runtime; the version recorded             | no table in the repository; `cas:runtime:unicode` in `supply-chain/sbom.cdx.json` (17.0 under Node 24.21.0, ICU 78.3)                                                        |
 | A test over every code point, per consumer         | `prohibitedCodePoints()` enumerates the rule from the runtime; the contracts test holds it to the property and to `\p{Cc}`; each consumer's test walks all 4,305 code points |
-| No exemption for the rule; fixtures hold escapes   | the class has no exception path; every test builds its characters with `String.fromCodePoint`                                                                                |
+| No blanket exemption; fixtures hold escapes        | each fixture exemption scoped to one pattern and recorded with its input (`FIXTURE_EXEMPTIONS`), held by a test; code builds its characters with `String.fromCodePoint`      |
 | A fix path                                         | `corepack pnpm hygiene:fix`                                                                                                                                                  |
 | Out of scope, named                                | confusables; whitespace that renders as a space (the export and the card already collapse it); C0 and C1 were already covered                                                |
 
-### 1.4 Two questions for the owner
+### 1.4 Two questions for the owner, answered on 1 November 2026
 
 **Question 1: do the fixtures' path exemptions stay?** D49's fifth condition reads "no
 exemption list and no per-file opt-out". The hygiene check has two: a
@@ -79,6 +80,22 @@ characters (escape, refuse, scan), so moving one is not a substitution.
   into the round-up editor would be refused at save, as a bidirectional control is today.
   **Recommended.**
 - (b) Move all four onto the rule in this unit, before its review, each keeping its action.
+
+**The answers.** Question 1: (a), with the exemption narrowed to its pattern, made load-bearing,
+and the condition amended (D49, condition 5). The byte-order mark's exemption already covered
+exactly one U+FEFF at offset 0, and the rest of that fixture was checked in full; it is now
+recorded with the input it imitates (`FIXTURE_EXEMPTIONS`). A test holds the master fixture to
+its leading mark and the weekly fixture to its CRLF line endings, and shows a second mark or a
+U+180E in either fixture is still a finding. The carriage-return exemption is the line-ending
+check's and is unchanged: U+000D is not a character this rule names.
+
+Question 2: (a), with the unit opened now rather than queued: CAS-012
+(`docs/tcu/CAS-012.md`), whose first decision is the save path, refuse or strip and report. The
+question named four lists. Applying the answer found five more, each a list of the controls and
+separators with no invisible characters at all: the dashboard's bounded inputs and passwords,
+the worker's display and review-note refusal, and the displays of `@cas/graph-evidence` and
+`@cas/sheets-intake`. D49 names all nine by path, with what each does, and CAS-012 covers all
+nine. No code in this unit changes for question 2.
 
 ## 2. Stack check and data contract (S1, S2)
 
@@ -140,11 +157,14 @@ Under Unicode 17.0 the rule names 4,305 code points: 4,172 default-ignorable one
   byte-order mark and U+180E, keeps the exempt fixture's mark and a selector, leaves a NUL a
   finding, and has nothing to do on a second run; a tracked path that became a link is refused
   and its target left alone.
+- The fixture exemptions (D49, condition 5): the master fixture starts with its byte-order mark
+  and the weekly fixture has CRLF line endings, so neither exemption outlives its reason; a
+  second mark or a U+180E in either fixture is a finding.
 - The bill of materials carries the property.
 
 Counts from the runner, 1 November 2026, in the working tree: `verify` exit 0, 1,190 offline
 tests (contracts 23, five added; round-up 15, its policy-table test rewritten; dashboard 146,
-one added), 34 tool tests (one rewritten, two added); `test:db` exit 0, 341 (database 117,
+one added), 35 tool tests (one rewritten, three added; the third with the answers of section 1.4); `test:db` exit 0, 341 (database 117,
 worker 119, dashboard 56, mcp-server 49), no test added; `test:browser` 30 passed.
 
 ## 5. End-to-end proof (S5)
@@ -180,7 +200,7 @@ The diff from `main` at `7c867b7`: two files added (the module and its test), on
 
 - Stored text keeps every character exactly (RR13); the export and the card are renderings.
 - Confusables, and whitespace that renders as a space, are outside D49 (section 1.3).
-- The four lists of section 1.4.
+- The nine lists D49 names, which CAS-012 puts on the rule.
 - The set follows the running Node: a Node built against a system ICU of another version
   reports another set, and the bill-of-materials check fails on it. CI installs the release
   `.nvmrc` pins (24.21.0) through `actions/setup-node`; the reproduction steps use the same.

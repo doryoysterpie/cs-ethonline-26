@@ -448,9 +448,25 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
   noncharacters the old table named. No consumer keeps a list of its own.
 - **Admitted.** By the owner on 1 November 2026, with his answer to the question the round-up's
   third review left open (U+180E), recorded as D49 with its refinements and conditions.
-- **Decisions.** D49. Two questions the build raises (`docs/CAS-011-REPORT.md`, section 1.4):
-  the fixtures' path exemptions, and the four lists outside the three consumers.
+- **Decisions.** D49, with the owner's answers of the same day to the two questions the build
+  raised (`docs/CAS-011-REPORT.md`, section 1.4).
 - **Depends on.** Nothing. **Blocks:** nothing.
+
+### CAS-012: Every character list on the rule (S0 only)
+
+**Tracker:** `docs/tcu/CAS-012.md`. **Issue, live status:** [#58](https://github.com/doryoysterpie/cs-ethonline-26/issues/58).
+
+- **Objective.** The nine lists D49 names outside CAS-011's three consumers take their set from
+  the prohibited-text rule in `@cas/contracts`, each keeping its own action: the escapes escape,
+  the refusals refuse, the scanner scans. The escape tables gain a generic `\u{XXXX}` form for
+  characters with no named label.
+- **Admitted.** By the owner on 1 November 2026, with his answer to CAS-011's second question:
+  opened now with its own number and tracker, not queued. Until it lands, no new list: any new
+  consumer imports the predicate.
+- **Decisions before any build.** The first is the save path of drafts, round-ups and articles:
+  refuse, or strip and report. The export already strips, and editor input is not a tracked
+  file, so refusal there is not obviously right. The design note raises the rest.
+- **Depends on.** CAS-011 merged, for the predicate. **Blocks:** nothing.
 
 ## 6. Interruption tolerance
 

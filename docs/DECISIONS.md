@@ -1839,11 +1839,18 @@ disabled on this model, so effort is the only control.
      regenerated, and the change is in the diff. A test in each consumer walks every code point
      the rule names (4,172 default-ignorable ones under Unicode 17.0, 4,305 in all) and asserts
      it is refused or stripped, and that the two selectors pass.
-  5. **No exemption and no per-file opt-out for the rule.** Test fixtures hold escapes
-     (`\u{180E}`), never the character. The hygiene check's two existing path exemptions, a
-     leading byte-order mark and carriage returns in the two editorial fixtures that imitate
-     real exports, are not changed by this decision; whether this condition retires them is
-     put to the owner (`docs/CAS-011-REPORT.md`, section 1.4).
+  5. **No blanket exemption** (amended the same day with the owner's answer to the report's
+     question 1). A fixture that reproduces an external input byte for byte may carry an
+     exemption scoped to one pattern, recorded with the input it imitates: one exemption per
+     external format proven, never one per file that finds the check inconvenient. There are two
+     (`FIXTURE_EXEMPTIONS`, `tools/checks/hygiene.ts`): exactly one U+FEFF at offset 0 of
+     `data/fixtures/editorial/master-synthetic.csv`, which reproduces the master RSS export; and
+     the carriage returns of `data/fixtures/editorial/weekly-synthetic.csv`, which reproduces a
+     weekly snapshot sheet's CRLF line endings. The second belongs to the line-ending check:
+     U+000D is a control this rule never names, so it is outside this decision and unchanged. The
+     rest of both fixtures is checked in full, and a test holds each fixture to its pattern, so an
+     exemption whose fixture has lost its reason fails the build. Fixtures written in code hold
+     escapes (`\u{180E}`), never the character.
   6. **A fix path.** `corepack pnpm hygiene:fix` removes the default-ignorable code points from
      tracked files (copied text's soft hyphens and zero-width spaces, an editor's byte-order
      mark) and checks again; every other finding stays for a person.
@@ -1865,10 +1872,33 @@ disabled on this model, so effort is the only control.
   property, so one rule covers them.
 - **Consequences:** CAS-011 builds it (`docs/CAS-011-REPORT.md`). The hygiene check refuses
   4,305 code points where the table named 150; the new ones are labelled `default_ignorable`
-  (the label `zero_width` is gone). Stored text is unchanged (threat model RR13). The dashboard's display
-  escapes, the draft, round-up and article body refusal, the MCP server's escapes and the
-  worker's source scanner keep their own sets, outside the three consumers; whether they move
-  onto the rule is put to the owner in the same section.
+  (the label `zero_width` is gone). Stored text is unchanged (threat model RR13).
+- **The lists outside the three consumers** (amended the same day with the owner's answer to the
+  report's question 2). Nine keep sets of their own, and none covers U+180E or the rest of the
+  property:
+  - `apps/dashboard/src/server/display.ts` escapes the C0 and C1 controls, the separators and the
+    bidirectional embedding, override and isolate controls in the dashboard's display of stored
+    text;
+  - `apps/dashboard/src/server/dal/mutate.ts` refuses the same set, tab, line feed and carriage
+    return excepted, when a draft, round-up or article body is saved;
+  - `packages/mcp-server/src/safety/text.ts` escapes the controls, the separators, the
+    bidirectional controls, U+200B, U+2060 to U+2064 and U+FEFF in the MCP server's output;
+  - `apps/worker/src/hygiene/scan.ts` scans source files for the controls and the separators;
+  - `apps/worker/src/editorial/display.ts` escapes the controls and the separators in the
+    worker's output and refuses them in a review note or a claim (`assertReviewNote`);
+  - `apps/dashboard/src/server/input.ts` and `apps/dashboard/src/server/auth/password.ts` refuse
+    the controls and the separators in the dashboard's bounded inputs and in a password;
+  - `packages/graph-evidence/src/display.ts` and `packages/sheets-intake/src/display.ts` escape
+    them in those packages' output.
+
+  CAS-011 changes none of them. CAS-012, opened the same day, puts each on the rule: the rule
+  supplies the set and each keeps its own action (escape, refuse or scan), and the escape tables
+  gain a generic `\u{XXXX}` form for characters with no named label. Its first decision is the
+  save path: refuse, or strip and report. Until it lands there is no new list: any new consumer
+  imports the predicate from `@cas/contracts`. CAS-012 opens inside the review-backlog rule (its
+  design note is S0), so the stopgap the owner allowed, U+180E added to the worker's source scanner alone, is
+  not taken.
+
 - **Decided by:** Project owner, 1 November 2026, in chat.
 - **Supersedes:** nothing; replaces the table `data/policy/prohibited-text.json` of CAS-004's
   third review.
