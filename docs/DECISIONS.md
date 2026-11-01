@@ -1907,7 +1907,8 @@ disabled on this model, so effort is the only control.
 
 - **Date:** 2026-11-01
 - **Status:** ACCEPTED; the two points the answers raised were settled by the owner the same day;
-  point 3 amended the same day (see the D50 amendment appended below)
+  point 3 amended the same day, and point 1's refusal notice settled the same day (see the two
+  D50 amendments appended below)
 - **Decision:** The owner's answers of 1 November 2026 to the three questions of
   `docs/CAS-012-REPORT.md`, section 1.4:
   1. **The save path: refuse by class, strip the rest** (option (c)). When a draft, round-up or
@@ -2003,4 +2004,36 @@ controls as they are. The owner's ruling of the same day, on the question CAS-01
   field, the forging case point 2 closed. Escaping nothing inside JSON would remove the
   protection on the one output that leaves the server for a model, the reader a
   direction-changing character is aimed at.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+### D50 amendment 2, 2026-11-01: a refusal's notice and its record
+
+Not a new decision. Point 1 says a removal is listed by code point, name and position, never
+only a count, and that "a refusal names the character and position the same way". A refused
+save stores nothing, so its characters travel in the redirect, which holds a bounded number of
+them. The question CAS-012 raised (`docs/CAS-012-REPORT.md`, section 9.1) was whether a refusal's
+notice must list every refused character as a save's notice lists every removal. The owner's
+ruling of the same day: it need not, under five conditions.
+
+- **The first twenty, then an exact count.** The notice names the first twenty refused
+  characters in the order they stood and states exactly how many more there were, so the owner
+  works from the top and the next batch is known.
+- **Code point, name and position only.** Each line carries the code point, its name, and the
+  field, line and column, never a character of the refused text: the redirect lands in browser
+  history and request logs.
+- **The likely cause, past the cap.** When there are more than twenty, the notice adds one line
+  saying that so many refused characters usually means a broken copy and that copying the text
+  again from its source is the expected fix.
+- **One cap, with its reason.** The cap is one constant, `NOTICE_CHARACTERS_MAX` in
+  `apps/dashboard/src/app/notices.ts`, bounded by the redirect's size, and the decoder's bound is
+  computed from it.
+- **The audit event is the record.** A refused save emits an audit event that carries the field,
+  the count and the code point of every refused character, with no position and no text
+  (migration 0025). The record is complete without a table of its own; the redirect is the
+  notice.
+- **Why not a complete list in the notice.** Keeping each refusal's list on the server would give
+  a refused save a stored footprint, a retention rule and a cleanup job for a rare case. More
+  than twenty controls or direction-changing characters in one save do not come from an honest
+  paste; they come from a binary or a hostile source, and the owner's action there is to copy the
+  text again, not to remove twenty positions by hand.
 - **Decided by:** Project owner, 1 November 2026, in chat.

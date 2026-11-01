@@ -307,9 +307,8 @@ the notice says only that the text was saved.
 A refusal stores nothing, so its characters still travel in the redirect: the first twenty, and
 `more`, the number of the rest, which the notice states ("And 7 more, named when the text is
 submitted again without the ones above"). Nothing is dropped silently. Where the page holds the
-refusal itself (the week search), every character is listed. This reads D50's "a refusal names
-the character and position the same way" as naming each listed character in that form; whether
-a refusal must list every character, as a removal must, is put to the owner.
+refusal itself (the week search), every character is listed. Whether a refusal must list every
+character, as a removal must, was put to the owner; the ruling and its build are in section 10.
 
 Tests: a pure save of 25 zero-width spaces returns all 25; the round-up save against PostgreSQL
 keeps every strippable code point's removal on the revision and reads it back, and the raw row
@@ -406,3 +405,54 @@ Counts from the runner, 1 November 2026, in the working tree at the corrections:
 mcp-server 49); `test:browser` 32 passed. One browser run before that timed out starting its
 web server after a successful build; the next run, with no change between them, passed all 32.
 The clean clone and CI of the corrected head are on the tracker.
+
+## 10. A refusal's notice and its record (the D50 amendment 2, 1 November 2026)
+
+The owner settled the question of section 9.1 the same day (`docs/DECISIONS.md`, the D50
+amendment 2): a refusal's notice names the first twenty and counts the rest, and the audit event
+is the complete record. Built on `cas-012/refusal-record`, stacked on pull request 61 so that the
+head under review did not move, as five changes, one for each condition:
+
+- **The first twenty, then an exact count.** `withNotice` takes the first
+  `NOTICE_CHARACTERS_MAX` in the order `locateProhibitedText` finds them, which is the order they
+  stood, and `more` is the exact number of the rest.
+- **Code point, name and position only.** A refusal now carries its field (`DashboardError.field`,
+  the identifier `characterRefusal` names), which travels as `field` and decodes only to an
+  identifier of a lowercase letter and up to 31 letters; each line reads `\u{202E}
+RIGHT-TO-LEFT OVERRIDE, field markdown, line 1, column 6`. A save's removals are always from its
+  body and are named as `field markdown` too. Nothing else travels.
+- **The likely cause, past the cap.** Past twenty, the notice adds: "More than 20 refused
+  characters usually means a broken copy; copying the text again from its source is the expected
+  fix."
+- **One cap, with its reason.** `NOTICE_CHARACTERS_MAX` records why it bounds the redirect: the
+  list rides in the URL, kept in browser history and request logs. The decoder's bound,
+  `NOTICE_AT_LENGTH_MAX`, is computed from it and the longest entry, 22 characters: 459 in all.
+  Before, the decoder took at most 400, so twenty entries with long positions decoded to nothing
+  and the notice listed none; a test now decodes twenty of the longest form.
+- **The audit event is the record.** Migration 0025 adds `refused_field`, `refused_count` and
+  `refused_code_points` to `audit_events`, null together on every other event and on every
+  existing one. The check requires all three or none, a failure, an identifier for the field, at
+  least one code point, a count equal to the number of code points, and whole numbers from 0 to
+  U+10FFFF. The draft, round-up and article saves record a refusal's field and every code point
+  in order. A refused draft save was not audited before; it now is, like a round-up's and an
+  article's, as `draft_revision_saved` with outcome `failure` and its fixed code.
+
+The migration counts in the database tests are now read from the migrations directory, but for
+the written-out file lists in `migrate.test.ts` and `migrate.db.test.ts`, kept as a tripwire for a
+dropped or renamed file and marked as such (the owner's ruling on pull requests 51 and 52, the
+same day).
+
+Tests: the notice decodes twenty entries of the longest form and nothing from a longer list; the
+field decodes only to an identifier; the redirect carries `notice`, `field`, `at` and `more` and
+nothing else; a refused draft save of 25 controls and right-to-left overrides is audited with the
+field and all 25 code points in order and holds none of the text; the round-up's refusal is
+stored in the three columns; migration 0025 against a schema migrated to 0024 leaves an existing
+event without a record, keeps a refusal's, keeps the append-only guard, and refuses twelve
+malformed records; the browser refuses a draft carrying 25 right-to-left overrides and lists the
+first twenty, from column 5 to column 91, with "And 5 more" and the re-copy line, and the URL holds
+none of the text.
+
+Counts from the runner, 1 November 2026, in the working tree: `verify` exit 0, 1,227 offline
+tests and 39 tool tests; `test:db` 353 (database 128, worker 119, dashboard 57, mcp-server 49);
+`test:browser` 33 passed. The clean clone and CI of this branch's head are recorded in its pull
+request, so that recording them does not move the head.

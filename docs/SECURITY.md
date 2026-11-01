@@ -1060,11 +1060,13 @@ characters remains in them.
   refuses a control or a bidirectional control and removes every other character the rule names
   before the revision is computed, then bounds the body as stored. The revision keeps every
   removal as code points and positions (migration 0024), and the page lists each one by code
-  point, name, line and column; a refusal's notice lists the first twenty and states how many
-  more there were.
+  point, name, field, line and column; a refusal's notice lists the first twenty in the order
+  they stood and states exactly how many more there were, and a refused save's audit event keeps
+  the field and every code point, with no position and no text (migration 0025).
 - **The notice carries no text.** Its `at` parameter holds hexadecimal code points and
   positions only, and is decoded only to characters the rule names or the three line
-  characters; `more` and `revision` decode only to whole numbers. Nothing a person typed travels
+  characters; `field` decodes only to an identifier, and `more` and `revision` only to whole
+  numbers. Nothing a person typed travels
   through a query string, and the removal record holds no character.
 - **The scanner and the refusals read as one event.** The worker's source scanner and its note
   and claim refusals report in one form, `where:line:column: rule \u{XXXX} NAME`.

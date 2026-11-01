@@ -702,6 +702,7 @@ escape, `locateProhibitedText`, which gives each character its line and column, 
 and `@cas/sheets-intake` escape through it; `server/input.ts`, `auth/password.ts` and the
 worker's `clustering/note.ts` refuse through it; `server/markdown/body.ts` refuses or removes
 on save, and `server/dal/mutate.ts` keeps what it removed on the revision (migration 0024), which
-the page lists from the revision a notice names, while a refusal travels in the `at` and `more`
-parameters of `app/notices.ts`; the worker's `hygiene/scan.ts` scans for the rule; and `text/scan-stored.ts`
+the page lists from the revision a notice names, while a refusal travels in the `field`, `at`
+and `more` parameters of `app/notices.ts`, and its complete record is its audit event (migration
+0025); the worker's `hygiene/scan.ts` scans for the rule; and `text/scan-stored.ts`
 behind `text scan` reads the stored revisions. The report is `docs/CAS-012-REPORT.md`.
