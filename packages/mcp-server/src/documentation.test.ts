@@ -73,8 +73,8 @@ async function collect(config?: string): Promise<Collected> {
 
 /** The one place a documented count is written, so a drift shows up in one diff. */
 const DOCUMENTED = {
-  offlineTests: 208,
-  offlineFiles: 22,
+  offlineTests: 210,
+  offlineFiles: 23,
   databaseTests: 49,
   databaseFiles: 4,
 } as const;
