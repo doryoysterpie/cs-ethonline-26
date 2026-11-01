@@ -183,3 +183,27 @@ H2 not closed, one Medium. Each correction closed the general case and left one 
 - **M1: the tracker contradicted D53 to D55.** Reconciled: steps 3, 4 and 12 are ticked with
   their decisions, the evidence table and the restart condition are current, and step 5 stays
   open, outside pull request 65.
+
+## 9. The dispositions (step 5, D54)
+
+- **Removed:** `apps/sunday-agent`, `apps/payer-agent` and `packages/feed-api`, twelve files in
+  all, each package a `package.json`, two `tsconfig` files and one source file exporting nothing,
+  in one commit that names every file. Migrations 0008 and 0009 created no table that only a
+  removed package read, since none of the three read anything, so no migration drops one. The
+  lockfile and the bill of materials were regenerated (15 workspace packages, 346 components);
+  no workspace entry, path alias, CI matrix row or bill-of-materials line names a removed
+  package, and the clean clone proves it. The README's sponsor-track section keeps one line
+  naming what the repository held at the ETHOnline submission and what became of it.
+- **Parked, `@cas/graph-evidence` and the live Graph path.** It fails closed without
+  `GRAPH_API_KEY` (the client and the probe refuse with a fixed message, and tests hold both);
+  its default tests run with a synthetic key and no network; the live suite, `test:live`, is
+  outside the default suite and fails rather than skips without the key, so that a missing key
+  is never read as a pass (`gateway.live.test.ts`). `.dockerignore` keeps it out of the deployed
+  image; its dependencies stay in the bill of materials, and advisories keep applying.
+- **Parked, `@cas/mcp-server`.** No fact was given that it is wired into an AI client the owner
+  uses, so it is parked (D54): out of the deployed image by `.dockerignore`, in the repository,
+  the workspace and the bill of materials; step 8 is `N/A`; unparking is a unit with its own
+  audit.
+- **Kept, `@cas/evidence` and the anomaly layer.** Unchanged.
+- **The image, proved.** A Docker build of this branch's tree contains `apps/dashboard`,
+  `apps/worker` and eleven packages, neither parked package among them, and the dashboard built.
