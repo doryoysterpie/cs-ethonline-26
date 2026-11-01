@@ -64,6 +64,11 @@ repository's own reports and the sprint board. CAS-006 step 1, 22 October 2026.
 | minimatch advisory, PR #53 merged                 | `7e44692` in `38b51bf`     | none                           | not audited                                                                                                                                                                                                        | 31 Oct 2026      | PR #53                                                   |
 | Merge records, PR #54 merged                      | `2e96c6b` in `7c867b7`     | none (documents only)          | not audited                                                                                                                                                                                                        | 31 Oct 2026      | PR #54                                                   |
 | Corrections, PR #55 re-review                     | `2ff9a50`                  | Codex                          | CHANGES REQUIRED: F1 (High) open, migration 0023 read the records 0022 numbered from `created_at`; F2 and F3 closed; corrected on `train/34-50-corrections`                                                        | 1 Nov 2026       | `2026-11-01-pr-55-2ff9a50.md`                            |
+| Corrections, PR #55 re-review                     | `20e919d`                  | Codex                          | CHANGES REQUIRED: F1 (High) closed; F4 (Low) open, CodeQL alert 17 in the narrowing test                                                                                                                           | 1 Nov 2026       | `2026-11-01-pr-55-20e919d.md`                            |
+| Corrections, PR #55 merged                        | `d572aaf` in `a144108`     | Codex                          | PASS in the combined re-review of pull requests 55 and 57; every finding of the audit of `8105678` closed                                                                                                          | 1 Nov 2026       | `2026-11-01-pr-55-d572aaf-pr-57-6276df0.md`              |
+| CAS-011 rule, PR #57 review                       | `030c8d6`, `7ab3697`       | Codex                          | CHANGES REQUIRED at each: F1 (Medium), the fix mode followed a parent link; then F1 (Medium), a link made after the check, and F2 (Low), the refusal message                                                       | 1 Nov 2026       | `2026-11-01-cas-011-pr-57.md`                            |
+| CAS-011 rule, PR #57 merged                       | `6276df0` in `7530d1c`     | Codex                          | CHANGES REQUIRED in the same combined re-review: F3 (Medium), a short write in the fix mode; corrected on `cas-011/write-all`                                                                                      | 1 Nov 2026       | `2026-11-01-pr-55-d572aaf-pr-57-6276df0.md`              |
+| CAS-012 design note, PR #59 merged                | `b38d329` in `bdf608c`     | none (documents only)          | not audited                                                                                                                                                                                                        | 1 Nov 2026       | PR #59                                                   |
 
 ## What this means for the deployed service
 
@@ -75,7 +80,10 @@ step 12 is the owner's decision, per unaudited track, between requesting an inde
 now and recording an accepted risk here with a review date. The units merged from 24 to 26
 October 2026 (pull requests 37, 34, 36, 35 and 50) are on `main` from `8105678`; the combined
 audit of that head returned CHANGES REQUIRED on 31 October 2026 (F1 to F3), corrected on
-`train/34-50-corrections`, whose re-review is pending.
+`train/34-50-corrections` and merged on 1 November 2026 at `a144108` after a PASS at
+`d572aaf`. CAS-011 (pull request 57) merged the same day at `7530d1c`, before its last verdict;
+that verdict, CHANGES REQUIRED (F3, a short write in the fix mode), is corrected on
+`cas-011/write-all`.
 
 ## How a row changes
 
