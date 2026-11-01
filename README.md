@@ -51,7 +51,7 @@ amendment of 22 October 2026).
 after its independent review and is not re-audited; no document may read as saying otherwise
 (`docs/SPRINT-5-REPORT.md`, section 16). Its rules stand as written: a file can be ingested as
 fixture or replay only; live evidence comes from the Graph client, never from a file; a claim
-is a record, not a UUID. Migrations 0001 to 0022 are applied by the deploy step before the
+is a record, not a UUID. Migrations 0001 to 0023 are applied by the deploy step before the
 dashboard serves traffic.
 
 **What is on `main`, and what is in review.** Four post-event units merged on 22 October
@@ -86,12 +86,15 @@ place of `judge`, the published mark and scrape protection (migration 0017), on 
 signed webhooks, with the pinned donation page (migration 0018, `qrcode-generator`), on pull
 request 28 (`docs/CAS-008-REPORT.md`).
 
-Merged into `main` from 24 to 26 October 2026 with no PASS; one combined audit of `main` at
-`8105678` is pending (`docs/AUDIT-LEDGER.md`): the Zod advisory, on pull request 37; CAS-010, the
-dashboard's terminal grid under D47, on pull request 34 (`docs/CAS-010-REPORT.md`); the browser
-harness brought to the passwordless sign-in, on pull request 36; CAS-009, shareable story cards
-under D48 (migrations 0021 and 0022), on pull request 35 (`docs/CAS-009-REPORT.md`); and the
-bounded readiness endpoint, on pull request 50.
+Merged into `main` from 24 to 26 October 2026: the Zod advisory, on pull request 37; CAS-010,
+the dashboard's terminal grid under D47, on pull request 34 (`docs/CAS-010-REPORT.md`); the
+browser harness brought to the passwordless sign-in, on pull request 36; CAS-009, shareable
+story cards under D48 (migrations 0021 and 0022), on pull request 35 (`docs/CAS-009-REPORT.md`);
+and the bounded readiness endpoint, on pull request 50. The combined audit of `main` at
+`8105678` returned CHANGES REQUIRED on 31 October 2026 (three findings, `docs/AUDIT-LEDGER.md`),
+corrected with tests and migration 0023 on `train/34-50-corrections`; the re-review at `2ff9a50`
+closed two and returned the third, migration 0023's boundary, on 1 November 2026, corrected the
+same day.
 
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up

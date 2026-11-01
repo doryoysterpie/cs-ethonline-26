@@ -204,15 +204,34 @@ export async function makeCard(
     );
   }
   const packages = await workspace();
-  const { findStoryCard, insertStoryCard } = packages.database;
+  const { findStoryCard, insertStoryCard, lockStoryCard } = packages.database;
   try {
     const story = await runtime.database.withTransaction((tx) => resolveStoryOn(tx, key), SNAPSHOT);
     if (story === null) throw notShareable();
-    const existing = await runtime.database.withClient((client) => findStoryCard(client, key));
-    if (existing !== null) return { id: existing.id, created: false };
-    const decision = runtime.limits.cardAccount.check(`account:${principal.accountId}`, seconds());
-    if (!decision.allowed) {
-      if (decision.firstTrip) {
+    // One decision per story at a time (the combined audit's F2): the lock is held from the
+    // existence check through the insert, so a concurrent request for the same story waits,
+    // then finds this card and spends nothing. Read committed, not the snapshot above, so the
+    // waiting request sees the card the first one committed.
+    const decided = await runtime.database.withTransaction(async (tx) => {
+      await lockStoryCard(tx, key);
+      const existing = await findStoryCard(tx, key);
+      if (existing !== null) return { kind: 'existing', card: existing } as const;
+      const decision = runtime.limits.cardAccount.check(
+        `account:${principal.accountId}`,
+        seconds(),
+      );
+      if (!decision.allowed) return { kind: 'limited', firstTrip: decision.firstTrip } as const;
+      const inserted = await insertStoryCard(tx, {
+        ...key,
+        id: randomBytes(16).toString('base64url'),
+        createdBy: principal.accountId,
+        createdAt: new Date().toISOString(),
+      });
+      return { kind: 'inserted', ...inserted } as const;
+    });
+    if (decided.kind === 'existing') return { id: decided.card.id, created: false };
+    if (decided.kind === 'limited') {
+      if (decided.firstTrip) {
         await audit(runtime, {
           kind: 'limit_tripped',
           outcome: 'failure',
@@ -226,14 +245,7 @@ export async function makeCard(
       }
       throw new DashboardError('throttled', 'card_limited', 'Too many cards made; wait a while.');
     }
-    const { card, created } = await runtime.database.withTransaction((tx) =>
-      insertStoryCard(tx, {
-        ...key,
-        id: randomBytes(16).toString('base64url'),
-        createdBy: principal.accountId,
-        createdAt: new Date().toISOString(),
-      }),
-    );
+    const { card, created } = decided;
     if (created) {
       await audit(runtime, {
         kind: 'card_created',

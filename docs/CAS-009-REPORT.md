@@ -359,3 +359,80 @@ mcp-server 49). The failure is closed on that count; its cause is still not esta
 same clone ran `corepack pnpm verify` exit 0 (1,184 offline tests, 32 tool tests) and
 `playwright test` 30 of 30 against the production build, the three card specs among them, with
 the PNG's first eight bytes checked against the PNG signature.
+
+## 8. Corrections after the combined audit of `main` at `8105678` (31 October 2026)
+
+The combined audit of the train merged after pull request 33 (pull requests 37, 34, 36, 35 and 50) returned CHANGES REQUIRED with three findings; F1 and F2 are against this unit, F3 against
+CAS-010 (`docs/CAS-010-REPORT.md`, section 8). The report is in the vault,
+`03_Audits/cs-ethonline-26/2026-10-31-combined-merge-train-8105678.md`. Both are corrected on
+`train/34-50-corrections`, each with a test that fails on `main`'s code.
+
+- **F1 (High): migration 0022 numbered the existing records in scan order.** Adding `seq` to a
+  populated table numbers the rows in the order PostgreSQL scans them, so an upgrade could make an
+  older or an unpublished revision current, and a card would then show it. Migration 0022 is not
+  edited: the deploy step applies migrations and the runner refuses a changed checksum, so a
+  database that already ran 0022 would stop the next deploy. Migration 0023
+  (`0023_publication_order_backfill.sql`, SHA-256
+  `e6ec4d050c36ea878039b4384611f72bc9242ad48dbfa9b6f474c4611521a29e`) locks the table and gives
+  the records 0022 numbered the order the readers used before it: by `created_at`, then by `id`,
+  the latest last, the pre-0022 tie rule. Which records 0022 numbered is read from the database's
+  write history, as section 8.1 describes; the renumbering reuses the same numbers, so records
+  written after 0022 keep their order and the sequence is untouched. The append-only guard is set
+  aside for the two updates inside the migration's transaction and restored before it commits.
+  `publication-order.db.test.ts`: a schema stopped at 0021 holds a round-up published, corrected
+  and unpublished, and an article whose last two records share one instant; the table is stored
+  newest first; 0022 alone makes the round-up read as published again; 0023 restores every
+  output's current record and the exact written order; the guard and the generated column are
+  back; a record written after an earlier deploy's 0022 keeps its place; an empty table is
+  untouched.
+- **F2 (Medium): concurrent duplicate requests spent the account's limit.** The existence check,
+  the limit and the insert were three steps, so simultaneous requests for one new story all
+  found no card and all spent the limit. They are now one decision under a transaction advisory
+  lock keyed on the story (`lockStoryCard`), at read committed, so a second request waits, then
+  finds the card the first made and spends nothing; the trip's audit event and the refusal follow
+  the transaction. The test in `dal.db.test.ts`: six simultaneous requests for one story with a
+  limit of two receive one address and one `created`; a different story is still made and a
+  third is refused. On `main`'s code four of the six are throttled.
+
+### 8.1 The re-review of pull request 55 at `2ff9a50` (1 November 2026)
+
+Codex re-reviewed the corrections (record `2026-11-01-pr-55-2ff9a50.md`): CHANGES REQUIRED, F1
+High still open; F2 and F3 closed. The first 0023 took the records 0022 numbered to be those whose
+`created_at` was earlier than 0022's `applied_at`. The application writes `created_at`, so that
+boundary was unsound both ways. An insert that held the table while 0022 waited, or a clock
+running ahead, put a record 0022 numbered after the boundary, and 0023 left it in scan order. A
+record written after 0022 with a backdated instant fell before the boundary, and 0023 reordered
+every record up to it, later ones included.
+
+Corrected, the same day, by reading the database's own write history instead. Adding an identity
+column rewrites the table, and the rewrite stamps every record it numbers with the rewriting
+transaction's id (`xmin`). The runner records each migration in that same transaction, so the
+`schema_migrations` row of version 22 carries the same id. The records 0022 numbered are exactly
+those whose `xmin` is that id, whatever instant they carry, whether 0022 ran in this deploy or an
+earlier one. 0022 numbered them in one pass from a new sequence, so they hold exactly 1 to N, the
+cutoff, and every later record holds more. Freezing keeps the raw `xmin`, as PostgreSQL 17 showed
+here under `VACUUM (FREEZE)`, and a physical backup keeps it too. A logical dump and restore does
+not keep it, and it leaves every row of `schema_migrations` with one transaction id. So 0023
+refuses, changing nothing and stopping the deploy, unless versions 21 and 22 were recorded by
+different transactions and the records carrying 0022's id are exactly the numbers 1 to N. The one
+case this cannot detect is a logical restore of the publication table alone with the migration
+history kept: the records then carry no trace of 0022, and 0023 leaves 0022's numbering as it is.
+No such restore has been run, and no runbook describes one.
+
+Tests added to `publication-order.db.test.ts`, each failing on the first 0023:
+
+- (a) an insert holds the table while 0022 waits for its lock, and writes the whole history newest
+  first, stamped from the clock after 0022's transaction began; 0023 restores every current record
+  and the written order;
+- (b) a history written before 0022 by a clock a day ahead, every instant later than 0022's
+  `applied_at`; restored the same way, the round-up unpublished again;
+- (c) after 0022, a publish stamped an hour ahead and then an unpublish stamped in 2020; both keep
+  their places and the unpublish stays current;
+- the refusal: with the migration history copied by one transaction, as a restore leaves it, or
+  with a record 0022 numbered rewritten since, 0023 fails with code P0001, the numbering is
+  unchanged and version 23 is not recorded.
+
+On the first 0023 the three cases and the refusal fail and the three earlier tests pass; on the
+corrected one all seven pass. Counts from the runner, 1 November 2026, in the working tree:
+`verify` exit 0, 1,186 offline and 32 tool tests; `test:db` exit 0, 349 (database 124, four
+added; worker 119, dashboard 57, mcp-server 49); `test:browser` 30 passed.

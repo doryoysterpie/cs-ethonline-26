@@ -969,8 +969,9 @@ Rules the presentation keeps while the look changes (D47).
   the request's path for the server component; the header is never rendered.
 - **The local email file is a memory-store seam only.** With the memory store, which the
   configuration refuses outside `local`, the one-time code's message is appended to the file the
-  developer names (`DASHBOARD_LOCAL_EMAIL_FILE`, mode 600) or dropped; production uses the
-  PostgreSQL store and the Resend provider, where the variable has no effect.
+  developer names (`DASHBOARD_LOCAL_EMAIL_FILE`), opened without following a symbolic link,
+  refused unless a regular file and narrowed to mode 600 before each write, or dropped;
+  production uses the PostgreSQL store and the Resend provider, where the variable has no effect.
 
 ## 24. Story cards (CAS-009)
 
@@ -987,8 +988,9 @@ pending an independent audit**.
   the next request.
 - **The page needs no session and is never indexed**: the address is 128 random bits; the proxy
   adds `X-Robots-Tag: noindex, nofollow`; the page says the same; cards are in no sitemap and no
-  index anywhere. Pages and images are limited per network source; new cards per account; one
-  count-only trip event per window each.
+  index anywhere. Pages and images are limited per network source; new cards per account, decided
+  under one lock per story so a duplicate, concurrent or not, spends nothing; one count-only trip
+  event per window each.
 - **The image is the dashboard's own**: an SVG of text only, every string XML-escaped, rasterized
   in process by WebAssembly with no network and two pinned font files, bounded at 1 MiB, cached
   per card and revision.
@@ -997,7 +999,10 @@ pending an independent audit**.
 - **One snapshot per read; a monotonic publication order.** The card, the current publication,
   the revision's text and the cached image are read in one repeatable-read transaction, and an
   image is stored only from that read's text under that read's revision; the current publication
-  is the greatest database-assigned `seq` (migration 0022), never an application timestamp.
+  is the greatest database-assigned `seq` (migration 0022), never an application timestamp; the
+  records 0022 numbered, found by the transaction that numbered them and never by their
+  timestamps, carry the order they were written in, records written after it keep theirs, and
+  the migration refuses when that evidence is gone (migration 0023).
 - **"Not found at once" holds at the origin.** The images are cacheable for five minutes, so a
   downstream cache may serve an unpublished card's image that long, and platforms cache link
   previews for their own periods; the card page itself is never cached.
