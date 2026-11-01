@@ -690,3 +690,16 @@ Unicode property, not a table; the bill of materials records the Unicode version
 removes the default-ignorable ones under `--fix`), `@cas/roundup`'s `text.ts` strips, the card's
 contract refuses and the dashboard's `server/cards/story.ts` strips. The hygiene check reads the
 module as source, since it runs before any build. The report is `docs/CAS-011-REPORT.md`.
+
+## 26. CAS-012: every character list on the rule
+
+`@cas/contracts` adds `text-escape@1` (`src/text-escape.ts`) beside the rule: one escape form,
+`\u{XXXX}`, the names of the characters a reader is most likely to meet, `escapeOneLine` and
+its parts form for a display that styles each escape, and `locateProhibitedText`, which gives
+each character its line and column. The dashboard's `server/display.ts`, the MCP server's
+`safety/text.ts`, the worker's `editorial/display.ts` and the displays of `@cas/graph-evidence`
+and `@cas/sheets-intake` escape through it; `server/input.ts`, `auth/password.ts` and the
+worker's `clustering/note.ts` refuse through it; `server/dal/mutate.ts` refuses or removes on
+save and returns what it removed, which the page shows through the `at` parameter of
+`app/notices.ts`; the worker's `hygiene/scan.ts` scans for the rule; and `text/scan-stored.ts`
+behind `text scan` reads the stored revisions. The report is `docs/CAS-012-REPORT.md`.

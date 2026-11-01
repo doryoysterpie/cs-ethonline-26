@@ -154,3 +154,106 @@ The contract is `text-escape@1` (`packages/contracts/src/text-escape.ts`), besid
 `prohibited-text@2` gains `replaceProhibitedText(value, replace, { oneLine })`, and its one-line
 class is built from the same set as the rule's own, less the two selectors only, so the two
 cannot drift. No migration: the database constraints stay as section 1.2 says.
+
+## 3. Implementation (S3, S5)
+
+Each list keeps its action and takes its set from the rule.
+
+- **The five displays** (the dashboard's `safeText` and `safeParts`, the MCP server's
+  `toSingleLine` and `quoteEvidence`, the worker's `toSingleLine` and `safeDisplay`, and the
+  `safeDisplay` of `@cas/graph-evidence` and `@cas/sheets-intake`) escape through
+  `escapeOneLine`: every character the rule names, and tab, line feed and carriage return, in
+  the one form. A bound never splits an escape (`escapedCut`). The dashboard renders each
+  escape in its own `span.escaped`, muted and underlined, apart from body text. The MCP server
+  escapes the angle brackets in the same form, `\u{003C}` and `\u{003E}`.
+- **The refusals** name the first refused character as `where:line:column: rule \u{XXXX}
+NAME`. `boundedText` refuses the rule and the three line characters, with code
+  `<field>_control`. `validatePassword` refuses them after NFKC, at set and change; `verifyPassword`
+  never checks. `assertReviewNote` refuses them in a note, and in a claim statement as
+  `statement`.
+- **The save path** (`cleanedBody` in `server/dal/mutate.ts`, for drafts, round-ups and
+  articles) refuses a character labelled `c0_control`, `c1_control` or `bidi_control`, which are
+  `\p{Cc}` less the three and `\p{Bidi_Control}`, with code `markdown_control`. It removes
+  every other character the rule names before the revision is computed and returns each
+  removal. A body that holds nothing once they are removed is refused as `markdown_length`.
+- **The notice.** The three save actions redirect with `saved_cleaned` or `edited_cleaned` when
+  something was removed. A refusal redirects with `invalid_character`. Both carry `at`, a list
+  of `CODEPOINT-LINE-COLUMN` entries (`app/notices.ts`, at most twenty), and the `Notice`
+  component lists each as its escape, name, line and column. The actions behind the queue,
+  incident, evidence and selection notes, the account form and the week search pass a refusal's
+  characters the same way.
+- **The worker's scanner** (`hygiene/scan.ts`) reports each code point the rule names with its
+  column, in the shared form. It now keeps a byte-order mark that opens a line, which its
+  decoder used to strip silently; the coverage test found that.
+- **The scan of stored texts.** `text scan` (`corepack pnpm text:scan`, `text/scan-stored.ts`)
+  reads `draft_revisions`, `roundup_revisions` and `article_revisions` and prints, for each
+  revision holding a character the rule names, the table, the key, the revision and each code
+  point with its rule and count, never the text.
+
+## 4. Tests (S4)
+
+Each list has the test CAS-011's consumers have: every code point the rule names, as the runtime
+enumerates it, is escaped, refused or reported, and the two presentation selectors pass. The
+lists are the dashboard display, the MCP escapes, the worker's display, scanner and note
+refusal, the graph-evidence and sheets-intake displays, the bounded inputs and the password.
+Besides, the following are covered:
+
+- the contract: the form round-trips through a string literal and a `u`-flag expression, names
+  are added only by `describeCodePoint`, a literal backslash sequence stays text in the parts
+  form, the cut never splits an escape, and positions are counted in code points;
+- the notice: the parameter's encoding and its strict decoding, which refuses a printable code
+  point, text, a zero position, lowercase hexadecimal and a value past U+10FFFF (the last one
+  raised before the range was checked first);
+- the save path, against PostgreSQL: a pasted soft hyphen and zero-width space are removed and
+  listed with their positions, re-saving the cleaned text removes nothing, and a right-to-left
+  override refuses the save with its position;
+- the browser: a draft carrying a right-to-left override is refused with its name and position,
+  and a draft carrying a soft hyphen is saved without it, with the notice listing it;
+- the scan: a stub database shows the report names code points and counts and never text.
+
+The MCP truncation and bounds tests change count, because an escape now takes eight characters
+where it took six. The draft preview's fixture now truncates five hostile fields at the
+300-character bound, and the result counts them.
+
+## 5. Interface (S5)
+
+The notices, the refusals and the escaped displays are exercised in the browser suite, two new
+cases among its 31. The scan, against a fresh local PostgreSQL 17 database migrated to 0023, 1
+November 2026: `corepack pnpm text:scan` printed `text:scan: scanned=0
+revisions_with_characters=0` and exited 0, its three queries reading the real tables. The
+owner's run against the hosted database is the one that reports the stored revisions.
+
+## 6. Security baseline (S6)
+
+- Nothing a person typed travels in the notice's query string: the parameter decodes only to
+  code points the rule names or the three line characters, and to positions.
+- Refusal messages name the field and the character, never the value.
+- The password check runs at set and change only, so a change of the property at a Node upgrade
+  cannot lock an account out.
+- The scan only reads; it opens no transaction that writes.
+- No dependency changed; `pnpm audit` is clean (section 7).
+
+## 7. Verification (S8)
+
+Counts from the runner, 1 November 2026, in the working tree: `verify` exit 0, 1,212 offline
+tests and 37 tool tests; `test:db` 349 (database 124, worker 119, dashboard 57, mcp-server 49);
+`test:browser` 31 passed. The clean clone and CI are recorded on the tracker.
+
+## 8. What the unit does not cover
+
+- **The MCP server's JSON fields** (put to the owner). D50 says that where a format escapes on
+  its own, as a JSON field in an MCP result does, the display escape is not applied before it.
+  The MCP server escapes quoted evidence first and then serialises the whole result with
+  `JSON.stringify`, as on `main` before this unit. `JSON.stringify` escapes only U+0000 to
+  U+001F, the quotation mark and the backslash. Applying no display escape before it would leave
+  the bidirectional controls, the zero-width characters and the C1 controls raw in the server's
+  output, which the Track D design forbids. The unit keeps the escape before serialisation, in
+  the one form, until the owner decides.
+- **Other lists**, outside the nine and unchanged: `packages/sheets-intake/src/a1.ts`
+  (`isUnrepresentable`, the controls a range address may not hold) and the source scan in
+  `apps/dashboard/src/hygiene.test.ts`. The MCP server's test helper `hasRawControl` is on the
+  rule now.
+- **The Markdown renderer** (`SafeMarkdown`) holds no list. It renders a stored body as it is,
+  and it is fed only cleaned text by the save path from now on; what bodies saved earlier hold,
+  the scan reports.
+- **The database's constraints** stay the floor (section 1.2).

@@ -100,6 +100,12 @@ same day.
 round-up export and the story card, from the Unicode property for characters that render as
 nothing (D49; `docs/CAS-011-REPORT.md`): built on `cas-011/invisible-text`, not audited.
 
+**In review, not merged.** CAS-012, every character list on the prohibited-text rule (D50;
+`docs/CAS-012-REPORT.md`): the nine lists outside CAS-011's consumers escape, refuse or scan
+through the rule in one escape form, the save path removes the invisible characters a paste
+brings and names each, and `text:scan` reads the stored revisions; on `cas-012/lists`, not
+audited.
+
 **What the product is for.** The owner's weekly flow: the feed read from Google Sheets, every
 story classified by category, a sift table where the owner selects stories, a round-up
 generated through the rundown template, edited by the owner and pasted into Substack by the

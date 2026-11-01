@@ -1040,6 +1040,35 @@ U+061C through.
   subdivision flags fall back to the black flag; U+200C, U+200E, U+200F and U+061C are stripped,
   which affects Persian, Arabic and Hebrew names only.
 
+## 26. Every character list on the rule (CAS-012)
+
+The nine lists D49 named outside CAS-011's three consumers take their set from the
+prohibited-text rule (D49, D50) and keep their own action; no list of invisible or control
+characters remains in them.
+
+- **The displays escape in one form.** The dashboard's stored-text display, the MCP server's
+  quoted evidence, the worker's output and the displays of `@cas/graph-evidence` and
+  `@cas/sheets-intake` write every character the rule names, and tab, line feed and carriage
+  return, as `\u{XXXX}` (uppercase, at least four digits), never splitting an escape at a
+  bound. In the dashboard an escape is its own element in a muted style, so a literal backslash
+  sequence in stored text is never taken for one.
+- **The refusals name the character where it stands.** A bounded single-line input, a password
+  at set and change (after its normalisation; verification never runs the check), and the
+  worker's review note and claim refuse everything the rule names and the three line
+  characters, naming the first by escape, name and position. The save path of drafts,
+  round-ups and articles refuses a control or a bidirectional control and removes every other
+  character the rule names before the revision is computed; the page's notice lists each
+  removed or refused character by code point, name, line and column.
+- **The notice carries no text.** Its `at` parameter holds hexadecimal code points and
+  positions only, at most twenty, and is decoded only to characters the rule names or the three
+  line characters, so nothing a person typed travels through a query string.
+- **The scanner and the refusals read as one event.** The worker's source scanner and its note
+  and claim refusals report in one form, `where:line:column: rule \u{XXXX} NAME`.
+- **Stored text is read, never rewritten.** `corepack pnpm text:scan` reports, read-only, which
+  stored revisions hold a character the rule names; no migration rewrites a published revision.
+- **The database is the floor.** Its constraints refuse the controls and separators in stored
+  fields and cannot follow a Unicode property; the application refuses more, first.
+
 ## Reporting a vulnerability
 
 Report privately; never open a public issue describing an unpatched weakness. The policy,
