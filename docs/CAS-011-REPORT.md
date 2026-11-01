@@ -258,3 +258,21 @@ and one Low; the first review's F1 closed, the regression failing on `030c8d6` a
   through as itself. The final-component test asserts the exact message; on `7ab3697` it fails.
 
 Tool tests: 37.
+
+## 11. The combined re-review of `6276df0` (1 November 2026)
+
+Codex reviewed pull requests 55 and 57 together (record
+`2026-11-01-pr-55-d572aaf-pr-57-6276df0.md`): 55 PASS at `d572aaf`; 57 CHANGES REQUIRED at
+`6276df0`, with F1 and F2 of the re-review closed and one new Medium. Pull request 57 had already
+merged at `7530d1c`, so the correction is a new pull request from `main`, on `cas-011/write-all`.
+
+- **F3 (Medium): a short write could replace the tracked file with a truncated one.**
+  `replaceTracked` called `writeSync` once and ignored the number of bytes it took, which Node
+  documents as possibly fewer than asked. A write that took three bytes was then renamed over the
+  tracked file and the fix reported success. Corrected: `writeAll` repeats the write from where
+  the last one stopped, advancing the buffer offset and the file position together, until every
+  byte is taken; a write that takes none throws, and the replacement is then removed, never
+  renamed. Test: `tools/checks/hygiene-write.test.ts` cuts every write to three bytes at most, and
+  the whole corrected text reaches the replacement in three calls; a write that takes nothing
+  stops the fix with `hygiene fix could not write the replacement for docs/note.md`, the tracked
+  file unchanged and no replacement left behind. Both fail on `6276df0`. Tool tests: 39.

@@ -268,8 +268,8 @@ head are on the tracker.
   MCP server escapes quoted evidence before it serialises the result, as on `main` before this
   unit: the display escape serves whoever reads the decoded string, JSON's escaping serves its
   parser, and the two stack. A round trip through a JSON parser proves a client reads the
-  display-escaped text with nothing the rule names in it (`json-roundtrip.test.ts`, folded into
-  this branch from pull request 62, which was closed).
+  display-escaped text with nothing the rule names in it (`json-roundtrip.test.ts`, this branch took
+  pull request 62's head, so GitHub records 62 as merged into `cas-012/lists`).
 - **Other lists**, outside the nine and unchanged: `packages/sheets-intake/src/a1.ts`
   (`isUnrepresentable`, the controls a range address may not hold) and the source scan in
   `apps/dashboard/src/hygiene.test.ts`. The MCP server's test helper `hasRawControl` is on the

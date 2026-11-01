@@ -92,13 +92,15 @@ browser harness brought to the passwordless sign-in, on pull request 36; CAS-009
 story cards under D48 (migrations 0021 and 0022), on pull request 35 (`docs/CAS-009-REPORT.md`);
 and the bounded readiness endpoint, on pull request 50. The combined audit of `main` at
 `8105678` returned CHANGES REQUIRED on 31 October 2026 (three findings, `docs/AUDIT-LEDGER.md`),
-corrected with tests and migration 0023 on `train/34-50-corrections`; the re-review at `2ff9a50`
-closed two and returned the third, migration 0023's boundary, on 1 November 2026, corrected the
-same day.
+corrected with tests and migration 0023 on `train/34-50-corrections` (pull request 55), which
+passed its re-review at `d572aaf` and merged on 1 November 2026 at `a144108`.
 
-**In review, not merged.** CAS-011, one invisible-character rule for the hygiene check, the
-round-up export and the story card, from the Unicode property for characters that render as
-nothing (D49; `docs/CAS-011-REPORT.md`): built on `cas-011/invisible-text`, not audited.
+**Merged on 1 November 2026, before its last verdict.** CAS-011, one invisible-character rule
+for the hygiene check, the round-up export and the story card, from the Unicode property for
+characters that render as nothing (D49; `docs/CAS-011-REPORT.md`), at `7530d1c` (pull request
+57). The combined re-review of its head `6276df0` returned CHANGES REQUIRED (F3, a short write in
+the fix mode), corrected on `cas-011/write-all`; not accepted. CAS-012's design note and D50
+merged the same day (pull request 59, `docs/CAS-012-REPORT.md`), documents only.
 
 **In review, not merged.** CAS-012, every character list on the prohibited-text rule (D50;
 `docs/CAS-012-REPORT.md`): the nine lists outside CAS-011's consumers escape, refuse or scan
