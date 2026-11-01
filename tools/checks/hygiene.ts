@@ -245,6 +245,21 @@ function openTracked(root: string, relative: string): number {
 }
 
 /**
+ * Writes every byte, from offset 0 of the file (the combined re-review of
+ * pull requests 55 and 57, F3): `writeSync` returns how many bytes it took,
+ * which may be fewer than asked, so the call repeats from where it stopped. A
+ * call that takes none is an error, and the replacement is then never renamed.
+ */
+function writeAll(handle: number, bytes: Uint8Array, relative: string): void {
+  let done = 0;
+  while (done < bytes.length) {
+    const taken = writeSync(handle, bytes, done, bytes.length - done, done);
+    if (taken <= 0) throw new Error(`hygiene fix could not write the replacement for ${relative}`);
+    done += taken;
+  }
+}
+
+/**
  * Replaces a tracked file with corrected bytes without writing to the file
  * itself: the bytes go into a new file created beside it, with its mode, and
  * a rename puts the new file in its place. Whatever links the original has,
@@ -268,7 +283,7 @@ function replaceTracked(root: string, relative: string, reading: number, bytes: 
   }
   let renamed = false;
   try {
-    writeSync(written, bytes, 0, bytes.length, 0);
+    writeAll(written, bytes, relative);
     fchmodSync(written, mode);
     if (!holdsTracked(root, besideRelative, written) || !holdsTracked(root, relative, reading)) {
       throw refusal(relative);
