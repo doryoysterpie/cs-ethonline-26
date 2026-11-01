@@ -127,3 +127,31 @@ Codex re-reviewed `e19449e` on 22 October 2026: **PASS**, no findings. The atomi
 Record: `2026-10-22-cas-006-pr-17-correction-reaudit.md`. Steps 9 and 10 are therefore audited
 at the commit `main` carries. Pull request 18's delta was passed at `32e1357`; the owner's
 halves of step 7 remain, on the recreated Railway service.
+
+## 7. Review of pull request 65 at `aa6f519`, and the corrections (1 November 2026)
+
+Codex reviewed pull request 65, the ruleset for one identity (D52) and the restore drill carried
+from pull request 51 (record `2026-11-01-pr-65-aa6f519.md`): CHANGES REQUIRED, two High. The
+ruleset's four conditions, the validator, the carry of pull request 51 and the records were
+supported. Neither gap was ever on `main`. Each is named here and corrected with its tests, in the
+same push (D53).
+
+- **H1: a failed run of the verdict recorder could leave an earlier success standing.** The
+  recorder decided before it wrote, so a run that failed while reading the comments wrote
+  nothing, and a head an earlier run had passed stayed green after its verdict changed. Corrected
+  in `tools/ci/codex-verdict.ts`: once the head is known the status is set to pending before
+  anything is read, a failed read or a malformed page leaves it failed or pending, and success is
+  written only after every comment is read and decided. Five cases are tested from an earlier
+  success; the one that remains, GitHub refusing every status write, fails the job and is named in
+  `docs/RUNBOOK-SECURITY.md`, section 1.1.
+- **H2: the restore drill's local-only check read a different host from the one its clients
+  used.** The guard classified the URL's authority, while the Node client and the child tools
+  honoured a host parameter, and the child tools inherited the drill's whole environment.
+  Corrected in `packages/database/src/restore.ts`: `drillTarget` reads each URL once, refusing
+  any libpq parameter that could route a client elsewhere, a parameter given twice, more than one
+  host or none; the guard checks that target; `drillChildEnvironment` hands the child tools that
+  target and keeps from the inherited environment only what finds the tools and formats messages.
+  `summarizeConnection` now reads the effective host as well. Tests cover the parameters that
+  route, socket directories in either place, the variables a child must not inherit, and that the
+  Node client and the child tools resolve the same host, port, database and user. The drill passes
+  locally at 25 migrations, and a target that routes elsewhere is refused before any connection.

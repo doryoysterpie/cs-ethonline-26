@@ -2105,3 +2105,77 @@ ruling of the same day: it need not, under five conditions.
 - **Decided by:** Project owner, 1 November 2026, in chat.
 - **Supersedes:** pull request 52's approval rules (one approval, last-push approval), never
   active.
+
+## D53 The repository stays public under Apache-2.0
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 3: the repository stays
+  public under Apache-2.0. Conditions:
+  1. **A record names a gap, never a reproduction, and the record of an exploitable gap is pushed
+     after its fix lands, not before.** Decision records and reports stay public, and recording
+     gaps stays the practice; the ordering is what changes.
+  2. **The licence covers the code, not the name.** The README states that the "Cyberattack
+     Sunday" name and marks are not licensed under Apache-2.0.
+  3. **Nothing else changes.** Secrets stay in the environment and the repository scans keep
+     enforcing it.
+- **Rationale:** GitHub's documentation, read on 1 November 2026: repository rulesets are
+  enforced in public repositories on GitHub Free and in private repositories only on Pro, Team or
+  Enterprise Cloud; code scanning on a private repository needs a paid GitHub Code Security
+  licence; secret scanning on a personal account's private repository is not available outside
+  Enterprise Managed Users. Going private would switch off the ruleset of D52 and the scans the
+  project relies on. Versions already published stay licensed to whoever fetched them.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D54 The dispositions of the hackathon components (P-3)
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED; executed by CAS-006, step 5
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 4, transcribing P-3:
+  - `apps/payer-agent`, `apps/sunday-agent` and `packages/feed-api`: **remove**. Each is a
+    placeholder of nine lines; a public feed, if one is ever wanted, is a unit of its own.
+  - `@cas/graph-evidence` and the live Graph path: **park**. It fails closed without
+    `GRAPH_API_KEY`; its tests run without the key or skip with the reason recorded; it stays out
+    of the deployed image; its dependencies stay in the bill of materials and advisories keep
+    applying while it is parked.
+  - `@cas/evidence` and the anomaly layer: **keep**.
+  - `packages/mcp-server`: decided on use, not size: kept if it is wired into an AI client the
+    owner uses in the editorial workflow, otherwise parked; absent that fact, **park**. Parked,
+    CAS-006 step 8 is not applicable, and unparking is a unit with its own audit, not a
+    status-line edit. Kept, step 8 runs as the fix list from its audit under D55, and it stays a
+    consumer of D49's rule and D50's escapes.
+- **Conditions on the removal:** if migration 0008 or 0009 created a table that only a removed
+  placeholder reads, a new migration drops it in the same unit, since an empty table with no
+  reader is a place for data nobody checks; no workspace entry, path alias, CI matrix row or
+  bill-of-materials line refers to a removed package, which the clean-clone gate proves; the
+  README's hackathon section keeps one line naming what was submitted to ETHOnline and that it
+  was removed or parked at CAS-006, so the history stays true. Migrations 0008 and 0009 stay,
+  since applied migrations are never edited.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D55 One audit of main, in scoped prompts
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 12: the code that exists is
+  audited at one head, `main` once pull request 65 merges, and that commit is recorded in the
+  ledger as the audit head. Every "not audited" code row closes against it; code merged afterwards
+  is covered by its own review, so the rows never reopen. Conditions:
+  1. **Scoped prompts, not one.** One prompt over the whole of `main` gives a shallow audit with a
+     confident verdict. The audit is scoped by trust boundary against the same head, in this order:
+     authentication, sessions, roles and the dashboard's capability checks; then intake and the
+     worker (the Sheets intake, the source scanner, and the path from untrusted text through the
+     model to a stored draft); then the MCP server if it is kept; then the rest (the security
+     foundation, the release integration and the dependency posture).
+  2. **Invariants, not "audit this".** Each prompt lists the invariants from the decision records
+     (secrets from the environment and the key-locality rule, D6's publication act, the reader
+     role, D49's rule and its consumers, D50's escapes, the audit-event rule) and asks, for each,
+     where it is enforced and which test would fail if it were broken.
+  3. **Documents-only rows** (pull requests 12, 54 and 59) are an accepted risk with the public
+     launch as the review date: their risk is a wrong decision, not an exploit, and those
+     decisions have since been built and reviewed in code.
+  4. **Findings become units.** A ledger row reads "audited at `<head>`, findings in CAS-0xx",
+     never PASS alone.
+- **Rationale:** The owner's. Per-track audits would review code since rewritten; accepting the
+  risk would leave the authentication path unaudited at launch.
+- **Decided by:** Project owner, 1 November 2026, in chat.

@@ -46,6 +46,12 @@ public commenter cannot pass a head. The comment sets the status within a minute
 makes a head no verdict names, and the status turns to failure until Codex passes it. Until the
 ruleset is active, nothing enforces the verdict but the process.
 
+Each run sets the status to pending before it reads anything, and writes success only after every
+comment has been read, so a failed read leaves the head pending or failed, never green from an
+earlier run. One case remains: if GitHub refuses every status write, the earlier status stands
+and the `Codex verdict record` job fails. Before a merge, the latest `Codex verdict record` run
+on the pull request is green.
+
 ### 1.2 What one identity cannot enforce
 
 With a single GitHub identity, everyone who can push can also write a verdict comment, add a

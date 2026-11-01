@@ -2,8 +2,10 @@
 
 Onchain incident intelligence for the weekly **Cyberattack Sunday** workflow, with a
 crypto-focused editorial feed, **Latest in Crypto**. Repository: `doryoysterpie/cs-ethonline-26`.
-Licence: Apache License 2.0 (`LICENSE`). `CAS Chainwatch` was the working name; it survives only
-in machine identifiers such as the `@cas/` scope and the `cas-chainwatch-mcp` server name (D5).
+Licence: Apache License 2.0 (`LICENSE`), which covers the code and not the name: the "Cyberattack
+Sunday" name and marks are not licensed under it (D53). `CAS Chainwatch` was the working name; it
+survives only in machine identifiers such as the `@cas/` scope and the `cas-chainwatch-mcp` server
+name (D5).
 
 An ETHOnline 2026 project that imports the current cybersecurity news feed, classifies it
 automatically with high recall into an include, exclude or needs-review queue, clusters the
