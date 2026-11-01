@@ -3,6 +3,7 @@ import 'server-only';
 import { forbidden, notFound, redirect } from 'next/navigation';
 
 import { isDashboardError } from '../server/errors.ts';
+import { noticeCharactersParameter, type NoticeCharacter } from './notices.ts';
 
 /**
  * Helpers shared by every protected page and action.
@@ -37,7 +38,7 @@ export function escalate(error: unknown): string {
         notFound();
       // eslint-disable-next-line no-fallthrough
       case 'validation':
-        return 'invalid';
+        return error.characters.length > 0 ? 'invalid_character' : 'invalid';
       case 'conflict':
         return 'conflict';
       default:
@@ -56,7 +57,7 @@ export function noticeCodeFor(error: unknown): string {
       case 'authorization':
         return 'forbidden';
       case 'validation':
-        return 'invalid';
+        return error.characters.length > 0 ? 'invalid_character' : 'invalid';
       case 'conflict':
         return 'conflict';
       case 'not_found':
@@ -74,6 +75,17 @@ export function single(value: string | string[] | undefined): string | undefined
   return Array.isArray(value) ? value[0] : value;
 }
 
-export function withNotice(path: string, code: string): string {
-  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(code)}`;
+/** The characters a refusal names, for its notice (D50); empty for any other failure. */
+export function refusedCharacters(error: unknown): readonly NoticeCharacter[] {
+  return isDashboardError(error) ? error.characters : [];
+}
+
+export function withNotice(
+  path: string,
+  code: string,
+  characters: readonly NoticeCharacter[] = [],
+): string {
+  const at =
+    characters.length > 0 ? `&at=${encodeURIComponent(noticeCharactersParameter(characters))}` : '';
+  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(code)}${at}`;
 }

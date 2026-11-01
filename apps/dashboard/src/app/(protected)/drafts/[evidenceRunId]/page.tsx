@@ -36,7 +36,7 @@ export default async function DraftPage({
         Draft for evidence run <span className="mono">{view.evidenceRun.id}</span>{' '}
         <Origin value={view.evidenceRun.dataOrigin} />
       </h2>
-      <Notice code={single(query.notice)} />
+      <Notice code={single(query.notice)} at={single(query.at)} />
       <p className="small">
         Period {view.periodStart} to {view.periodEnd} · status{' '}
         <span className="mono">{view.status}</span> · showing{' '}

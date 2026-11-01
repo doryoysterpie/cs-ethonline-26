@@ -309,6 +309,7 @@ export {
   TEXT_ESCAPE_CONTRACT,
   codePointName,
   describeCodePoint,
+  describeLocated,
   escapeCodePoint,
   escapeMultiLine,
   escapeOneLine,

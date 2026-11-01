@@ -4,6 +4,7 @@ import { PERMITTED_DEFAULT_IGNORABLES, prohibitedCodePoints } from './prohibited
 import {
   codePointName,
   describeCodePoint,
+  describeLocated,
   escapeCodePoint,
   escapeMultiLine,
   escapeOneLine,
@@ -95,5 +96,19 @@ describe('the one escape form (D50, point 3)', () => {
         escapeOneLine(`A${char(code)}B`),
       ]);
     }
+  });
+
+  it('locates the three line characters too in a one-line value, and describes a located character in one form', () => {
+    const found = locateProhibitedText(`a\tb${char(0x200b)}`, { oneLine: true });
+    expect(found).toEqual([
+      { codePoint: 0x09, rule: 'line_character', line: 1, column: 2 },
+      { codePoint: 0x200b, rule: 'default_ignorable', line: 1, column: 4 },
+    ]);
+    expect(describeLocated('note', found[1]!)).toBe(
+      'note:1:4: default_ignorable \\u{200B} ZERO WIDTH SPACE',
+    );
+    expect(
+      describeLocated('src/a.ts', { codePoint: 0x202e, rule: 'bidi_control', line: 3, column: 7 }),
+    ).toBe('src/a.ts:3:7: bidi_control \\u{202E} RIGHT-TO-LEFT OVERRIDE');
   });
 });

@@ -1,3 +1,5 @@
+import { prohibitedTextRule } from '@cas/contracts';
+
 /**
  * Fixed notices a page may show after a redirect. A URL carries only one of
  * these codes; the sentence is looked up here, so nothing submitted by a
@@ -9,6 +11,9 @@ const NOTICES: Readonly<Record<string, string>> = {
   selected: 'Selected for the issue.',
   generated: 'Round-up generated; revisions 0 and 1 recorded.',
   edited: 'Revision saved.',
+  saved_cleaned: 'Saved. These invisible characters were removed before saving:',
+  edited_cleaned: 'Revision saved. These invisible characters were removed before saving:',
+  invalid_character: 'Not saved. This text carries a character that is refused here:',
   sources_read:
     'Sources read. Review what was read and what was not, then confirm to write the article.',
   article_generated: 'Article written; revision 1 recorded.',
@@ -65,6 +70,7 @@ export function noticeFor(code: unknown): string | null {
 
 export function isErrorNotice(code: unknown): boolean {
   return (
+    code === 'invalid_character' ||
     code === 'sign_in_failed' ||
     code === 'forbidden' ||
     code === 'invalid' ||
@@ -83,4 +89,51 @@ export function isErrorNotice(code: unknown): boolean {
     code === 'support_not_configured' ||
     code === 'no_supporter_record'
   );
+}
+
+/** One character a notice names: a code point and where it stood, never the text around it. */
+export interface NoticeCharacter {
+  readonly codePoint: number;
+  readonly line: number;
+  readonly column: number;
+}
+
+/** At most this many characters travel in a notice; the rest are counted. */
+export const NOTICE_CHARACTERS_MAX = 20;
+
+const ENTRY = /^([0-9A-F]{4,6})-([1-9][0-9]{0,6})-([1-9][0-9]{0,6})$/u;
+
+/**
+ * The `at` parameter of a notice that names characters (D50, point 1):
+ * `CODEPOINT-LINE-COLUMN`, comma-separated, uppercase hexadecimal. It carries
+ * code points and positions only, and `noticeCharacters` accepts only code
+ * points the prohibited-text rule names, or tab, line feed and carriage
+ * return, so nothing a person typed can travel through the query string.
+ */
+export function noticeCharactersParameter(characters: readonly NoticeCharacter[]): string {
+  return characters
+    .slice(0, NOTICE_CHARACTERS_MAX)
+    .map(
+      (character) =>
+        `${character.codePoint.toString(16).toUpperCase().padStart(4, '0')}-${character.line}-${character.column}`,
+    )
+    .join(',');
+}
+
+export function noticeCharacters(at: unknown): NoticeCharacter[] {
+  if (typeof at !== 'string' || at.length === 0 || at.length > 400) return [];
+  const out: NoticeCharacter[] = [];
+  for (const entry of at.split(',').slice(0, NOTICE_CHARACTERS_MAX)) {
+    const match = ENTRY.exec(entry);
+    if (match === null) return [];
+    const codePoint = Number.parseInt(match[1] ?? '', 16);
+    const named =
+      codePoint === 0x09 ||
+      codePoint === 0x0a ||
+      codePoint === 0x0d ||
+      prohibitedTextRule(codePoint) !== null;
+    if (codePoint > 0x10ffff || !named) return [];
+    out.push({ codePoint, line: Number(match[2]), column: Number(match[3]) });
+  }
+  return out;
 }

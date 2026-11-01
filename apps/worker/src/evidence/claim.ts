@@ -73,7 +73,7 @@ export function parseClaimKind(value: string | undefined): ClaimKind {
  * is required: a claim with nothing said is not a claim.
  */
 export function assertClaimStatement(value: string | null | undefined): string {
-  const statement = assertReviewNote(value);
+  const statement = assertReviewNote(value, 'statement');
   if (statement === null) {
     throw configuration('statement_required', '--statement is required');
   }

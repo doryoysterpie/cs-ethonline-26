@@ -30,7 +30,7 @@ export default async function QueuePage({
         Queue for run <span className="mono">{view.run.id}</span>{' '}
         <Origin value={view.run.dataOrigin} />
       </h2>
-      <Notice code={single(query.notice)} />
+      <Notice code={single(query.notice)} at={single(query.at)} />
       <p className="small">
         {view.run.reviewCount} rows need review · batch{' '}
         <span className="mono">{view.run.batchId}</span> · category{' '}

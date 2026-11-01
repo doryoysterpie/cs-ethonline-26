@@ -1,6 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { describeLocated, prohibitedCodePoints, prohibitedTextRule } from '@cas/contracts';
+
 /**
  * A scanner for invisible characters in source (audit finding F5).
  *
@@ -22,21 +24,13 @@ import path from 'node:path';
  */
 
 /**
- * Every C0 control except tab and newline, DEL, every C1 control, and the two
- * Unicode line separators. This is the set migration 0007 refuses in a stored
- * note, and the set `assertReviewNote` refuses at the worker API.
+ * Every code point the prohibited-text rule names (`@cas/contracts`, D49), as
+ * the running Node enumerates it: the same rule the repository's hygiene check
+ * and the review-note refusal apply (CAS-012). Tab, line feed and carriage
+ * return are not among them; the repository check refuses a carriage return by
+ * path.
  */
-export const PROHIBITED_CODE_POINTS: readonly number[] = [
-  ...Array.from({ length: 0x20 }, (_, code) => code).filter(
-    (code) => code !== 0x09 && code !== 0x0a,
-  ),
-  0x7f,
-  ...Array.from({ length: 0x20 }, (_, offset) => 0x80 + offset),
-  0x2028,
-  0x2029,
-];
-
-const PROHIBITED = new Set(PROHIBITED_CODE_POINTS);
+export const PROHIBITED_CODE_POINTS: readonly number[] = prohibitedCodePoints();
 
 export const DEFAULT_SCANNED_EXTENSIONS: readonly string[] = ['.ts', '.tsx', '.sql'];
 export const DEFAULT_SKIPPED_DIRECTORIES: readonly string[] = [
@@ -52,6 +46,8 @@ export interface HygieneOffender {
   readonly file: string;
   /** One-based line. */
   readonly line: number;
+  /** One-based column, in code points; 0 for a line that is not valid UTF-8. */
+  readonly column: number;
   /** The prohibited code point, or null when the line is not valid UTF-8. */
   readonly codePoint: number | null;
 }
@@ -86,18 +82,26 @@ async function sourceFiles(
   return found;
 }
 
-/** Formats an offender as `file:line: U+XXXX` or `file:line: invalid UTF-8`. */
+/**
+ * Formats an offender in the one form every refusal and scan reports in (D50):
+ * `file:line:column: rule \u{XXXX} NAME`, or `file:line: invalid UTF-8`.
+ */
 export function describeOffender(offender: HygieneOffender): string {
-  const what =
-    offender.codePoint === null
-      ? 'invalid UTF-8'
-      : `U+${offender.codePoint.toString(16).toUpperCase().padStart(4, '0')}`;
-  return `${offender.file}:${offender.line}: ${what}`;
+  if (offender.codePoint === null) return `${offender.file}:${offender.line}: invalid UTF-8`;
+  const rule = prohibitedTextRule(offender.codePoint) ?? 'line_character';
+  return describeLocated(offender.file, {
+    codePoint: offender.codePoint,
+    rule,
+    line: offender.line,
+    column: offender.column,
+  });
 }
 
 /** Scans one file's bytes: every line decoded strictly and walked by code point. */
 export function scanBytes(bytes: Uint8Array, file: string): HygieneOffender[] {
-  const decoder = new TextDecoder('utf-8', { fatal: true });
+  // `ignoreBOM` keeps a byte-order mark in the decoded text, so one that opens a line is
+  // reported rather than silently dropped by the decoder.
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
   const offenders: HygieneOffender[] = [];
   let line = 1;
   let start = 0;
@@ -108,12 +112,14 @@ export function scanBytes(bytes: Uint8Array, file: string): HygieneOffender[] {
     try {
       text = decoder.decode(slice);
     } catch {
-      offenders.push({ file, line, codePoint: null });
+      offenders.push({ file, line, column: 0, codePoint: null });
       text = '';
     }
+    let column = 1;
     for (const character of text) {
       const codePoint = character.codePointAt(0) ?? 0;
-      if (PROHIBITED.has(codePoint)) offenders.push({ file, line, codePoint });
+      if (prohibitedTextRule(codePoint) !== null) offenders.push({ file, line, column, codePoint });
+      column += 1;
     }
     line += 1;
     start = index + 1;

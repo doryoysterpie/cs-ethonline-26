@@ -35,7 +35,7 @@ export default async function RoundupPage({
         Round-up for week <span className="mono">{view.week.id}</span> · {view.category}{' '}
         <Origin value={view.week.dataOrigin} />
       </h2>
-      <Notice code={single(query.notice)} />
+      <Notice code={single(query.notice)} at={single(query.at)} />
       <p className="small">
         Window <Instant value={view.week.windowStart} /> to <Instant value={view.week.windowEnd} />{' '}
         · {view.selectedIncidents} incidents selected · template {view.templateVersion}{' '}

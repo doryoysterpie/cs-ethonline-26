@@ -154,7 +154,8 @@ export function escapedCut(escaped: string, max: number): number {
 
 export interface LocatedCodePoint {
   readonly codePoint: number;
-  readonly rule: ProhibitedTextRule;
+  /** The rule's label, or `line_character` for tab, line feed or carriage return in a one-line value. */
+  readonly rule: ProhibitedTextRule | 'line_character';
   /** One-based. */
   readonly line: number;
   /** One-based, counted in code points. */
@@ -163,15 +164,21 @@ export interface LocatedCodePoint {
 
 /**
  * Every code point the rule names in a value, with its line and column, for a
- * notice or a refusal that names each character where it stands (D50, point 1).
+ * notice or a refusal that names each character where it stands (D50, point
+ * 1). With `oneLine`, tab, line feed and carriage return are reported too.
  */
-export function locateProhibitedText(value: string): LocatedCodePoint[] {
+export function locateProhibitedText(
+  value: string,
+  options: { readonly oneLine?: boolean } = {},
+): LocatedCodePoint[] {
   const found: LocatedCodePoint[] = [];
   let line = 1;
   let column = 1;
   for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0;
-    const rule = prohibitedTextRule(codePoint);
+    const lineCharacter = codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d;
+    const rule =
+      options.oneLine === true && lineCharacter ? 'line_character' : prohibitedTextRule(codePoint);
     if (rule !== null) found.push({ codePoint, rule, line, column });
     if (codePoint === 0x0a) {
       line += 1;
@@ -181,4 +188,13 @@ export function locateProhibitedText(value: string): LocatedCodePoint[] {
     }
   }
   return found;
+}
+
+/**
+ * One line about one located character, the form every refusal and scan
+ * reports in (D50): `where:line:column: rule \u{XXXX} NAME`. `where` is a
+ * file path or a field name, never the value.
+ */
+export function describeLocated(where: string, located: LocatedCodePoint): string {
+  return `${where}:${located.line}:${located.column}: ${located.rule} ${describeCodePoint(located.codePoint)}`;
 }

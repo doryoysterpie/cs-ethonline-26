@@ -5,13 +5,23 @@ import { redirect } from 'next/navigation';
 import { mergeIncidentsAction, splitIncidentAction } from '../../../../../server/dal/mutate.ts';
 import { assertActionRequest, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { readClosedObject, uuid } from '../../../../../server/input.ts';
-import { attempt, noticeCodeFor, withNotice } from '../../../../page-support.ts';
+import { attempt, noticeCodeFor, refusedCharacters, withNotice } from '../../../../page-support.ts';
+import type { NoticeCharacter } from '../../../../notices.ts';
 
-function back(runId: unknown, incidentId: unknown, code: string): never {
+function back(
+  runId: unknown,
+  incidentId: unknown,
+  code: string,
+  characters: readonly NoticeCharacter[] = [],
+): never {
   const run = typeof runId === 'string' ? runId : '';
   const incident = typeof incidentId === 'string' ? incidentId : '';
   redirect(
-    withNotice(`/incidents/${encodeURIComponent(run)}/${encodeURIComponent(incident)}`, code),
+    withNotice(
+      `/incidents/${encodeURIComponent(run)}/${encodeURIComponent(incident)}`,
+      code,
+      characters,
+    ),
   );
 }
 
@@ -44,7 +54,12 @@ export async function mergeAction(form: FormData): Promise<void> {
     });
     return result.outcome === 'recorded' ? 'recorded' : 'already_recorded';
   });
-  back(runId, incidentId, outcome.ok ? outcome.value : noticeCodeFor(outcome.error));
+  back(
+    runId,
+    incidentId,
+    outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
+    outcome.ok ? [] : refusedCharacters(outcome.error),
+  );
 }
 
 export async function splitAction(form: FormData): Promise<void> {
@@ -75,5 +90,10 @@ export async function splitAction(form: FormData): Promise<void> {
     });
     return result.outcome === 'recorded' ? 'recorded' : 'already_recorded';
   });
-  back(runId, incidentId, outcome.ok ? outcome.value : noticeCodeFor(outcome.error));
+  back(
+    runId,
+    incidentId,
+    outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
+    outcome.ok ? [] : refusedCharacters(outcome.error),
+  );
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { describeLocated, locateProhibitedText, prohibitedCodePoints } from '@cas/contracts';
+
 import { run } from '../cli.js';
 import { EXIT_CODES, isIngestionError } from '../editorial/errors.js';
 import { assertReviewNote, REVIEW_NOTE_MAX_LENGTH } from './note.js';
@@ -72,11 +74,29 @@ describe('the review note policy', () => {
         expect(isIngestionError(thrown), name).toBe(true);
         const error = thrown as { code: string; message: string };
         expect(error.code, name).toBe('note_invalid');
-        // The error names the condition; it never echoes the note.
-        expect(error.message, name).toBe('a review note must not contain a control character');
-        expect(error.message, name).not.toContain('line');
+        // The error names the first refused character by its escape, name and position
+        // (D50); it never echoes the note.
+        const first = locateProhibitedText(note, { oneLine: true })[0];
+        expect(first, name).toBeDefined();
+        expect(error.message, name).toBe(
+          `a review note must not contain ${describeLocated('note', first!)}`,
+        );
+        for (const word of ['break', 'trailing', 'leading']) {
+          expect(error.message, name).not.toContain(word);
+        }
         expect(error.message, name).not.toContain(value);
       }
+    }
+    // Every character the prohibited-text rule names is refused, the selectors are kept (CAS-012).
+    for (const code of prohibitedCodePoints()) {
+      expect(
+        () => assertReviewNote(`a${String.fromCodePoint(code)}b`),
+        String(code),
+      ).toThrowError();
+    }
+    for (const code of [0xfe0e, 0xfe0f]) {
+      const heart = `a${String.fromCodePoint(0x2764, code)}b`;
+      expect(assertReviewNote(heart)).toBe(heart);
     }
   });
 });

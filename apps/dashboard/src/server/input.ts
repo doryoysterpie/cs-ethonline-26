@@ -1,4 +1,6 @@
-import { validation, type DashboardError } from './errors.ts';
+import { locateProhibitedText } from '@cas/contracts';
+
+import { characterRefusal, validation, type DashboardError } from './errors.ts';
 
 /**
  * Closed input validation for every server action and route handler.
@@ -96,15 +98,12 @@ export function enumOf<T extends string>(value: unknown, values: readonly T[], f
   throw validation(`${field}_invalid`, `${field} must be one of the permitted values`);
 }
 
-const char = (code: number): string => String.fromCodePoint(code);
-const CONTROL = new RegExp(
-  `[${char(0x00)}-${char(0x1f)}${char(0x7f)}-${char(0x9f)}${char(0x2028)}${char(0x2029)}]`,
-  'u',
-);
-
 /**
- * A bounded string that carries no control character. The bound is in code
- * units, matching PostgreSQL's `length()` on the stored value.
+ * A bounded string on one line that carries nothing the prohibited-text rule
+ * names, and no tab, line feed or carriage return (D50, point 2: an invisible
+ * character in a title or a note makes two values that look alike and compare
+ * unequal). The refusal names each character and its column. The bound is in
+ * code units, matching PostgreSQL's `length()` on the stored value.
  */
 export function boundedText(
   value: unknown,
@@ -118,9 +117,8 @@ export function boundedText(
       `${field} must be between ${bounds.min} and ${bounds.max} characters`,
     );
   }
-  if (CONTROL.test(value)) {
-    throw validation(`${field}_control`, `${field} must not contain a control character`);
-  }
+  const refused = locateProhibitedText(value, { oneLine: true });
+  if (refused.length > 0) throw characterRefusal(`${field}_control`, field, refused);
   return value;
 }
 

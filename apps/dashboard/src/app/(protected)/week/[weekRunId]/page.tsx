@@ -12,7 +12,14 @@ import {
 } from '../../../../components/ui.tsx';
 import { csrfFor, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { weekTable } from '../../../../server/dal/read.ts';
-import { attempt, escalate, single, type SearchParams } from '../../../page-support.ts';
+import {
+  attempt,
+  escalate,
+  refusedCharacters,
+  type SearchParams,
+  single,
+} from '../../../page-support.ts';
+import { noticeCharactersParameter } from '../../../notices.ts';
 import { selectAction } from './actions.ts';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +44,14 @@ export default async function WeekTablePage({
       single(query.sort),
     ),
   );
-  if (!result.ok) return <Notice code={escalate(result.error)} />;
+  if (!result.ok) {
+    return (
+      <Notice
+        code={escalate(result.error)}
+        at={noticeCharactersParameter(refusedCharacters(result.error))}
+      />
+    );
+  }
   const view = result.value;
   const token = principal === null ? '' : csrfFor(principal);
   const href = (category: string, sort: string): string =>
@@ -48,7 +62,7 @@ export default async function WeekTablePage({
         Sift table for week <span className="mono">{view.week.id}</span>{' '}
         <Origin value={view.week.dataOrigin} />
       </h2>
-      <Notice code={single(query.notice)} />
+      <Notice code={single(query.notice)} at={single(query.at)} />
       <p className="small">
         Window <Instant value={view.week.windowStart} /> to <Instant value={view.week.windowEnd} />{' '}
         · publication cutoff <Instant value={view.week.publicationCutoffAt} /> · clustering run{' '}

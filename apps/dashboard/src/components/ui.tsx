@@ -1,9 +1,9 @@
 import Link from 'next/link';
 
-import type { DataOrigin } from '@cas/contracts';
+import { codePointName, escapeCodePoint, type DataOrigin } from '@cas/contracts';
 
 import { safeParts } from '../server/display.ts';
-import { isErrorNotice, noticeFor } from '../app/notices.ts';
+import { isErrorNotice, noticeCharacters, noticeFor } from '../app/notices.ts';
 
 /** The data origin, shown on every record the dashboard renders. */
 export function Origin({ value }: { readonly value: DataOrigin }) {
@@ -37,10 +37,32 @@ export function Text({
   );
 }
 
-export function Notice({ code }: { readonly code: unknown }) {
+/**
+ * A fixed notice, and, for one that names characters, each of them by its
+ * escape, name and position (D50): `\u{00AD} SOFT HYPHEN, line 4, column 17`.
+ */
+export function Notice({ code, at }: { readonly code: unknown; readonly at?: unknown }) {
   const message = noticeFor(code);
   if (message === null) return null;
-  return <p className={isErrorNotice(code) ? 'notice notice-error' : 'notice'}>{message}</p>;
+  const className = isErrorNotice(code) ? 'notice notice-error' : 'notice';
+  const characters = noticeCharacters(at);
+  if (characters.length === 0) return <p className={className}>{message}</p>;
+  return (
+    <div className={className}>
+      <p>{message}</p>
+      <ul className="notice-characters">
+        {characters.map((character, index) => {
+          const name = codePointName(character.codePoint);
+          return (
+            <li key={index}>
+              <span className="escaped">{escapeCodePoint(character.codePoint)}</span>
+              {name === null ? '' : ` ${name}`}, line {character.line}, column {character.column}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }
 
 export function Limitation({ children }: { readonly children: React.ReactNode }) {
