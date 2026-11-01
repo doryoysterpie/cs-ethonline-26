@@ -241,14 +241,12 @@ tests and 37 tool tests; `test:db` 349 (database 124, worker 119, dashboard 57, 
 
 ## 8. What the unit does not cover
 
-- **The MCP server's JSON fields** (put to the owner). D50 says that where a format escapes on
-  its own, as a JSON field in an MCP result does, the display escape is not applied before it.
-  The MCP server escapes quoted evidence first and then serialises the whole result with
-  `JSON.stringify`, as on `main` before this unit. `JSON.stringify` escapes only U+0000 to
-  U+001F, the quotation mark and the backslash. Applying no display escape before it would leave
-  the bidirectional controls, the zero-width characters and the C1 controls raw in the server's
-  output, which the Track D design forbids. The unit keeps the escape before serialisation, in
-  the one form, until the owner decides.
+- **The MCP server's JSON fields**, settled by the owner the same day (the D50 amendment). The
+  MCP server escapes quoted evidence before it serialises the result, as on `main` before this
+  unit: the display escape serves whoever reads the decoded string, JSON's escaping serves its
+  parser, and the two stack. A round trip through a JSON parser proves a client reads the
+  display-escaped text with nothing the rule names in it (`json-roundtrip.test.ts`, on the
+  follow-on `cas-012/json-roundtrip`).
 - **Other lists**, outside the nine and unchanged: `packages/sheets-intake/src/a1.ts`
   (`isUnrepresentable`, the controls a range address may not hold) and the source scan in
   `apps/dashboard/src/hygiene.test.ts`. The MCP server's test helper `hasRawControl` is on the

@@ -1906,7 +1906,8 @@ disabled on this model, so effort is the only control.
 ## D50 CAS-012: the save path, the refusals and one escape form
 
 - **Date:** 2026-11-01
-- **Status:** ACCEPTED; the two points the answers raised were settled by the owner the same day
+- **Status:** ACCEPTED; the two points the answers raised were settled by the owner the same day;
+  point 3 amended the same day (see the D50 amendment appended below)
 - **Decision:** The owner's answers of 1 November 2026 to the three questions of
   `docs/CAS-012-REPORT.md`, section 1.4:
   1. **The save path: refuse by class, strip the rest** (option (c)). When a draft, round-up or
@@ -1974,3 +1975,32 @@ disabled on this model, so effort is the only control.
   U+200C in a Persian password is refused.
 - **Decided by:** Project owner, 1 November 2026, in chat.
 - **Supersedes:** nothing; extends D49 to the nine lists it names.
+
+### D50 amendment, 2026-11-01: the display escape and a serialiser's escaping stack
+
+Not a new decision. Point 3's condition that "the serializer's escaping stands and the display
+escape is not applied before it" assumed a serialiser escapes the same set as the display escape.
+It does not: JSON escapes for its parser (the quotation mark, the backslash, U+0000 to U+001F)
+and nothing else, and leaves the bidirectional controls, the zero-width characters and the C1
+controls as they are. The owner's ruling of the same day, on the question CAS-012 raised
+(`docs/CAS-012-REPORT.md`, section 8):
+
+- **The two layers stack.** The display escape is applied to content before serialisation, for
+  whoever reads the decoded string; a serialiser's own escaping serves its parser and is neither
+  substituted for the display escape nor removed.
+- **The doubled backslash is required, not a cost.** JSON's `\u` takes exactly four hexadecimal
+  digits, so `\u{202E}` can never be a JSON escape and exists only as text; its backslash is
+  serialised as `\\`, the only form under which the result parses. A reader of the raw JSON who
+  sees it is seeing the serialiser work.
+- **Every string a client shows or hands to a model is escaped**, `structuredContent` included.
+  Identifiers, counts and enumerations carry no text and are never escaped.
+- **Proven by a round trip.** Evidence holding U+202E, U+200B, U+0085 and U+000A is serialised,
+  parsed by a JSON parser, and the decoded string equals the display-escaped text and holds no
+  character the rule names and no raw control
+  (`packages/mcp-server/src/json-roundtrip.test.ts`).
+- **Why not the alternatives.** Escaping only what JSON leaves raw would let the client's parser
+  restore JSON's `\n` and `\u0000` to real characters: one form plus raw controls in a one-line
+  field, the forging case point 2 closed. Escaping nothing inside JSON would remove the
+  protection on the one output that leaves the server for a model, the reader a
+  direction-changing character is aimed at.
+- **Decided by:** Project owner, 1 November 2026, in chat.
