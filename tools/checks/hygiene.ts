@@ -5,6 +5,8 @@ import {
   ftruncateSync,
   openSync,
   readFileSync,
+  realpathSync,
+  statSync,
   writeSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -192,9 +194,44 @@ export interface HygieneFix {
 }
 
 /**
- * Rewrites each tracked file that carries a default-ignorable code point. The
- * file is opened without following a link, refused unless it is a regular
- * file, and read, judged and rewritten through that one handle.
+ * Opens a tracked file only if the handle is that file inside the checkout
+ * (the review of pull request 57 at 030c8d6, F1). `O_NOFOLLOW` refuses a link
+ * in the last component only, so the check is made on the handle once it is
+ * open: the file is regular with one link, the path resolves to the
+ * repository's own real path plus the tracked path, with no link anywhere
+ * between, and the file at that path is the handle's (same device and inode).
+ * A swap before the open leaves the handle on another file, and one after it
+ * changes the resolved path; either way nothing is read or written.
+ */
+function openTracked(root: string, relative: string, flags: number): number {
+  const target = path.join(root, relative);
+  const handle = openSync(target, flags | constants.O_NOFOLLOW);
+  try {
+    const opened = fstatSync(handle);
+    const inside = path.join(realpathSync(root), relative);
+    const resolved = realpathSync(target);
+    const atPath = statSync(inside);
+    if (
+      !opened.isFile() ||
+      opened.nlink !== 1 ||
+      resolved !== inside ||
+      atPath.dev !== opened.dev ||
+      atPath.ino !== opened.ino
+    ) {
+      throw new Error(`hygiene fix refuses ${relative}: not a regular file of this checkout`);
+    }
+    return handle;
+  } catch (error) {
+    closeSync(handle);
+    throw error;
+  }
+}
+
+/**
+ * Rewrites each tracked file that carries a default-ignorable code point. Each
+ * file is opened through `openTracked`, read and judged through that handle,
+ * and only when there is something to remove reopened for writing, through
+ * `openTracked` again, and rewritten from what that handle holds.
  */
 export function fixHygiene(
   root: string,
@@ -204,10 +241,16 @@ export function fixHygiene(
   const fixed: HygieneFix[] = [];
   for (const entry of entries) {
     if (entry.mode !== '100644' && entry.mode !== '100755') continue;
-    if (fixFileHygiene(entry.path, readTracked(root, entry.path), options) === null) continue;
-    const handle = openSync(path.join(root, entry.path), constants.O_RDWR | constants.O_NOFOLLOW);
+    const reading = openTracked(root, entry.path, constants.O_RDONLY);
+    let candidate: boolean;
     try {
-      if (!fstatSync(handle).isFile()) continue;
+      candidate = fixFileHygiene(entry.path, readFileSync(reading), options) !== null;
+    } finally {
+      closeSync(reading);
+    }
+    if (!candidate) continue;
+    const handle = openTracked(root, entry.path, constants.O_RDWR);
+    try {
       const result = fixFileHygiene(entry.path, readFileSync(handle), options);
       if (result === null) continue;
       ftruncateSync(handle, 0);

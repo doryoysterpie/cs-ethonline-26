@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -207,6 +208,29 @@ describe('hygiene', () => {
     symlinkSync(path.join(outside, 'target.md'), path.join(root, 'docs/note.md'));
     expect(() => fixHygiene(root)).toThrow();
     expect(readFileSync(path.join(outside, 'target.md'), 'utf8')).toBe(hidden);
+  });
+
+  it('refuses to fix through a tracked file whose parent directory became a symbolic link, or a file linked from outside (review of pull request 57, F1)', () => {
+    const hidden = `outside${String.fromCodePoint(0x200b)}\n`;
+    for (const swap of ['parent', 'hard-link'] as const) {
+      const root = disposableRepository({ 'docs/note.md': hidden, 'kept.md': 'kept\n' });
+      const outside = mkdtempSync(path.join(os.tmpdir(), 'cas-check-outside-'));
+      temps.push(outside);
+      writeFileSync(path.join(outside, 'note.md'), hidden);
+      if (swap === 'parent') {
+        rmSync(path.join(root, 'docs'), { recursive: true });
+        symlinkSync(outside, path.join(root, 'docs'));
+      } else {
+        rmSync(path.join(root, 'docs/note.md'));
+        linkSync(path.join(outside, 'note.md'), path.join(root, 'docs/note.md'));
+      }
+      const before = readFileSync(path.join(outside, 'note.md'));
+      expect(() => fixHygiene(root)).toThrow(/^hygiene fix refuses docs\/note\.md:/u);
+      expect([swap, readFileSync(path.join(outside, 'note.md')).equals(before)]).toEqual([
+        swap,
+        true,
+      ]);
+    }
   });
 
   it('caps the findings from one flooding file', () => {
