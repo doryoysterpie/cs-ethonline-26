@@ -15,7 +15,13 @@ import {
 import { assertActionRequest, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { validation } from '../../../../server/errors.ts';
 import { readClosedObject } from '../../../../server/input.ts';
-import { attempt, noticeCodeFor, refusedCharacters, withNotice } from '../../../page-support.ts';
+import {
+  attempt,
+  noticeCodeFor,
+  NO_REFUSAL,
+  refusalOf,
+  withNotice,
+} from '../../../page-support.ts';
 
 const PAGE = '/admin/accounts';
 
@@ -36,7 +42,7 @@ async function guarded(
     withNotice(
       PAGE,
       outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
-      outcome.ok ? [] : refusedCharacters(outcome.error),
+      outcome.ok ? NO_REFUSAL : refusalOf(outcome.error),
     ),
   );
 }

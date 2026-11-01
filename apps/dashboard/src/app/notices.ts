@@ -99,12 +99,24 @@ export interface NoticeCharacter {
 }
 
 /**
- * At most this many refused characters travel in a redirect's query string;
- * the number of the rest travels as `more`, and the notice states it. A save's
- * removals never travel there: its notice names the revision, and the page
- * lists every removal from the record the revision keeps (migration 0024).
+ * At most this many refused characters travel in a redirect, the first in the
+ * order they stood; the exact number of the rest travels as `more`, and the
+ * notice states it (the D50 amendment of 1 November 2026). The bound is the
+ * redirect's size: the list rides in the URL, which a browser keeps in its
+ * history and every proxy and server writes to its request log, so it is
+ * kept to a few hundred bytes (`NOTICE_AT_LENGTH_MAX`), well inside any
+ * request-line limit. The complete list of a refused save is its audit event
+ * (migration 0025). A save's removals never travel in the URL: its notice
+ * names the revision, and the page lists every removal from the record the
+ * revision keeps (migration 0024).
  */
 export const NOTICE_CHARACTERS_MAX = 20;
+
+/** The longest entry, `10FFFF-9999999-9999999`: six hexadecimal digits and two seven-digit positions. */
+const NOTICE_ENTRY_LENGTH_MAX = 22;
+
+/** The longest `at` the cap allows, entries and commas: 459 characters. */
+export const NOTICE_AT_LENGTH_MAX = NOTICE_CHARACTERS_MAX * (NOTICE_ENTRY_LENGTH_MAX + 1) - 1;
 
 const ENTRY = /^([0-9A-F]{4,6})-([1-9][0-9]{0,6})-([1-9][0-9]{0,6})$/u;
 
@@ -126,7 +138,7 @@ export function noticeCharactersParameter(characters: readonly NoticeCharacter[]
 }
 
 export function noticeCharacters(at: unknown): NoticeCharacter[] {
-  if (typeof at !== 'string' || at.length === 0 || at.length > 400) return [];
+  if (typeof at !== 'string' || at.length === 0 || at.length > NOTICE_AT_LENGTH_MAX) return [];
   const out: NoticeCharacter[] = [];
   for (const entry of at.split(',').slice(0, NOTICE_CHARACTERS_MAX)) {
     const match = ENTRY.exec(entry);
@@ -155,6 +167,13 @@ export function noticeMore(more: unknown): number {
 /** The `revision` parameter of a save's notice, or `null`. */
 export function noticeRevision(revision: unknown): number | null {
   return typeof revision === 'string' && COUNT.test(revision) ? Number(revision) : null;
+}
+
+const FIELD = /^[a-z][A-Za-z]{0,31}$/u;
+
+/** The `field` parameter: the identifier of the field refused (`markdown`, `title`), or `null`. */
+export function noticeField(field: unknown): string | null {
+  return typeof field === 'string' && FIELD.test(field) ? field : null;
 }
 
 /** True for the two notices that list what a save removed. */

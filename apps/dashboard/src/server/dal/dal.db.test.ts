@@ -497,6 +497,47 @@ describe('data-access layer against PostgreSQL', () => {
     expect(after.generatedMarkdown).toContain('unpublished');
     expect(after.revisions).toHaveLength(1);
     expect(after.revisions[0]?.savedBy).toBe(principals.editor.username);
+
+    // A refused body: the redirect carries the first twenty, and the audit event is the complete
+    // record, the field and every code point in the order they stood, no position and no text
+    // (the D50 amendment of 1 November 2026; migration 0025).
+    const refusedCodePoints = Array.from({ length: 25 }, (_, i) => (i % 2 === 0 ? 0x202e : 0x0007));
+    const hostile = refusedCodePoints
+      .map((codePoint) => `Zq${String.fromCodePoint(codePoint)}`)
+      .join('');
+    let refused: unknown;
+    try {
+      await saveDraftRevision(runtime, principals.editor, {
+        evidenceRunId: seeded.evidenceRunId,
+        periodStart: PERIOD_START,
+        periodEnd: PERIOD_END,
+        expectedRevision: 1,
+        markdown: hostile,
+      });
+    } catch (error) {
+      refused = error;
+    }
+    expect(isDashboardError(refused) && [refused.code, refused.field]).toEqual([
+      'markdown_control',
+      'markdown',
+    ]);
+    const [event] = (await runtime.stores.audit.list(20)).filter(
+      (e) => e.kind === 'draft_revision_saved' && e.code === 'markdown_control',
+    );
+    expect(event).toMatchObject({
+      kind: 'draft_revision_saved',
+      outcome: 'failure',
+      code: 'markdown_control',
+      actorAccountId: principals.editor.accountId,
+      subjectId: seeded.evidenceRunId,
+      refused: { field: 'markdown', codePoints: refusedCodePoints },
+    });
+    expect(JSON.stringify(event)).not.toContain('Zq');
+    // A refusal with no characters records none.
+    const [conflict] = (await runtime.stores.audit.list(10)).filter(
+      (e) => e.kind === 'draft_revision_saved' && e.code === 'draft_revision_conflict',
+    );
+    expect(conflict?.refused).toBeNull();
   });
 
   it('left every machine record unchanged and audited every mutation without stored text', async () => {
@@ -1795,6 +1836,31 @@ describe('data-access layer against PostgreSQL', () => {
       );
       expect(isDashboardError(refused) ? refused.characters : null).toEqual([
         { codePoint: 0x202e, rule: 'bidi_control', line: 2, column: 6 },
+      ]);
+      // The refusal's audit event is its record in PostgreSQL: the field and the code point, no
+      // position and no text (the D50 amendment of 1 November 2026; migration 0025).
+      // Found by its code: two events in one millisecond have no defined order in the list.
+      const [refusal] = (await persistent.audit.list(20)).filter(
+        (event) => event.kind === 'roundup_edited' && event.code === 'markdown_control',
+      );
+      expect(refusal).toMatchObject({
+        kind: 'roundup_edited',
+        outcome: 'failure',
+        code: 'markdown_control',
+        refused: { field: 'markdown', codePoints: [0x202e] },
+      });
+      const row = await rt.database.withClient((client) =>
+        client.query<{
+          refused_field: string;
+          refused_count: number;
+          refused_code_points: number[];
+        }>(
+          `SELECT refused_field, refused_count, refused_code_points FROM audit_events WHERE id = $1`,
+          [refusal?.id],
+        ),
+      );
+      expect(row.rows).toEqual([
+        { refused_field: 'markdown', refused_count: 1, refused_code_points: [0x202e] },
       ]);
       // Every code point the strip removes, in one save: the stored body holds none of them, and
       // the revision keeps every removal, past the twenty a query string could carry, as numbers

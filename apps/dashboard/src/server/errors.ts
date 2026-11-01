@@ -30,18 +30,22 @@ export class DashboardError extends Error {
   readonly code: string;
   /** For a character refusal (D50): each refused character by code point and position, never the text. */
   readonly characters: readonly LocatedCodePoint[];
+  /** For a character refusal: the field refused, an identifier from the code (`markdown`), never a value. */
+  readonly field: string | null;
 
   constructor(
     kind: DashboardFailureKind,
     code: string,
     message: string,
     characters: readonly LocatedCodePoint[] = [],
+    field: string | null = null,
   ) {
     super(message);
     this.name = 'DashboardError';
     this.kind = kind;
     this.code = code;
     this.characters = characters;
+    this.field = field;
   }
 }
 
@@ -118,7 +122,7 @@ export function characterRefusal(
 ): DashboardError {
   const first = characters[0];
   const named = first === undefined ? where : describeLocated(where, first);
-  return new DashboardError('validation', code, `refused character at ${named}`, characters);
+  return new DashboardError('validation', code, `refused character at ${named}`, characters, where);
 }
 
 export function forbidden(code: string): DashboardError {

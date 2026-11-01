@@ -5,7 +5,13 @@ import { redirect } from 'next/navigation';
 import { decideEvidence } from '../../../../server/dal/mutate.ts';
 import { assertActionRequest, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { readClosedObject } from '../../../../server/input.ts';
-import { attempt, noticeCodeFor, refusedCharacters, withNotice } from '../../../page-support.ts';
+import {
+  attempt,
+  noticeCodeFor,
+  NO_REFUSAL,
+  refusalOf,
+  withNotice,
+} from '../../../page-support.ts';
 
 export async function decideAction(form: FormData): Promise<void> {
   let runId: unknown = null;
@@ -40,7 +46,7 @@ export async function decideAction(form: FormData): Promise<void> {
     withNotice(
       `/evidence/${encodeURIComponent(run)}`,
       outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
-      outcome.ok ? [] : refusedCharacters(outcome.error),
+      outcome.ok ? NO_REFUSAL : refusalOf(outcome.error),
     ),
   );
 }

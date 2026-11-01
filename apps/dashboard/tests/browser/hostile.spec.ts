@@ -102,7 +102,9 @@ test.describe('hostile stored content', () => {
     await expect(
       page.getByText('Not saved. This text carries a character that is refused here:'),
     ).toBeVisible();
-    await expect(page.getByText('RIGHT-TO-LEFT OVERRIDE, line 1, column 6')).toBeVisible();
+    await expect(
+      page.getByText('RIGHT-TO-LEFT OVERRIDE, field markdown, line 1, column 6'),
+    ).toBeVisible();
     await expect(page.locator('.notice .escaped')).toHaveText('\\u{202E}');
     await expect(page.getByRole('button', { name: 'Save revision 1' })).toBeVisible();
   });
@@ -121,7 +123,7 @@ test.describe('hostile stored content', () => {
     await expect(
       page.getByText('Saved. These invisible characters were removed before saving:'),
     ).toBeVisible();
-    await expect(page.getByText('SOFT HYPHEN, line 1, column 5')).toBeVisible();
+    await expect(page.getByText('SOFT HYPHEN, field markdown, line 1, column 5')).toBeVisible();
     await expect(page.getByLabel('Markdown')).toHaveValue('# cooperate');
     expect(await page.getByRole('button', { name: /^Save revision/u }).textContent()).not.toBe(
       before,
@@ -143,13 +145,52 @@ test.describe('hostile stored content', () => {
     expect(new URL(page.url()).searchParams.get('at')).toBeNull();
     expect(new URL(page.url()).searchParams.get('revision')).toMatch(/^[1-9][0-9]*$/u);
     await expect(page.locator('.notice .notice-characters li')).toHaveCount(25);
-    await expect(page.getByText(/ZERO WIDTH SPACE, line 1, column 5$/u)).toBeVisible();
+    await expect(
+      page.getByText(/ZERO WIDTH SPACE, field markdown, line 1, column 5$/u),
+    ).toBeVisible();
     // The first twenty show; the other five sit behind a disclosure, the last at column 116.
     await expect(page.locator('.notice details li')).toHaveCount(5);
     await page.getByText('5 more').click();
-    await expect(page.getByText('ZERO WIDTH SPACE, line 1, column 116')).toBeVisible();
+    await expect(
+      page.getByText('ZERO WIDTH SPACE, field markdown, line 1, column 116'),
+    ).toBeVisible();
     await expect(page.getByLabel('Markdown')).toHaveValue(
       `# ${words.join(' ').replaceAll(String.fromCodePoint(0x200b), '')}`,
     );
+  });
+
+  test('a refusal of more than twenty characters names the first twenty, counts the rest exactly, and says to copy again (the D50 amendment)', async ({
+    page,
+  }) => {
+    const { accounts, seeded } = await credentials();
+    await signIn(page, accounts.editor.email);
+    const url = `/drafts/${seeded.evidenceRunId}?start=2026-09-03T00:00:00Z&end=2026-09-10T00:00:00Z`;
+    await page.goto(url);
+    const before = await page.getByRole('button', { name: /^Save revision/u }).textContent();
+    const words = Array.from({ length: 25 }, (_, i) => `w${i}${String.fromCodePoint(0x202e)}`);
+    await page.getByLabel('Markdown').fill(`# ${words.join(' ')}`);
+    await page.getByRole('button', { name: /^Save revision/u }).click();
+    await page.waitForURL('**notice=invalid_character**');
+    const query = new URL(page.url()).searchParams;
+    expect([query.get('field'), query.get('more')]).toEqual(['markdown', '5']);
+    expect(query.get('at')?.split(',')).toHaveLength(20);
+    expect(page.url()).not.toContain('w0');
+    await expect(page.locator('.notice .notice-characters li')).toHaveCount(20);
+    // The first twenty in the order they stood: the first at column 5, the twentieth at column 91.
+    await expect(page.locator('.notice .notice-characters li').first()).toHaveText(
+      '\\u{202E} RIGHT-TO-LEFT OVERRIDE, field markdown, line 1, column 5',
+    );
+    await expect(page.locator('.notice .notice-characters li').last()).toHaveText(
+      '\\u{202E} RIGHT-TO-LEFT OVERRIDE, field markdown, line 1, column 91',
+    );
+    await expect(
+      page.getByText('And 5 more, named when the text is submitted again without the ones above.'),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        'More than 20 refused characters usually means a broken copy; copying the text again from its source is the expected fix.',
+      ),
+    ).toBeVisible();
+    expect(await page.getByRole('button', { name: /^Save revision/u }).textContent()).toBe(before);
   });
 });

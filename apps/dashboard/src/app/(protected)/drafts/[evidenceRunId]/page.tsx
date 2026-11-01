@@ -40,6 +40,7 @@ export default async function DraftPage({
         code={single(query.notice)}
         at={single(query.at)}
         more={single(query.more)}
+        field={single(query.field)}
         removed={removedAt(view.revisions, single(query.revision))}
       />
       <p className="small">

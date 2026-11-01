@@ -209,6 +209,7 @@ export {
   touchSession,
   type AccountRow,
   type AuditEventRow,
+  type RefusedCharacters,
   type DraftRevisionRow,
   type OtpChallengeRow,
   type QueueDecisionRow,

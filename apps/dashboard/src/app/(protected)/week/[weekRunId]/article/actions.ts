@@ -9,7 +9,13 @@ import {
 } from '../../../../../server/dal/mutate.ts';
 import { assertActionRequest, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { readClosedObject } from '../../../../../server/input.ts';
-import { attempt, noticeCodeFor, refusedCharacters, withNotice } from '../../../../page-support.ts';
+import {
+  attempt,
+  noticeCodeFor,
+  NO_REFUSAL,
+  refusalOf,
+  withNotice,
+} from '../../../../page-support.ts';
 
 function target(weekRunId: unknown, category: unknown): string {
   const week = typeof weekRunId === 'string' ? weekRunId : '';
@@ -101,7 +107,7 @@ export async function saveArticleAction(form: FormData): Promise<void> {
     withNotice(
       target(weekRunId, category),
       outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
-      outcome.ok ? [] : refusedCharacters(outcome.error),
+      outcome.ok ? NO_REFUSAL : refusalOf(outcome.error),
       outcome.ok ? cleanedRevision : null,
     ),
   );

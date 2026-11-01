@@ -38,7 +38,12 @@ export default async function IncidentDetailPage({
         Incident <span className="mono">{view.incident.id}</span>{' '}
         <Origin value={view.incident.dataOrigin} />
       </h2>
-      <Notice code={single(query.notice)} at={single(query.at)} more={single(query.more)} />
+      <Notice
+        code={single(query.notice)}
+        at={single(query.at)}
+        more={single(query.more)}
+        field={single(query.field)}
+      />
       <p className="small">
         <Link href={`/incidents/${view.run.id}`}>Clustering run {view.run.id.slice(0, 8)}</Link> ·{' '}
         {view.incident.kind} · {view.incident.memberCount} members · reason codes{' '}

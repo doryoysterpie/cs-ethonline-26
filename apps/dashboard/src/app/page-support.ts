@@ -80,23 +80,39 @@ export function single(value: string | string[] | undefined): string | undefined
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** The characters a refusal names, for its notice (D50); empty for any other failure. */
-export function refusedCharacters(error: unknown): readonly NoticeCharacter[] {
-  return isDashboardError(error) ? error.characters : [];
+/** A refusal's field and characters, for its notice (D50); empty for any other failure. */
+export interface Refusal {
+  readonly field: string | null;
+  readonly characters: readonly NoticeCharacter[];
+}
+
+export const NO_REFUSAL: Refusal = { field: null, characters: [] };
+
+export function refusalOf(error: unknown): Refusal {
+  return isDashboardError(error)
+    ? { field: error.field, characters: error.characters }
+    : NO_REFUSAL;
 }
 
 /**
- * A redirect target with its notice. A refusal's characters travel as `at`,
- * the first `NOTICE_CHARACTERS_MAX` of them, with the number of the rest as
- * `more`; a save that removed characters names its `revision`, whose record
- * the page lists in full (D50, point 1; migration 0024).
+ * A redirect target with its notice. A refusal's field travels as `field` and
+ * its characters as `at`, the first `NOTICE_CHARACTERS_MAX` in the order they
+ * stood, with the exact number of the rest as `more`; never a character of the
+ * refused text. A save that removed characters names its `revision`, whose
+ * record the page lists in full (D50, point 1, and its amendment; migration
+ * 0024).
  */
 export function withNotice(
   path: string,
   code: string,
-  characters: readonly NoticeCharacter[] = [],
+  refusal: Refusal = NO_REFUSAL,
   revision: number | null = null,
 ): string {
+  const { characters } = refusal;
+  const field =
+    characters.length > 0 && refusal.field !== null
+      ? `&field=${encodeURIComponent(refusal.field)}`
+      : '';
   const at =
     characters.length > 0 ? `&at=${encodeURIComponent(noticeCharactersParameter(characters))}` : '';
   const more =
@@ -104,7 +120,7 @@ export function withNotice(
       ? `&more=${characters.length - NOTICE_CHARACTERS_MAX}`
       : '';
   const saved = revision === null ? '' : `&revision=${revision}`;
-  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(code)}${at}${more}${saved}`;
+  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(code)}${field}${at}${more}${saved}`;
 }
 
 /** The removal record of the revision a save's notice names, or none. */

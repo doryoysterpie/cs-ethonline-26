@@ -345,6 +345,16 @@ export interface DraftEditInput {
   readonly markdown: unknown;
 }
 
+/**
+ * A refused save's record for its audit event (the D50 amendment of 1 November 2026, migration
+ * 0025): the field and every refused code point, in the order they stood. The event is the
+ * record, complete; the redirect is the notice, bounded. No position and no text.
+ */
+function refusedRecord(error: DashboardError): NonNullable<AuditEvent['refused']> | null {
+  if (error.field === null || error.characters.length === 0) return null;
+  return { field: error.field, codePoints: error.characters.map((located) => located.codePoint) };
+}
+
 /** The record a revision keeps of what its save removed: code points and positions only. */
 function removalRecord(removed: readonly LocatedCodePoint[]): readonly RemovedCharacter[] {
   return removed.map(({ codePoint, line, column }) => ({ codePoint, line, column }));
@@ -363,6 +373,35 @@ export interface SavedRevision {
  * (revision 0) is never stored and never changes.
  */
 export async function saveDraftRevision(
+  runtime: Runtime,
+  who: Principal | null,
+  input: DraftEditInput,
+): Promise<SavedRevision> {
+  try {
+    return await saveDraftRevisionUnaudited(runtime, who, input);
+  } catch (error) {
+    // As for the round-up: every refusal with a known actor is audited once, with its fixed
+    // code; a refused body's event records its characters (migration 0025).
+    if (who !== null && isDashboardError(error) && error.kind !== 'unavailable') {
+      await audit(runtime, {
+        kind: 'draft_revision_saved',
+        outcome: 'failure',
+        code: error.code,
+        actorAccountId: who.accountId,
+        subjectAccountId: null,
+        sessionId: who.sessionId,
+        subjectId:
+          typeof input.evidenceRunId === 'string' && UUID_SHAPE.test(input.evidenceRunId)
+            ? input.evidenceRunId
+            : null,
+        refused: refusedRecord(error),
+      });
+    }
+    throw error;
+  }
+}
+
+async function saveDraftRevisionUnaudited(
   runtime: Runtime,
   who: Principal | null,
   input: DraftEditInput,
@@ -1021,6 +1060,7 @@ export async function generateRoundup(
           typeof input.weekRunId === 'string' && UUID_SHAPE.test(input.weekRunId)
             ? input.weekRunId
             : null,
+        refused: refusedRecord(error),
       });
     }
     throw error;
@@ -1370,6 +1410,7 @@ export async function saveRoundupRevision(
           typeof input.weekRunId === 'string' && UUID_SHAPE.test(input.weekRunId)
             ? input.weekRunId
             : null,
+        refused: refusedRecord(error),
       });
     }
     throw error;
@@ -1530,6 +1571,7 @@ async function auditArticleRefusal(
       subjectAccountId: null,
       sessionId: who.sessionId,
       subjectId: typeof weekRunId === 'string' && UUID_SHAPE.test(weekRunId) ? weekRunId : null,
+      refused: refusedRecord(error),
     });
   }
 }

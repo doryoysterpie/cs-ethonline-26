@@ -6,11 +6,13 @@ import {
   isErrorNotice,
   noticeCharacters,
   noticeCharactersParameter,
+  NOTICE_AT_LENGTH_MAX,
+  noticeField,
   noticeFor,
   noticeMore,
   noticeRevision,
 } from './notices.ts';
-import { removedAt, withNotice } from './page-support.ts';
+import { NO_REFUSAL, removedAt, withNotice } from './page-support.ts';
 
 describe('notices', () => {
   it('maps only fixed codes to fixed sentences', () => {
@@ -64,15 +66,21 @@ describe('notices', () => {
       column: i + 1,
     }));
     const refused = new URL(
-      withNotice('/week/x?category=c', 'invalid_character', many),
+      withNotice('/week/x?category=c', 'invalid_character', {
+        field: 'markdown',
+        characters: many,
+      }),
       'http://h',
     );
     expect(noticeCharacters(refused.searchParams.get('at'))).toHaveLength(NOTICE_CHARACTERS_MAX);
     expect(noticeMore(refused.searchParams.get('more'))).toBe(7);
     expect(refused.searchParams.get('category')).toBe('c');
-    const few = new URL(withNotice('/x', 'invalid_character', many.slice(0, 3)), 'http://h');
+    const few = new URL(
+      withNotice('/x', 'invalid_character', { field: null, characters: many.slice(0, 3) }),
+      'http://h',
+    );
     expect(few.searchParams.get('more')).toBeNull();
-    const saved = new URL(withNotice('/x', 'saved_cleaned', [], 3), 'http://h');
+    const saved = new URL(withNotice('/x', 'saved_cleaned', NO_REFUSAL, 3), 'http://h');
     expect([
       saved.searchParams.get('at'),
       noticeRevision(saved.searchParams.get('revision')),
@@ -91,5 +99,36 @@ describe('notices', () => {
     expect(removedAt(revisions, '9')).toEqual([]);
     expect(removedAt(revisions, 'three')).toEqual([]);
     expect(removedAt(revisions, undefined)).toEqual([]);
+  });
+
+  it('carries the first twenty in document order, the exact rest, the field, and nothing of the text (the D50 amendment)', () => {
+    // Twenty entries of the longest form fit the bound computed from the cap.
+    const longest = Array.from({ length: 25 }, (_, i) => ({
+      // The two six-digit code points the rule names, U+10FFFE and U+10FFFF, both noncharacters.
+      codePoint: i % 2 === 0 ? 0x10ffff : 0x10fffe,
+      line: 9_999_999,
+      column: 9_999_999 - i,
+    }));
+    const url = new URL(
+      withNotice('/drafts/r', 'invalid_character', { field: 'markdown', characters: longest }),
+      'http://h',
+    );
+    const at = url.searchParams.get('at') ?? '';
+    expect(at.length).toBe(NOTICE_AT_LENGTH_MAX);
+    expect(noticeCharacters(at)).toEqual(longest.slice(0, NOTICE_CHARACTERS_MAX));
+    expect(noticeMore(url.searchParams.get('more'))).toBe(5);
+    expect(noticeField(url.searchParams.get('field'))).toBe('markdown');
+    expect(noticeCharacters(`${at},0041-1-1`)).toEqual([]);
+    // The query string holds code points, positions, a field identifier and counts only.
+    expect([...url.searchParams.keys()].sort()).toEqual(['at', 'field', 'more', 'notice']);
+    for (const hostile of ['', 'Markdown', 'mark down', '<b>', 'x'.repeat(33), 7, undefined]) {
+      expect([hostile, noticeField(hostile)]).toEqual([hostile, null]);
+    }
+    // No refused characters: no field travels.
+    const plain = new URL(
+      withNotice('/x', 'invalid', { field: 'title', characters: [] }),
+      'http://h',
+    );
+    expect(plain.searchParams.get('field')).toBeNull();
   });
 });

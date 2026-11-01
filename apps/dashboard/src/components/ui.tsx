@@ -9,6 +9,7 @@ import {
   isErrorNotice,
   noticeCharacters,
   noticeFor,
+  noticeField,
   noticeMore,
   type NoticeCharacter,
 } from '../app/notices.ts';
@@ -45,37 +46,48 @@ export function Text({
   );
 }
 
-/** One named character: `\u{00AD} SOFT HYPHEN, line 4, column 17`. */
-function NamedCharacter({ character }: { readonly character: NoticeCharacter }) {
+/** One named character: `\u{00AD} SOFT HYPHEN, field markdown, line 4, column 17`. */
+function NamedCharacter({
+  character,
+  field,
+}: {
+  readonly character: NoticeCharacter;
+  readonly field: string | null;
+}) {
   const name = codePointName(character.codePoint);
   return (
     <li>
       <span className="escaped">{escapeCodePoint(character.codePoint)}</span>
-      {name === null ? '' : ` ${name}`}, line {character.line}, column {character.column}
+      {name === null ? '' : ` ${name}`}
+      {field === null ? '' : `, field ${field}`}, line {character.line}, column {character.column}
     </li>
   );
 }
 
 /**
  * A fixed notice, and, for one that names characters, each of them by its
- * escape, name and position (D50): `\u{00AD} SOFT HYPHEN, line 4, column 17`.
- * A save's notice lists every character the save removed, from the record its
- * revision keeps (`removed`), past the first twenty behind a disclosure; with
- * no record it says only that the text was saved. A refusal lists what its
- * redirect carried (`at`), the first twenty, and states how many more there
- * were (`more`), or, on a page that holds the refusal itself, all of them
- * (`characters`).
+ * escape, name and position, never a character of the text (D50 and its
+ * amendment of 1 November 2026): `\u{00AD} SOFT HYPHEN, field markdown, line 4,
+ * column 17`. A save's notice lists every character the save removed from its
+ * body, from the record its revision keeps (`removed`), past the first twenty
+ * behind a disclosure; with no record it says only that the text was saved. A
+ * refusal lists what its redirect carried (`field`, `at`), the first twenty in
+ * the order they stood, and states exactly how many more there were (`more`),
+ * or, on a page that holds the refusal itself, all of them (`characters`).
+ * Past the cap, a refusal adds that a broken copy is the likely cause.
  */
 export function Notice({
   code,
   at,
   more,
+  field,
   characters,
   removed,
 }: {
   readonly code: unknown;
   readonly at?: unknown;
   readonly more?: unknown;
+  readonly field?: unknown;
   readonly characters?: readonly NoticeCharacter[];
   readonly removed?: readonly NoticeCharacter[];
 }) {
@@ -87,15 +99,18 @@ export function Notice({
   if (message === null) return null;
   const className = isErrorNotice(shown) ? 'notice notice-error' : 'notice';
   if (listed.length === 0) return <p className={className}>{message}</p>;
+  // A save's removals are always from its body.
+  const named = cleaned ? 'markdown' : noticeField(field);
   const first = listed.slice(0, NOTICE_CHARACTERS_MAX);
   const rest = listed.slice(NOTICE_CHARACTERS_MAX);
   const unlisted = !cleaned && characters === undefined ? noticeMore(more) : 0;
+  const overflow = !cleaned && (unlisted > 0 || rest.length > 0);
   return (
     <div className={className}>
       <p>{message}</p>
       <ul className="notice-characters">
         {first.map((character, index) => (
-          <NamedCharacter key={index} character={character} />
+          <NamedCharacter key={index} character={character} field={named} />
         ))}
       </ul>
       {rest.length > 0 ? (
@@ -103,13 +118,19 @@ export function Notice({
           <summary>{rest.length} more</summary>
           <ul className="notice-characters">
             {rest.map((character, index) => (
-              <NamedCharacter key={index} character={character} />
+              <NamedCharacter key={index} character={character} field={named} />
             ))}
           </ul>
         </details>
       ) : null}
       {unlisted > 0 ? (
         <p>And {unlisted} more, named when the text is submitted again without the ones above.</p>
+      ) : null}
+      {overflow ? (
+        <p>
+          More than {NOTICE_CHARACTERS_MAX} refused characters usually means a broken copy; copying
+          the text again from its source is the expected fix.
+        </p>
       ) : null}
     </div>
   );

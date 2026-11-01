@@ -112,7 +112,7 @@ describe('migration 0024: each revision keeps every character its save removed (
       await runMigrations(isolated.db, { directory: through23.directory });
       const { weekRunId, owner } = await seedWeek(isolated.db);
       const applied = await runMigrations(isolated.db);
-      expect(applied.applied).toEqual(['0024_revision_removed_characters.sql']);
+      expect(applied.applied[0]).toBe('0024_revision_removed_characters.sql');
       const before = await isolated.db.withClient((c) =>
         listRoundupRevisions(c, weekRunId, 'cyberattack'),
       );
