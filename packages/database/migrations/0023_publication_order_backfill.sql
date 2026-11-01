@@ -11,23 +11,42 @@
 -- Records with one `created_at` are ordered by `id`, exactly as the pre-0022
 -- reader broke that tie (`ORDER BY created_at DESC, id DESC`).
 --
--- Which records 0022 numbered: those written before it ran, that is with a
--- `created_at` earlier than its `applied_at` in `schema_migrations`. Every
--- record up to the greatest `seq` among them is renumbered, so a record whose
--- write waited on 0022's lock is ordered with them by the same rule. Records
--- written after that keep their numbers and their order. The renumbering
--- reuses the same set of numbers, so the identity sequence and every later
--- record are untouched. The append-only guard of migration 0017 is set aside
--- for the two updates and restored before the transaction ends; the table is
--- locked for the whole migration, so no record is written meanwhile.
+-- Which records 0022 numbered is read from the database's own write history,
+-- never from `created_at` (the re-review of pull request 55 at 2ff9a50, F1:
+-- the application writes `created_at`, so an instant cannot say which records
+-- existed when 0022 ran). Adding an identity column rewrites the table, and
+-- the rewrite stamps every record it numbers with the rewriting transaction's
+-- id (`xmin`); the migration runner records each migration in that same
+-- transaction, so the `schema_migrations` row of version 22 carries the same
+-- id. The records 0022 numbered are exactly those whose `xmin` is that id,
+-- whatever instant they carry and whenever 0022 ran, in this deploy or an
+-- earlier one. 0022 numbers them in one pass from a new sequence, so they hold
+-- exactly 1 to N, the cutoff; every record written after 0022 holds a greater
+-- number and keeps it. Freezing keeps the raw `xmin`, and a physical backup
+-- keeps it; a logical dump and restore does not, and leaves every row of
+-- `schema_migrations` with one transaction id.
+--
+-- The migration refuses, with nothing changed, unless the evidence holds:
+-- versions 21 and 22 were recorded by different transactions, and the records
+-- carrying 0022's id are exactly those numbered 1 to N. Otherwise it cannot
+-- tell which records 0022 numbered, and guessing could make an older or an
+-- unpublished revision current. Within 1 to N the records take the pre-0022
+-- readers' order, above. The renumbering reuses the same numbers, so the
+-- identity sequence and every later record are untouched. The append-only
+-- guard of migration 0017 is set aside for the two updates and restored before
+-- the transaction ends; the table is locked for the whole migration, so no
+-- record is written meanwhile.
 --
 -- Migrations 0001 to 0022 are unchanged.
 
 DO $migration$
 DECLARE
   target text := pg_catalog.current_schema();
-  boundary timestamptz;
+  numbering xid;
+  previous xid;
+  numbered bigint;
   last_numbered bigint;
+  within bigint;
 BEGIN
   IF target IS NULL OR target = '' THEN
     RAISE EXCEPTION 'migration 0023 has no target schema' USING ERRCODE = 'raise_exception';
@@ -44,17 +63,31 @@ BEGIN
   EXECUTE pg_catalog.format(
     'LOCK TABLE %1$I.output_publications IN ACCESS EXCLUSIVE MODE', target);
   EXECUTE pg_catalog.format(
-    'SELECT applied_at FROM %1$I.schema_migrations WHERE version = 22', target)
-    INTO boundary;
-  IF boundary IS NULL THEN
+    'SELECT xmin FROM %1$I.schema_migrations WHERE version = 22', target)
+    INTO numbering;
+  IF numbering IS NULL THEN
     RAISE EXCEPTION 'migration 0023 needs migration 0022 applied first'
       USING ERRCODE = 'raise_exception';
   END IF;
   EXECUTE pg_catalog.format(
-    'SELECT max(seq) FROM %1$I.output_publications WHERE created_at < $1', target)
-    INTO last_numbered USING boundary;
-  IF last_numbered IS NULL THEN
+    'SELECT xmin FROM %1$I.schema_migrations WHERE version = 21', target)
+    INTO previous;
+  IF previous IS NULL OR previous = numbering THEN
+    RAISE EXCEPTION 'migration 0023 cannot tell which publication records 0022 numbered: the migration history was rewritten since 0022 ran'
+      USING ERRCODE = 'raise_exception';
+  END IF;
+  EXECUTE pg_catalog.format(
+    'SELECT count(*), max(seq) FROM %1$I.output_publications WHERE xmin = $1', target)
+    INTO numbered, last_numbered USING numbering;
+  IF numbered = 0 THEN
     RETURN;
+  END IF;
+  EXECUTE pg_catalog.format(
+    'SELECT count(*) FROM %1$I.output_publications WHERE seq <= $1', target)
+    INTO within USING numbered;
+  IF last_numbered <> numbered OR within <> numbered THEN
+    RAISE EXCEPTION 'migration 0023 cannot tell which publication records 0022 numbered: the records carrying its transaction are not the numbers 1 to %', numbered
+      USING ERRCODE = 'raise_exception';
   END IF;
 
   EXECUTE pg_catalog.format(
