@@ -206,7 +206,9 @@ describe('hygiene', () => {
     writeFileSync(path.join(outside, 'target.md'), hidden);
     rmSync(path.join(root, 'docs/note.md'));
     symlinkSync(path.join(outside, 'target.md'), path.join(root, 'docs/note.md'));
-    expect(() => fixHygiene(root)).toThrow();
+    expect(() => fixHygiene(root)).toThrow(
+      new Error('hygiene fix refuses docs/note.md: not a regular file of this checkout'),
+    );
     expect(readFileSync(path.join(outside, 'target.md'), 'utf8')).toBe(hidden);
   });
 

@@ -1,11 +1,14 @@
+import { randomBytes } from 'node:crypto';
 import {
   closeSync,
   constants,
+  fchmodSync,
   fstatSync,
-  ftruncateSync,
   openSync,
   readFileSync,
   realpathSync,
+  renameSync,
+  rmSync,
   statSync,
   writeSync,
 } from 'node:fs';
@@ -193,45 +196,98 @@ export interface HygieneFix {
   readonly removed: number;
 }
 
+function refusal(relative: string): Error {
+  return new Error(`hygiene fix refuses ${relative}: not a regular file of this checkout`);
+}
+
+/** The errors a link, a swapped directory or a vanished file raise on the way to a refusal. */
+function refusedBy(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'ELOOP' || code === 'ENOTDIR' || code === 'ENOENT';
+}
+
 /**
- * Opens a tracked file only if the handle is that file inside the checkout
- * (the review of pull request 57 at 030c8d6, F1). `O_NOFOLLOW` refuses a link
- * in the last component only, so the check is made on the handle once it is
- * open: the file is regular with one link, the path resolves to the
- * repository's own real path plus the tracked path, with no link anywhere
- * between, and the file at that path is the handle's (same device and inode).
- * A swap before the open leaves the handle on another file, and one after it
- * changes the resolved path; either way nothing is read or written.
+ * True when `relative` names, inside the checkout, the regular file the handle
+ * holds: the path resolves to the repository's real path plus `relative`, so
+ * no component is a link, and the file there has the handle's device and inode.
  */
-function openTracked(root: string, relative: string, flags: number): number {
-  const target = path.join(root, relative);
-  const handle = openSync(target, flags | constants.O_NOFOLLOW);
+function holdsTracked(root: string, relative: string, handle: number): boolean {
+  const opened = fstatSync(handle);
+  const inside = path.join(realpathSync(root), relative);
+  if (!opened.isFile() || realpathSync(path.join(root, relative)) !== inside) return false;
+  const atPath = statSync(inside);
+  return atPath.dev === opened.dev && atPath.ino === opened.ino;
+}
+
+/**
+ * Opens a tracked file for reading only if the handle is that file inside the
+ * checkout, with one link (the reviews of pull request 57 at 030c8d6 and
+ * 7ab3697). `O_NOFOLLOW` refuses a link in the last component; the rest is
+ * checked on the open handle. Every refusal, a native one included, is the
+ * same message.
+ */
+function openTracked(root: string, relative: string): number {
+  let handle: number;
   try {
-    const opened = fstatSync(handle);
-    const inside = path.join(realpathSync(root), relative);
-    const resolved = realpathSync(target);
-    const atPath = statSync(inside);
-    if (
-      !opened.isFile() ||
-      opened.nlink !== 1 ||
-      resolved !== inside ||
-      atPath.dev !== opened.dev ||
-      atPath.ino !== opened.ino
-    ) {
-      throw new Error(`hygiene fix refuses ${relative}: not a regular file of this checkout`);
+    handle = openSync(path.join(root, relative), constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    throw refusedBy(error) ? refusal(relative) : error;
+  }
+  try {
+    if (fstatSync(handle).nlink !== 1 || !holdsTracked(root, relative, handle)) {
+      throw refusal(relative);
     }
     return handle;
   } catch (error) {
     closeSync(handle);
-    throw error;
+    throw refusedBy(error) ? refusal(relative) : error;
+  }
+}
+
+/**
+ * Replaces a tracked file with corrected bytes without writing to the file
+ * itself: the bytes go into a new file created beside it, with its mode, and
+ * a rename puts the new file in its place. Whatever links the original has,
+ * or gains at any moment, keep the original bytes. Both files are checked to
+ * be where the checkout says just before the rename. Another process
+ * swapping a directory of the checkout between that check and the rename is
+ * the one case this cannot exclude through Node's path-based calls; a change
+ * to the checkout while the command runs is outside its threat model.
+ */
+function replaceTracked(root: string, relative: string, reading: number, bytes: Uint8Array): void {
+  const name = `.${path.posix.basename(relative)}.hygiene-fix-${randomBytes(8).toString('hex')}`;
+  const besideRelative = path.posix.join(path.posix.dirname(relative), name);
+  const beside = path.join(root, besideRelative);
+  const mode = fstatSync(reading).mode & 0o777;
+  const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
+  let written: number;
+  try {
+    written = openSync(beside, flags, mode);
+  } catch (error) {
+    throw refusedBy(error) ? refusal(relative) : error;
+  }
+  let renamed = false;
+  try {
+    writeSync(written, bytes, 0, bytes.length, 0);
+    fchmodSync(written, mode);
+    if (!holdsTracked(root, besideRelative, written) || !holdsTracked(root, relative, reading)) {
+      throw refusal(relative);
+    }
+    renameSync(beside, path.join(root, relative));
+    renamed = true;
+  } catch (error) {
+    throw refusedBy(error) ? refusal(relative) : error;
+  } finally {
+    closeSync(written);
+    if (!renamed) rmSync(beside, { force: true });
   }
 }
 
 /**
  * Rewrites each tracked file that carries a default-ignorable code point. Each
  * file is opened through `openTracked`, read and judged through that handle,
- * and only when there is something to remove reopened for writing, through
- * `openTracked` again, and rewritten from what that handle holds.
+ * and, when there is something to remove, replaced through `replaceTracked`:
+ * no existing file is ever written.
  */
 export function fixHygiene(
   root: string,
@@ -241,23 +297,14 @@ export function fixHygiene(
   const fixed: HygieneFix[] = [];
   for (const entry of entries) {
     if (entry.mode !== '100644' && entry.mode !== '100755') continue;
-    const reading = openTracked(root, entry.path, constants.O_RDONLY);
-    let candidate: boolean;
+    const reading = openTracked(root, entry.path);
     try {
-      candidate = fixFileHygiene(entry.path, readFileSync(reading), options) !== null;
-    } finally {
-      closeSync(reading);
-    }
-    if (!candidate) continue;
-    const handle = openTracked(root, entry.path, constants.O_RDWR);
-    try {
-      const result = fixFileHygiene(entry.path, readFileSync(handle), options);
+      const result = fixFileHygiene(entry.path, readFileSync(reading), options);
       if (result === null) continue;
-      ftruncateSync(handle, 0);
-      writeSync(handle, result.bytes, 0, result.bytes.length, 0);
+      replaceTracked(root, entry.path, reading, result.bytes);
       fixed.push({ path: entry.path, removed: result.removed });
     } finally {
-      closeSync(handle);
+      closeSync(reading);
     }
   }
   return fixed;
