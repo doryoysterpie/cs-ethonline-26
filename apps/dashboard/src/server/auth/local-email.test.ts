@@ -39,25 +39,21 @@ describe('the local email file (memory store only)', () => {
 
   it('narrows a file that already exists with wider permissions to mode 600, keeping what it held (combined audit F3)', async () => {
     const file = path.join(await directory, 'existing.jsonl');
-    // `chmod` sets the mode exactly, whatever the umask; the file is not inspected again until
-    // the provider has written, so nothing checked by path is used later (code scanning).
-    const seeded = await open(file, 'w', 0o644);
+    // One handle seeds the file and reads it back after the provider has written, so the test
+    // opens the path once and nothing it checked by path is used again (code scanning, alert 17).
+    // `chmod` sets the mode exactly, whatever the umask.
+    const handle = await open(file, 'w+', 0o644);
     try {
-      await seeded.write('earlier line\n');
-      await seeded.chmod(0o644);
-    } finally {
-      await seeded.close();
-    }
-    await localEmailProvider(file).send(message);
-    // The mode and the content are read through one handle, so both describe the same file.
-    const written = await open(file, 'r');
-    try {
-      expect((await written.stat()).mode & 0o777).toBe(0o600);
-      const lines = (await written.readFile('utf8')).trimEnd().split('\n');
+      await handle.write('earlier line\n');
+      await handle.chmod(0o644);
+      await localEmailProvider(file).send(message);
+      expect((await handle.stat()).mode & 0o777).toBe(0o600);
+      const { buffer, bytesRead } = await handle.read(Buffer.alloc(4096), 0, 4096, 0);
+      const lines = buffer.subarray(0, bytesRead).toString('utf8').trimEnd().split('\n');
       expect(lines[0]).toBe('earlier line');
       expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ text: 'code 123456' });
     } finally {
-      await written.close();
+      await handle.close();
     }
   });
 
