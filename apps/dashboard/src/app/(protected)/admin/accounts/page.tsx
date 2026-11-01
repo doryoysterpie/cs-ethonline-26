@@ -26,7 +26,12 @@ export default async function AccountsPage({
   return (
     <section>
       <h2>Accounts and sessions</h2>
-      <Notice code={single(query.notice)} />
+      <Notice
+        code={single(query.notice)}
+        at={single(query.at)}
+        more={single(query.more)}
+        field={single(query.field)}
+      />
       <p className="small">
         Store: <span className="mono">{runtime.config.accountStore}</span>. Passwords are stored
         only as Argon2id hashes with a fresh salt each; nothing on this page can show one. A reader

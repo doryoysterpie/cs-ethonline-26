@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { ReviewState } from '@cas/contracts';
+import type { RemovedCharacter } from '@cas/database';
 
 import type { Role } from './roles.ts';
 import type { Throttle } from './rate-limit.ts';
@@ -110,6 +111,11 @@ export interface AuditEvent {
   readonly networkKey: string | null;
   /** An identifier the event is about (a run, an incident, a draft key), or null. */
   readonly subjectId: string | null;
+  /**
+   * A refused save's record (migration 0025): the field and the code point of each refused
+   * character, in the order they stood; never a position, never text. Absent on every other event.
+   */
+  readonly refused?: { readonly field: string; readonly codePoints: readonly number[] } | null;
 }
 
 export interface DraftRevision {
@@ -120,6 +126,8 @@ export interface DraftRevision {
   readonly markdown: string;
   readonly savedByAccountId: string;
   readonly savedAt: string;
+  /** Every character the save removed from the text submitted (D50, point 1; migration 0024). */
+  readonly removedCharacters: readonly RemovedCharacter[];
 }
 
 export interface QueueDecision {

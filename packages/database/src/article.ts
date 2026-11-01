@@ -1,4 +1,9 @@
 import type { Queryable } from './database.js';
+import {
+  removedCharactersFrom,
+  removedCharactersJson,
+  type RemovedCharacter,
+} from './removed-characters.js';
 
 /**
  * The article (CAS-005, migration 0016): revisions per week run and category,
@@ -42,14 +47,18 @@ export interface NewArticleRevision {
   readonly provenance: ArticleProvenanceColumns | null;
   readonly savedByAccountId: string;
   readonly createdAt: string;
+  /** Every character the owner's save removed (migration 0024); none for a generated revision. */
+  readonly removedCharacters?: readonly RemovedCharacter[];
 }
 
-export type ArticleRevisionRecord = NewArticleRevision;
+export interface ArticleRevisionRecord extends NewArticleRevision {
+  readonly removedCharacters: readonly RemovedCharacter[];
+}
 
 const COLUMNS = `week_run_id, category, revision, kind, slots, markdown, model, prompt_version,
   prompt_hash, input_digest, input_tokens, output_tokens,
   cost_microdollars::text AS cost_microdollars, word_count, naming_basis, sources,
-  saved_by_account_id, to_json(created_at) #>> '{}' AS created_at`;
+  saved_by_account_id, to_json(created_at) #>> '{}' AS created_at, removed_characters`;
 
 interface Row {
   week_run_id: string;
@@ -70,6 +79,7 @@ interface Row {
   sources: unknown;
   saved_by_account_id: string;
   created_at: string;
+  removed_characters: unknown;
 }
 
 function toRecord(row: Row): ArticleRevisionRecord {
@@ -108,6 +118,7 @@ function toRecord(row: Row): ArticleRevisionRecord {
     provenance,
     savedByAccountId: row.saved_by_account_id,
     createdAt: row.created_at,
+    removedCharacters: removedCharactersFrom(row.removed_characters),
   };
 }
 
@@ -116,12 +127,15 @@ export async function insertArticleRevision(
   revision: NewArticleRevision,
 ): Promise<void> {
   const p = revision.provenance;
+  // As for the round-up: only an edit that removed characters names the record (migration 0024).
+  const removed = revision.removedCharacters ?? [];
+  const record = removed.length > 0;
   await client.query(
     `INSERT INTO article_revisions (week_run_id, category, revision, kind, slots, markdown, model,
        prompt_version, prompt_hash, input_digest, input_tokens, output_tokens, cost_microdollars,
-       word_count, naming_basis, sources, saved_by_account_id, created_at)
+       word_count, naming_basis, sources, saved_by_account_id, created_at${record ? ', removed_characters' : ''})
      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17,
-       $18::timestamptz)`,
+       $18::timestamptz${record ? ', $19::jsonb' : ''})`,
     [
       revision.weekRunId,
       revision.category,
@@ -141,6 +155,7 @@ export async function insertArticleRevision(
       p === null ? null : JSON.stringify(p.sources),
       revision.savedByAccountId,
       revision.createdAt,
+      ...(record ? [removedCharactersJson(removed)] : []),
     ],
   );
 }

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { STORY_CARD_FIELDS } from '@cas/contracts';
+import { STORY_CARD_FIELDS, prohibitedCodePoints } from '@cas/contracts';
 import { insertStoryCardImage, type Queryable } from '@cas/database';
 
 import { openMigratedSchema, type IsolatedSchema } from '../../test/isolated-schema.ts';
@@ -497,6 +497,47 @@ describe('data-access layer against PostgreSQL', () => {
     expect(after.generatedMarkdown).toContain('unpublished');
     expect(after.revisions).toHaveLength(1);
     expect(after.revisions[0]?.savedBy).toBe(principals.editor.username);
+
+    // A refused body: the redirect carries the first twenty, and the audit event is the complete
+    // record, the field and every code point in the order they stood, no position and no text
+    // (the D50 amendment of 1 November 2026; migration 0025).
+    const refusedCodePoints = Array.from({ length: 25 }, (_, i) => (i % 2 === 0 ? 0x202e : 0x0007));
+    const hostile = refusedCodePoints
+      .map((codePoint) => `Zq${String.fromCodePoint(codePoint)}`)
+      .join('');
+    let refused: unknown;
+    try {
+      await saveDraftRevision(runtime, principals.editor, {
+        evidenceRunId: seeded.evidenceRunId,
+        periodStart: PERIOD_START,
+        periodEnd: PERIOD_END,
+        expectedRevision: 1,
+        markdown: hostile,
+      });
+    } catch (error) {
+      refused = error;
+    }
+    expect(isDashboardError(refused) && [refused.code, refused.field]).toEqual([
+      'markdown_control',
+      'markdown',
+    ]);
+    const [event] = (await runtime.stores.audit.list(20)).filter(
+      (e) => e.kind === 'draft_revision_saved' && e.code === 'markdown_control',
+    );
+    expect(event).toMatchObject({
+      kind: 'draft_revision_saved',
+      outcome: 'failure',
+      code: 'markdown_control',
+      actorAccountId: principals.editor.accountId,
+      subjectId: seeded.evidenceRunId,
+      refused: { field: 'markdown', codePoints: refusedCodePoints },
+    });
+    expect(JSON.stringify(event)).not.toContain('Zq');
+    // A refusal with no characters records none.
+    const [conflict] = (await runtime.stores.audit.list(10)).filter(
+      (e) => e.kind === 'draft_revision_saved' && e.code === 'draft_revision_conflict',
+    );
+    expect(conflict?.refused).toBeNull();
   });
 
   it('left every machine record unchanged and audited every mutation without stored text', async () => {
@@ -647,6 +688,7 @@ describe('data-access layer against PostgreSQL', () => {
         markdown: `# revision ${revision}`,
         savedByAccountId: principals.editor.accountId,
         savedAt: new Date().toISOString(),
+        removedCharacters: [],
       });
     }
     caught = null;
@@ -1721,7 +1763,10 @@ describe('data-access layer against PostgreSQL', () => {
       for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(await kindOf(saveRoundupRevision(rt, persisted[role], edit))).toBe('authorization');
       }
-      expect(await saveRoundupRevision(rt, persisted.owner, edit)).toEqual({ revision: 2 });
+      expect(await saveRoundupRevision(rt, persisted.owner, edit)).toEqual({
+        revision: 2,
+        removed: [],
+      });
       expect(await kindOf(saveRoundupRevision(rt, persisted.owner, edit))).toBe('conflict');
       expect(
         await kindOf(
@@ -1749,6 +1794,116 @@ describe('data-access layer against PostgreSQL', () => {
       ]);
       expect(edits.every((e) => e.subjectId === week.weekRunId)).toBe(true);
       expect(edits.every((e) => !e.code.includes('Edited'))).toBe(true);
+      // A soft hyphen and a zero-width space pasted from a page are removed before the revision is
+      // computed and listed for the notice; re-saving the cleaned text removes nothing; a
+      // bidirectional control refuses the save, named where it stands (CAS-012, D50, point 1).
+      const char = (code: number): string => String.fromCodePoint(code);
+      const pasted = `## Rundown\n\nco${char(0xad)}operate${char(0x200b)}\n`;
+      expect(
+        await saveRoundupRevision(rt, persisted.owner, {
+          ...edit,
+          expectedRevision: 2,
+          markdown: pasted,
+        }),
+      ).toEqual({
+        revision: 3,
+        removed: [
+          { codePoint: 0xad, rule: 'default_ignorable', line: 3, column: 3 },
+          { codePoint: 0x200b, rule: 'default_ignorable', line: 3, column: 11 },
+        ],
+      });
+      const cleaned = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(cleaned.latest).toEqual({ revision: 3, markdown: '## Rundown\n\ncooperate\n' });
+      expect(
+        await saveRoundupRevision(rt, persisted.owner, {
+          ...edit,
+          expectedRevision: 3,
+          markdown: cleaned.latest?.markdown ?? '',
+        }),
+      ).toEqual({ revision: 4, removed: [] });
+      let refused: unknown;
+      try {
+        await saveRoundupRevision(rt, persisted.owner, {
+          ...edit,
+          expectedRevision: 4,
+          markdown: `line one\nturn ${char(0x202e)}here\n`,
+        });
+      } catch (error) {
+        refused = error;
+      }
+      expect(isDashboardError(refused) && `${refused.kind}:${refused.code}`).toBe(
+        'validation:markdown_control',
+      );
+      expect(isDashboardError(refused) ? refused.characters : null).toEqual([
+        { codePoint: 0x202e, rule: 'bidi_control', line: 2, column: 6 },
+      ]);
+      // The refusal's audit event is its record in PostgreSQL: the field and the code point, no
+      // position and no text (the D50 amendment of 1 November 2026; migration 0025).
+      // Found by its code: two events in one millisecond have no defined order in the list.
+      const [refusal] = (await persistent.audit.list(20)).filter(
+        (event) => event.kind === 'roundup_edited' && event.code === 'markdown_control',
+      );
+      expect(refusal).toMatchObject({
+        kind: 'roundup_edited',
+        outcome: 'failure',
+        code: 'markdown_control',
+        refused: { field: 'markdown', codePoints: [0x202e] },
+      });
+      const row = await rt.database.withClient((client) =>
+        client.query<{
+          refused_field: string;
+          refused_count: number;
+          refused_code_points: number[];
+        }>(
+          `SELECT refused_field, refused_count, refused_code_points FROM audit_events WHERE id = $1`,
+          [refusal?.id],
+        ),
+      );
+      expect(row.rows).toEqual([
+        { refused_field: 'markdown', refused_count: 1, refused_code_points: [0x202e] },
+      ]);
+      // Every code point the strip removes, in one save: the stored body holds none of them, and
+      // the revision keeps every removal, past the twenty a query string could carry, as numbers
+      // only (the review of pull request 61 at db10902, findings 1 and 4; migration 0024).
+      const strippable = prohibitedCodePoints().filter(
+        (codePoint) => !/^[\p{Cc}\p{Bidi_Control}]$/u.test(char(codePoint)),
+      );
+      const every = await saveRoundupRevision(rt, persisted.owner, {
+        ...edit,
+        expectedRevision: 4,
+        markdown: `## Rundown\n\nx${strippable.map(char).join('')}y\n`,
+      });
+      expect(every.revision).toBe(5);
+      expect(every.removed.map((located) => located.codePoint)).toEqual(strippable);
+      const stored = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(stored.latest).toEqual({ revision: 5, markdown: '## Rundown\n\nxy\n' });
+      const record = (revision: number) =>
+        stored.revisions.find((entry) => entry.revision === revision)?.removedCharacters;
+      expect(record(5)).toEqual(
+        strippable.map((codePoint, index) => ({ codePoint, line: 3, column: index + 2 })),
+      );
+      expect(record(4)).toEqual([]);
+      expect(record(3)).toEqual([
+        { codePoint: 0xad, line: 3, column: 3 },
+        { codePoint: 0x200b, line: 3, column: 11 },
+      ]);
+      expect(record(1)).toEqual([]);
+      const raw = await rt.database.withClient((client) =>
+        client.query<{ removed_characters: unknown; markdown: string }>(
+          `SELECT removed_characters, markdown FROM roundup_revisions
+            WHERE week_run_id = $1 AND category = 'cyberattack' AND revision = 3`,
+          [week.weekRunId],
+        ),
+      );
+      expect(raw.rows).toEqual([
+        {
+          removed_characters: [
+            [0xad, 3, 3],
+            [0x200b, 3, 11],
+          ],
+          markdown: '## Rundown\n\ncooperate\n',
+        },
+      ]);
     });
   });
 
@@ -2004,7 +2159,10 @@ describe('data-access layer against PostgreSQL', () => {
       for (const role of ['reader', 'editor', 'admin'] as const) {
         expect(await kindOf(saveArticleRevision(rt, persisted[role], edit))).toBe('authorization');
       }
-      expect(await saveArticleRevision(rt, persisted.owner, edit)).toEqual({ revision: 2 });
+      expect(await saveArticleRevision(rt, persisted.owner, edit)).toEqual({
+        revision: 2,
+        removed: [],
+      });
       expect(await kindOf(saveArticleRevision(rt, persisted.owner, edit))).toBe('conflict');
       const edits = (await persistent.audit.list(200)).filter((e) => e.kind === 'article_edited');
       expect(edits.map((e) => `${e.outcome}:${e.code}`).sort()).toEqual([
@@ -2348,7 +2506,7 @@ describe('data-access layer against PostgreSQL', () => {
       );
       expect(
         await saveArticleRevision(rt, persisted.owner, { ...edit, markdown: 'a'.repeat(400_000) }),
-      ).toEqual({ revision: 2 });
+      ).toEqual({ revision: 2, removed: [] });
       // Behind the layer's bound, the database refuses the 400,001st character.
       let refused: unknown;
       try {
@@ -3515,7 +3673,7 @@ describe('data-access layer against PostgreSQL', () => {
           expectedRevision: 1,
           markdown: corrected,
         }),
-      ).toEqual({ revision: 2 });
+      ).toEqual({ revision: 2, removed: [] });
       // Revision 2 exists but is not published: the card still shows revision 1.
       expect((await cardPage(rt, id, 'direct')).card).toMatchObject({
         revision: 1,

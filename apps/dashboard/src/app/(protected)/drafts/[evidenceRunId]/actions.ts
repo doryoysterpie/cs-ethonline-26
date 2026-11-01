@@ -5,12 +5,20 @@ import { redirect } from 'next/navigation';
 import { saveDraftRevision } from '../../../../server/dal/mutate.ts';
 import { assertActionRequest, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { readClosedObject } from '../../../../server/input.ts';
-import { attempt, noticeCodeFor, withNotice } from '../../../page-support.ts';
+import {
+  attempt,
+  noticeCodeFor,
+  NO_REFUSAL,
+  refusalOf,
+  withNotice,
+} from '../../../page-support.ts';
 
 export async function saveDraftAction(form: FormData): Promise<void> {
   let runId: unknown = null;
   let start: unknown = null;
   let end: unknown = null;
+  // A save that removed characters names its revision; the page lists the record it keeps.
+  let cleanedRevision: number | null = null;
   const outcome = await attempt(async () => {
     const { runtime, principal } = await currentPrincipal();
     if (principal === null) return 'session_expired';
@@ -26,14 +34,16 @@ export async function saveDraftAction(form: FormData): Promise<void> {
     runId = input.evidenceRunId;
     start = input.periodStart;
     end = input.periodEnd;
-    await saveDraftRevision(runtime, principal, {
+    const saved = await saveDraftRevision(runtime, principal, {
       evidenceRunId: input.evidenceRunId,
       periodStart: input.periodStart,
       periodEnd: input.periodEnd,
       expectedRevision: input.expectedRevision,
       markdown: input.markdown,
     });
-    return 'saved';
+    if (saved.removed.length === 0) return 'saved';
+    cleanedRevision = saved.revision;
+    return 'saved_cleaned';
   });
   const run = typeof runId === 'string' ? runId : '';
   const query = new URLSearchParams({
@@ -44,6 +54,8 @@ export async function saveDraftAction(form: FormData): Promise<void> {
     withNotice(
       `/drafts/${encodeURIComponent(run)}?${query.toString()}`,
       outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
+      outcome.ok ? NO_REFUSAL : refusalOf(outcome.error),
+      outcome.ok ? cleanedRevision : null,
     ),
   );
 }

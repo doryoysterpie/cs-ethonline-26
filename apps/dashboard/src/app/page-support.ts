@@ -3,6 +3,12 @@ import 'server-only';
 import { forbidden, notFound, redirect } from 'next/navigation';
 
 import { isDashboardError } from '../server/errors.ts';
+import {
+  NOTICE_CHARACTERS_MAX,
+  noticeCharactersParameter,
+  noticeRevision,
+  type NoticeCharacter,
+} from './notices.ts';
 
 /**
  * Helpers shared by every protected page and action.
@@ -37,7 +43,7 @@ export function escalate(error: unknown): string {
         notFound();
       // eslint-disable-next-line no-fallthrough
       case 'validation':
-        return 'invalid';
+        return error.characters.length > 0 ? 'invalid_character' : 'invalid';
       case 'conflict':
         return 'conflict';
       default:
@@ -56,7 +62,7 @@ export function noticeCodeFor(error: unknown): string {
       case 'authorization':
         return 'forbidden';
       case 'validation':
-        return 'invalid';
+        return error.characters.length > 0 ? 'invalid_character' : 'invalid';
       case 'conflict':
         return 'conflict';
       case 'not_found':
@@ -74,6 +80,58 @@ export function single(value: string | string[] | undefined): string | undefined
   return Array.isArray(value) ? value[0] : value;
 }
 
-export function withNotice(path: string, code: string): string {
-  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(code)}`;
+/** A refusal's field and characters, for its notice (D50); empty for any other failure. */
+export interface Refusal {
+  readonly field: string | null;
+  readonly characters: readonly NoticeCharacter[];
+}
+
+export const NO_REFUSAL: Refusal = { field: null, characters: [] };
+
+export function refusalOf(error: unknown): Refusal {
+  return isDashboardError(error)
+    ? { field: error.field, characters: error.characters }
+    : NO_REFUSAL;
+}
+
+/**
+ * A redirect target with its notice. A refusal's field travels as `field` and
+ * its characters as `at`, the first `NOTICE_CHARACTERS_MAX` in the order they
+ * stood, with the exact number of the rest as `more`; never a character of the
+ * refused text. A save that removed characters names its `revision`, whose
+ * record the page lists in full (D50, point 1, and its amendment; migration
+ * 0024).
+ */
+export function withNotice(
+  path: string,
+  code: string,
+  refusal: Refusal = NO_REFUSAL,
+  revision: number | null = null,
+): string {
+  const { characters } = refusal;
+  const field =
+    characters.length > 0 && refusal.field !== null
+      ? `&field=${encodeURIComponent(refusal.field)}`
+      : '';
+  const at =
+    characters.length > 0 ? `&at=${encodeURIComponent(noticeCharactersParameter(characters))}` : '';
+  const more =
+    characters.length > NOTICE_CHARACTERS_MAX
+      ? `&more=${characters.length - NOTICE_CHARACTERS_MAX}`
+      : '';
+  const saved = revision === null ? '' : `&revision=${revision}`;
+  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(code)}${field}${at}${more}${saved}`;
+}
+
+/** The removal record of the revision a save's notice names, or none. */
+export function removedAt(
+  revisions: readonly {
+    readonly revision: number;
+    readonly removedCharacters: readonly NoticeCharacter[];
+  }[],
+  revision: string | undefined,
+): readonly NoticeCharacter[] {
+  const wanted = noticeRevision(revision);
+  if (wanted === null) return [];
+  return revisions.find((entry) => entry.revision === wanted)?.removedCharacters ?? [];
 }

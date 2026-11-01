@@ -510,7 +510,7 @@ figures by `src/documentation.test.ts`.
 
 | Suite                         | Tests | Files |
 | ----------------------------- | ----: | ----: |
-| `@cas/mcp-server`, offline    |   208 |    22 |
+| `@cas/mcp-server`, offline    |   210 |    23 |
 | `@cas/mcp-server`, PostgreSQL |    49 |     4 |
 
 Workspace totals: **700 offline tests** across ten packages (contracts 9, taxonomy 7,

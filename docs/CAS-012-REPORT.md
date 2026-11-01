@@ -1,8 +1,10 @@
 # CAS-012 report: every character list on the rule
 
-**Status:** S0 design note, written 1 November 2026 before any code; **not audited**. Tracker:
-`docs/tcu/CAS-012.md`. Decision: D49. Issue: #58. The note is on `cas-012/design-note`, stacked on
-CAS-011's `cas-011/invisible-text`, which holds the tracker and the rule.
+**Status:** Built on `cas-012/lists`, pull request 61. The review of `db10902` returned CHANGES
+REQUIRED, four P2 findings and one P3, corrected on the same branch (section 9); re-review
+pending; **not accepted**. Tracker: `docs/tcu/CAS-012.md`. Decisions: D49, D50. Issue: #58.
+Section 1 is the S0 design note, written before any code on `cas-012/design-note` and merged in
+pull request 59; sections 2 to 8 record the build and section 9 the corrections.
 
 ## 1. Design note (S0)
 
@@ -132,8 +134,325 @@ their tests changed together. Point 2: (a); one-line displays escape the three c
 displayed value is bare, and the escape is applied once, at the rendering boundary, never before
 a format that escapes on its own. D50 records both.
 
-## 2. What follows the decisions
+## 2. Stack check and data contract (S1, S2)
 
-S1 to S8 wait on CAS-011's merge, since the predicate lives there. Each list then gets the test
-CAS-011's consumers have: every code point the rule names is escaped, refused or reported, and
-the two presentation selectors pass.
+Built on `cas-012/lists` from `main` at `bdf608c`, after CAS-011 (pull request 57) and this note
+(pull request 59) merged. No dependency is added or changed: the rule, the escape form and the
+names are first-party code in `@cas/contracts`, which every one of the nine lists' packages
+already depends on or, for the dashboard, already imports.
+
+The contract is `text-escape@1` (`packages/contracts/src/text-escape.ts`), beside
+`prohibited-text@2`:
+
+- `escapeCodePoint(codePoint)`: `\u{XXXX}`, uppercase, at least four digits.
+- `codePointName(codePoint)` and `describeCodePoint(codePoint)`: the escape followed by the
+  Unicode name, or a control's alias, from a table generated from the Unicode character database
+  (`unicode-names.ts`, section 9.3) that names every assigned code point the rule names but three
+  that have neither. The names are labels: which characters are escaped is the rule's.
+- `codePointLength(value)`: a value's length in code points, the measure of every bound beside
+  the rule, as PostgreSQL's `length()` counts (section 9.2).
+- `escapeOneLine(value)`: every code point the rule names, and tab, line feed and carriage
+  return, written as a bare escape; `escapeMultiLine(value)`: the rule's code points only.
+- `locateProhibitedText(value)`: each code point the rule names with its rule, line and column,
+  counted in code points, for a notice or a refusal.
+
+`prohibited-text@2` gains `replaceProhibitedText(value, replace, { oneLine })`, and its one-line
+class is built from the same set as the rule's own, less the two selectors only, so the two
+cannot drift. The database constraints stay as section 1.2 says. Migration 0024 adds the record
+of what each save removed, as numbers (section 9.1); it changes no stored text.
+
+## 3. Implementation (S3, S5)
+
+Each list keeps its action and takes its set from the rule.
+
+- **The five displays** (the dashboard's `safeText` and `safeParts`, the MCP server's
+  `toSingleLine` and `quoteEvidence`, the worker's `toSingleLine` and `safeDisplay`, and the
+  `safeDisplay` of `@cas/graph-evidence` and `@cas/sheets-intake`) escape through
+  `escapeOneLine`: every character the rule names, and tab, line feed and carriage return, in
+  the one form. A bound never splits an escape (`escapedCut`). The dashboard renders each
+  escape in its own `span.escaped`, muted and underlined, apart from body text. The MCP server
+  escapes the angle brackets in the same form, `\u{003C}` and `\u{003E}`.
+- **The refusals** name the first refused character as `where:line:column: rule \u{XXXX}
+NAME`. Each applies the rule before its length bound, and the bound counts code points (section
+  9.2). `boundedText` refuses the rule and the three line characters, with code
+  `<field>_control`. `validatePassword` refuses them after NFKC, at set and change; `verifyPassword`
+  never checks. `assertReviewNote` refuses them in a note, and in a claim statement as
+  `statement`.
+- **The save path** (`cleanedBody` in `server/markdown/body.ts`, for drafts, round-ups and
+  articles) refuses a character labelled `c0_control`, `c1_control` or `bidi_control`, which are
+  `\p{Cc}` less the three and `\p{Bidi_Control}`, with code `markdown_control`. It removes
+  every other character the rule names before the revision is computed and returns each
+  removal; then it bounds the body as stored, in code points (section 9.2). A body that holds
+  nothing once they are removed is refused as `markdown_length`. The revision keeps every
+  removal (section 9.1).
+- **The notice.** The three save actions redirect with `saved_cleaned` or `edited_cleaned` and
+  the `revision` when something was removed, and the page lists every removal from the record
+  that revision keeps (section 9.1). A refusal redirects with `invalid_character` and `at`, a
+  list of `CODEPOINT-LINE-COLUMN` entries (`app/notices.ts`), the first twenty, with `more`
+  counting the rest; the `Notice` component lists each as its escape, name, line and column and
+  states how many more there were. The actions behind the queue, incident, evidence and
+  selection notes and the account form pass a refusal's characters the same way; the week
+  search, which holds its refusal on the page, lists all of them.
+- **The worker's scanner** (`hygiene/scan.ts`) reports each code point the rule names with its
+  column, in the shared form. It now keeps a byte-order mark that opens a line, which its
+  decoder used to strip silently; the coverage test found that.
+- **The scan of stored texts.** `text scan` (`corepack pnpm text:scan`, `text/scan-stored.ts`)
+  reads `draft_revisions`, `roundup_revisions` and `article_revisions` and prints, for each
+  revision holding a character the rule names, the table, the key, the revision and each code
+  point with its rule and count, never the text.
+
+## 4. Tests (S4)
+
+Each list has the test CAS-011's consumers have: every code point the rule names, as the runtime
+enumerates it, is escaped, refused or reported, and the two presentation selectors pass. The
+lists are the dashboard display, the MCP escapes, the worker's display, scanner and note
+refusal, the graph-evidence and sheets-intake displays, the bounded inputs and the password.
+Besides, the following are covered:
+
+- the contract: the form round-trips through a string literal and a `u`-flag expression, names
+  are added only by `describeCodePoint`, a literal backslash sequence stays text in the parts
+  form, the cut never splits an escape, and positions are counted in code points;
+- the notice: the parameter's encoding and its strict decoding, which refuses a printable code
+  point, text, a zero position, lowercase hexadecimal and a value past U+10FFFF (the last one
+  raised before the range was checked first);
+- the save path, against PostgreSQL: a pasted soft hyphen and zero-width space are removed and
+  listed with their positions, re-saving the cleaned text removes nothing, and a right-to-left
+  override refuses the save with its position;
+- the browser: a draft carrying a right-to-left override is refused with its name and position,
+  a draft carrying a soft hyphen is saved without it, with the notice listing it, and a draft
+  carrying 25 zero-width spaces is saved without them, with the notice listing all 25 from the
+  revision (section 9.1);
+- the scan: a stub database shows the report names code points and counts and never text;
+- the corrections of section 9: the name table against every assigned code point the running
+  rule names, the code-point bounds at an astral boundary in each of the four places, the save
+  path over every code point the rule names, and migration 0024 and its record.
+
+The MCP truncation and bounds tests change count, because an escape now takes eight characters
+where it took six. The draft preview's fixture now truncates five hostile fields at the
+300-character bound, and the result counts them.
+
+## 5. Interface (S5)
+
+The notices, the refusals and the escaped displays are exercised in the browser suite, three
+new cases among its 32. The scan, against a fresh local PostgreSQL 17 database migrated to 0023, 1
+November 2026: `corepack pnpm text:scan` printed `text:scan: scanned=0
+revisions_with_characters=0` and exited 0, its three queries reading the real tables. The
+owner's run against the hosted database is the one that reports the stored revisions.
+
+## 6. Security baseline (S6)
+
+- Nothing a person typed travels in the notice's query string: the parameter decodes only to
+  code points the rule names or the three line characters, and to positions; `more` and
+  `revision` decode only to whole numbers.
+- The removal record holds code points and positions, never a character, and migration 0024's
+  check refuses any other shape and any record on a revision no owner edited.
+- Refusal messages name the field and the character, never the value.
+- The password check runs at set and change only, so a change of the property at a Node upgrade
+  cannot lock an account out.
+- The scan only reads; it opens no transaction that writes.
+- No dependency changed; `pnpm audit` is clean (section 7).
+
+## 7. Verification (S8)
+
+At `db10902`, 1 November 2026: `verify` exit 0, 1,212 offline tests and 37 tool tests; `test:db`
+349 (database 124, worker 119, dashboard 57, mcp-server 49); `test:browser` 31 passed; the same
+in a clean clone (install, the bill-of-materials check, `pnpm audit`, `verify`, `test:db`,
+`test:browser`); CI run 41296920925 and CodeQL run 41296920964 green. The independent review
+reproduced everything but the browser suite, which its host's Chromium sandbox would not launch.
+The counts after the corrections are in section 9.6; the clean clone and CI of the corrected
+head are on the tracker.
+
+## 8. What the unit does not cover
+
+- **The MCP server's JSON fields**, settled by the owner the same day (the D50 amendment). The
+  MCP server escapes quoted evidence before it serialises the result, as on `main` before this
+  unit: the display escape serves whoever reads the decoded string, JSON's escaping serves its
+  parser, and the two stack. A round trip through a JSON parser proves a client reads the
+  display-escaped text with nothing the rule names in it (`json-roundtrip.test.ts`, this branch took
+  pull request 62's head, so GitHub records 62 as merged into `cas-012/lists`).
+- **Other lists**, outside the nine and unchanged: `packages/sheets-intake/src/a1.ts`
+  (`isUnrepresentable`, the controls a range address may not hold) and the source scan in
+  `apps/dashboard/src/hygiene.test.ts`. The MCP server's test helper `hasRawControl` is on the
+  rule now.
+- **The Markdown renderer** (`SafeMarkdown`) holds no list. It renders a stored body as it is,
+  and it is fed only cleaned text by the save path from now on; what bodies saved earlier hold,
+  the scan reports.
+- **The database's constraints** stay the floor (section 1.2).
+
+## 9. Review of pull request 61 at `db10902` (1 November 2026)
+
+Codex reviewed `db10902` (record `2026-11-01-CAS-012-pr-61.md`): CHANGES REQUIRED, four P2 and
+one P3. `verify`, the bill-of-materials check, `pnpm audit`, the 349 database tests and
+`text:scan` passed on the reviewer's host; the shared predicate, the escape form and the parts
+form were supported. Each finding is corrected below, with its tests.
+
+### 9.1 P2: the notice dropped every removal after the twentieth
+
+`noticeCharactersParameter` cut the list at twenty, and nothing counted the rest, so a save that
+removed 25 characters listed 20. D50 requires each removal listed, never only a count.
+
+Corrected with a record kept on the revision. Migration 0024 adds `removed_characters` to
+`draft_revisions`, `roundup_revisions` and `article_revisions`: every character the save removed,
+as `[code point, line, column]`, the position counted in code points in the text submitted. The
+record holds numbers only, never a character, and its check refuses any entry that is not three
+whole numbers from 1 with a code point no greater than U+10FFFF; a generated or deterministic
+revision may hold only the empty record. Existing revisions take the empty record, which is
+true of them: no save before this unit removed anything. A column with a constant default
+rewrites no row, so the append-only guards stand and no published text changes. The save writes
+the record in the same insert as the revision; the redirect names the `revision`, and the draft,
+round-up and article pages list every removal from that revision's record, the first twenty and
+the rest behind a disclosure. With no record (a revision that does not exist, or a bad number),
+the notice says only that the text was saved.
+
+A refusal stores nothing, so its characters still travel in the redirect: the first twenty, and
+`more`, the number of the rest, which the notice states ("And 7 more, named when the text is
+submitted again without the ones above"). Nothing is dropped silently. Where the page holds the
+refusal itself (the week search), every character is listed. Whether a refusal must list every
+character, as a removal must, was put to the owner; the ruling and its build are in section 10.
+
+Tests: a pure save of 25 zero-width spaces returns all 25; the round-up save against PostgreSQL
+keeps every strippable code point's removal on the revision and reads it back, and the raw row
+holds the numbers; migration 0024 against a schema migrated to 0023 gives the existing revision
+the empty record and refuses nine malformed records and a record on a generated revision; the
+draft store returns its record; the notice parameters count and name the revision and decode
+nothing else; the browser saves a draft with 25 zero-width spaces and finds 25 listed, five
+behind the disclosure, with no `at` in the URL.
+
+### 9.2 P2: lengths counted UTF-16 code units and ran before the rule
+
+`boundedText`, the worker's `assertReviewNote` and the three saves measured `string.length`
+before the rule ran. 279 letters and U+E0067 are 280 code points and 281 code units, so the
+title and the note refused the value as too long instead of naming U+E0067, and a body at its
+maximum carrying a removable astral character was refused instead of stripped. The comment in
+`input.ts` that the code-unit bound matched PostgreSQL's `length()` was false: PostgreSQL counts
+characters.
+
+Corrected in all four places, and in `validatePassword`, which counted code points but checked
+the length first. Each now applies the rule first, so a refused character is named wherever it
+stands, and then bounds the value in code points (`codePointLength` in `@cas/contracts`). A
+code-unit check comes first only to bound the work: twice the maximum for a single-line value,
+which can refuse nothing the code-point bound would accept since nothing there is stripped; four
+times the maximum for a body, so a submission past that is refused as too long before any
+character is examined. A body is bounded as stored, after the strip.
+
+Tests, each at an astral boundary: 279 letters and U+E0067 are refused by the bounded input and
+the note as `title:1:280: default_ignorable \u{E0067} TAG LATIN SMALL LETTER G` and
+`note:1:280: ...`; 279 letters and U+1F600 are accepted; one more letter is too long; a body of
+ten letters and U+E0067 under a maximum of ten is saved as ten letters with the removal listed;
+a password of 128 letters and U+200B names U+200B at column 129; a lone surrogate counts as one,
+as iteration counts it.
+
+### 9.3 P2: notices, refusals and logs left out standard names
+
+`codePointName` held 47 names and the two variation-selector ranges, so `describeCodePoint` gave
+U+E0067 no name, and the test required that.
+
+Corrected with a generated table, `packages/contracts/src/unicode-names.ts`: the Unicode Name of
+every code point the rule names that has one, and, for a control, which has no Name, its alias of
+type `control` in NameAliases.txt, with tab, line feed and carriage return, which a one-line
+display escapes; 470 entries. U+0080, U+0081 and U+0099 have no Name and no control alias (their
+only aliases are of type `figment`, never standardised) and are written as a bare escape, as are
+unassigned code points and noncharacters. The names come from Python 3.13.15's `unicodedata`
+(Unicode 15.1.0). A name never changes once assigned, and no code point the rule names was
+assigned after 15.1.0, so the table stands under the 17.0 the runtime reports. The 62 control
+aliases each resolve through `unicodedata.lookup` and agree with Perl's `charnames::viacode`.
+The generator, run with the rule's assigned code points (and the three line characters) as JSON
+and the control aliases as JSON, writes the table's rows:
+
+```python
+import json, sys, unicodedata
+
+CONTROL_ALIASES = json.load(open(sys.argv[2]))  # {"0x0000": "NULL", ...}, type "control"
+code_points = json.load(open(sys.argv[1]))
+rows = []
+for cp in code_points:
+    name = unicodedata.name(chr(cp), None) or CONTROL_ALIASES.get(f'0x{cp:04x}')
+    if name is None:
+        continue
+    if CONTROL_ALIASES.get(f'0x{cp:04x}') and unicodedata.lookup(name) != chr(cp):
+        raise SystemExit(f'alias does not resolve: {cp:04X} {name}')
+    rows.append(f"  [0x{cp:04x}, '{name}'],")
+sys.stdout.write('\n'.join(rows) + '\n')
+```
+
+Tests: every code point the running rule names that Node reports as `\p{Assigned}`, and the
+three line characters, has a name, but exactly U+0080, U+0081 and U+0099; the table holds nothing
+the rule does not name and nothing unassigned; U+E0067 is `TAG LATIN SMALL LETTER G`, and the
+tag, variation-selector and control ranges are named at their ends.
+
+### 9.4 P2: the save consumer had no exhaustive test
+
+The acceptance requires each consumer's test to walk every code point the runtime rule names;
+the save path's covered three. The cleaning is now its own module,
+`apps/dashboard/src/server/markdown/body.ts`, and its test walks the rule: every code point in
+`\p{Cc}` less the three and in `\p{Bidi_Control}`, taken from the property and not from the rule's
+labels, refuses the save with its line and column; every other is stripped and listed where it
+stood; U+FE0E, U+FE0F, tab, line feed and carriage return are kept; one body carrying every
+strippable code point is stored with none of them and lists each removal. The PostgreSQL test of
+section 9.1 saves that body through the round-up and reads the record back.
+
+### 9.5 P3: the report and the tracker contradicted the branch
+
+The report called itself a design note on `cas-012/design-note`, and the tracker named that
+branch, left steps 3 and S8 open and recorded no counts, clean clone, CI or review. Both now
+describe `cas-012/lists`, its commits, the counts, the clean clone, CI and this review, and the
+acceptance stays open until the re-review.
+
+### 9.6 Verification after the corrections
+
+Counts from the runner, 1 November 2026, in the working tree at the corrections: `verify` exit
+0, 1,226 offline tests and 37 tool tests; `test:db` 351 (database 126, worker 119, dashboard 57,
+mcp-server 49); `test:browser` 32 passed. One browser run before that timed out starting its
+web server after a successful build; the next run, with no change between them, passed all 32.
+The clean clone and CI of the corrected head are on the tracker.
+
+## 10. A refusal's notice and its record (the D50 amendment 2, 1 November 2026)
+
+The owner settled the question of section 9.1 the same day (`docs/DECISIONS.md`, the D50
+amendment 2): a refusal's notice names the first twenty and counts the rest, and the audit event
+is the complete record. Built on `cas-012/refusal-record`, stacked on pull request 61 so that the
+head under review did not move, as five changes, one for each condition:
+
+- **The first twenty, then an exact count.** `withNotice` takes the first
+  `NOTICE_CHARACTERS_MAX` in the order `locateProhibitedText` finds them, which is the order they
+  stood, and `more` is the exact number of the rest.
+- **Code point, name and position only.** A refusal now carries its field (`DashboardError.field`,
+  the identifier `characterRefusal` names), which travels as `field` and decodes only to an
+  identifier of a lowercase letter and up to 31 letters; each line reads `\u{202E}
+RIGHT-TO-LEFT OVERRIDE, field markdown, line 1, column 6`. A save's removals are always from its
+  body and are named as `field markdown` too. Nothing else travels.
+- **The likely cause, past the cap.** Past twenty, the notice adds: "More than 20 refused
+  characters usually means a broken copy; copying the text again from its source is the expected
+  fix."
+- **One cap, with its reason.** `NOTICE_CHARACTERS_MAX` records why it bounds the redirect: the
+  list rides in the URL, kept in browser history and request logs. The decoder's bound,
+  `NOTICE_AT_LENGTH_MAX`, is computed from it and the longest entry, 22 characters: 459 in all.
+  Before, the decoder took at most 400, so twenty entries with long positions decoded to nothing
+  and the notice listed none; a test now decodes twenty of the longest form.
+- **The audit event is the record.** Migration 0025 adds `refused_field`, `refused_count` and
+  `refused_code_points` to `audit_events`, null together on every other event and on every
+  existing one. The check requires all three or none, a failure, an identifier for the field, at
+  least one code point, a count equal to the number of code points, and whole numbers from 0 to
+  U+10FFFF. The draft, round-up and article saves record a refusal's field and every code point
+  in order. A refused draft save was not audited before; it now is, like a round-up's and an
+  article's, as `draft_revision_saved` with outcome `failure` and its fixed code.
+
+The migration counts in the database tests are now read from the migrations directory, but for
+the written-out file lists in `migrate.test.ts` and `migrate.db.test.ts`, kept as a tripwire for a
+dropped or renamed file and marked as such (the owner's ruling on pull requests 51 and 52, the
+same day).
+
+Tests: the notice decodes twenty entries of the longest form and nothing from a longer list; the
+field decodes only to an identifier; the redirect carries `notice`, `field`, `at` and `more` and
+nothing else; a refused draft save of 25 controls and right-to-left overrides is audited with the
+field and all 25 code points in order and holds none of the text; the round-up's refusal is
+stored in the three columns; migration 0025 against a schema migrated to 0024 leaves an existing
+event without a record, keeps a refusal's, keeps the append-only guard, and refuses twelve
+malformed records; the browser refuses a draft carrying 25 right-to-left overrides and lists the
+first twenty, from column 5 to column 91, with "And 5 more" and the re-copy line, and the URL holds
+none of the text.
+
+Counts from the runner, 1 November 2026, in the working tree: `verify` exit 0, 1,227 offline
+tests and 39 tool tests; `test:db` 353 (database 128, worker 119, dashboard 57, mcp-server 49);
+`test:browser` 33 passed. The clean clone and CI of this branch's head are recorded in its pull
+request, so that recording them does not move the head.

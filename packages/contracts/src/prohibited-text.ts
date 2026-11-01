@@ -42,12 +42,17 @@ export type ProhibitedTextRule = (typeof PROHIBITED_TEXT_RULES)[number];
 // from a string because the compilation target predates the flag. The lint
 // rule reads the two selectors as combining with the character before them;
 // here they are set members on their own, the ones subtracted.
-const PROHIBITED_CLASS =
-  '[[\\p{Cc}\\p{Default_Ignorable_Code_Point}\\p{Noncharacter_Code_Point}\\u{2028}\\u{2029}\\u{FFF9}-\\u{FFFB}]--[\\t\\n\\r\\u{FE0E}\\u{FE0F}]]';
+const RULE_SET =
+  '\\p{Cc}\\p{Default_Ignorable_Code_Point}\\p{Noncharacter_Code_Point}\\u{2028}\\u{2029}\\u{FFF9}-\\u{FFFB}';
+const SELECTORS = '\\u{FE0E}\\u{FE0F}';
+const PROHIBITED_CLASS = `[[${RULE_SET}]--[\\t\\n\\r${SELECTORS}]]`;
+// A one-line value treats tab, line feed and carriage return as the rule's (D50, point 3).
+const ONE_LINE_CLASS = `[[${RULE_SET}]--[${SELECTORS}]]`;
 // eslint-disable-next-line no-misleading-character-class
 const PROHIBITED_ONE = new RegExp(PROHIBITED_CLASS, 'v');
 // eslint-disable-next-line no-misleading-character-class
 const PROHIBITED_EVERY = new RegExp(PROHIBITED_CLASS, 'gv');
+const ONE_LINE_EVERY = new RegExp(ONE_LINE_CLASS, 'gv');
 const BIDI_CONTROL = /\p{Bidi_Control}/u;
 const DEFAULT_IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
 const NONCHARACTER = /\p{Noncharacter_Code_Point}/u;
@@ -73,6 +78,21 @@ export function hasProhibitedText(value: string): boolean {
 /** The value with every code point the rule prohibits removed. */
 export function removeProhibitedText(value: string): string {
   return value.replace(PROHIBITED_EVERY, '');
+}
+
+/**
+ * The value with every code point the rule prohibits replaced by what
+ * `replace` returns for it; with `oneLine`, tab, line feed and carriage return
+ * are replaced too, since inside a one-line value they are a value trying to
+ * become structure (D50, point 3).
+ */
+export function replaceProhibitedText(
+  value: string,
+  replace: (codePoint: number) => string,
+  options: { readonly oneLine?: boolean } = {},
+): string {
+  const pattern = options.oneLine === true ? ONE_LINE_EVERY : PROHIBITED_EVERY;
+  return value.replace(pattern, (character) => replace(character.codePointAt(0) ?? 0));
 }
 
 /** Every code point the rule prohibits, enumerated from the runtime, for the tests that hold each consumer to it. */

@@ -1,4 +1,5 @@
-import { hasControlCharacter } from '../editorial/display.js';
+import { codePointLength, describeLocated, locateProhibitedText } from '@cas/contracts';
+
 import { IngestionError } from '../editorial/errors.js';
 
 /**
@@ -13,8 +14,10 @@ import { IngestionError } from '../editorial/errors.js';
  *
  * The policy:
  *
- *   - **Length.** One to 280 characters. The bound is characters, matching the
- *     database's `length(note)`, and it is the same 280 migration 0006 set.
+ *   - **Length.** One to 280 characters. The bound counts code points, as the
+ *     database's `length(note)` does, and it is the same 280 migration 0006 set.
+ *     It is checked after the prohibited characters, so a refused character
+ *     is named wherever it stands, even as the 280th.
  *   - **Absence.** `null` and `undefined` mean no note. An empty string is not
  *     a note and is refused rather than silently stored as absence, because
  *     absence and emptiness are distinguished in the canonical action payload
@@ -23,16 +26,18 @@ import { IngestionError } from '../editorial/errors.js';
  *     normalizing transform would make the stored note differ from what the
  *     reviewer wrote and would move the payload digest in a way the caller
  *     cannot predict, so the note is validated and kept, never rewritten.
- *   - **Prohibited characters.** Every C0 control (U+0000 to U+001F, which
- *     covers NUL, newline, carriage return, tab and the ANSI escape introducer
- *     U+001B), DEL (U+007F), every C1 control (U+0080 to U+009F, which covers
- *     the eight-bit CSI U+009B), and the Unicode line and paragraph separators
- *     U+2028 and U+2029. This is exactly the class `hasControlCharacter`
- *     already refuses for a filename or a review label, and exactly the class
- *     migration 0007 refuses in the database.
+ *   - **Prohibited characters.** Every character the prohibited-text rule names
+ *     (`@cas/contracts`, D49: the controls, the line and paragraph separators,
+ *     the bidirectional controls and every other character that renders as
+ *     nothing, but the two emoji presentation selectors), and tab, line feed and
+ *     carriage return, since a note is one line (D50, point 2). The database's
+ *     constraint (migration 0007) refuses the controls and separators; this
+ *     refusal is the stricter one, made first.
  *
- * Both messages are fixed and neither echoes the note, its length or any part
- * of its content.
+ * Neither message echoes the note or any part of its content. A character
+ * refusal names the first refused character by its escape, name and position,
+ * in the form the worker's source scanner reports in (`note:1:5:
+ * default_ignorable \u{200B} ZERO WIDTH SPACE`), so the two read as one event.
  */
 
 export const REVIEW_NOTE_MAX_LENGTH = 280;
@@ -49,13 +54,20 @@ function invalid(message: string): IngestionError {
  * Called before the canonical payload is built, so a refused note never
  * reaches a hash, a digest, a database round trip or a printed line.
  */
-export function assertReviewNote(note: string | null | undefined): string | null {
+export function assertReviewNote(
+  note: string | null | undefined,
+  where: string = 'note',
+): string | null {
   if (note === undefined || note === null) return null;
-  if (note.length < REVIEW_NOTE_MIN_LENGTH || note.length > REVIEW_NOTE_MAX_LENGTH) {
-    throw invalid('a review note must be between 1 and 280 characters');
+  const tooLong = (): IngestionError =>
+    invalid('a review note must be between 1 and 280 characters');
+  // Code units first only to bound the walk: 280 code points are at most 560 code units.
+  if (note.length > REVIEW_NOTE_MAX_LENGTH * 2) throw tooLong();
+  const refused = locateProhibitedText(note, { oneLine: true })[0];
+  if (refused !== undefined) {
+    throw invalid(`a review note must not contain ${describeLocated(where, refused)}`);
   }
-  if (hasControlCharacter(note)) {
-    throw invalid('a review note must not contain a control character');
-  }
+  const length = codePointLength(note);
+  if (length < REVIEW_NOTE_MIN_LENGTH || length > REVIEW_NOTE_MAX_LENGTH) throw tooLong();
   return note;
 }

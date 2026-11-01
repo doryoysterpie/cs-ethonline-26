@@ -10,7 +10,7 @@ import {
 import { parseDatabaseConfig } from './config.js';
 import { openDatabase, type Database } from './database.js';
 import { isDatabaseError } from './errors.js';
-import { migrationStatus, runMigrations } from './migrate.js';
+import { loadMigrations, migrationStatus, runMigrations } from './migrate.js';
 import { quoteIdentifier } from './schema.js';
 import { openIsolatedSchema, type IsolatedSchema } from './test-support.js';
 
@@ -334,7 +334,7 @@ describe('search-path capture (migration 0005)', () => {
     const status = await migrationStatus(isolated.db);
     expect(status.pending).toEqual([]);
     expect(status.drift).toEqual([]);
-    expect(status.applied).toHaveLength(23);
+    expect(status.applied).toHaveLength((await loadMigrations()).length);
     // A rerun stays a no-op rather than reapplying into the shadow schema.
     expect((await runMigrations(isolated.db)).applied).toEqual([]);
 
@@ -349,7 +349,7 @@ describe('search-path capture (migration 0005)', () => {
         `SELECT count(*)::text AS count FROM ${quoteIdentifier(isolated.name)}.schema_migrations`,
       ),
     );
-    expect(real.rows[0]?.count).toBe('23');
+    expect(real.rows[0]?.count).toBe(String((await loadMigrations()).length));
   });
 
   it('leaves every shadow table empty', async () => {

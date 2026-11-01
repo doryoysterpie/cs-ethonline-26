@@ -1906,7 +1906,9 @@ disabled on this model, so effort is the only control.
 ## D50 CAS-012: the save path, the refusals and one escape form
 
 - **Date:** 2026-11-01
-- **Status:** ACCEPTED; the two points the answers raised were settled by the owner the same day
+- **Status:** ACCEPTED; the two points the answers raised were settled by the owner the same day;
+  point 3 amended the same day, and point 1's refusal notice settled the same day (see the two
+  D50 amendments appended below)
 - **Decision:** The owner's answers of 1 November 2026 to the three questions of
   `docs/CAS-012-REPORT.md`, section 1.4:
   1. **The save path: refuse by class, strip the rest** (option (c)). When a draft, round-up or
@@ -1974,3 +1976,92 @@ disabled on this model, so effort is the only control.
   U+200C in a Persian password is refused.
 - **Decided by:** Project owner, 1 November 2026, in chat.
 - **Supersedes:** nothing; extends D49 to the nine lists it names.
+
+### D50 amendment, 2026-11-01: the display escape and a serialiser's escaping stack
+
+Not a new decision. Point 3's condition that "the serializer's escaping stands and the display
+escape is not applied before it" assumed a serialiser escapes the same set as the display escape.
+It does not: JSON escapes for its parser (the quotation mark, the backslash, U+0000 to U+001F)
+and nothing else, and leaves the bidirectional controls, the zero-width characters and the C1
+controls as they are. The owner's ruling of the same day, on the question CAS-012 raised
+(`docs/CAS-012-REPORT.md`, section 8):
+
+- **The two layers stack.** The display escape is applied to content before serialisation, for
+  whoever reads the decoded string; a serialiser's own escaping serves its parser and is neither
+  substituted for the display escape nor removed.
+- **The doubled backslash is required, not a cost.** JSON's `\u` takes exactly four hexadecimal
+  digits, so `\u{202E}` can never be a JSON escape and exists only as text; its backslash is
+  serialised as `\\`, the only form under which the result parses. A reader of the raw JSON who
+  sees it is seeing the serialiser work.
+- **Every string a client shows or hands to a model is escaped**, `structuredContent` included.
+  Identifiers, counts and enumerations carry no text and are never escaped.
+- **Proven by a round trip.** Evidence holding U+202E, U+200B, U+0085 and U+000A is serialised,
+  parsed by a JSON parser, and the decoded string equals the display-escaped text and holds no
+  character the rule names and no raw control
+  (`packages/mcp-server/src/json-roundtrip.test.ts`).
+- **Why not the alternatives.** Escaping only what JSON leaves raw would let the client's parser
+  restore JSON's `\n` and `\u0000` to real characters: one form plus raw controls in a one-line
+  field, the forging case point 2 closed. Escaping nothing inside JSON would remove the
+  protection on the one output that leaves the server for a model, the reader a
+  direction-changing character is aimed at.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+### D50 amendment 2, 2026-11-01: a refusal's notice and its record
+
+Not a new decision. Point 1 says a removal is listed by code point, name and position, never
+only a count, and that "a refusal names the character and position the same way". A refused
+save stores nothing, so its characters travel in the redirect, which holds a bounded number of
+them. The question CAS-012 raised (`docs/CAS-012-REPORT.md`, section 9.1) was whether a refusal's
+notice must list every refused character as a save's notice lists every removal. The owner's
+ruling of the same day: it need not, under five conditions.
+
+- **The first twenty, then an exact count.** The notice names the first twenty refused
+  characters in the order they stood and states exactly how many more there were, so the owner
+  works from the top and the next batch is known.
+- **Code point, name and position only.** Each line carries the code point, its name, and the
+  field, line and column, never a character of the refused text: the redirect lands in browser
+  history and request logs.
+- **The likely cause, past the cap.** When there are more than twenty, the notice adds one line
+  saying that so many refused characters usually means a broken copy and that copying the text
+  again from its source is the expected fix.
+- **One cap, with its reason.** The cap is one constant, `NOTICE_CHARACTERS_MAX` in
+  `apps/dashboard/src/app/notices.ts`, bounded by the redirect's size, and the decoder's bound is
+  computed from it.
+- **The audit event is the record.** A refused save emits an audit event that carries the field,
+  the count and the code point of every refused character, with no position and no text
+  (migration 0025). The record is complete without a table of its own; the redirect is the
+  notice.
+- **Why not a complete list in the notice.** Keeping each refusal's list on the server would give
+  a refused save a stored footprint, a retention rule and a cleanup job for a rare case. More
+  than twenty controls or direction-changing characters in one save do not come from an honest
+  paste; they come from a binary or a hostile source, and the owner's action there is to copy the
+  text again, not to remove twenty positions by hand.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D51 Carrying a stale pull request
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** A pull request that has fallen behind `main` and conflicts is carried by Claude
+  Code as a new pull request, never refreshed by the agent that wrote it. The owner's ruling of
+  1 November 2026 on pull requests 51 and 52, with three conditions:
+  1. **New pull requests, the originals closed and linked.** Each original is closed as
+     superseded once its replacement is open, with links both ways, so the earlier review
+     threads stay attached to the code they reviewed. The new description states the delta
+     beyond the rebase, and any unresolved review comment on the original is carried over as an
+     open item, so the review is of the delta, not from zero.
+  2. **Carry what does not depend on open work now.** Pull request 52 does not depend on CAS-012
+     and is carried at once. Pull request 51 is carried after pull request 61 merges, so its
+     restore test enters review at the migration count `main` then holds.
+  3. **Counts read from the directory.** A test that counts migrations derives the number from
+     the migrations directory. A literal kept on purpose, as a tripwire against a dropped
+     migration file, says so in the test.
+- **Rationale:** The owner's. A refreshed pull request has an author; if Codex refreshes a pull
+  request it wrote, Codex then reviews its own work, which breaks the independent review the
+  project adopted it for. Closing the two would lose two reviewed changes. A literal count goes
+  stale at every migration and someone must remember to edit it, as one just did.
+- **Consequences:** Pull request 52 is carried from `main` at `12ce7a7` (`ops/main-ruleset-controls-carry`);
+  pull request 51 waits on pull request 61. CAS-012's database tests read their migration counts
+  from the directory and mark their written-out lists as the tripwire.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+- **Supersedes:** nothing.

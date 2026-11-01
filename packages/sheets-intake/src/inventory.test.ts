@@ -121,9 +121,9 @@ describe('the inventory describes structure and reports no content', () => {
     const tab = inventory.tabs[0];
     expect(tab?.nameSanitized).toBe(true);
     expect(tab?.displayName).not.toContain('\n');
-    expect(tab?.displayName).toContain('\\n');
-    expect(tab?.displayName).toContain('\\x1b');
-    expect(JSON.stringify(inventory).includes('\\n"')).toBe(false);
+    expect(tab?.displayName).toContain('\\u{000A}');
+    expect(tab?.displayName).toContain('\\u{001B}');
+    expect(JSON.stringify(inventory).includes('\\u{000A}"')).toBe(false);
   });
 
   it('warns rather than aborting when the title does not match', async () => {
@@ -226,7 +226,7 @@ describe('headers are described, never repaired', () => {
   it('escapes a hostile header for display and flags it', () => {
     const analysis = analyzeHeaders([`Title\nURL`], limits);
     expect(analysis.anySanitized).toBe(true);
-    expect(analysis.headers[0]?.display).toBe('Title\\nURL');
+    expect(analysis.headers[0]?.display).toBe('Title\\u{000A}URL');
   });
 
   it('refuses an oversized header row and an oversized header cell', () => {

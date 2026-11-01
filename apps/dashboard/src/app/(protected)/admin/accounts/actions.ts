@@ -15,7 +15,13 @@ import {
 import { assertActionRequest, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { validation } from '../../../../server/errors.ts';
 import { readClosedObject } from '../../../../server/input.ts';
-import { attempt, noticeCodeFor, withNotice } from '../../../page-support.ts';
+import {
+  attempt,
+  noticeCodeFor,
+  NO_REFUSAL,
+  refusalOf,
+  withNotice,
+} from '../../../page-support.ts';
 
 const PAGE = '/admin/accounts';
 
@@ -32,7 +38,13 @@ async function guarded(
     await assertActionRequest(principal, form);
     return work({ runtime, principal });
   });
-  redirect(withNotice(PAGE, outcome.ok ? outcome.value : noticeCodeFor(outcome.error)));
+  redirect(
+    withNotice(
+      PAGE,
+      outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
+      outcome.ok ? NO_REFUSAL : refusalOf(outcome.error),
+    ),
+  );
 }
 
 export async function provisionAction(form: FormData): Promise<void> {

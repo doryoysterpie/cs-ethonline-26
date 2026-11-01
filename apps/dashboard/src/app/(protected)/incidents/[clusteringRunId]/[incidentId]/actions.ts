@@ -5,13 +5,29 @@ import { redirect } from 'next/navigation';
 import { mergeIncidentsAction, splitIncidentAction } from '../../../../../server/dal/mutate.ts';
 import { assertActionRequest, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { readClosedObject, uuid } from '../../../../../server/input.ts';
-import { attempt, noticeCodeFor, withNotice } from '../../../../page-support.ts';
+import {
+  attempt,
+  noticeCodeFor,
+  NO_REFUSAL,
+  refusalOf,
+  withNotice,
+  type Refusal,
+} from '../../../../page-support.ts';
 
-function back(runId: unknown, incidentId: unknown, code: string): never {
+function back(
+  runId: unknown,
+  incidentId: unknown,
+  code: string,
+  refusal: Refusal = NO_REFUSAL,
+): never {
   const run = typeof runId === 'string' ? runId : '';
   const incident = typeof incidentId === 'string' ? incidentId : '';
   redirect(
-    withNotice(`/incidents/${encodeURIComponent(run)}/${encodeURIComponent(incident)}`, code),
+    withNotice(
+      `/incidents/${encodeURIComponent(run)}/${encodeURIComponent(incident)}`,
+      code,
+      refusal,
+    ),
   );
 }
 
@@ -44,7 +60,12 @@ export async function mergeAction(form: FormData): Promise<void> {
     });
     return result.outcome === 'recorded' ? 'recorded' : 'already_recorded';
   });
-  back(runId, incidentId, outcome.ok ? outcome.value : noticeCodeFor(outcome.error));
+  back(
+    runId,
+    incidentId,
+    outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
+    outcome.ok ? NO_REFUSAL : refusalOf(outcome.error),
+  );
 }
 
 export async function splitAction(form: FormData): Promise<void> {
@@ -75,5 +96,10 @@ export async function splitAction(form: FormData): Promise<void> {
     });
     return result.outcome === 'recorded' ? 'recorded' : 'already_recorded';
   });
-  back(runId, incidentId, outcome.ok ? outcome.value : noticeCodeFor(outcome.error));
+  back(
+    runId,
+    incidentId,
+    outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
+    outcome.ok ? NO_REFUSAL : refusalOf(outcome.error),
+  );
 }

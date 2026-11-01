@@ -867,8 +867,9 @@ describe('F10 and F13: bounded draft data and truthful truncation', () => {
     expect(omitted(title(4))).toBe(100);
     expect((title(4)['text'] as string).startsWith(char(0x6f22).repeat(300))).toBe(true);
     expect(title(5)['truncated']).toBe(true);
-    expect(omitted(title(5))).toBe(250);
-    expect((title(5)['text'] as string).startsWith('\\u003c'.repeat(50))).toBe(true);
+    // Eight display characters per escaped angle bracket: thirty-seven fit (CAS-012, D50).
+    expect(omitted(title(5))).toBe(263);
+    expect((title(5)['text'] as string).startsWith('\\u{003C}'.repeat(37))).toBe(true);
     // The secret crossed the display boundary, was fetched whole, and was
     // redacted before the cut: no prefix of it leaks.
     expect(title(6)['text']).toContain('[REDACTED]');

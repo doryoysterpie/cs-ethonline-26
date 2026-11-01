@@ -1,16 +1,29 @@
 import Link from 'next/link';
 
-import type { DataOrigin } from '@cas/contracts';
+import { codePointName, escapeCodePoint, type DataOrigin } from '@cas/contracts';
 
-import { safeText } from '../server/display.ts';
-import { isErrorNotice, noticeFor } from '../app/notices.ts';
+import { safeParts } from '../server/display.ts';
+import {
+  NOTICE_CHARACTERS_MAX,
+  isCleanedNotice,
+  isErrorNotice,
+  noticeCharacters,
+  noticeFor,
+  noticeField,
+  noticeMore,
+  type NoticeCharacter,
+} from '../app/notices.ts';
 
 /** The data origin, shown on every record the dashboard renders. */
 export function Origin({ value }: { readonly value: DataOrigin }) {
   return <span className={`origin origin-${value}`}>{value}</span>;
 }
 
-/** Hostile stored text, escaped and bounded. */
+/**
+ * Hostile stored text, escaped and bounded. Each escape renders in its own
+ * style, apart from body text, so a literal backslash sequence in the value is
+ * never taken for one (D50, point 3).
+ */
 export function Text({
   value,
   max,
@@ -18,13 +31,109 @@ export function Text({
   readonly value: unknown;
   readonly max?: number | undefined;
 }) {
-  return <>{safeText(value, max)}</>;
+  return (
+    <>
+      {safeParts(value, max).map((part, index) =>
+        part.escape ? (
+          <span key={index} className="escaped">
+            {part.text}
+          </span>
+        ) : (
+          part.text
+        ),
+      )}
+    </>
+  );
 }
 
-export function Notice({ code }: { readonly code: unknown }) {
-  const message = noticeFor(code);
+/** One named character: `\u{00AD} SOFT HYPHEN, field markdown, line 4, column 17`. */
+function NamedCharacter({
+  character,
+  field,
+}: {
+  readonly character: NoticeCharacter;
+  readonly field: string | null;
+}) {
+  const name = codePointName(character.codePoint);
+  return (
+    <li>
+      <span className="escaped">{escapeCodePoint(character.codePoint)}</span>
+      {name === null ? '' : ` ${name}`}
+      {field === null ? '' : `, field ${field}`}, line {character.line}, column {character.column}
+    </li>
+  );
+}
+
+/**
+ * A fixed notice, and, for one that names characters, each of them by its
+ * escape, name and position, never a character of the text (D50 and its
+ * amendment of 1 November 2026): `\u{00AD} SOFT HYPHEN, field markdown, line 4,
+ * column 17`. A save's notice lists every character the save removed from its
+ * body, from the record its revision keeps (`removed`), past the first twenty
+ * behind a disclosure; with no record it says only that the text was saved. A
+ * refusal lists what its redirect carried (`field`, `at`), the first twenty in
+ * the order they stood, and states exactly how many more there were (`more`),
+ * or, on a page that holds the refusal itself, all of them (`characters`).
+ * Past the cap, a refusal adds that a broken copy is the likely cause.
+ */
+export function Notice({
+  code,
+  at,
+  more,
+  field,
+  characters,
+  removed,
+}: {
+  readonly code: unknown;
+  readonly at?: unknown;
+  readonly more?: unknown;
+  readonly field?: unknown;
+  readonly characters?: readonly NoticeCharacter[];
+  readonly removed?: readonly NoticeCharacter[];
+}) {
+  const cleaned = isCleanedNotice(code);
+  const listed = cleaned ? (removed ?? []) : (characters ?? noticeCharacters(at));
+  const shown =
+    cleaned && listed.length === 0 ? (code === 'saved_cleaned' ? 'saved' : 'edited') : code;
+  const message = noticeFor(shown);
   if (message === null) return null;
-  return <p className={isErrorNotice(code) ? 'notice notice-error' : 'notice'}>{message}</p>;
+  const className = isErrorNotice(shown) ? 'notice notice-error' : 'notice';
+  if (listed.length === 0) return <p className={className}>{message}</p>;
+  // A save's removals are always from its body.
+  const named = cleaned ? 'markdown' : noticeField(field);
+  const first = listed.slice(0, NOTICE_CHARACTERS_MAX);
+  const rest = listed.slice(NOTICE_CHARACTERS_MAX);
+  const unlisted = !cleaned && characters === undefined ? noticeMore(more) : 0;
+  const overflow = !cleaned && (unlisted > 0 || rest.length > 0);
+  return (
+    <div className={className}>
+      <p>{message}</p>
+      <ul className="notice-characters">
+        {first.map((character, index) => (
+          <NamedCharacter key={index} character={character} field={named} />
+        ))}
+      </ul>
+      {rest.length > 0 ? (
+        <details>
+          <summary>{rest.length} more</summary>
+          <ul className="notice-characters">
+            {rest.map((character, index) => (
+              <NamedCharacter key={index} character={character} field={named} />
+            ))}
+          </ul>
+        </details>
+      ) : null}
+      {unlisted > 0 ? (
+        <p>And {unlisted} more, named when the text is submitted again without the ones above.</p>
+      ) : null}
+      {overflow ? (
+        <p>
+          More than {NOTICE_CHARACTERS_MAX} refused characters usually means a broken copy; copying
+          the text again from its source is the expected fix.
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function Limitation({ children }: { readonly children: React.ReactNode }) {

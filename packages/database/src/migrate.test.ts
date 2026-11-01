@@ -15,6 +15,8 @@ afterEach(async () => {
 
 describe('loadMigrations', () => {
   it('loads the shipped migrations in numeric order with SHA-256 checksums of the file bytes', async () => {
+    // Written out on purpose, a tripwire: a dropped, renamed or reordered migration file fails here,
+    // so this list is edited with every migration. Counts elsewhere are derived from the directory.
     const files = await loadMigrations();
     expect(files.map((f) => f.fileName)).toEqual([
       '0001_editorial_ingestion.sql',
@@ -40,6 +42,8 @@ describe('loadMigrations', () => {
       '0021_story_cards.sql',
       '0022_publication_sequence.sql',
       '0023_publication_order_backfill.sql',
+      '0024_revision_removed_characters.sql',
+      '0025_audit_refused_characters.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));

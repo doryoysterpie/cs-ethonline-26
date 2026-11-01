@@ -1,10 +1,10 @@
 import 'server-only';
 
-import type { Queryable } from '@cas/database';
+import type { Queryable, RemovedCharacter } from '@cas/database';
 
 import { randomUUID } from 'node:crypto';
 
-import { REVIEW_STATES, type ReviewState } from '@cas/contracts';
+import { REVIEW_STATES, type LocatedCodePoint, type ReviewState } from '@cas/contracts';
 
 import { normalizeEmail } from '../auth/email.ts';
 import { assertPassword, hashPassword } from '../auth/password.ts';
@@ -25,6 +25,7 @@ import {
 import type { ArticleInput } from '@cas/article';
 import type { SourceOutcome } from '@cas/source-reader';
 
+import { cleanedBody } from '../markdown/body.ts';
 import { workspace } from '../packages.ts';
 import type { Runtime } from '../runtime.ts';
 import { mapFailure } from './failures.ts';
@@ -344,12 +345,26 @@ export interface DraftEditInput {
   readonly markdown: unknown;
 }
 
-const char = (code: number): string => String.fromCodePoint(code);
-/** Everything a draft body refuses: controls other than tab, newline and carriage return; C1; line separators; bidi controls. */
-const DRAFT_FORBIDDEN = new RegExp(
-  `[${char(0x00)}-${char(0x08)}${char(0x0b)}${char(0x0c)}${char(0x0e)}-${char(0x1f)}${char(0x7f)}-${char(0x9f)}${char(0x2028)}${char(0x2029)}${char(0x202a)}-${char(0x202e)}${char(0x2066)}-${char(0x2069)}]`,
-  'u',
-);
+/**
+ * A refused save's record for its audit event (the D50 amendment of 1 November 2026, migration
+ * 0025): the field and every refused code point, in the order they stood. The event is the
+ * record, complete; the redirect is the notice, bounded. No position and no text.
+ */
+function refusedRecord(error: DashboardError): NonNullable<AuditEvent['refused']> | null {
+  if (error.field === null || error.characters.length === 0) return null;
+  return { field: error.field, codePoints: error.characters.map((located) => located.codePoint) };
+}
+
+/** The record a revision keeps of what its save removed: code points and positions only. */
+function removalRecord(removed: readonly LocatedCodePoint[]): readonly RemovedCharacter[] {
+  return removed.map(({ codePoint, line, column }) => ({ codePoint, line, column }));
+}
+
+/** What a save returns: the revision written and every character removed before it was written. */
+export interface SavedRevision {
+  readonly revision: number;
+  readonly removed: readonly LocatedCodePoint[];
+}
 
 /**
  * Appends a human revision of a draft. Optimistic concurrency: the caller
@@ -361,7 +376,36 @@ export async function saveDraftRevision(
   runtime: Runtime,
   who: Principal | null,
   input: DraftEditInput,
-): Promise<{ readonly revision: number }> {
+): Promise<SavedRevision> {
+  try {
+    return await saveDraftRevisionUnaudited(runtime, who, input);
+  } catch (error) {
+    // As for the round-up: every refusal with a known actor is audited once, with its fixed
+    // code; a refused body's event records its characters (migration 0025).
+    if (who !== null && isDashboardError(error) && error.kind !== 'unavailable') {
+      await audit(runtime, {
+        kind: 'draft_revision_saved',
+        outcome: 'failure',
+        code: error.code,
+        actorAccountId: who.accountId,
+        subjectAccountId: null,
+        sessionId: who.sessionId,
+        subjectId:
+          typeof input.evidenceRunId === 'string' && UUID_SHAPE.test(input.evidenceRunId)
+            ? input.evidenceRunId
+            : null,
+        refused: refusedRecord(error),
+      });
+    }
+    throw error;
+  }
+}
+
+async function saveDraftRevisionUnaudited(
+  runtime: Runtime,
+  who: Principal | null,
+  input: DraftEditInput,
+): Promise<SavedRevision> {
   const principal = requireCapability(who, 'edit:draft');
   const runId = uuid(input.evidenceRunId, 'evidenceRunId');
   const start = instant(input.periodStart, 'periodStart');
@@ -373,18 +417,7 @@ export async function saveDraftRevision(
   if (typeof input.markdown !== 'string')
     throw validation('markdown_invalid', 'The draft body must be text.');
   const markdown = input.markdown.replace(/\r\n/gu, '\n');
-  if (markdown.length < 1 || markdown.length > MAX_DRAFT_CHARACTERS) {
-    throw validation(
-      'markdown_length',
-      `The draft body must be between 1 and ${MAX_DRAFT_CHARACTERS} characters.`,
-    );
-  }
-  if (DRAFT_FORBIDDEN.test(markdown)) {
-    throw validation(
-      'markdown_control',
-      'The draft body must not contain a control or bidirectional character.',
-    );
-  }
+  const { body, removed } = cleanedBody(markdown, 'draft', MAX_DRAFT_CHARACTERS);
   const packages = await workspace();
   const { getEvidenceRun } = packages.database;
   try {
@@ -413,9 +446,10 @@ export async function saveDraftRevision(
     await runtime.stores.drafts.append({
       draftKey: key,
       revision,
-      markdown,
+      markdown: body,
       savedByAccountId: principal.accountId,
       savedAt: new Date().toISOString(),
+      removedCharacters: removalRecord(removed),
     });
     await audit(runtime, {
       kind: 'draft_revision_saved',
@@ -426,7 +460,7 @@ export async function saveDraftRevision(
       sessionId: principal.sessionId,
       subjectId: key,
     });
-    return { revision };
+    return { revision, removed };
   } catch (error) {
     throw mapFailure(error, packages);
   }
@@ -1026,6 +1060,7 @@ export async function generateRoundup(
           typeof input.weekRunId === 'string' && UUID_SHAPE.test(input.weekRunId)
             ? input.weekRunId
             : null,
+        refused: refusedRecord(error),
       });
     }
     throw error;
@@ -1357,7 +1392,7 @@ export async function saveRoundupRevision(
   runtime: Runtime,
   who: Principal | null,
   input: RoundupEditInput,
-): Promise<{ readonly revision: number }> {
+): Promise<SavedRevision> {
   try {
     return await saveRoundupRevisionUnaudited(runtime, who, input);
   } catch (error) {
@@ -1375,6 +1410,7 @@ export async function saveRoundupRevision(
           typeof input.weekRunId === 'string' && UUID_SHAPE.test(input.weekRunId)
             ? input.weekRunId
             : null,
+        refused: refusedRecord(error),
       });
     }
     throw error;
@@ -1385,7 +1421,7 @@ async function saveRoundupRevisionUnaudited(
   runtime: Runtime,
   who: Principal | null,
   input: RoundupEditInput,
-): Promise<{ readonly revision: number }> {
+): Promise<SavedRevision> {
   const principal = requireCapability(who, 'edit:output');
   if (runtime.stores.kind !== 'postgres') {
     throw validation(
@@ -1405,18 +1441,7 @@ async function saveRoundupRevisionUnaudited(
   if (typeof input.markdown !== 'string')
     throw validation('markdown_invalid', 'The round-up body must be text.');
   const markdown = input.markdown.replace(/\r\n/gu, '\n');
-  if (markdown.length < 1 || markdown.length > MAX_ROUNDUP_CHARACTERS) {
-    throw validation(
-      'markdown_length',
-      `The round-up body must be between 1 and ${MAX_ROUNDUP_CHARACTERS} characters.`,
-    );
-  }
-  if (DRAFT_FORBIDDEN.test(markdown)) {
-    throw validation(
-      'markdown_control',
-      'The round-up body must not contain a control or bidirectional character.',
-    );
-  }
+  const { body, removed } = cleanedBody(markdown, 'round-up', MAX_ROUNDUP_CHARACTERS);
   const packages = await workspace();
   const { insertRoundupRevision, isDatabaseError, latestRoundupRevision } = packages.database;
   try {
@@ -1452,10 +1477,11 @@ async function saveRoundupRevisionUnaudited(
           revision,
           kind: 'edited',
           slots: latest.slots,
-          markdown,
+          markdown: body,
           provenance: null,
           savedByAccountId: principal.accountId,
           createdAt: new Date().toISOString(),
+          removedCharacters: removalRecord(removed),
         }),
       );
     } catch (error) {
@@ -1477,7 +1503,7 @@ async function saveRoundupRevisionUnaudited(
       sessionId: principal.sessionId,
       subjectId: weekRunId,
     });
-    return { revision };
+    return { revision, removed };
   } catch (error) {
     throw mapFailure(error, packages);
   }
@@ -1545,6 +1571,7 @@ async function auditArticleRefusal(
       subjectAccountId: null,
       sessionId: who.sessionId,
       subjectId: typeof weekRunId === 'string' && UUID_SHAPE.test(weekRunId) ? weekRunId : null,
+      refused: refusedRecord(error),
     });
   }
 }
@@ -1953,7 +1980,7 @@ export async function saveArticleRevision(
   runtime: Runtime,
   who: Principal | null,
   input: ArticleEditInput,
-): Promise<{ readonly revision: number }> {
+): Promise<SavedRevision> {
   try {
     return await saveArticleRevisionUnaudited(runtime, who, input);
   } catch (error) {
@@ -1966,7 +1993,7 @@ async function saveArticleRevisionUnaudited(
   runtime: Runtime,
   who: Principal | null,
   input: ArticleEditInput,
-): Promise<{ readonly revision: number }> {
+): Promise<SavedRevision> {
   const principal = requireCapability(who, 'edit:output');
   if (runtime.stores.kind !== 'postgres') {
     throw validation(
@@ -1986,18 +2013,7 @@ async function saveArticleRevisionUnaudited(
   if (typeof input.markdown !== 'string')
     throw validation('markdown_invalid', 'The article body must be text.');
   const markdown = input.markdown.replace(/\r\n/gu, '\n');
-  if (markdown.length < 1 || markdown.length > MAX_ARTICLE_CHARACTERS) {
-    throw validation(
-      'markdown_length',
-      `The article body must be between 1 and ${MAX_ARTICLE_CHARACTERS} characters.`,
-    );
-  }
-  if (DRAFT_FORBIDDEN.test(markdown)) {
-    throw validation(
-      'markdown_control',
-      'The article body must not contain a control or bidirectional character.',
-    );
-  }
+  const { body, removed } = cleanedBody(markdown, 'article', MAX_ARTICLE_CHARACTERS);
   const packages = await workspace();
   const { insertArticleRevision, isDatabaseError, latestArticleRevision } = packages.database;
   try {
@@ -2033,10 +2049,11 @@ async function saveArticleRevisionUnaudited(
           revision,
           kind: 'edited',
           slots: latest.slots,
-          markdown,
+          markdown: body,
           provenance: null,
           savedByAccountId: principal.accountId,
           createdAt: new Date().toISOString(),
+          removedCharacters: removalRecord(removed),
         }),
       );
     } catch (error) {
@@ -2058,7 +2075,7 @@ async function saveArticleRevisionUnaudited(
       sessionId: principal.sessionId,
       subjectId: weekRunId,
     });
-    return { revision };
+    return { revision, removed };
   } catch (error) {
     throw mapFailure(error, packages);
   }

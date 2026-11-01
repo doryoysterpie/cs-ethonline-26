@@ -325,7 +325,14 @@ class MemoryAudit implements AuditStore {
   private readonly events: AuditEvent[] = [];
 
   async append(event: AuditEvent): Promise<void> {
-    this.events.push(Object.freeze({ ...event }));
+    const refused =
+      event.refused === undefined || event.refused === null
+        ? null
+        : Object.freeze({
+            field: event.refused.field,
+            codePoints: Object.freeze([...event.refused.codePoints]),
+          });
+    this.events.push(Object.freeze({ ...event, refused }));
   }
 
   async list(limit: number): Promise<AuditEvent[]> {
@@ -355,7 +362,14 @@ class MemoryDrafts implements DraftStore {
         'the draft was revised by someone else; reload and try again',
       );
     }
-    revisions.push(Object.freeze({ ...revision }));
+    revisions.push(
+      Object.freeze({
+        ...revision,
+        removedCharacters: Object.freeze(
+          revision.removedCharacters.map((character) => Object.freeze({ ...character })),
+        ),
+      }),
+    );
     this.byKey.set(revision.draftKey, revisions);
   }
 }

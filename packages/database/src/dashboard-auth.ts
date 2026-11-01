@@ -1,4 +1,9 @@
 import type { Queryable } from './database.js';
+import {
+  removedCharactersFrom,
+  removedCharactersJson,
+  type RemovedCharacter,
+} from './removed-characters.js';
 
 /**
  * PostgreSQL operations backing the dashboard's authentication and
@@ -54,6 +59,14 @@ export interface AuditEventRow {
   readonly sessionId: string | null;
   readonly networkKey: string | null;
   readonly subjectId: string | null;
+  /** A refused save's characters (migration 0025): the field and each code point, never a position or text. */
+  readonly refused?: RefusedCharacters | null;
+}
+
+/** What a refused save's audit event records (migration 0025). */
+export interface RefusedCharacters {
+  readonly field: string;
+  readonly codePoints: readonly number[];
 }
 
 export interface DraftRevisionRow {
@@ -62,6 +75,8 @@ export interface DraftRevisionRow {
   readonly markdown: string;
   readonly savedByAccountId: string;
   readonly savedAt: string;
+  /** Every character the save removed from the text submitted (migration 0024). */
+  readonly removedCharacters: readonly RemovedCharacter[];
 }
 
 export interface QueueDecisionRow {
@@ -270,9 +285,14 @@ export async function listSessionsForAccount(
 }
 
 export async function appendAuditEvent(client: Queryable, event: AuditEventRow): Promise<void> {
+  // Only a refused save's event names the three columns; every other leaves them null, and is
+  // written as before migration 0025.
+  const refused = event.refused ?? null;
   await client.query(
-    `INSERT INTO audit_events (id, at, kind, outcome, code, actor_account_id, subject_account_id, session_id, network_key, subject_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    `INSERT INTO audit_events (id, at, kind, outcome, code, actor_account_id, subject_account_id, session_id, network_key, subject_id${
+      refused === null ? '' : ', refused_field, refused_count, refused_code_points'
+    })
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10${refused === null ? '' : ', $11, $12, $13::integer[]'})`,
     [
       event.id,
       event.at,
@@ -284,47 +304,73 @@ export async function appendAuditEvent(client: Queryable, event: AuditEventRow):
       event.sessionId,
       event.networkKey,
       event.subjectId,
+      ...(refused === null
+        ? []
+        : [refused.field, refused.codePoints.length, [...refused.codePoints]]),
     ],
   );
 }
 
 export async function listAuditEvents(client: Queryable, limit: number): Promise<AuditEventRow[]> {
-  const result = await client.query<AuditEventRow>(
+  const result = await client.query<
+    Omit<AuditEventRow, 'refused'> & {
+      readonly refusedField: string | null;
+      readonly refusedCodePoints: number[] | null;
+    }
+  >(
     `SELECT id, pg_catalog.to_json(at) #>> '{}' AS at, kind, outcome, code,
             actor_account_id AS "actorAccountId", subject_account_id AS "subjectAccountId",
-            session_id AS "sessionId", network_key AS "networkKey", subject_id AS "subjectId"
+            session_id AS "sessionId", network_key AS "networkKey", subject_id AS "subjectId",
+            refused_field AS "refusedField", refused_code_points AS "refusedCodePoints"
        FROM audit_events ORDER BY at DESC, id DESC LIMIT $1`,
     [Math.max(0, limit)],
   );
-  return result.rows;
+  return result.rows.map(({ refusedField, refusedCodePoints, ...event }) => ({
+    ...event,
+    refused:
+      refusedField === null || refusedCodePoints === null
+        ? null
+        : { field: refusedField, codePoints: refusedCodePoints },
+  }));
+}
+
+type StoredDraftRevision = Omit<DraftRevisionRow, 'removedCharacters'> & {
+  readonly removedCharacters: unknown;
+};
+
+function draftRevisionFrom(row: StoredDraftRevision): DraftRevisionRow {
+  return { ...row, removedCharacters: removedCharactersFrom(row.removedCharacters) };
 }
 
 export async function latestDraftRevision(
   client: Queryable,
   draftKey: string,
 ): Promise<DraftRevisionRow | null> {
-  const result = await client.query<DraftRevisionRow>(
+  const result = await client.query<StoredDraftRevision>(
     `SELECT draft_key AS "draftKey", revision, markdown,
             saved_by_account_id AS "savedByAccountId",
-            pg_catalog.to_json(saved_at) #>> '{}' AS "savedAt"
+            pg_catalog.to_json(saved_at) #>> '{}' AS "savedAt",
+            removed_characters AS "removedCharacters"
        FROM draft_revisions WHERE draft_key = $1 ORDER BY revision DESC LIMIT 1`,
     [draftKey],
   );
-  return result.rows[0] ?? null;
+  const row = result.rows[0];
+  return row === undefined ? null : draftRevisionFrom(row);
 }
 
 export async function listDraftRevisions(
   client: Queryable,
   draftKey: string,
 ): Promise<DraftRevisionRow[]> {
-  const result = await client.query<DraftRevisionRow>(
+  const result = await client.query<StoredDraftRevision>(
     `SELECT draft_key AS "draftKey", revision, markdown,
             saved_by_account_id AS "savedByAccountId",
-            pg_catalog.to_json(saved_at) #>> '{}' AS "savedAt"
+            pg_catalog.to_json(saved_at) #>> '{}' AS "savedAt",
+            removed_characters AS "removedCharacters"
        FROM draft_revisions WHERE draft_key = $1 ORDER BY revision`,
     [draftKey],
   );
-  return result.rows;
+  return result.rows.map(draftRevisionFrom);
 }
 
 /**
@@ -339,8 +385,9 @@ export async function appendDraftRevision(
   revision: DraftRevisionRow,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO draft_revisions (draft_key, evidence_run_id, revision, markdown, saved_by_account_id, saved_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO draft_revisions (draft_key, evidence_run_id, revision, markdown, saved_by_account_id, saved_at,
+       removed_characters)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
     [
       revision.draftKey,
       evidenceRunId,
@@ -348,6 +395,7 @@ export async function appendDraftRevision(
       revision.markdown,
       revision.savedByAccountId,
       revision.savedAt,
+      removedCharactersJson(revision.removedCharacters),
     ],
   );
 }

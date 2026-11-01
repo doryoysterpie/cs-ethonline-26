@@ -76,7 +76,7 @@ describe('the pure policy', () => {
     expect(out).not.toContain(SECRET_API_KEY);
     expect(hasRawControl(out)).toBe(false);
     expect(out).not.toContain(char(0x202e));
-    expect(out).toContain('\\u202e');
+    expect(out).toContain('\\u{202E}');
     expect(Buffer.byteLength(out, 'utf8')).toBeLessThanOrEqual(ERROR_TEXT_MAX_BYTES);
     expect(out).toMatch(/…\[\+\d+ chars\]$/);
     const errorResult = {

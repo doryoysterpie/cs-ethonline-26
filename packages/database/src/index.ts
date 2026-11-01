@@ -209,6 +209,7 @@ export {
   touchSession,
   type AccountRow,
   type AuditEventRow,
+  type RefusedCharacters,
   type DraftRevisionRow,
   type OtpChallengeRow,
   type QueueDecisionRow,
@@ -330,6 +331,11 @@ export {
   type RoundupRevisionRecord,
   type SelectedRowRecord,
 } from './roundup.js';
+export {
+  removedCharactersFrom,
+  removedCharactersJson,
+  type RemovedCharacter,
+} from './removed-characters.js';
 export {
   insertArticleRevision,
   latestArticleRevision,

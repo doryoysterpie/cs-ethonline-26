@@ -4,7 +4,9 @@ import { randomBytes } from 'node:crypto';
 
 import argon2 from 'argon2';
 
-import { validation } from '../errors.ts';
+import { codePointLength, locateProhibitedText, type LocatedCodePoint } from '@cas/contracts';
+
+import { characterRefusal, validation } from '../errors.ts';
 
 /**
  * Password policy and hashing.
@@ -42,12 +44,6 @@ export const ARGON2_PARAMETERS = {
 /** The most expensive stored hash this code will verify. */
 export const ARGON2_CEILING = { memoryCost: 65536, timeCost: 4, parallelism: 2 } as const;
 
-const char = (code: number): string => String.fromCodePoint(code);
-const CONTROL = new RegExp(
-  `[${char(0x00)}-${char(0x1f)}${char(0x7f)}-${char(0x9f)}${char(0x2028)}${char(0x2029)}]`,
-  'u',
-);
-
 export type PasswordRejection =
   | 'password_too_short'
   | 'password_too_long'
@@ -63,12 +59,24 @@ export function validatePassword(
   username: string,
 ):
   | { readonly ok: true; readonly normalized: string }
-  | { readonly ok: false; readonly reason: PasswordRejection } {
+  | {
+      readonly ok: false;
+      readonly reason: PasswordRejection;
+      readonly characters?: readonly LocatedCodePoint[];
+    } {
   const normalized = raw.normalize('NFKC');
-  const length = [...normalized].length;
+  // Code units first only to bound the walk: 128 code points are at most 256 code units.
+  if (normalized.length > PASSWORD_MAX_LENGTH * 2)
+    return { ok: false, reason: 'password_too_long' };
+  // The whole rule, on the form that is hashed (D50, point 2): a password pasted with
+  // an invisible character verifies at set time and fails when typed. Checked at set
+  // and change only; verification never runs it, so a Node upgrade cannot lock anyone out.
+  // It runs before the length, so a refused character is named wherever it stands.
+  const characters = locateProhibitedText(normalized, { oneLine: true });
+  if (characters.length > 0) return { ok: false, reason: 'password_control_character', characters };
+  const length = codePointLength(normalized);
   if (length < PASSWORD_MIN_LENGTH) return { ok: false, reason: 'password_too_short' };
   if (length > PASSWORD_MAX_LENGTH) return { ok: false, reason: 'password_too_long' };
-  if (CONTROL.test(normalized)) return { ok: false, reason: 'password_control_character' };
   if (username.length >= 3 && normalized.toLowerCase().includes(username.toLowerCase())) {
     return { ok: false, reason: 'password_contains_username' };
   }
@@ -77,6 +85,9 @@ export function validatePassword(
 
 export function assertPassword(raw: string, username: string): string {
   const result = validatePassword(raw, username);
+  if (!result.ok && result.characters !== undefined) {
+    throw characterRefusal(result.reason, 'password', result.characters);
+  }
   if (!result.ok) {
     throw validation(
       result.reason,
@@ -84,9 +95,7 @@ export function assertPassword(raw: string, username: string): string {
         ? `the password must be at least ${PASSWORD_MIN_LENGTH} characters`
         : result.reason === 'password_too_long'
           ? `the password must be at most ${PASSWORD_MAX_LENGTH} characters`
-          : result.reason === 'password_control_character'
-            ? 'the password must not contain a control character'
-            : 'the password must not contain the username',
+          : 'the password must not contain the username',
     );
   }
   return result.normalized;

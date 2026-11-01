@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { describeLocated, type LocatedCodePoint } from '@cas/contracts';
+
 /**
  * Failure kinds of the dashboard, with fixed messages.
  *
@@ -26,12 +28,24 @@ export type DashboardFailureKind = (typeof DASHBOARD_FAILURE_KINDS)[number];
 export class DashboardError extends Error {
   readonly kind: DashboardFailureKind;
   readonly code: string;
+  /** For a character refusal (D50): each refused character by code point and position, never the text. */
+  readonly characters: readonly LocatedCodePoint[];
+  /** For a character refusal: the field refused, an identifier from the code (`markdown`), never a value. */
+  readonly field: string | null;
 
-  constructor(kind: DashboardFailureKind, code: string, message: string) {
+  constructor(
+    kind: DashboardFailureKind,
+    code: string,
+    message: string,
+    characters: readonly LocatedCodePoint[] = [],
+    field: string | null = null,
+  ) {
     super(message);
     this.name = 'DashboardError';
     this.kind = kind;
     this.code = code;
+    this.characters = characters;
+    this.field = field;
   }
 }
 
@@ -94,6 +108,21 @@ export function statusFor(error: unknown): number {
 
 export function validation(code: string, message: string): DashboardError {
   return new DashboardError('validation', code, message);
+}
+
+/**
+ * A refusal of characters the field may not carry (D50): the message names the
+ * first by its escape, name and position, `where` being the field, never the
+ * value; every refused character travels with the error for the notice.
+ */
+export function characterRefusal(
+  code: string,
+  where: string,
+  characters: readonly LocatedCodePoint[],
+): DashboardError {
+  const first = characters[0];
+  const named = first === undefined ? where : describeLocated(where, first);
+  return new DashboardError('validation', code, `refused character at ${named}`, characters, where);
 }
 
 export function forbidden(code: string): DashboardError {

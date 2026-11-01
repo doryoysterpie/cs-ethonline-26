@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  PERMITTED_DEFAULT_IGNORABLES,
+  escapeCodePoint,
+  prohibitedCodePoints,
+} from '@cas/contracts';
+
 import { GraphGatewayClient, gatewayBaseContainsCredential, type FetchLike } from './client.js';
 import { ESCAPE_CHARACTER, safeDisplay } from './display.js';
 import type { DeploymentTarget } from './gate.js';
@@ -240,10 +246,12 @@ describe('provider content cannot forge output lines', () => {
     expect(rendered).not.toContain('\n');
     expect(rendered).not.toContain('\r');
     expect(rendered).not.toContain(ESCAPE_CHARACTER);
-    expect(rendered).toContain('\\n');
-    expect(rendered).toContain('\\r');
-    expect(rendered).toContain('\\x1b');
-    expect(safeDisplay(`a${char(0)}b${char(0x9b)}c${char(0x2028)}d`)).toBe('a\\x00b\\x9bc\\u2028d');
+    expect(rendered).toContain('\\u{000A}');
+    expect(rendered).toContain('\\u{000D}');
+    expect(rendered).toContain('\\u{001B}');
+    expect(safeDisplay(`a${char(0)}b${char(0x9b)}c${char(0x2028)}d`)).toBe(
+      'a\\u{0000}b\\u{009B}c\\u{2028}d',
+    );
     expect(safeDisplay('x'.repeat(500))).toMatch(/…\[\+300 chars\]$/);
   });
 
@@ -280,5 +288,21 @@ describe('provider content cannot forge output lines', () => {
     const first = lines.findIndex((l) => l.startsWith('[ethereum] ethereum-0'));
     expect(first).toBeGreaterThanOrEqual(0);
     expect(lines[first + 1]).toMatch(/^ {2}provider identity:/);
+  });
+
+  it('escapes every code point the prohibited-text rule names, in the one form, and keeps the selectors (CAS-012, D50)', () => {
+    for (const code of prohibitedCodePoints()) {
+      expect([code, safeDisplay(`A${String.fromCodePoint(code)}B`, 100)]).toEqual([
+        code,
+        `A${escapeCodePoint(code)}B`,
+      ]);
+    }
+    for (const code of [0x09, 0x0a, 0x0d]) {
+      expect(safeDisplay(`A${String.fromCodePoint(code)}B`)).toBe(`A${escapeCodePoint(code)}B`);
+    }
+    for (const code of PERMITTED_DEFAULT_IGNORABLES) {
+      const heart = `A${String.fromCodePoint(0x2764, code)}B`;
+      expect(safeDisplay(heart)).toBe(heart);
+    }
   });
 });

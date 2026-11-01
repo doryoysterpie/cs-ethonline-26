@@ -1,6 +1,6 @@
 # CAS-011 report: one invisible-character rule
 
-**Status:** built on `cas-011/invisible-text`, from `main` at `7c867b7`, pull request 57; **not audited**.
+**Status:** built on `cas-011/invisible-text`, from `main` at `7c867b7`, pull request 57, merged at `7530d1c`; the last finding corrected in pull request 60, which passed at `9346f4f` and merged at `12ce7a7`; **accepted** (section 12).
 Tracker: `docs/tcu/CAS-011.md`. Decision: D49. Issue: #56.
 
 ## 1. Scope and decisions (S0)
@@ -276,3 +276,10 @@ merged at `7530d1c`, so the correction is a new pull request from `main`, on `ca
   the whole corrected text reaches the replacement in three calls; a write that takes nothing
   stops the fix with `hygiene fix could not write the replacement for docs/note.md`, the tracked
   file unchanged and no replacement left behind. Both fail on `6276df0`. Tool tests: 39.
+
+## 12. Re-review of pull request 60 at `9346f4f` (1 November 2026)
+
+Codex re-reviewed pull request 60 (record `2026-11-01-pr-60-9346f4f.md`), bounded to F3 of the
+combined re-review: PASS, no findings. The short-write path in `replaceTracked`, its regression
+tests and the earlier fix-mode behaviour were supported. The owner merged pull request 60 at
+`12ce7a7` the same day, and CAS-011 is accepted.

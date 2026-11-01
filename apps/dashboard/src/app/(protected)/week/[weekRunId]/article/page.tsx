@@ -3,7 +3,13 @@ import Link from 'next/link';
 import { Csrf, Instant, Notice, Origin, SectionBlock } from '../../../../../components/ui.tsx';
 import { csrfFor, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { articleView } from '../../../../../server/dal/read.ts';
-import { attempt, escalate, single, type SearchParams } from '../../../../page-support.ts';
+import {
+  attempt,
+  escalate,
+  removedAt,
+  single,
+  type SearchParams,
+} from '../../../../page-support.ts';
 import { publishAction, unpublishAction } from '../publish-actions.ts';
 import { generateArticleAction, readSourcesAction, saveArticleAction } from './actions.ts';
 
@@ -35,7 +41,13 @@ export default async function ArticlePage({
         Article for week <span className="mono">{view.week.id}</span> · {view.category}{' '}
         <Origin value={view.week.dataOrigin} />
       </h2>
-      <Notice code={single(query.notice)} />
+      <Notice
+        code={single(query.notice)}
+        at={single(query.at)}
+        more={single(query.more)}
+        field={single(query.field)}
+        removed={removedAt(view.revisions, single(query.revision))}
+      />
       <p className="small">
         Window <Instant value={view.week.windowStart} /> to <Instant value={view.week.windowEnd} />{' '}
         · {view.selectedIncidents} incidents, {view.selectedSources} sources selected · article

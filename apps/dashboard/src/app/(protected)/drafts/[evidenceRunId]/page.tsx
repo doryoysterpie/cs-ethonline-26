@@ -9,7 +9,7 @@ import {
 } from '../../../../components/ui.tsx';
 import { csrfFor, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { draftView } from '../../../../server/dal/read.ts';
-import { attempt, escalate, single, type SearchParams } from '../../../page-support.ts';
+import { attempt, escalate, removedAt, single, type SearchParams } from '../../../page-support.ts';
 import { saveDraftAction } from './actions.ts';
 
 export const dynamic = 'force-dynamic';
@@ -36,7 +36,13 @@ export default async function DraftPage({
         Draft for evidence run <span className="mono">{view.evidenceRun.id}</span>{' '}
         <Origin value={view.evidenceRun.dataOrigin} />
       </h2>
-      <Notice code={single(query.notice)} />
+      <Notice
+        code={single(query.notice)}
+        at={single(query.at)}
+        more={single(query.more)}
+        field={single(query.field)}
+        removed={removedAt(view.revisions, single(query.revision))}
+      />
       <p className="small">
         Period {view.periodStart} to {view.periodEnd} · status{' '}
         <span className="mono">{view.status}</span> · showing{' '}

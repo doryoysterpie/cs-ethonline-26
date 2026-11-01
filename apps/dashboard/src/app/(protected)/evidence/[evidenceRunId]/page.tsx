@@ -36,7 +36,12 @@ export default async function EvidencePage({
         Evidence run <span className="mono">{view.run.id}</span>{' '}
         <Origin value={view.run.dataOrigin} />
       </h2>
-      <Notice code={single(query.notice)} />
+      <Notice
+        code={single(query.notice)}
+        at={single(query.at)}
+        more={single(query.more)}
+        field={single(query.field)}
+      />
       <p className="small">
         {view.run.status} · clustering run{' '}
         <Link href={`/incidents/${view.run.clusteringRunId}`} className="mono">

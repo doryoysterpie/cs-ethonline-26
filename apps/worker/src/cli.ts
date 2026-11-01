@@ -18,6 +18,7 @@ import {
   type Redactor,
 } from '@cas/database';
 
+import { formatStoredTextScan, scanStoredText } from './text/scan-stored.js';
 import {
   formatCalibration,
   formatClassificationRun,
@@ -188,6 +189,7 @@ const USAGE = [
   '  sheets timestamps --tab <name> --column <n>',
   '  sheets dry-run --tab <name> --stage <stage> [--first-row <n>] [--columns <n>] [--timestamp-column <n>]',
   '  week run --window <isoStart..isoEnd> [--batch <uuid>] [--categories <a,b>]',
+  '  text scan',
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -439,6 +441,12 @@ export async function run(argv: readonly string[], options: CliOptions): Promise
         importCsvFile(db, request, { signal: options.signal }),
       );
       for (const line of formatImportOutcome(outcome, redact)) emit(line);
+      return EXIT_CODES.ok;
+    }
+    if (group === 'text' && command === 'scan') {
+      // Read-only: what stored drafts, round-ups and articles hold of the rule (CAS-012, D50).
+      const scan = await withDatabase(options, (db) => scanStoredText(db));
+      for (const line of formatStoredTextScan(scan)) emit(line);
       return EXIT_CODES.ok;
     }
     if (group === 'editorial' && command === 'report') {

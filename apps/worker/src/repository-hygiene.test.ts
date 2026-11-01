@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { describeCodePoint, prohibitedCodePoints, prohibitedTextRule } from '@cas/contracts';
+
 import {
   PROHIBITED_CODE_POINTS,
   describeOffender,
@@ -35,12 +37,11 @@ describe('repository hygiene', () => {
     expect(scan.offenders.map(describeOffender)).toEqual([]);
   });
 
-  it('documents the whole prohibited set', () => {
-    // C0 except tab and newline, DEL, C1, and the two line separators.
-    expect(PROHIBITED_CODE_POINTS).toHaveLength(30 + 1 + 32 + 2);
-    expect(PROHIBITED_CODE_POINTS).not.toContain(0x09);
-    expect(PROHIBITED_CODE_POINTS).not.toContain(0x0a);
-    for (const code of [0x00, 0x1b, 0x1f, 0x7f, 0x80, 0x9b, 0x9f, 0x2028, 0x2029]) {
+  it('scans for the prohibited-text rule, as the runtime enumerates it (CAS-012)', () => {
+    expect(PROHIBITED_CODE_POINTS).toEqual(prohibitedCodePoints());
+    for (const code of [0x09, 0x0a, 0x0d, 0xfe0e, 0xfe0f])
+      expect(PROHIBITED_CODE_POINTS).not.toContain(code);
+    for (const code of [0x00, 0x1b, 0x7f, 0x9b, 0x2028, 0x00ad, 0x180e, 0x200b, 0x202e, 0xe0001]) {
       expect(PROHIBITED_CODE_POINTS).toContain(code);
     }
   });
@@ -89,7 +90,6 @@ describe('the hygiene scanner against a disposable tree', () => {
     ['backspace', 0x08],
     ['vertical tab', 0x0b],
     ['form feed', 0x0c],
-    ['carriage return', 0x0d],
     ['escape', 0x1b],
     ['unit separator', 0x1f],
     ['DEL', 0x7f],
@@ -99,14 +99,18 @@ describe('the hygiene scanner against a disposable tree', () => {
     ['C1 APC', 0x9f],
     ['line separator', 0x2028],
     ['paragraph separator', 0x2029],
-  ])('reports %s at its exact file and line', async (_name, codePoint) => {
+    ['soft hyphen', 0x00ad],
+    ['Mongolian vowel separator', 0x180e],
+    ['right-to-left override', 0x202e],
+    ['language tag', 0xe0001],
+  ])('reports %s at its exact file, line and column', async (_name, codePoint) => {
     const contents = `const a = 1;\nconst b = 'x${String.fromCodePoint(codePoint)}y';\nconst c = 3;\n`;
     await writeFile(path.join(root, 'src', 'a', 'injected.ts'), contents, 'utf8');
     const scan = await scanSourceTree(root);
     expect(scan.scanned).toBe(3);
-    expect(scan.offenders).toEqual([{ file: 'src/a/injected.ts', line: 2, codePoint }]);
+    expect(scan.offenders).toEqual([{ file: 'src/a/injected.ts', line: 2, column: 13, codePoint }]);
     expect(scan.offenders.map(describeOffender)).toEqual([
-      `src/a/injected.ts:2: U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}`,
+      `src/a/injected.ts:2:13: ${prohibitedTextRule(codePoint)} ${describeCodePoint(codePoint)}`,
     ]);
   });
 
@@ -115,10 +119,10 @@ describe('the hygiene scanner against a disposable tree', () => {
     for (const codePoint of PROHIBITED_CODE_POINTS) {
       const bytes = encoder.encode(`ok\n${String.fromCodePoint(codePoint)}\nok\n`);
       expect(scanBytes(bytes, 'f.ts'), String(codePoint)).toEqual([
-        { file: 'f.ts', line: 2, codePoint },
+        { file: 'f.ts', line: 2, column: 1, codePoint },
       ]);
     }
-    for (const codePoint of [0x09, 0x0a, 0x20, 0x41, 0xe9, 0x2014, 0x1f600]) {
+    for (const codePoint of [0x09, 0x0a, 0x0d, 0x20, 0x41, 0xe9, 0x2014, 0x1f600, 0xfe0f]) {
       const bytes = encoder.encode(`ok\n${String.fromCodePoint(codePoint)}\nok\n`);
       expect(scanBytes(bytes, 'f.ts'), String(codePoint)).toEqual([]);
     }
@@ -138,8 +142,8 @@ describe('the hygiene scanner against a disposable tree', () => {
     await writeFile(path.join(root, 'src', 'a', 'bytes.ts'), bytes);
     const scan = await scanSourceTree(root);
     expect(scan.offenders).toEqual([
-      { file: 'src/a/bytes.ts', line: 2, codePoint: null },
-      { file: 'src/a/bytes.ts', line: 3, codePoint: null },
+      { file: 'src/a/bytes.ts', line: 2, column: 0, codePoint: null },
+      { file: 'src/a/bytes.ts', line: 3, column: 0, codePoint: null },
     ]);
     expect(describeOffender(scan.offenders[0] as never)).toBe('src/a/bytes.ts:2: invalid UTF-8');
   });
@@ -153,8 +157,8 @@ describe('the hygiene scanner against a disposable tree', () => {
     await writeFile(path.join(root, 'src', 'two.sql'), `${String.fromCodePoint(0x2029)}\n`, 'utf8');
     const scan = await scanSourceTree(root);
     expect(scan.offenders).toEqual([
-      { file: 'src/a/one.ts', line: 2, codePoint: 0x7f },
-      { file: 'src/two.sql', line: 1, codePoint: 0x2029 },
+      { file: 'src/a/one.ts', line: 2, column: 2, codePoint: 0x7f },
+      { file: 'src/two.sql', line: 1, column: 1, codePoint: 0x2029 },
     ]);
   });
 });

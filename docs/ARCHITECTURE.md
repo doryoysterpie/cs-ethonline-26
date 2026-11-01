@@ -524,7 +524,7 @@ re-audit and is not accepted**. A read-only MCP server over local stdio with fou
 Inputs: `DATABASE_URL` (optional; store-backed tools fail with a fixed code without it),
 `GRAPH_API_KEY` (live mode only), `GRAPH_GATEWAY_URL` (optional), `CAS_MCP_MODE` (optional;
 `production` by default). Outputs: MCP tool results with structured content validated against
-the advertised output schema. Tests: 208 offline tests in 22 files over linked in-memory
+the advertised output schema. Tests: 210 offline tests in 23 files over linked in-memory
 transports and the built entry point as a child process with a synthetic provider, and 49
 PostgreSQL tests in 4 files, each file against a database and reader role of its own, with a
 before-and-after digest of every table.
@@ -690,3 +690,19 @@ Unicode property, not a table; the bill of materials records the Unicode version
 removes the default-ignorable ones under `--fix`), `@cas/roundup`'s `text.ts` strips, the card's
 contract refuses and the dashboard's `server/cards/story.ts` strips. The hygiene check reads the
 module as source, since it runs before any build. The report is `docs/CAS-011-REPORT.md`.
+
+## 26. CAS-012: every character list on the rule
+
+`@cas/contracts` adds `text-escape@1` (`src/text-escape.ts`) beside the rule: one escape form,
+`\u{XXXX}`, the Unicode name of each character the rule names from a generated table
+(`src/unicode-names.ts`), `escapeOneLine` and its parts form for a display that styles each
+escape, `locateProhibitedText`, which gives each character its line and column, and
+`codePointLength`, the measure of the bounds beside the rule. The dashboard's `server/display.ts`, the MCP server's
+`safety/text.ts`, the worker's `editorial/display.ts` and the displays of `@cas/graph-evidence`
+and `@cas/sheets-intake` escape through it; `server/input.ts`, `auth/password.ts` and the
+worker's `clustering/note.ts` refuse through it; `server/markdown/body.ts` refuses or removes
+on save, and `server/dal/mutate.ts` keeps what it removed on the revision (migration 0024), which
+the page lists from the revision a notice names, while a refusal travels in the `field`, `at`
+and `more` parameters of `app/notices.ts`, and its complete record is its audit event (migration
+0025); the worker's `hygiene/scan.ts` scans for the rule; and `text/scan-stored.ts`
+behind `text scan` reads the stored revisions. The report is `docs/CAS-012-REPORT.md`.
