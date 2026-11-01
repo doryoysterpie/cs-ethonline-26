@@ -89,6 +89,41 @@ the rule, so this is the owner's call.
   outputs that print `\u202e` today print `\u{202e}`. **Recommended.**
 - (b) Keep `\uXXXX` within the Basic Multilingual Plane and brace only above it.
 
+**The answers, 1 November 2026** (D50). Question 1: (c), with the refused set defined by property
+(`\p{Cc}` less tab, line feed and carriage return, plus `\p{Bidi_Control}`), each removed
+character listed in the notice by code point, name and position, the strip made before the
+revision is computed, and a one-time read-only scan of stored texts reported here. Question 2:
+the bounded inputs and the worker's note and claim refuse the whole rule, naming the character
+and position, the worker logging in the source scanner's form; the password refuses the whole
+rule too, at set and change only, after its NFKC normalisation, against the note's
+recommendation, on the owner's grounds (reproducibility, RFC 8265). Question 3: (a), one form,
+`\u{XXXX}` in uppercase with at least four digits, with the name appended when known, and a
+distinct style for an escape in the dashboard grid.
+
+### 1.5 Two points the answers raise against recorded text
+
+**Point 1: U+200D in an emoji sequence.** The answer to question 1 counts "U+200D between two
+Extended_Pictographic code points" among D49's carve-outs. D49 dropped that refinement on the
+owner's own condition: the table had stripped U+200D since CAS-004 and no broken sequence was
+reported. CAS-011 strips it everywhere, and its review passed that behaviour.
+
+- (a) D49 stands: U+200D is stripped with a notice like any other default-ignorable character,
+  and a joined emoji decomposes. One behaviour, as the answer asks. **Recommended.**
+- (b) Add the carve-out now: CAS-011's rule, its four consumers and their tests change to keep
+  U+200D between two Extended_Pictographic code points, in pull request 57 or in this unit.
+
+**Point 2: tab, line feed and carriage return in the displays.** The answer to question 3 says
+U+0009, U+000A and U+000D are never escaped. All five displays escape them today as `\n`, `\r`
+and `\t` (the dashboard's, the MCP server's, the worker's, and those of `@cas/graph-evidence` and
+`@cas/sheets-intake`), so that a value cannot forge a line in a page, a terminal, a log or the
+MCP server's output (the Sprint 6 hostile-text rule).
+
+- (a) The rule's characters take the one form; the three line characters keep their escapes
+  where a display is one line, written in the same form (`\u{000A}`), so the displays still
+  cannot be made to forge a line. **Recommended.**
+- (b) Never escape them: a one-line display then shows a line break as a real break, or the
+  display collapses it to a space.
+
 ## 2. What follows the decisions
 
 S1 to S8 wait on CAS-011's merge, since the predicate lives there. Each list then gets the test

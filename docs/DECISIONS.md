@@ -1902,3 +1902,60 @@ disabled on this model, so effort is the only control.
 - **Decided by:** Project owner, 1 November 2026, in chat.
 - **Supersedes:** nothing; replaces the table `data/policy/prohibited-text.json` of CAS-004's
   third review.
+
+## D50 CAS-012: the save path, the refusals and one escape form
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED, except the two points put to the owner below
+- **Decision:** The owner's answers of 1 November 2026 to the three questions of
+  `docs/CAS-012-REPORT.md`, section 1.4:
+  1. **The save path: refuse by class, strip the rest** (option (c)). When a draft, round-up or
+     article body is saved, the refused set is a property, not a list: `\p{Cc}` less U+0009,
+     U+000A and U+000D, plus `\p{Bidi_Control}` (U+061C, U+200E, U+200F, U+202A to U+202E,
+     U+2066 to U+2069). Everything else the prohibited-text rule names is stripped. D49's
+     selectors U+FE0E and U+FE0F pass unchanged. The notice lists each removed character by code
+     point, name and position (field, line, column), never only a count, and a refusal names the
+     character and position the same way, in the form of point 3. The strip runs before the
+     revision is computed, so no stored revision holds a stripped character and re-saving cleaned
+     text gives no notice. A one-time read-only scan of the stored drafts, round-ups and articles
+     is reported in the unit's report; no migration rewrites a published revision, since
+     published text changes only through D6's publication act and the cards re-render from it.
+  2. **The other refusals refuse the whole rule.** A bounded single-line input refuses everything
+     the rule names, controls and bidirectional controls included, naming the character and its
+     position: an invisible character in a title or a name makes two values that look alike and
+     compare unequal. The worker's review note and claim refuse everything the rule names; a
+     refused claim fails its job and logs the code point and the entry, in the same form as the
+     worker's source scanner, so the two read as one event. A password refuses the whole rule at
+     set and change, never at verification, so a change of the property at a Node upgrade cannot
+     invalidate a stored hash; the check runs after the NFKC normalisation the password path
+     already applies (`apps/dashboard/src/server/auth/password.ts`), on the form that is hashed.
+  3. **One escape form** (option (a)): `\u{XXXX}`, uppercase hexadecimal, at least four digits
+     (`\u{00AD}`, `\u{180E}`, `\u{E0067}`), for every escaped code point in a notice, a refusal,
+     a log or a display, controls below U+0080 included. Printable text, non-ASCII included, is
+     never escaped; only characters the rule names are. A known name follows the escape
+     (`\u{200B} ZERO WIDTH SPACE`) from one function. In the dashboard grid an escape renders in
+     a style distinct from body text, so a literal backslash sequence in a source is not taken for
+     one. The braced form is valid in a TypeScript string and a `u`-flag expression at every code
+     point, so an escape copied from a report pastes into a test unchanged.
+- **Put to the owner, not adopted** (`docs/CAS-012-REPORT.md`, section 1.5):
+  - The answer to point 1 counts "U+200D between two Extended_Pictographic code points" among
+    D49's carve-outs. D49 dropped that refinement on the owner's own condition (the table had
+    stripped U+200D since CAS-004 and no broken sequence was reported), and CAS-011 strips it.
+  - The answer to point 3 says U+0009, U+000A and U+000D are never escaped. Today all five
+    displays (the dashboard's, the MCP server's, the worker's, and those of `@cas/graph-evidence`
+    and `@cas/sheets-intake`) show them as `\n`, `\r` and `\t`, which keeps a value from forging
+    a line in a page, a terminal, a log or the MCP server's output.
+- **Rationale:** The owner's. In English content a direction-changing character or a control is
+  the finding, not the defect: it means a hostile source or a broken paste, and the owner needs
+  to see it, so it is refused; a soft hyphen, a zero-width space or a byte-order mark means a
+  copy from a web page, and the save should not stop for a character nobody can see. A password
+  pasted with a trailing U+200B verifies at set time and fails when typed, so refusing it then,
+  with the character named, prevents the lockout; RFC 8265 (OpaqueString, on RFC 8264's
+  FreeformClass) disallows default-ignorable code points in passwords outright. Two escape forms
+  are two things to learn, and the boundary between them sits where readers make the surrogate
+  mistake.
+- **Consequences:** CAS-012 builds it after CAS-011 merges. The browser test that a draft
+  carrying a bidirectional override is refused stays as it is. The accepted loss is D49's: a
+  U+200C in a Persian password is refused.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+- **Supersedes:** nothing; extends D49 to the nine lists it names.
