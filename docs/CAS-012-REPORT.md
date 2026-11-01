@@ -97,10 +97,10 @@ the bounded inputs and the worker's note and claim refuse the whole rule, naming
 and position, the worker logging in the source scanner's form; the password refuses the whole
 rule too, at set and change only, after its NFKC normalisation, against the note's
 recommendation, on the owner's grounds (reproducibility, RFC 8265). Question 3: (a), one form,
-`\u{XXXX}` in uppercase with at least four digits, with the name appended when known, and a
+`\u{XXXX}` in uppercase with at least four digits, the name appended only where the character is the subject of the line, and a
 distinct style for an escape in the dashboard grid.
 
-### 1.5 Two points the answers raise against recorded text
+### 1.5 Two points the answers raised against recorded text, settled on 1 November 2026
 
 **Point 1: U+200D in an emoji sequence.** The answer to question 1 counts "U+200D between two
 Extended_Pictographic code points" among D49's carve-outs. D49 dropped that refinement on the
@@ -123,6 +123,14 @@ MCP server's output (the Sprint 6 hostile-text rule).
   cannot be made to forge a line. **Recommended.**
 - (b) Never escape them: a one-line display then shows a line break as a real break, or the
   display collapses it to a space.
+
+**The answers.** Point 1: (a), D49 stands; the answer to question 1 misstated its carve-outs,
+which are U+FE0E and U+FE0F. A stripped U+200D is listed in the save notice like any other, and
+a joined sequence, if ever wanted, enters as an amendment to D49 with the rule, its consumers and
+their tests changed together. Point 2: (a); one-line displays escape the three characters as
+`\u{0009}`, `\u{000A}` and `\u{000D}`, multi-line displays keep them, an escape inside a
+displayed value is bare, and the escape is applied once, at the rendering boundary, never before
+a format that escapes on its own. D50 records both.
 
 ## 2. What follows the decisions
 

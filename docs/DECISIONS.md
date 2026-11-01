@@ -1906,7 +1906,7 @@ disabled on this model, so effort is the only control.
 ## D50 CAS-012: the save path, the refusals and one escape form
 
 - **Date:** 2026-11-01
-- **Status:** ACCEPTED, except the two points put to the owner below
+- **Status:** ACCEPTED; the two points the answers raised were settled by the owner the same day
 - **Decision:** The owner's answers of 1 November 2026 to the three questions of
   `docs/CAS-012-REPORT.md`, section 1.4:
   1. **The save path: refuse by class, strip the rest** (option (c)). When a draft, round-up or
@@ -1917,7 +1917,9 @@ disabled on this model, so effort is the only control.
      point, name and position (field, line, column), never only a count, and a refusal names the
      character and position the same way, in the form of point 3. The strip runs before the
      revision is computed, so no stored revision holds a stripped character and re-saving cleaned
-     text gives no notice. A one-time read-only scan of the stored drafts, round-ups and articles
+     text gives no notice. A stripped U+200D is listed in the notice by code point and position
+     like every other stripped character, which is how the owner learns that an emoji sequence
+     decomposed. A one-time read-only scan of the stored drafts, round-ups and articles
      is reported in the unit's report; no migration rewrites a published revision, since
      published text changes only through D6's publication act and the cards re-render from it.
   2. **The other refusals refuse the whole rule.** A bounded single-line input refuses everything
@@ -1932,19 +1934,32 @@ disabled on this model, so effort is the only control.
   3. **One escape form** (option (a)): `\u{XXXX}`, uppercase hexadecimal, at least four digits
      (`\u{00AD}`, `\u{180E}`, `\u{E0067}`), for every escaped code point in a notice, a refusal,
      a log or a display, controls below U+0080 included. Printable text, non-ASCII included, is
-     never escaped; only characters the rule names are. A known name follows the escape
-     (`\u{200B} ZERO WIDTH SPACE`) from one function. In the dashboard grid an escape renders in
-     a style distinct from body text, so a literal backslash sequence in a source is not taken for
-     one. The braced form is valid in a TypeScript string and a `u`-flag expression at every code
-     point, so an escape copied from a report pastes into a test unchanged.
-- **Put to the owner, not adopted** (`docs/CAS-012-REPORT.md`, section 1.5):
-  - The answer to point 1 counts "U+200D between two Extended_Pictographic code points" among
-    D49's carve-outs. D49 dropped that refinement on the owner's own condition (the table had
-    stripped U+200D since CAS-004 and no broken sequence was reported), and CAS-011 strips it.
-  - The answer to point 3 says U+0009, U+000A and U+000D are never escaped. Today all five
-    displays (the dashboard's, the MCP server's, the worker's, and those of `@cas/graph-evidence`
-    and `@cas/sheets-intake`) show them as `\n`, `\r` and `\t`, which keeps a value from forging
-    a line in a page, a terminal, a log or the MCP server's output.
+     never escaped; only characters the rule names are, and, in a one-line display (the grid, a
+     terminal, a log, the MCP server's text output), tab, line feed and carriage return as
+     `\u{0009}`, `\u{000A}` and `\u{000D}`: a line break inside a one-line value is a value
+     trying to become structure, the forging the five displays' escapes exist to stop. A
+     multi-line display (the editor, the article body) keeps the three as themselves. Inside a
+     displayed value the escape is bare; a name follows it (`\u{200B} ZERO WIDTH SPACE`), from the
+     same function, only where the character is the subject of the line: a notice, a refusal, a
+     log entry about it. The escape is applied once, at the rendering boundary; where a format
+     escapes on its own (a JSON field in an MCP result), its escaping stands and the display escape
+     is not applied first, or a reader would see `\\u{000A}`. In the dashboard grid an escape
+     renders in a style distinct from body text, so a literal backslash sequence in a source is not
+     taken for one. The braced form is valid in a TypeScript string and a `u`-flag expression at
+     every code point, so an escape copied from a report pastes into a test unchanged. U+2028 and
+     U+2029, which forge a line in some renderers, are named by the rule (D49) and take this form
+     in a display like the rest; anything further about them belongs with D49's note on
+     whitespace, outside this decision.
+- **Settled the same day** (`docs/CAS-012-REPORT.md`, section 1.5), two points the answers raised
+  against recorded text:
+  - **U+200D.** The answer to point 1 counted "U+200D between two Extended_Pictographic code
+    points" among D49's carve-outs. The owner corrected it: D49 stands, its carve-outs are U+FE0E
+    and U+FE0F, and CAS-011 shipped and tested on that. A joined sequence, if one is ever wanted,
+    enters as an amendment to D49 with the rule, its four consumers and their tests changed
+    together, never as an exception in one consumer.
+  - **Tab, line feed and carriage return.** The answer to point 3 said they are never escaped; the
+    owner corrected it for one-line displays, as point 3 now reads. "Never" holds for multi-line
+    content, where a line feed is structure.
 - **Rationale:** The owner's. In English content a direction-changing character or a control is
   the finding, not the defect: it means a hostile source or a broken paste, and the owner needs
   to see it, so it is refused; a soft hyphen, a zero-width space or a byte-order mark means a
