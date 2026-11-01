@@ -516,7 +516,7 @@ describe('migration 0023: the publication records 0022 numbered take the order t
     const isolated = await openIsolatedSchema();
     try {
       const applied = await runMigrations(isolated.db);
-      expect(applied.applied.at(-1)).toBe('0023_publication_order_backfill.sql');
+      expect(applied.applied).toContain('0023_publication_order_backfill.sql');
       expect(await idsInOrder(isolated.db, 'seq')).toEqual([]);
     } finally {
       await isolated.close();

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { ReviewState } from '@cas/contracts';
+import type { RemovedCharacter } from '@cas/database';
 
 import type { Role } from './roles.ts';
 import type { Throttle } from './rate-limit.ts';
@@ -120,6 +121,8 @@ export interface DraftRevision {
   readonly markdown: string;
   readonly savedByAccountId: string;
   readonly savedAt: string;
+  /** Every character the save removed from the text submitted (D50, point 1; migration 0024). */
+  readonly removedCharacters: readonly RemovedCharacter[];
 }
 
 export interface QueueDecision {

@@ -6,7 +6,6 @@ import { generateRoundup, saveRoundupRevision } from '../../../../../server/dal/
 import { assertActionRequest, currentPrincipal } from '../../../../../server/dal/principal.ts';
 import { readClosedObject } from '../../../../../server/input.ts';
 import { attempt, noticeCodeFor, refusedCharacters, withNotice } from '../../../../page-support.ts';
-import type { NoticeCharacter } from '../../../../notices.ts';
 
 function target(weekRunId: unknown, category: unknown): string {
   const week = typeof weekRunId === 'string' ? weekRunId : '';
@@ -45,7 +44,8 @@ export async function generateAction(form: FormData): Promise<void> {
 export async function saveRoundupAction(form: FormData): Promise<void> {
   let weekRunId: unknown = null;
   let category: unknown = null;
-  let removed: readonly NoticeCharacter[] = [];
+  // A save that removed characters names its revision; the page lists the record it keeps.
+  let cleanedRevision: number | null = null;
   const outcome = await attempt(async () => {
     const { runtime, principal } = await currentPrincipal();
     if (principal === null) return 'session_expired';
@@ -65,14 +65,16 @@ export async function saveRoundupAction(form: FormData): Promise<void> {
       expectedRevision: input.expectedRevision,
       markdown: input.markdown,
     });
-    removed = saved.removed;
-    return saved.removed.length > 0 ? 'edited_cleaned' : 'edited';
+    if (saved.removed.length === 0) return 'edited';
+    cleanedRevision = saved.revision;
+    return 'edited_cleaned';
   });
   redirect(
     withNotice(
       target(weekRunId, category),
       outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
-      outcome.ok ? removed : refusedCharacters(outcome.error),
+      outcome.ok ? [] : refusedCharacters(outcome.error),
+      outcome.ok ? cleanedRevision : null,
     ),
   );
 }

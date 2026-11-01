@@ -98,7 +98,12 @@ export interface NoticeCharacter {
   readonly column: number;
 }
 
-/** At most this many characters travel in a notice; the rest are counted. */
+/**
+ * At most this many refused characters travel in a redirect's query string;
+ * the number of the rest travels as `more`, and the notice states it. A save's
+ * removals never travel there: its notice names the revision, and the page
+ * lists every removal from the record the revision keeps (migration 0024).
+ */
 export const NOTICE_CHARACTERS_MAX = 20;
 
 const ENTRY = /^([0-9A-F]{4,6})-([1-9][0-9]{0,6})-([1-9][0-9]{0,6})$/u;
@@ -138,4 +143,21 @@ export function noticeCharacters(at: unknown): NoticeCharacter[] {
     out.push({ codePoint, line: Number(match[2]), column: Number(match[3]) });
   }
   return out;
+}
+
+const COUNT = /^[1-9][0-9]{0,6}$/u;
+
+/** The `more` parameter: how many refused characters the `at` list left out, or 0. */
+export function noticeMore(more: unknown): number {
+  return typeof more === 'string' && COUNT.test(more) ? Number(more) : 0;
+}
+
+/** The `revision` parameter of a save's notice, or `null`. */
+export function noticeRevision(revision: unknown): number | null {
+  return typeof revision === 'string' && COUNT.test(revision) ? Number(revision) : null;
+}
+
+/** True for the two notices that list what a save removed. */
+export function isCleanedNotice(code: unknown): boolean {
+  return code === 'saved_cleaned' || code === 'edited_cleaned';
 }

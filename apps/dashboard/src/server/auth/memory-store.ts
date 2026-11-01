@@ -355,7 +355,14 @@ class MemoryDrafts implements DraftStore {
         'the draft was revised by someone else; reload and try again',
       );
     }
-    revisions.push(Object.freeze({ ...revision }));
+    revisions.push(
+      Object.freeze({
+        ...revision,
+        removedCharacters: Object.freeze(
+          revision.removedCharacters.map((character) => Object.freeze({ ...character })),
+        ),
+      }),
+    );
     this.byKey.set(revision.draftKey, revisions);
   }
 }

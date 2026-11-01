@@ -331,6 +331,11 @@ export {
   type SelectedRowRecord,
 } from './roundup.js';
 export {
+  removedCharactersFrom,
+  removedCharactersJson,
+  type RemovedCharacter,
+} from './removed-characters.js';
+export {
   insertArticleRevision,
   latestArticleRevision,
   listArticleRevisions,

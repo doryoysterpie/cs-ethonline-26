@@ -1,5 +1,10 @@
 import type { Queryable } from './database.js';
 import { DatabaseError } from './errors.js';
+import {
+  removedCharactersFrom,
+  removedCharactersJson,
+  type RemovedCharacter,
+} from './removed-characters.js';
 
 /**
  * The round-up (CAS-004, migration 0015): revisions per week run and
@@ -32,9 +37,13 @@ export interface NewRoundupRevision {
   readonly provenance: RoundupProvenanceColumns | null;
   readonly savedByAccountId: string;
   readonly createdAt: string;
+  /** Every character the owner's save removed (migration 0024); none for any other kind. */
+  readonly removedCharacters?: readonly RemovedCharacter[];
 }
 
-export type RoundupRevisionRecord = NewRoundupRevision;
+export interface RoundupRevisionRecord extends NewRoundupRevision {
+  readonly removedCharacters: readonly RemovedCharacter[];
+}
 
 export type ModelCallKind = 'roundup' | 'article';
 
@@ -56,7 +65,7 @@ export interface NewModelCall {
 const REVISION_COLUMNS = `week_run_id, category, revision, kind, slots, markdown, model, prompt_version,
   prompt_hash, template_version, template_hash, input_digest, input_tokens, output_tokens,
   cost_microdollars::text AS cost_microdollars, saved_by_account_id,
-  to_json(created_at) #>> '{}' AS created_at`;
+  to_json(created_at) #>> '{}' AS created_at, removed_characters`;
 
 interface RevisionRow {
   week_run_id: string;
@@ -76,6 +85,7 @@ interface RevisionRow {
   cost_microdollars: string | null;
   saved_by_account_id: string;
   created_at: string;
+  removed_characters: unknown;
 }
 
 function toRevision(row: RevisionRow): RoundupRevisionRecord {
@@ -112,6 +122,7 @@ function toRevision(row: RevisionRow): RoundupRevisionRecord {
     provenance,
     savedByAccountId: row.saved_by_account_id,
     createdAt: row.created_at,
+    removedCharacters: removedCharactersFrom(row.removed_characters),
   };
 }
 
@@ -120,11 +131,17 @@ export async function insertRoundupRevision(
   revision: NewRoundupRevision,
 ): Promise<void> {
   const p = revision.provenance;
+  // Only an owner's edit that removed characters names the record; any other revision leaves the
+  // column to its default, the empty record (migration 0024), and is written as before it.
+  const removed = revision.removedCharacters ?? [];
+  const record = removed.length > 0;
   await client.query(
     `INSERT INTO roundup_revisions (week_run_id, category, revision, kind, slots, markdown, model,
        prompt_version, prompt_hash, template_version, template_hash, input_digest, input_tokens,
-       output_tokens, cost_microdollars, saved_by_account_id, created_at)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::timestamptz)`,
+       output_tokens, cost_microdollars, saved_by_account_id, created_at${record ? ', removed_characters' : ''})
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::timestamptz${
+       record ? ', $18::jsonb' : ''
+     })`,
     [
       revision.weekRunId,
       revision.category,
@@ -143,6 +160,7 @@ export async function insertRoundupRevision(
       p?.costMicrodollars ?? null,
       revision.savedByAccountId,
       revision.createdAt,
+      ...(record ? [removedCharactersJson(removed)] : []),
     ],
   );
 }

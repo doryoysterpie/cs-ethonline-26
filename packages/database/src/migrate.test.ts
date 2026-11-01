@@ -40,6 +40,7 @@ describe('loadMigrations', () => {
       '0021_story_cards.sql',
       '0022_publication_sequence.sql',
       '0023_publication_order_backfill.sql',
+      '0024_revision_removed_characters.sql',
     ]);
     for (const file of files) {
       const bytes = await readFile(path.join(MIGRATIONS_DIRECTORY, file.fileName));

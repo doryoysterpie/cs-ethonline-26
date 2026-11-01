@@ -257,6 +257,7 @@ export interface DraftViewDto {
     readonly revision: number;
     readonly savedBy: string;
     readonly savedAt: string;
+    readonly removedCharacters: readonly RemovedCharacterDto[];
   }[];
   readonly canEdit: boolean;
 }
@@ -350,11 +351,22 @@ export interface WeekTableDto {
 
 // ------------------------------------------------------------ the round-up (CAS-004)
 
+/**
+ * One character a save removed from the text submitted for a revision, by
+ * code point, line and column in that text (D50, point 1; migration 0024).
+ */
+export interface RemovedCharacterDto {
+  readonly codePoint: number;
+  readonly line: number;
+  readonly column: number;
+}
+
 export interface RoundupRevisionDto {
   readonly revision: number;
   readonly kind: 'deterministic' | 'generated' | 'edited';
   readonly savedBy: string;
   readonly savedAt: string;
+  readonly removedCharacters: readonly RemovedCharacterDto[];
   readonly provenance: {
     readonly model: string;
     readonly promptVersion: string;
@@ -392,6 +404,7 @@ export interface ArticleRevisionDto {
   readonly kind: 'generated' | 'edited';
   readonly savedBy: string;
   readonly savedAt: string;
+  readonly removedCharacters: readonly RemovedCharacterDto[];
   readonly provenance: {
     readonly model: string;
     readonly promptVersion: string;

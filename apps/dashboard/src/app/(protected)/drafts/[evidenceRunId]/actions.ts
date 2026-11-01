@@ -6,13 +6,13 @@ import { saveDraftRevision } from '../../../../server/dal/mutate.ts';
 import { assertActionRequest, currentPrincipal } from '../../../../server/dal/principal.ts';
 import { readClosedObject } from '../../../../server/input.ts';
 import { attempt, noticeCodeFor, refusedCharacters, withNotice } from '../../../page-support.ts';
-import type { NoticeCharacter } from '../../../notices.ts';
 
 export async function saveDraftAction(form: FormData): Promise<void> {
   let runId: unknown = null;
   let start: unknown = null;
   let end: unknown = null;
-  let removed: readonly NoticeCharacter[] = [];
+  // A save that removed characters names its revision; the page lists the record it keeps.
+  let cleanedRevision: number | null = null;
   const outcome = await attempt(async () => {
     const { runtime, principal } = await currentPrincipal();
     if (principal === null) return 'session_expired';
@@ -35,8 +35,9 @@ export async function saveDraftAction(form: FormData): Promise<void> {
       expectedRevision: input.expectedRevision,
       markdown: input.markdown,
     });
-    removed = saved.removed;
-    return saved.removed.length > 0 ? 'saved_cleaned' : 'saved';
+    if (saved.removed.length === 0) return 'saved';
+    cleanedRevision = saved.revision;
+    return 'saved_cleaned';
   });
   const run = typeof runId === 'string' ? runId : '';
   const query = new URLSearchParams({
@@ -47,7 +48,8 @@ export async function saveDraftAction(form: FormData): Promise<void> {
     withNotice(
       `/drafts/${encodeURIComponent(run)}?${query.toString()}`,
       outcome.ok ? outcome.value : noticeCodeFor(outcome.error),
-      outcome.ok ? removed : refusedCharacters(outcome.error),
+      outcome.ok ? [] : refusedCharacters(outcome.error),
+      outcome.ok ? cleanedRevision : null,
     ),
   );
 }

@@ -1,4 +1,9 @@
 import type { Queryable } from './database.js';
+import {
+  removedCharactersFrom,
+  removedCharactersJson,
+  type RemovedCharacter,
+} from './removed-characters.js';
 
 /**
  * PostgreSQL operations backing the dashboard's authentication and
@@ -62,6 +67,8 @@ export interface DraftRevisionRow {
   readonly markdown: string;
   readonly savedByAccountId: string;
   readonly savedAt: string;
+  /** Every character the save removed from the text submitted (migration 0024). */
+  readonly removedCharacters: readonly RemovedCharacter[];
 }
 
 export interface QueueDecisionRow {
@@ -299,32 +306,43 @@ export async function listAuditEvents(client: Queryable, limit: number): Promise
   return result.rows;
 }
 
+type StoredDraftRevision = Omit<DraftRevisionRow, 'removedCharacters'> & {
+  readonly removedCharacters: unknown;
+};
+
+function draftRevisionFrom(row: StoredDraftRevision): DraftRevisionRow {
+  return { ...row, removedCharacters: removedCharactersFrom(row.removedCharacters) };
+}
+
 export async function latestDraftRevision(
   client: Queryable,
   draftKey: string,
 ): Promise<DraftRevisionRow | null> {
-  const result = await client.query<DraftRevisionRow>(
+  const result = await client.query<StoredDraftRevision>(
     `SELECT draft_key AS "draftKey", revision, markdown,
             saved_by_account_id AS "savedByAccountId",
-            pg_catalog.to_json(saved_at) #>> '{}' AS "savedAt"
+            pg_catalog.to_json(saved_at) #>> '{}' AS "savedAt",
+            removed_characters AS "removedCharacters"
        FROM draft_revisions WHERE draft_key = $1 ORDER BY revision DESC LIMIT 1`,
     [draftKey],
   );
-  return result.rows[0] ?? null;
+  const row = result.rows[0];
+  return row === undefined ? null : draftRevisionFrom(row);
 }
 
 export async function listDraftRevisions(
   client: Queryable,
   draftKey: string,
 ): Promise<DraftRevisionRow[]> {
-  const result = await client.query<DraftRevisionRow>(
+  const result = await client.query<StoredDraftRevision>(
     `SELECT draft_key AS "draftKey", revision, markdown,
             saved_by_account_id AS "savedByAccountId",
-            pg_catalog.to_json(saved_at) #>> '{}' AS "savedAt"
+            pg_catalog.to_json(saved_at) #>> '{}' AS "savedAt",
+            removed_characters AS "removedCharacters"
        FROM draft_revisions WHERE draft_key = $1 ORDER BY revision`,
     [draftKey],
   );
-  return result.rows;
+  return result.rows.map(draftRevisionFrom);
 }
 
 /**
@@ -339,8 +357,9 @@ export async function appendDraftRevision(
   revision: DraftRevisionRow,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO draft_revisions (draft_key, evidence_run_id, revision, markdown, saved_by_account_id, saved_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO draft_revisions (draft_key, evidence_run_id, revision, markdown, saved_by_account_id, saved_at,
+       removed_characters)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
     [
       revision.draftKey,
       evidenceRunId,
@@ -348,6 +367,7 @@ export async function appendDraftRevision(
       revision.markdown,
       revision.savedByAccountId,
       revision.savedAt,
+      removedCharactersJson(revision.removedCharacters),
     ],
   );
 }

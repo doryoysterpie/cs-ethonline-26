@@ -3,7 +3,12 @@ import 'server-only';
 import { forbidden, notFound, redirect } from 'next/navigation';
 
 import { isDashboardError } from '../server/errors.ts';
-import { noticeCharactersParameter, type NoticeCharacter } from './notices.ts';
+import {
+  NOTICE_CHARACTERS_MAX,
+  noticeCharactersParameter,
+  noticeRevision,
+  type NoticeCharacter,
+} from './notices.ts';
 
 /**
  * Helpers shared by every protected page and action.
@@ -80,12 +85,37 @@ export function refusedCharacters(error: unknown): readonly NoticeCharacter[] {
   return isDashboardError(error) ? error.characters : [];
 }
 
+/**
+ * A redirect target with its notice. A refusal's characters travel as `at`,
+ * the first `NOTICE_CHARACTERS_MAX` of them, with the number of the rest as
+ * `more`; a save that removed characters names its `revision`, whose record
+ * the page lists in full (D50, point 1; migration 0024).
+ */
 export function withNotice(
   path: string,
   code: string,
   characters: readonly NoticeCharacter[] = [],
+  revision: number | null = null,
 ): string {
   const at =
     characters.length > 0 ? `&at=${encodeURIComponent(noticeCharactersParameter(characters))}` : '';
-  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(code)}${at}`;
+  const more =
+    characters.length > NOTICE_CHARACTERS_MAX
+      ? `&more=${characters.length - NOTICE_CHARACTERS_MAX}`
+      : '';
+  const saved = revision === null ? '' : `&revision=${revision}`;
+  return `${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(code)}${at}${more}${saved}`;
+}
+
+/** The removal record of the revision a save's notice names, or none. */
+export function removedAt(
+  revisions: readonly {
+    readonly revision: number;
+    readonly removedCharacters: readonly NoticeCharacter[];
+  }[],
+  revision: string | undefined,
+): readonly NoticeCharacter[] {
+  const wanted = noticeRevision(revision);
+  if (wanted === null) return [];
+  return revisions.find((entry) => entry.revision === wanted)?.removedCharacters ?? [];
 }

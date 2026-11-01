@@ -30,6 +30,7 @@ import type {
   ArticleViewDto,
   RoundupViewDto,
   WeekListDto,
+  RemovedCharacterDto,
   WeekRunDto,
   WeekTableDto,
 } from './dto.ts';
@@ -54,6 +55,17 @@ const QUEUE_PAGE = 100;
 const EVIDENCE_PAGE = 500;
 const TEXT_BOUND = 1000;
 const DRAFT_INCIDENTS = 500;
+
+/** A revision's removal record as a view shows it: code points and positions only. */
+function removedCharacterDtos(
+  removed: readonly {
+    readonly codePoint: number;
+    readonly line: number;
+    readonly column: number;
+  }[],
+): RemovedCharacterDto[] {
+  return removed.map(({ codePoint, line, column }) => ({ codePoint, line, column }));
+}
 
 export function describePrincipal(principal: Principal): PrincipalDto {
   return {
@@ -612,6 +624,7 @@ export async function draftView(
         revision: revision.revision,
         savedBy: accounts.get(revision.savedByAccountId) ?? 'unknown',
         savedAt: revision.savedAt,
+        removedCharacters: removedCharacterDtos(revision.removedCharacters),
       })),
       canEdit: holds(principal, 'edit:draft'),
     };
@@ -910,6 +923,7 @@ export async function roundupView(
         kind: revision.kind,
         savedBy: accounts.get(revision.savedByAccountId) ?? 'unknown',
         savedAt: revision.createdAt,
+        removedCharacters: removedCharacterDtos(revision.removedCharacters),
         provenance:
           revision.provenance === null
             ? null
@@ -1035,6 +1049,7 @@ export async function articleView(
         kind: revision.kind,
         savedBy: accounts.get(revision.savedByAccountId) ?? 'unknown',
         savedAt: revision.createdAt,
+        removedCharacters: removedCharacterDtos(revision.removedCharacters),
         provenance:
           revision.provenance === null
             ? null

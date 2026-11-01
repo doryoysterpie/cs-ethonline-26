@@ -190,8 +190,13 @@ describe('the PostgreSQL store against a migrated schema', () => {
       markdown: '# one',
       savedByAccountId: account.id,
       savedAt: '2026-09-12T00:00:00.000Z',
+      removedCharacters: [{ codePoint: 0xad, line: 1, column: 4 }],
     });
     expect((await stores.drafts.latest(key))?.markdown).toBe('# one');
+    // The save's removal record comes back as it was kept (migration 0024).
+    expect((await stores.drafts.list(key)).map((r) => r.removedCharacters)).toEqual([
+      [{ codePoint: 0xad, line: 1, column: 4 }],
+    ]);
     await expect(
       stores.drafts.append({
         draftKey: key,
@@ -199,6 +204,7 @@ describe('the PostgreSQL store against a migrated schema', () => {
         markdown: '# two',
         savedByAccountId: account.id,
         savedAt: '2026-09-12T00:01:00.000Z',
+        removedCharacters: [],
       }),
     ).rejects.toSatisfy(
       (error) => isDashboardError(error) && error.code === 'draft_revision_conflict',

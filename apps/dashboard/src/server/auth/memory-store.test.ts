@@ -106,6 +106,7 @@ describe('memory stores', () => {
       markdown: 'one',
       savedByAccountId: 'a',
       savedAt: '2026-09-10T00:00:00.000Z',
+      removedCharacters: [],
     });
     await expect(
       stores.drafts.append({
@@ -114,6 +115,7 @@ describe('memory stores', () => {
         markdown: 'two',
         savedByAccountId: 'b',
         savedAt: '2026-09-10T00:00:01.000Z',
+        removedCharacters: [],
       }),
     ).rejects.toSatisfy(
       (error) => isDashboardError(error) && error.code === 'draft_revision_conflict',
@@ -125,6 +127,7 @@ describe('memory stores', () => {
         markdown: 'three',
         savedByAccountId: 'b',
         savedAt: '2026-09-10T00:00:01.000Z',
+        removedCharacters: [],
       }),
     ).rejects.toSatisfy(
       (error) => isDashboardError(error) && error.code === 'draft_revision_conflict',

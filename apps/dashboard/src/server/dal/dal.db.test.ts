@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { STORY_CARD_FIELDS } from '@cas/contracts';
+import { STORY_CARD_FIELDS, prohibitedCodePoints } from '@cas/contracts';
 import { insertStoryCardImage, type Queryable } from '@cas/database';
 
 import { openMigratedSchema, type IsolatedSchema } from '../../test/isolated-schema.ts';
@@ -647,6 +647,7 @@ describe('data-access layer against PostgreSQL', () => {
         markdown: `# revision ${revision}`,
         savedByAccountId: principals.editor.accountId,
         savedAt: new Date().toISOString(),
+        removedCharacters: [],
       });
     }
     caught = null;
@@ -1794,6 +1795,48 @@ describe('data-access layer against PostgreSQL', () => {
       );
       expect(isDashboardError(refused) ? refused.characters : null).toEqual([
         { codePoint: 0x202e, rule: 'bidi_control', line: 2, column: 6 },
+      ]);
+      // Every code point the strip removes, in one save: the stored body holds none of them, and
+      // the revision keeps every removal, past the twenty a query string could carry, as numbers
+      // only (the review of pull request 61 at db10902, findings 1 and 4; migration 0024).
+      const strippable = prohibitedCodePoints().filter(
+        (codePoint) => !/^[\p{Cc}\p{Bidi_Control}]$/u.test(char(codePoint)),
+      );
+      const every = await saveRoundupRevision(rt, persisted.owner, {
+        ...edit,
+        expectedRevision: 4,
+        markdown: `## Rundown\n\nx${strippable.map(char).join('')}y\n`,
+      });
+      expect(every.revision).toBe(5);
+      expect(every.removed.map((located) => located.codePoint)).toEqual(strippable);
+      const stored = await roundupView(rt, persisted.owner, week.weekRunId, 'cyberattack');
+      expect(stored.latest).toEqual({ revision: 5, markdown: '## Rundown\n\nxy\n' });
+      const record = (revision: number) =>
+        stored.revisions.find((entry) => entry.revision === revision)?.removedCharacters;
+      expect(record(5)).toEqual(
+        strippable.map((codePoint, index) => ({ codePoint, line: 3, column: index + 2 })),
+      );
+      expect(record(4)).toEqual([]);
+      expect(record(3)).toEqual([
+        { codePoint: 0xad, line: 3, column: 3 },
+        { codePoint: 0x200b, line: 3, column: 11 },
+      ]);
+      expect(record(1)).toEqual([]);
+      const raw = await rt.database.withClient((client) =>
+        client.query<{ removed_characters: unknown; markdown: string }>(
+          `SELECT removed_characters, markdown FROM roundup_revisions
+            WHERE week_run_id = $1 AND category = 'cyberattack' AND revision = 3`,
+          [week.weekRunId],
+        ),
+      );
+      expect(raw.rows).toEqual([
+        {
+          removed_characters: [
+            [0xad, 3, 3],
+            [0x200b, 3, 11],
+          ],
+          markdown: '## Rundown\n\ncooperate\n',
+        },
       ]);
     });
   });

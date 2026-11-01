@@ -1,23 +1,17 @@
 import 'server-only';
 
-import type { Queryable } from '@cas/database';
+import type { Queryable, RemovedCharacter } from '@cas/database';
 
 import { randomUUID } from 'node:crypto';
 
-import {
-  REVIEW_STATES,
-  locateProhibitedText,
-  removeProhibitedText,
-  type LocatedCodePoint,
-  type ReviewState,
-} from '@cas/contracts';
+import { REVIEW_STATES, type LocatedCodePoint, type ReviewState } from '@cas/contracts';
 
 import { normalizeEmail } from '../auth/email.ts';
 import { assertPassword, hashPassword } from '../auth/password.ts';
 import { ROLES, type Role } from '../auth/roles.ts';
 import { displayIdentity, type Principal } from '../auth/session.ts';
 import { isUsernameShaped, type AccountRecord, type AuditEvent } from '../auth/store.ts';
-import { DashboardError, characterRefusal, isDashboardError, validation } from '../errors.ts';
+import { DashboardError, isDashboardError, validation } from '../errors.ts';
 import {
   boundedText,
   enumOf,
@@ -31,6 +25,7 @@ import {
 import type { ArticleInput } from '@cas/article';
 import type { SourceOutcome } from '@cas/source-reader';
 
+import { cleanedBody } from '../markdown/body.ts';
 import { workspace } from '../packages.ts';
 import type { Runtime } from '../runtime.ts';
 import { mapFailure } from './failures.ts';
@@ -350,37 +345,9 @@ export interface DraftEditInput {
   readonly markdown: unknown;
 }
 
-/**
- * A body as a save keeps it (D50, point 1). A control other than tab, line
- * feed and carriage return (`\p{Cc}`), or a bidirectional control
- * (`\p{Bidi_Control}`), refuses the save: in English text it means a hostile
- * source or a broken paste, and the owner sees each one named where it stands.
- * Every other character the prohibited-text rule names (a soft hyphen, a
- * zero-width space, a byte-order mark from a copied page) is removed before the
- * revision is computed, so no stored revision holds one, and each removal is
- * returned for the notice. Re-saving the cleaned text removes nothing.
- */
-function cleanedBody(
-  markdown: string,
-  label: string,
-): { readonly body: string; readonly removed: readonly LocatedCodePoint[] } {
-  const located = locateProhibitedText(markdown);
-  const refused = located.filter(
-    (character) =>
-      character.rule === 'c0_control' ||
-      character.rule === 'c1_control' ||
-      character.rule === 'bidi_control',
-  );
-  if (refused.length > 0) throw characterRefusal('markdown_control', 'markdown', refused);
-  if (located.length === 0) return { body: markdown, removed: [] };
-  const body = removeProhibitedText(markdown);
-  if (body.length < 1) {
-    throw validation(
-      'markdown_length',
-      `The ${label} body holds nothing once its invisible characters are removed.`,
-    );
-  }
-  return { body, removed: located };
+/** The record a revision keeps of what its save removed: code points and positions only. */
+function removalRecord(removed: readonly LocatedCodePoint[]): readonly RemovedCharacter[] {
+  return removed.map(({ codePoint, line, column }) => ({ codePoint, line, column }));
 }
 
 /** What a save returns: the revision written and every character removed before it was written. */
@@ -411,13 +378,7 @@ export async function saveDraftRevision(
   if (typeof input.markdown !== 'string')
     throw validation('markdown_invalid', 'The draft body must be text.');
   const markdown = input.markdown.replace(/\r\n/gu, '\n');
-  if (markdown.length < 1 || markdown.length > MAX_DRAFT_CHARACTERS) {
-    throw validation(
-      'markdown_length',
-      `The draft body must be between 1 and ${MAX_DRAFT_CHARACTERS} characters.`,
-    );
-  }
-  const { body, removed } = cleanedBody(markdown, 'draft');
+  const { body, removed } = cleanedBody(markdown, 'draft', MAX_DRAFT_CHARACTERS);
   const packages = await workspace();
   const { getEvidenceRun } = packages.database;
   try {
@@ -449,6 +410,7 @@ export async function saveDraftRevision(
       markdown: body,
       savedByAccountId: principal.accountId,
       savedAt: new Date().toISOString(),
+      removedCharacters: removalRecord(removed),
     });
     await audit(runtime, {
       kind: 'draft_revision_saved',
@@ -1438,13 +1400,7 @@ async function saveRoundupRevisionUnaudited(
   if (typeof input.markdown !== 'string')
     throw validation('markdown_invalid', 'The round-up body must be text.');
   const markdown = input.markdown.replace(/\r\n/gu, '\n');
-  if (markdown.length < 1 || markdown.length > MAX_ROUNDUP_CHARACTERS) {
-    throw validation(
-      'markdown_length',
-      `The round-up body must be between 1 and ${MAX_ROUNDUP_CHARACTERS} characters.`,
-    );
-  }
-  const { body, removed } = cleanedBody(markdown, 'round-up');
+  const { body, removed } = cleanedBody(markdown, 'round-up', MAX_ROUNDUP_CHARACTERS);
   const packages = await workspace();
   const { insertRoundupRevision, isDatabaseError, latestRoundupRevision } = packages.database;
   try {
@@ -1484,6 +1440,7 @@ async function saveRoundupRevisionUnaudited(
           provenance: null,
           savedByAccountId: principal.accountId,
           createdAt: new Date().toISOString(),
+          removedCharacters: removalRecord(removed),
         }),
       );
     } catch (error) {
@@ -2014,13 +1971,7 @@ async function saveArticleRevisionUnaudited(
   if (typeof input.markdown !== 'string')
     throw validation('markdown_invalid', 'The article body must be text.');
   const markdown = input.markdown.replace(/\r\n/gu, '\n');
-  if (markdown.length < 1 || markdown.length > MAX_ARTICLE_CHARACTERS) {
-    throw validation(
-      'markdown_length',
-      `The article body must be between 1 and ${MAX_ARTICLE_CHARACTERS} characters.`,
-    );
-  }
-  const { body, removed } = cleanedBody(markdown, 'article');
+  const { body, removed } = cleanedBody(markdown, 'article', MAX_ARTICLE_CHARACTERS);
   const packages = await workspace();
   const { insertArticleRevision, isDatabaseError, latestArticleRevision } = packages.database;
   try {
@@ -2060,6 +2011,7 @@ async function saveArticleRevisionUnaudited(
           provenance: null,
           savedByAccountId: principal.accountId,
           createdAt: new Date().toISOString(),
+          removedCharacters: removalRecord(removed),
         }),
       );
     } catch (error) {

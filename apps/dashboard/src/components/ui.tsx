@@ -3,7 +3,15 @@ import Link from 'next/link';
 import { codePointName, escapeCodePoint, type DataOrigin } from '@cas/contracts';
 
 import { safeParts } from '../server/display.ts';
-import { isErrorNotice, noticeCharacters, noticeFor } from '../app/notices.ts';
+import {
+  NOTICE_CHARACTERS_MAX,
+  isCleanedNotice,
+  isErrorNotice,
+  noticeCharacters,
+  noticeFor,
+  noticeMore,
+  type NoticeCharacter,
+} from '../app/notices.ts';
 
 /** The data origin, shown on every record the dashboard renders. */
 export function Origin({ value }: { readonly value: DataOrigin }) {
@@ -37,30 +45,72 @@ export function Text({
   );
 }
 
+/** One named character: `\u{00AD} SOFT HYPHEN, line 4, column 17`. */
+function NamedCharacter({ character }: { readonly character: NoticeCharacter }) {
+  const name = codePointName(character.codePoint);
+  return (
+    <li>
+      <span className="escaped">{escapeCodePoint(character.codePoint)}</span>
+      {name === null ? '' : ` ${name}`}, line {character.line}, column {character.column}
+    </li>
+  );
+}
+
 /**
  * A fixed notice, and, for one that names characters, each of them by its
  * escape, name and position (D50): `\u{00AD} SOFT HYPHEN, line 4, column 17`.
+ * A save's notice lists every character the save removed, from the record its
+ * revision keeps (`removed`), past the first twenty behind a disclosure; with
+ * no record it says only that the text was saved. A refusal lists what its
+ * redirect carried (`at`), the first twenty, and states how many more there
+ * were (`more`), or, on a page that holds the refusal itself, all of them
+ * (`characters`).
  */
-export function Notice({ code, at }: { readonly code: unknown; readonly at?: unknown }) {
-  const message = noticeFor(code);
+export function Notice({
+  code,
+  at,
+  more,
+  characters,
+  removed,
+}: {
+  readonly code: unknown;
+  readonly at?: unknown;
+  readonly more?: unknown;
+  readonly characters?: readonly NoticeCharacter[];
+  readonly removed?: readonly NoticeCharacter[];
+}) {
+  const cleaned = isCleanedNotice(code);
+  const listed = cleaned ? (removed ?? []) : (characters ?? noticeCharacters(at));
+  const shown =
+    cleaned && listed.length === 0 ? (code === 'saved_cleaned' ? 'saved' : 'edited') : code;
+  const message = noticeFor(shown);
   if (message === null) return null;
-  const className = isErrorNotice(code) ? 'notice notice-error' : 'notice';
-  const characters = noticeCharacters(at);
-  if (characters.length === 0) return <p className={className}>{message}</p>;
+  const className = isErrorNotice(shown) ? 'notice notice-error' : 'notice';
+  if (listed.length === 0) return <p className={className}>{message}</p>;
+  const first = listed.slice(0, NOTICE_CHARACTERS_MAX);
+  const rest = listed.slice(NOTICE_CHARACTERS_MAX);
+  const unlisted = !cleaned && characters === undefined ? noticeMore(more) : 0;
   return (
     <div className={className}>
       <p>{message}</p>
       <ul className="notice-characters">
-        {characters.map((character, index) => {
-          const name = codePointName(character.codePoint);
-          return (
-            <li key={index}>
-              <span className="escaped">{escapeCodePoint(character.codePoint)}</span>
-              {name === null ? '' : ` ${name}`}, line {character.line}, column {character.column}
-            </li>
-          );
-        })}
+        {first.map((character, index) => (
+          <NamedCharacter key={index} character={character} />
+        ))}
       </ul>
+      {rest.length > 0 ? (
+        <details>
+          <summary>{rest.length} more</summary>
+          <ul className="notice-characters">
+            {rest.map((character, index) => (
+              <NamedCharacter key={index} character={character} />
+            ))}
+          </ul>
+        </details>
+      ) : null}
+      {unlisted > 0 ? (
+        <p>And {unlisted} more, named when the text is submitted again without the ones above.</p>
+      ) : null}
     </div>
   );
 }

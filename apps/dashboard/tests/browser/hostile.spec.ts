@@ -127,4 +127,29 @@ test.describe('hostile stored content', () => {
       before,
     );
   });
+
+  test('a save that removes more than twenty characters lists every one, from the revision (review of db10902)', async ({
+    page,
+  }) => {
+    const { accounts, seeded } = await credentials();
+    await signIn(page, accounts.editor.email);
+    const url = `/drafts/${seeded.evidenceRunId}?start=2026-09-03T00:00:00Z&end=2026-09-10T00:00:00Z`;
+    await page.goto(url);
+    const words = Array.from({ length: 25 }, (_, i) => `w${i}${String.fromCodePoint(0x200b)}`);
+    await page.getByLabel('Markdown').fill(`# ${words.join(' ')}`);
+    await page.getByRole('button', { name: /^Save revision/u }).click();
+    await page.waitForURL('**notice=saved_cleaned**');
+    // The notice names the revision, never the characters: the list comes from its record.
+    expect(new URL(page.url()).searchParams.get('at')).toBeNull();
+    expect(new URL(page.url()).searchParams.get('revision')).toMatch(/^[1-9][0-9]*$/u);
+    await expect(page.locator('.notice .notice-characters li')).toHaveCount(25);
+    await expect(page.getByText(/ZERO WIDTH SPACE, line 1, column 5$/u)).toBeVisible();
+    // The first twenty show; the other five sit behind a disclosure, the last at column 116.
+    await expect(page.locator('.notice details li')).toHaveCount(5);
+    await page.getByText('5 more').click();
+    await expect(page.getByText('ZERO WIDTH SPACE, line 1, column 116')).toBeVisible();
+    await expect(page.getByLabel('Markdown')).toHaveValue(
+      `# ${words.join(' ').replaceAll(String.fromCodePoint(0x200b), '')}`,
+    );
+  });
 });

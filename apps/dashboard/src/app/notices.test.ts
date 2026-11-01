@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   NOTICE_CHARACTERS_MAX,
+  isCleanedNotice,
   isErrorNotice,
   noticeCharacters,
   noticeCharactersParameter,
   noticeFor,
+  noticeMore,
+  noticeRevision,
 } from './notices.ts';
+import { removedAt, withNotice } from './page-support.ts';
 
 describe('notices', () => {
   it('maps only fixed codes to fixed sentences', () => {
@@ -51,5 +55,41 @@ describe('notices', () => {
     expect(noticeCharacters(noticeCharactersParameter(many))).toHaveLength(NOTICE_CHARACTERS_MAX);
     expect(isErrorNotice('invalid_character')).toBe(true);
     expect(noticeFor('edited_cleaned')).toMatch(/removed before saving/u);
+  });
+
+  it('counts the refused characters a redirect leaves out, and names the revision of a cleaned save (review of db10902)', () => {
+    const many = Array.from({ length: 27 }, (_, i) => ({
+      codePoint: 0x202e,
+      line: 1,
+      column: i + 1,
+    }));
+    const refused = new URL(
+      withNotice('/week/x?category=c', 'invalid_character', many),
+      'http://h',
+    );
+    expect(noticeCharacters(refused.searchParams.get('at'))).toHaveLength(NOTICE_CHARACTERS_MAX);
+    expect(noticeMore(refused.searchParams.get('more'))).toBe(7);
+    expect(refused.searchParams.get('category')).toBe('c');
+    const few = new URL(withNotice('/x', 'invalid_character', many.slice(0, 3)), 'http://h');
+    expect(few.searchParams.get('more')).toBeNull();
+    const saved = new URL(withNotice('/x', 'saved_cleaned', [], 3), 'http://h');
+    expect([
+      saved.searchParams.get('at'),
+      noticeRevision(saved.searchParams.get('revision')),
+    ]).toEqual([null, 3]);
+    for (const hostile of ['0', '-1', '1e3', 'x', '12345678', ' 3', undefined, 3]) {
+      expect([hostile, noticeMore(hostile), noticeRevision(hostile)]).toEqual([hostile, 0, null]);
+    }
+    expect(isCleanedNotice('saved_cleaned') && isCleanedNotice('edited_cleaned')).toBe(true);
+    expect(isCleanedNotice('saved')).toBe(false);
+    const revisions = [
+      { revision: 2, removedCharacters: [] },
+      { revision: 3, removedCharacters: many },
+    ];
+    expect(removedAt(revisions, '3')).toHaveLength(27);
+    expect(removedAt(revisions, '2')).toEqual([]);
+    expect(removedAt(revisions, '9')).toEqual([]);
+    expect(removedAt(revisions, 'three')).toEqual([]);
+    expect(removedAt(revisions, undefined)).toEqual([]);
   });
 });
