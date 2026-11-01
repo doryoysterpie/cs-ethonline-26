@@ -1804,3 +1804,101 @@ disabled on this model, so effort is the only control.
   revision, whose headlines are the sources' own titles, never renders as a card.
 - **Decided by:** Project owner, 23 October 2026, in chat.
 - **Supersedes:** nothing; extends D6 and D42 to the card.
+
+## D49 Invisible characters: one rule, from the Unicode property
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** The code points no tracked file may carry, no round-up export keeps and no story
+  card shows are one rule, `prohibited-text@2`, in one module, `@cas/contracts`
+  (`packages/contracts/src/prohibited-text.ts`). Resolved by the owner on 1 November 2026,
+  option (b) of the question the CAS-004 review left open (U+180E survived the export because
+  the table did not name it), with one refinement adopted, one dropped, and five conditions:
+  1. **The set.** Every code point the running Node reports as Default_Ignorable_Code_Point
+     (`/\p{Default_Ignorable_Code_Point}/u`), except U+FE0E and U+FE0F, the two variation
+     selectors emoji need. The other variation selectors (U+180B to U+180F, U+FE00 to U+FE0D,
+     U+E0100 to U+E01EF) are prohibited: none has a use here and each renders as nothing. With
+     it, unchanged in substance: the C0 and C1 controls other than tab, line feed and carriage
+     return (`\p{Cc}`), the line and paragraph separators, the interlinear annotation
+     characters (U+FFF9 to U+FFFB) and the noncharacters (`\p{Noncharacter_Code_Point}`). The
+     bidirectional controls lie inside the property; findings name them apart.
+  2. **U+200D.** Refused bare and stripped everywhere, emoji sequences included: a joined
+     sequence (a flag, a profession, a family) decomposes into its parts. The refinement that
+     would keep U+200D between two Extended_Pictographic characters is dropped on the owner's
+     own condition: the table had stripped U+200D since CAS-004 and no broken sequence was
+     reported.
+  3. **One predicate, one module, three consumers.** The hygiene check over tracked files
+     refuses, the round-up export strips, and the story card refuses (its contract) and strips
+     (the dashboard's display text). None holds a list of its own: the card's two lists are
+     deleted, and the table `data/policy/prohibited-text.json` is removed, its fixed rules
+     moving into the module and its hand-picked bidirectional and zero-width lists giving way
+     to the property. The lists drifted once already: the card's let U+061C through.
+  4. **From the runtime, not a copied table.** The property follows the Unicode version of the
+     running Node. The bill of materials records it (`cas:runtime:unicode`, 17.0 under Node
+     24.21.0), so a Node upgrade that moves it fails the supply-chain check until the bill is
+     regenerated, and the change is in the diff. A test in each consumer walks every code point
+     the rule names (4,172 default-ignorable ones under Unicode 17.0, 4,305 in all) and asserts
+     it is refused or stripped, and that the two selectors pass.
+  5. **No blanket exemption** (amended the same day with the owner's answer to the report's
+     question 1). A fixture that reproduces an external input byte for byte may carry an
+     exemption scoped to one pattern, recorded with the input it imitates: one exemption per
+     external format proven, never one per file that finds the check inconvenient. There are two
+     (`FIXTURE_EXEMPTIONS`, `tools/checks/hygiene.ts`): exactly one U+FEFF at offset 0 of
+     `data/fixtures/editorial/master-synthetic.csv`, which reproduces the master RSS export; and
+     the carriage returns of `data/fixtures/editorial/weekly-synthetic.csv`, which reproduces a
+     weekly snapshot sheet's CRLF line endings. The second belongs to the line-ending check:
+     U+000D is a control this rule never names, so it is outside this decision and unchanged. The
+     rest of both fixtures is checked in full, and a test holds each fixture to its pattern, so an
+     exemption whose fixture has lost its reason fails the build. Fixtures written in code hold
+     escapes (`\u{180E}`), never the character.
+  6. **A fix path.** `corepack pnpm hygiene:fix` removes the default-ignorable code points from
+     tracked files (copied text's soft hyphens and zero-width spaces, an editor's byte-order
+     mark) and checks again; every other finding stays for a person.
+- **Accepted losses:** soft hyphens are stripped (a hint, no content lost); subdivision flags
+  fall back to U+1F3F4; joined emoji decompose; U+200C, U+200E, U+200F and U+061C are stripped,
+  which affects Persian, Arabic and Hebrew names only. Slot text is English and the names in it
+  are Latin-script in practice; a non-Latin name that needs one of these enters by amendment,
+  never as a silent exception.
+- **Named out of scope:** confusables (UTS #39), a different class. Whitespace that renders as
+  a space (U+00A0, U+2000 to U+200A, U+202F, U+205F, U+3000) is a separate decision; the export
+  and the card already collapse it to one U+0020, since their whitespace collapse covers it,
+  and the hygiene check accepts it in files. The C0 and C1 controls were already covered.
+- **Rationale:** The owner's. The finding was about the class, not the character: a
+  hand-picked list guarantees the next review finds U+034F, U+3164 or a tag character, and each
+  costs a round, while Default_Ignorable_Code_Point is the property Unicode defines for
+  characters that render as nothing, so adopting it ends the series. The cost was measured
+  first: no tracked file held any of these characters. The bidirectional controls that matter
+  most for a security product's own repository (the CVE-2021-42574 class) sit inside the
+  property, so one rule covers them.
+- **Consequences:** CAS-011 builds it (`docs/CAS-011-REPORT.md`). The hygiene check refuses
+  4,305 code points where the table named 150; the new ones are labelled `default_ignorable`
+  (the label `zero_width` is gone). Stored text is unchanged (threat model RR13).
+- **The lists outside the three consumers** (amended the same day with the owner's answer to the
+  report's question 2). Nine keep sets of their own, and none covers U+180E or the rest of the
+  property:
+  - `apps/dashboard/src/server/display.ts` escapes the C0 and C1 controls, the separators and the
+    bidirectional embedding, override and isolate controls in the dashboard's display of stored
+    text;
+  - `apps/dashboard/src/server/dal/mutate.ts` refuses the same set, tab, line feed and carriage
+    return excepted, when a draft, round-up or article body is saved;
+  - `packages/mcp-server/src/safety/text.ts` escapes the controls, the separators, the
+    bidirectional controls, U+200B, U+2060 to U+2064 and U+FEFF in the MCP server's output;
+  - `apps/worker/src/hygiene/scan.ts` scans source files for the controls and the separators;
+  - `apps/worker/src/editorial/display.ts` escapes the controls and the separators in the
+    worker's output and refuses them in a review note or a claim (`assertReviewNote`);
+  - `apps/dashboard/src/server/input.ts` and `apps/dashboard/src/server/auth/password.ts` refuse
+    the controls and the separators in the dashboard's bounded inputs and in a password;
+  - `packages/graph-evidence/src/display.ts` and `packages/sheets-intake/src/display.ts` escape
+    them in those packages' output.
+
+  CAS-011 changes none of them. CAS-012, opened the same day, puts each on the rule: the rule
+  supplies the set and each keeps its own action (escape, refuse or scan), and the escape tables
+  gain a generic `\u{XXXX}` form for characters with no named label. Its first decision is the
+  save path: refuse, or strip and report. Until it lands there is no new list: any new consumer
+  imports the predicate from `@cas/contracts`. CAS-012 opens inside the review-backlog rule (its
+  design note is S0), so the stopgap the owner allowed, U+180E added to the worker's source scanner alone, is
+  not taken.
+
+- **Decided by:** Project owner, 1 November 2026, in chat.
+- **Supersedes:** nothing; replaces the table `data/policy/prohibited-text.json` of CAS-004's
+  third review.

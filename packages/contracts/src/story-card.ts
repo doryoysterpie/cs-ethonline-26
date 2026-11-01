@@ -1,3 +1,5 @@
+import { hasProhibitedText } from './prohibited-text.js';
+
 /**
  * The public story card (D6, D48): the strict allowlist of what a card
  * serializes to anyone who holds its address. A field not named here is
@@ -39,10 +41,9 @@ const ID = /^[A-Za-z0-9_-]{22}$/u;
 const CATEGORY = /^[a-z][a-z0-9_]{1,31}$/u;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/u;
 const HOST = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/u;
-// Controls, separators and bidirectional overrides never reach a card's text.
-const FORBIDDEN =
-  // eslint-disable-next-line no-control-regex
-  /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/u;
+// A card's text is one line, so tab, line feed and carriage return are refused
+// with everything the prohibited-text rule names (D49).
+const LINE_CONTROL = /[\t\n\r]/u;
 
 export class StoryCardShapeError extends Error {
   constructor(readonly field: (typeof STORY_CARD_FIELDS)[number]) {
@@ -56,7 +57,8 @@ function text(value: unknown, field: (typeof STORY_CARD_FIELDS)[number], max: nu
     typeof value !== 'string' ||
     value.length < 1 ||
     value.length > max ||
-    FORBIDDEN.test(value)
+    LINE_CONTROL.test(value) ||
+    hasProhibitedText(value)
   ) {
     throw new StoryCardShapeError(field);
   }

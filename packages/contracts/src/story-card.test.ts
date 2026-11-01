@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { PERMITTED_DEFAULT_IGNORABLES, prohibitedCodePoints } from './prohibited-text.js';
 import { STORY_CARD_FIELDS, StoryCardShapeError, toPublicStoryCard } from './story-card.js';
 
 const valid = {
@@ -58,11 +59,30 @@ describe('the public story card contract (D6, D48)', () => {
       'headline',
     );
     expect(shapeError({ ...valid, headline: 'line\nbreak' })).toBe('headline');
+    expect(shapeError({ ...valid, headline: 'a\ttab' })).toBe('headline');
+    expect(shapeError({ ...valid, headline: `ok ${String.fromCodePoint(0x061c)} mark` })).toBe(
+      'headline',
+    );
     expect(shapeError({ ...valid, publishers: ['https://news.example.org/x'] })).toBe('publishers');
     expect(shapeError({ ...valid, publishers: ['UPPER.example'] })).toBe('publishers');
     expect(
       shapeError({ ...valid, publishers: Array.from({ length: 13 }, (_, i) => `p${i}.example`) }),
     ).toBe('publishers');
     expect(shapeError({ ...valid, publishers: 'news.example.org' })).toBe('publishers');
+  });
+
+  it('refuses a headline carrying any code point the prohibited-text rule names, and keeps emoji presentation (D49)', () => {
+    const prohibited = prohibitedCodePoints();
+    expect(prohibited.length).toBeGreaterThan(4000);
+    for (const code of prohibited) {
+      expect([code, shapeError({ ...valid, headline: `A${String.fromCodePoint(code)}B` })]).toEqual(
+        [code, 'headline'],
+      );
+    }
+    for (const code of PERMITTED_DEFAULT_IGNORABLES) {
+      expect(
+        shapeError({ ...valid, headline: `A${String.fromCodePoint(0x2764, code)}B` }),
+      ).toBeNull();
+    }
   });
 });

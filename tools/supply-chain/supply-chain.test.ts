@@ -95,6 +95,7 @@ function syntheticInputs(licenses: Record<string, string>): SbomInputs {
       { path: 'packages/contracts', name: '@cas/contracts', version: '0.0.0', license: null },
     ],
     licenses: new Map(Object.entries(licenses)),
+    unicodeVersion: '17.0',
   };
 }
 
@@ -190,6 +191,7 @@ describe('bill of materials', () => {
     expect(document.specVersion).toBe('1.6');
     expect(document.metadata.component['bom-ref']).toBe('workspace:root-app');
     expect(document.metadata.properties.map((p) => p.name)).toContain('cas:lockfile:sha256');
+    expect(document.metadata.properties).toContainEqual({ name: 'cas:runtime:unicode', value: '17.0' });
     const refs = document.components.map((c) => c['bom-ref']);
     expect(refs).toEqual([
       'workspace:@cas/contracts',

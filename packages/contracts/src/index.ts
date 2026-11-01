@@ -8,7 +8,9 @@
  * editorial source kind and the import status enums; CAS-005 adds the source
  * reference policy, the one pure function here, shared by the MCP server and
  * the source reader; CAS-009 adds the public story card's allowlist (D6, D48), a
- * pure function that copies only the allowed fields. No other runtime
+ * pure function that copies only the allowed fields; CAS-011 adds the
+ * prohibited-text rule (D49), the one predicate for invisible and control
+ * characters, beside the card that calls it. No other runtime
  * behaviour lives here beyond constant definitions. See docs/ARCHITECTURE.md and docs/DATA_INPUTS.md.
  */
 
@@ -292,6 +294,16 @@ export {
   type ResourceLimits,
 } from './limits.js';
 
+export {
+  PERMITTED_DEFAULT_IGNORABLES,
+  PROHIBITED_TEXT_POLICY,
+  PROHIBITED_TEXT_RULES,
+  hasProhibitedText,
+  prohibitedCodePoints,
+  prohibitedTextRule,
+  removeProhibitedText,
+  type ProhibitedTextRule,
+} from './prohibited-text.js';
 export {
   REFERENCE_REJECTIONS,
   classifySourceReference,

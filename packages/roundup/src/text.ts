@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { hasProhibitedText, removeProhibitedText } from '@cas/contracts';
 
 /**
  * Slot text at the Markdown boundary (review of pull request 24, F2). A
@@ -15,65 +15,9 @@ import { readFileSync } from 'node:fs';
  * reaches the export.
  */
 
-/**
- * What the export removes from every slot text, model-written or recorded:
- * every code point the repository's prohibited-text policy names
- * (`data/policy/prohibited-text.json`, the one table the hygiene check over
- * tracked files and this export both read, so the two cannot drift): the C0
- * and C1 controls (tab, line feed and carriage return excepted, since line
- * breaks are collapsed on their own), the bidirectional controls, the
- * zero-width characters, the interlinear annotation characters and the
- * noncharacters; the line separators are left to the line-break collapse.
- * Stored text keeps them exactly (threat model RR13); the copy-ready
- * Markdown is a rendering, and removal is its escape. Global, so every
- * occurrence goes (re-review of 22 October 2026, RR5; the third review added
- * U+2060 and made the table the policy's).
- */
-const POLICY_PATH = new URL('../../../data/policy/prohibited-text.json', import.meta.url);
-
-function prohibitedRanges(): readonly (readonly [number, number])[] {
-  const parsed = JSON.parse(readFileSync(POLICY_PATH, 'utf8')) as {
-    readonly version: string;
-    readonly rules: readonly {
-      readonly rule: string;
-      readonly ranges: readonly (readonly [string, string])[];
-    }[];
-  };
-  if (parsed.version !== 'prohibited-text@1') throw new Error('prohibited-text policy version');
-  return parsed.rules
-    .filter((entry) => entry.rule !== 'line_separator')
-    .flatMap((entry) =>
-      entry.ranges.map(([from, to]): readonly [number, number] => [
-        Number.parseInt(from, 16),
-        Number.parseInt(to, 16),
-      ]),
-    );
-}
-
-const PROHIBITED_RANGES = prohibitedRanges();
-
-/** Every code point the export removes, for the test that holds this table equal to the policy's. */
-export function prohibitedCodePoints(): readonly number[] {
-  const out: number[] = [];
-  for (const [from, to] of PROHIBITED_RANGES)
-    for (let code = from; code <= to; code += 1) out.push(code);
-  return out;
-}
-
-const CONTROL = new RegExp(
-  `[${PROHIBITED_RANGES.map(([from, to]) =>
-    from === to ? `\\u{${from.toString(16)}}` : `\\u{${from.toString(16)}}-\\u{${to.toString(16)}}`,
-  ).join('')}]`,
-  'gu',
-);
 const LINE_BREAK = /[\r\n\u2028\u2029]/u;
 const BLOCK_START = /^\s*(?:[#>+\-*=~|`]|\d{1,9}[.)])/u;
 const WWW = /\bwww\./iu;
-
-function hasControl(value: string): boolean {
-  CONTROL.lastIndex = 0;
-  return CONTROL.test(value);
-}
 
 export type InlineTextIssue =
   | 'line_break'
@@ -91,7 +35,7 @@ export type InlineTextIssue =
 export function inlineSlotTextIssue(value: string): InlineTextIssue | null {
   if (value.trim().length === 0) return 'empty';
   if (LINE_BREAK.test(value)) return 'line_break';
-  if (hasControl(value)) return 'control_character';
+  if (hasProhibitedText(value)) return 'control_character';
   if (value.includes('<') || value.includes('>')) return 'html';
   if (value.includes('[') || value.includes(']') || value.includes('](')) return 'link';
   if (value.includes('://') || WWW.test(value)) return 'url';
@@ -102,11 +46,25 @@ export function inlineSlotTextIssue(value: string): InlineTextIssue | null {
   return null;
 }
 
-/** One line of text that no Markdown renderer turns into structure or a link. */
+/**
+ * One line of text that no Markdown renderer turns into structure or a link.
+ *
+ * What the export removes from every slot text, model-written or recorded:
+ * every code point the prohibited-text rule names (D49, `@cas/contracts`,
+ * the one predicate the hygiene check over tracked files and the story card
+ * also call, so none of them can drift): the C0 and C1 controls (tab, line
+ * feed and carriage return excepted, since line breaks are collapsed on their
+ * own), the default-ignorable code points other than U+FE0E and U+FE0F (the
+ * bidirectional controls, the zero-width characters, the soft hyphen, the
+ * variation selectors and the tags among them), the interlinear annotation
+ * characters and the noncharacters; the line separators are turned into
+ * spaces by the line-break collapse first. Stored text keeps them exactly
+ * (threat model RR13); the copy-ready Markdown is a rendering, and removal is
+ * its escape. Every occurrence goes (re-review of 22 October 2026, RR5; the
+ * third review added U+2060; D49 replaced the table with the rule).
+ */
 export function escapeInline(value: string): string {
-  const oneLine = value
-    .replace(/[\r\n\u2028\u2029]+/gu, ' ')
-    .replace(CONTROL, '')
+  const oneLine = removeProhibitedText(value.replace(/[\r\n\u2028\u2029]+/gu, ' '))
     .replace(/\s+/gu, ' ')
     .trim();
   const escaped = oneLine
