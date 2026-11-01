@@ -111,7 +111,9 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
   reporting, the `main` ruleset and required SHA pinning are repository settings. They cannot
   be enabled from code; `.github/rulesets/main.json` defines the intended branch rules,
   `RUNBOOK-SECURITY.md` defines the owner-only activation and read-back, and the first-party
-  scans above are the readiness step that runs whether or not the live settings are on.
+  scans above are the readiness step that runs whether or not the live settings are on. With
+  one GitHub identity, the ruleset requires no approval; it requires the `Codex verdict` status,
+  a Codex PASS recorded against the pull request's exact head (D52).
 
 ## 9. Chain posture
 
