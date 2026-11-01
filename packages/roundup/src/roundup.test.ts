@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { PERMITTED_DEFAULT_IGNORABLES, prohibitedCodePoints } from '@cas/contracts';
+
 import { canonicalize, sha256 } from './canonical.js';
 import {
   costMicrodollars,
@@ -22,7 +24,7 @@ import {
   renderMarkdown,
 } from './render.js';
 import { ModelSlotsSchema, RoundupSlotsSchema, slotsJsonSchema } from './schema.js';
-import { escapeInline, inlineSlotTextIssue, prohibitedCodePoints, urlsIn } from './text.js';
+import { escapeInline, inlineSlotTextIssue, urlsIn } from './text.js';
 import { loadTemplate, parseTemplate, sectionOf } from './template.js';
 import { recordedTransport } from './transport.js';
 import { validateResponse } from './validate.js';
@@ -367,24 +369,25 @@ describe('the Markdown boundary (review F2)', () => {
     expect(inlineSlotTextIssue('fine \u202e text')).toBe('control_character');
     expect(inlineSlotTextIssue('fine \u200b text')).toBe('control_character');
     expect(inlineSlotTextIssue('fine text')).toBeNull();
-    // The export's table is the repository's hygiene policy, code point for code point,
-    // except the three whitespace controls (tab, line feed, carriage return) and the two
-    // line separators, which the line-break collapse handles.
-    const file = JSON.parse(
-      await readFile(new URL('../../../data/policy/prohibited-text.json', import.meta.url), 'utf8'),
-    ) as { rules: { rule: string; ranges: [string, string][] }[] };
-    const policy = file.rules
-      .filter((entry) => entry.rule !== 'line_separator')
-      .flatMap((entry) =>
-        entry.ranges.flatMap(([from, to]) => {
-          const out: number[] = [];
-          for (let c = Number.parseInt(from, 16); c <= Number.parseInt(to, 16); c += 1) out.push(c);
-          return out;
-        }),
-      )
-      .sort((x, y) => x - y);
-    expect([...prohibitedCodePoints()].sort((x, y) => x - y)).toEqual(policy);
-    expect(policy).toContain(0x2060);
+    // Every code point the prohibited-text rule names (D49) goes, and alone fails the
+    // inline check; the line separators become a space and a line break. The two
+    // presentation selectors stay.
+    const prohibited = prohibitedCodePoints();
+    expect(prohibited).toContain(0x180e);
+    for (const code of prohibited) {
+      const value = `A${String.fromCodePoint(code)}B`;
+      const separator = code === 0x2028 || code === 0x2029;
+      expect([code, escapeInline(value), inlineSlotTextIssue(value)]).toEqual([
+        code,
+        separator ? 'A B' : 'AB',
+        separator ? 'line_break' : 'control_character',
+      ]);
+    }
+    for (const code of PERMITTED_DEFAULT_IGNORABLES) {
+      const heart = `A${String.fromCodePoint(0x2764, code)}B`;
+      expect(escapeInline(heart)).toBe(heart);
+      expect(inlineSlotTextIssue(heart)).toBeNull();
+    }
     expect(
       urlsIn('Sources:\nhttps://a.example/1\nhttps://b.example/2 and (https://c.example)'),
     ).toEqual(['https://a.example/1', 'https://b.example/2', 'https://c.example']);

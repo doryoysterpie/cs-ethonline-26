@@ -460,6 +460,9 @@ importers:
 
   packages/roundup:
     dependencies:
+      '@cas/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       zod:
         specifier: 'catalog:'
         version: 4.6.7

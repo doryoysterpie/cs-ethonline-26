@@ -1,17 +1,25 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { scanForbiddenFiles } from './forbidden-files.ts';
 import {
-  PROHIBITED_CODE_POINTS,
-  readProhibitedTextPolicy,
-  scanFileHygiene,
-  scanHygiene,
-} from './hygiene.ts';
+  PERMITTED_DEFAULT_IGNORABLES,
+  prohibitedCodePoints,
+  prohibitedTextRule,
+} from '../../packages/contracts/src/prohibited-text.ts';
+import { scanForbiddenFiles } from './forbidden-files.ts';
+import { fixFileHygiene, fixHygiene, scanFileHygiene, scanHygiene } from './hygiene.ts';
 import { formatFinding } from './lib/report.ts';
 import { repositoryRoot, trackedEntries } from './lib/tracked.ts';
 import { scanSecrets, scanTextForSecrets } from './secrets.ts';
@@ -52,25 +60,23 @@ function disposableRepository(files: Record<string, string | Buffer>): string {
 const rules = (findings: readonly { rule: string }[]) => findings.map((f) => f.rule).sort();
 
 describe('hygiene', () => {
-  it('reads its table from data/policy/prohibited-text.json, which names U+2060 zero-width', () => {
-    const policy = readProhibitedTextPolicy();
-    expect(policy.version).toBe('prohibited-text@1');
-    expect(PROHIBITED_CODE_POINTS.get(0x2060)).toBe('zero_width');
-    expect(PROHIBITED_CODE_POINTS.get(0x200b)).toBe('zero_width');
-    expect(PROHIBITED_CODE_POINTS.get(0x202e)).toBe('bidi_control');
-    expect(PROHIBITED_CODE_POINTS.get(0x09)).toBeUndefined();
-    expect(PROHIBITED_CODE_POINTS.get(0x10ffff)).toBe('noncharacter');
-    expect(PROHIBITED_CODE_POINTS.size).toBe(
-      policy.rules.reduce(
-        (n, entry) =>
-          n +
-          entry.ranges.reduce(
-            (m, [a, b]) => m + Number.parseInt(b, 16) - Number.parseInt(a, 16) + 1,
-            0,
-          ),
-        0,
-      ),
-    );
+  it('reports every code point the prohibited-text rule names, by its rule, and nothing for the presentation selectors (D49)', () => {
+    const prohibited = prohibitedCodePoints();
+    expect(prohibited).toEqual(expect.arrayContaining([0x061c, 0x180e, 0x00ad, 0x2060, 0xe0001]));
+    for (const code of prohibited) {
+      const findings = scanFileHygiene('any.md', Buffer.from(`a${String.fromCodePoint(code)}b\n`));
+      expect([code, findings.map(formatFinding)]).toEqual([
+        code,
+        [
+          `any.md:1: ${prohibitedTextRule(code)} (U+${code.toString(16).toUpperCase().padStart(4, '0')})`,
+        ],
+      ]);
+    }
+    for (const code of PERMITTED_DEFAULT_IGNORABLES) {
+      expect(
+        scanFileHygiene('any.md', Buffer.from(`a${String.fromCodePoint(0x2764, code)}b\n`)),
+      ).toEqual([]);
+    }
   });
 
   it('reports nothing on the repository as tracked', () => {
@@ -94,7 +100,7 @@ describe('hygiene', () => {
     expect(result.findings.map(formatFinding).sort()).toEqual(
       [
         'src/planted.ts:3: bidi_control (U+202E)',
-        'src/planted.ts:4: zero_width (U+200B)',
+        'src/planted.ts:4: default_ignorable (U+200B)',
         'src/planted.ts:5: c0_control (U+0000)',
         'docs/cr.md:1: carriage_return (U+000D)',
         'docs/cr.md:2: carriage_return (U+000D)',
@@ -123,6 +129,47 @@ describe('hygiene', () => {
       'carriage_return',
       'carriage_return',
     ]);
+  });
+
+  it('removes the default-ignorable code points with --fix, through one handle, and leaves every other finding', () => {
+    const char = (code: number): string => String.fromCodePoint(code);
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    const root = disposableRepository({
+      'docs/pasted.md': `co${char(0xad)}operate${char(0x200b)} now${char(0x202e)}\n`,
+      'docs/windows.md': Buffer.concat([bom, Buffer.from('saved with a mark\n')]),
+      'src/mixed.ts': `const a = "${char(0)}";${char(0x180e)}\n`,
+      'data/fixtures/editorial/master-synthetic.csv': Buffer.concat([bom, Buffer.from('a,b\n')]),
+      'docs/emoji.md': `${char(0x26a0)}${char(0xfe0f)} kept\n`,
+    });
+    expect(fixHygiene(root)).toEqual([
+      { path: 'docs/pasted.md', removed: 3 },
+      { path: 'docs/windows.md', removed: 1 },
+      { path: 'src/mixed.ts', removed: 1 },
+    ]);
+    expect(readFileSync(path.join(root, 'docs/pasted.md'), 'utf8')).toBe('cooperate now\n');
+    expect(readFileSync(path.join(root, 'docs/windows.md'), 'utf8')).toBe('saved with a mark\n');
+    expect(readFileSync(path.join(root, 'src/mixed.ts'), 'utf8')).toBe(`const a = "${char(0)}";\n`);
+    expect(
+      readFileSync(path.join(root, 'data/fixtures/editorial/master-synthetic.csv')).subarray(0, 3),
+    ).toEqual(bom);
+    // The control character is a finding for a person, not for removal.
+    expect(scanHygiene(root).findings.map(formatFinding)).toEqual([
+      'src/mixed.ts:1: c0_control (U+0000)',
+    ]);
+    expect(fixHygiene(root)).toEqual([]);
+    expect(fixFileHygiene('bad.bin', Buffer.from([0xff, 0xfe]))).toBeNull();
+  });
+
+  it('refuses to fix through a tracked path that became a symbolic link, and leaves its target alone', () => {
+    const hidden = `outside${String.fromCodePoint(0x200b)}\n`;
+    const root = disposableRepository({ 'docs/note.md': hidden });
+    const outside = mkdtempSync(path.join(os.tmpdir(), 'cas-check-outside-'));
+    temps.push(outside);
+    writeFileSync(path.join(outside, 'target.md'), hidden);
+    rmSync(path.join(root, 'docs/note.md'));
+    symlinkSync(path.join(outside, 'target.md'), path.join(root, 'docs/note.md'));
+    expect(() => fixHygiene(root)).toThrow();
+    expect(readFileSync(path.join(outside, 'target.md'), 'utf8')).toBe(hidden);
   });
 
   it('caps the findings from one flooding file', () => {

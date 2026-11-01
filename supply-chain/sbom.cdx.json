@@ -9,7 +9,7 @@
         {
           "type": "application",
           "name": "cas-sbom-generator",
-          "version": "1"
+          "version": "2"
         }
       ]
     },
@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "28393e44bb48a236c92f540f6200b261348c73180d6d2832bf18abd5feb7cf1c"
+        "value": "4a2b2d68430b6c2b9d7aafbca766dfac948cdbac16bc0cad6c0efe799c2ae69e"
       },
       {
         "name": "cas:lockfile:version",
@@ -41,7 +41,11 @@
       },
       {
         "name": "cas:generator",
-        "value": "cas-sbom-generator@1"
+        "value": "cas-sbom-generator@2"
+      },
+      {
+        "name": "cas:runtime:unicode",
+        "value": "17.0"
       }
     ]
   },
@@ -11945,7 +11949,8 @@
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
-        "pkg:npm/zod@4.6.7"
+        "pkg:npm/zod@4.6.7",
+        "workspace:@cas/contracts"
       ]
     },
     {

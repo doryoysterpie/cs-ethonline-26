@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cas/contracts": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

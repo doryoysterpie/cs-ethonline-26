@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { removeProhibitedText } from '@cas/contracts';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 
 /**
@@ -34,10 +35,7 @@ const PUBLISHERS_MAX = 12;
 const HOST = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/u;
 const URL_LINE = /^\s*(https?:\/\/\S+)\s*$/u;
 const URL_AT_END = /(https?:\/\/\S+)\s*$/u;
-// Controls, separators and bidirectional overrides: removed, never shown.
-const INVISIBLE =
-  // eslint-disable-next-line no-control-regex
-  /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/gu;
+const LINE_BREAK = /[\r\n\u2028\u2029]+/gu;
 
 /** The text a node carries, escapes resolved, markup dropped. */
 function plainText(node: Walkable): string {
@@ -48,9 +46,13 @@ function plainText(node: Walkable): string {
   return (node.children ?? []).map(plainText).join('');
 }
 
-/** One line of display text, bounded; null when nothing is left. */
+/**
+ * One line of display text, bounded; null when nothing is left. Line breaks
+ * become spaces, then every code point the prohibited-text rule names (D49,
+ * the one the export and the card contract call) is removed, never shown.
+ */
 export function displayText(value: string, max: number = HEADLINE_MAX): string | null {
-  const clean = value.replace(INVISIBLE, ' ').replace(/\s+/gu, ' ').trim();
+  const clean = removeProhibitedText(value.replace(LINE_BREAK, ' ')).replace(/\s+/gu, ' ').trim();
   if (clean.length === 0) return null;
   return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`;
 }

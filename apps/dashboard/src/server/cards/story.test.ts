@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { PERMITTED_DEFAULT_IGNORABLES, prohibitedCodePoints } from '@cas/contracts';
 import { loadTemplate, renderMarkdown } from '@cas/roundup';
 
 import {
@@ -113,5 +114,22 @@ describe('a story as the published text states it (CAS-009)', () => {
     const long = displayText('x'.repeat(400));
     expect(long).toHaveLength(300);
     expect(long?.endsWith('…')).toBe(true);
+  });
+
+  it('removes every code point the prohibited-text rule names from a published headline, and keeps emoji presentation (D49)', () => {
+    const char = (code: number): string => String.fromCodePoint(code);
+    const prohibited = prohibitedCodePoints();
+    expect(prohibited).toEqual(expect.arrayContaining([0x061c, 0x180e, 0x00ad, 0xe0001]));
+    for (const code of prohibited) {
+      const separator = code === 0x2028 || code === 0x2029;
+      expect([code, displayText(`A${char(code)}B`)]).toEqual([code, separator ? 'A B' : 'AB']);
+    }
+    for (const code of PERMITTED_DEFAULT_IGNORABLES) {
+      const heart = `A${char(0x2764)}${char(code)}B`;
+      expect(displayText(heart)).toBe(heart);
+    }
+    // The gap the card filter's own list left (U+061C), through the published markdown.
+    const markdown = `**Port${char(0x061c)} halts${char(0x180e)} terminal**\n\nhttps://news.example.org/1\n`;
+    expect(roundupHeadline(markdown, ['https://news.example.org/1'])).toBe('Port halts terminal');
   });
 });

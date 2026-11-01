@@ -22,6 +22,12 @@ import { baseOfSpecifier, parseLockfile, type Lockfile } from './lockfile.ts';
  * not inventoried rather than as whatever the generating machine happened to
  * see. The document carries no timestamp and no random serial number.
  *
+ * It also records the Unicode version of the Node that generated it
+ * (`process.versions.unicode`, D49): the prohibited-text rule takes its
+ * invisible characters from that version's Default_Ignorable_Code_Point
+ * property, so a Node upgrade that moves the version fails `--check` until
+ * the bill is regenerated, and the change is in the diff.
+ *
  * `--check` regenerates in memory and fails when the committed files differ,
  * which is how continuous integration proves the committed bill of
  * materials is the lockfile's.
@@ -30,7 +36,7 @@ import { baseOfSpecifier, parseLockfile, type Lockfile } from './lockfile.ts';
 export const SBOM_PATH = 'supply-chain/sbom.cdx.json';
 export const LICENSES_PATH = 'supply-chain/LICENSES.md';
 export const GENERATOR_NAME = 'cas-sbom-generator';
-export const GENERATOR_VERSION = '1';
+export const GENERATOR_VERSION = '2';
 
 export interface WorkspaceManifest {
   /** Path relative to the repository root, as the lockfile's importer key. */
@@ -46,6 +52,8 @@ export interface SbomInputs {
   readonly workspaces: readonly WorkspaceManifest[];
   /** `name@version` to the licence string of its installed manifest. */
   readonly licenses: ReadonlyMap<string, string>;
+  /** `process.versions.unicode` of the generating Node (D49). */
+  readonly unicodeVersion: string;
 }
 
 export interface SbomSummary {
@@ -347,6 +355,7 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
         { name: 'cas:lockfile:sha256', value: lockfileSha256 },
         { name: 'cas:lockfile:version', value: lock.lockfileVersion },
         { name: 'cas:generator', value: `${GENERATOR_NAME}@${GENERATOR_VERSION}` },
+        { name: 'cas:runtime:unicode', value: inputs.unicodeVersion },
       ],
     },
     components: [...workspaceComponents, ...components],
@@ -489,6 +498,7 @@ export function gatherInputs(root: string): SbomInputs {
     root: { path: '.', ...readManifest(path.join(root, 'package.json')) },
     workspaces: readWorkspaces(root),
     licenses: readInstalledLicenses(root),
+    unicodeVersion: process.versions.unicode ?? 'unreported',
   };
 }
 
