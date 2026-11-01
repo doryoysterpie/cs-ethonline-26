@@ -17,8 +17,8 @@ test.describe('hostile stored content', () => {
     const text = await cell.textContent();
     // The markup is text, the bidi override and the escape introducer are visible escapes.
     expect(text).toContain("<script>alert('x')</script>");
-    expect(text).toContain('\\u202e');
-    expect(text).toContain('\\x1b[31m');
+    expect(text).toContain('\\u{202E}');
+    expect(text).toContain('\\u{001B}[31m');
     expect(text).toContain('<img src=x onerror=alert(2)>');
     expect(await page.locator('img').count()).toBe(0);
     expect(await page.locator('td script').count()).toBe(0);

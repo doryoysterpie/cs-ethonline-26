@@ -1,59 +1,68 @@
+import { escapeOneLine, escapeOneLineParts, type EscapedPart } from '@cas/contracts';
+
 /**
  * Safe display of hostile stored text.
  *
  * React escapes markup, so a stored `<script>` renders as text. What React
- * does not do is make an invisible character visible: a C0 or C1 control, a
- * Unicode line separator, or a bidirectional override that reverses the
- * reading order of everything after it. `safeText` renders each of those as
- * a visible escape and bounds the length with a visible marker, so a hostile
- * title can neither hide content nor re-order a line in the reader's eye.
+ * does not do is make an invisible character visible: a control, a line
+ * separator, a bidirectional override that reverses the reading order of
+ * everything after it, or any other character that renders as nothing.
+ * `safeText` and `safeParts` render every character the prohibited-text rule
+ * names, and tab, line feed and carriage return, as a visible escape in the
+ * one form (`\u{202E}`, D50; `@cas/contracts`) and bound the length with a
+ * visible marker, so a hostile title can neither hide content nor re-order a
+ * line in the reader's eye. `safeParts` keeps each escape apart, for the grid to
+ * style it distinctly from body text.
  *
- * The character classes are built from code points so this source file holds
- * none of them. This module is pure and is shared by server components and
- * unit tests; it imports nothing.
+ * This module is pure and is shared by server components and unit tests.
  */
-
-const char = (code: number): string => String.fromCodePoint(code);
-
-/**
- * C0 controls, DEL, C1 controls, the Unicode line and paragraph separators,
- * and the bidirectional embedding, override and isolate controls
- * (U+202A to U+202E, U+2066 to U+2069).
- */
-const ESCAPED_CLASS = `[${char(0x00)}-${char(0x1f)}${char(0x7f)}-${char(0x9f)}${char(0x2028)}${char(0x2029)}${char(0x202a)}-${char(0x202e)}${char(0x2066)}-${char(0x2069)}]`;
-const ESCAPED_CHARACTERS = new RegExp(ESCAPED_CLASS, 'gu');
-const ESCAPED_CHARACTER = new RegExp(ESCAPED_CLASS, 'u');
 
 /** Display copies longer than this are truncated with a visible marker. */
 export const DISPLAY_MAX_LENGTH = 300;
 
-function escapeCharacter(character: string): string {
-  const code = character.codePointAt(0) ?? 0;
-  if (code === 0x0a) return '\\n';
-  if (code === 0x0d) return '\\r';
-  if (code === 0x09) return '\\t';
-  if (code === 0x1b) return '\\x1b';
-  return code > 0xff
-    ? `\\u${code.toString(16).padStart(4, '0')}`
-    : `\\x${code.toString(16).padStart(2, '0')}`;
-}
-
 /** True when the value carries a character `safeText` would escape. */
 export function hasEscapedCharacter(value: string): boolean {
-  return ESCAPED_CHARACTER.test(value);
+  return escapeOneLineParts(value).some((part) => part.escape);
 }
 
-/** Every escaped-class character shown as a visible escape; never truncated. */
+/** Every character the rule names, and tab, line feed and carriage return, as a visible escape; never truncated. */
 export function visibleControls(value: string): string {
-  return value.replace(ESCAPED_CHARACTERS, escapeCharacter);
+  return escapeOneLine(value);
 }
 
-/** `visibleControls`, then bounded to `maxLength` characters with a visible marker. */
-export function safeText(value: unknown, maxLength: number = DISPLAY_MAX_LENGTH): string {
+/**
+ * The value as parts, escapes apart from text, bounded to `maxLength`
+ * characters with a visible marker; an escape is never split by the bound.
+ */
+export function safeParts(value: unknown, maxLength: number = DISPLAY_MAX_LENGTH): EscapedPart[] {
   const text = typeof value === 'string' ? value : value === null ? '' : String(value);
-  const escaped = visibleControls(text);
-  if (escaped.length <= maxLength) return escaped;
-  return `${escaped.slice(0, maxLength)}…[+${escaped.length - maxLength} chars]`;
+  const parts = escapeOneLineParts(text);
+  const total = parts.reduce((length, part) => length + part.text.length, 0);
+  if (total <= maxLength) return parts;
+  const kept: EscapedPart[] = [];
+  let used = 0;
+  for (const part of parts) {
+    const room = maxLength - used;
+    if (room <= 0) break;
+    if (part.text.length <= room) {
+      kept.push(part);
+      used += part.text.length;
+    } else {
+      if (!part.escape) {
+        kept.push({ text: part.text.slice(0, room), escape: false });
+        used += room;
+      }
+      break;
+    }
+  }
+  return [...kept, { text: `…[+${total - used} chars]`, escape: false }];
+}
+
+/** `safeParts` as one string, for a context that cannot style an escape. */
+export function safeText(value: unknown, maxLength: number = DISPLAY_MAX_LENGTH): string {
+  return safeParts(value, maxLength)
+    .map((part) => part.text)
+    .join('');
 }
 
 /** The editorial clock (D10): one zone, always shown with its offset so the instant is unambiguous. */

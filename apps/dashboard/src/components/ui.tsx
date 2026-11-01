@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import type { DataOrigin } from '@cas/contracts';
 
-import { safeText } from '../server/display.ts';
+import { safeParts } from '../server/display.ts';
 import { isErrorNotice, noticeFor } from '../app/notices.ts';
 
 /** The data origin, shown on every record the dashboard renders. */
@@ -10,7 +10,11 @@ export function Origin({ value }: { readonly value: DataOrigin }) {
   return <span className={`origin origin-${value}`}>{value}</span>;
 }
 
-/** Hostile stored text, escaped and bounded. */
+/**
+ * Hostile stored text, escaped and bounded. Each escape renders in its own
+ * style, apart from body text, so a literal backslash sequence in the value is
+ * never taken for one (D50, point 3).
+ */
 export function Text({
   value,
   max,
@@ -18,7 +22,19 @@ export function Text({
   readonly value: unknown;
   readonly max?: number | undefined;
 }) {
-  return <>{safeText(value, max)}</>;
+  return (
+    <>
+      {safeParts(value, max).map((part, index) =>
+        part.escape ? (
+          <span key={index} className="escaped">
+            {part.text}
+          </span>
+        ) : (
+          part.text
+        ),
+      )}
+    </>
+  );
 }
 
 export function Notice({ code }: { readonly code: unknown }) {

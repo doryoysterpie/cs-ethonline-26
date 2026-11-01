@@ -7,6 +7,7 @@ import {
   escapeCodePoint,
   escapeMultiLine,
   escapeOneLine,
+  escapeOneLineParts,
   escapedCut,
   locateProhibitedText,
 } from './text-escape.js';
@@ -77,5 +78,22 @@ describe('the one escape form (D50, point 3)', () => {
     expect(escapedCut(escaped, 10)).toBe(10);
     expect(escapedCut(escaped, 11)).toBe(11);
     expect(escapedCut('short', 10)).toBe(5);
+  });
+
+  it('gives the same escapes as parts, and a literal backslash sequence stays text', () => {
+    const value = `a${char(0x202e)}b\\u{0041}c\n`;
+    expect(escapeOneLineParts(value)).toEqual([
+      { text: 'a', escape: false },
+      { text: '\\u{202E}', escape: true },
+      { text: 'b\\u{0041}c', escape: false },
+      { text: '\\u{000A}', escape: true },
+    ]);
+    for (const code of prohibitedCodePoints()) {
+      const parts = escapeOneLineParts(`A${char(code)}B`);
+      expect([code, parts.map((part) => part.text).join('')]).toEqual([
+        code,
+        escapeOneLine(`A${char(code)}B`),
+      ]);
+    }
   });
 });

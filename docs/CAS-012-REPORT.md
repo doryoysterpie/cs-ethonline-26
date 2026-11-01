@@ -132,8 +132,25 @@ their tests changed together. Point 2: (a); one-line displays escape the three c
 displayed value is bare, and the escape is applied once, at the rendering boundary, never before
 a format that escapes on its own. D50 records both.
 
-## 2. What follows the decisions
+## 2. Stack check and data contract (S1, S2)
 
-S1 to S8 wait on CAS-011's merge, since the predicate lives there. Each list then gets the test
-CAS-011's consumers have: every code point the rule names is escaped, refused or reported, and
-the two presentation selectors pass.
+Built on `cas-012/lists` from `main` at `bdf608c`, after CAS-011 (pull request 57) and this note
+(pull request 59) merged. No dependency is added or changed: the rule, the escape form and the
+names are first-party code in `@cas/contracts`, which every one of the nine lists' packages
+already depends on or, for the dashboard, already imports.
+
+The contract is `text-escape@1` (`packages/contracts/src/text-escape.ts`), beside
+`prohibited-text@2`:
+
+- `escapeCodePoint(codePoint)`: `\u{XXXX}`, uppercase, at least four digits.
+- `codePointName(codePoint)` and `describeCodePoint(codePoint)`: the escape followed by the
+  Unicode name, or a control's name alias, when one is known; a table of 47 names and the two
+  variation-selector ranges. The names are labels: which characters are escaped is the rule's.
+- `escapeOneLine(value)`: every code point the rule names, and tab, line feed and carriage
+  return, written as a bare escape; `escapeMultiLine(value)`: the rule's code points only.
+- `locateProhibitedText(value)`: each code point the rule names with its rule, line and column,
+  counted in code points, for a notice or a refusal.
+
+`prohibited-text@2` gains `replaceProhibitedText(value, replace, { oneLine })`, and its one-line
+class is built from the same set as the rule's own, less the two selectors only, so the two
+cannot drift. No migration: the database constraints stay as section 1.2 says.

@@ -101,6 +101,41 @@ export function escapeOneLine(value: string): string {
   return replaceProhibitedText(value, escapeCodePoint, { oneLine: true });
 }
 
+/** One stretch of a displayed value: text as it stands, or one escaped character. */
+export interface EscapedPart {
+  readonly text: string;
+  readonly escape: boolean;
+}
+
+/**
+ * `escapeOneLine` as parts, so a display can style each escape apart from the
+ * text around it (D50, point 3): a literal backslash sequence in the value is
+ * a text part, never taken for an escape.
+ */
+export function escapeOneLineParts(value: string): EscapedPart[] {
+  const parts: EscapedPart[] = [];
+  let plain = '';
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    const printable = codePoint >= 0x20 && codePoint < 0x7f;
+    const escaped =
+      !printable &&
+      (codePoint === 0x09 ||
+        codePoint === 0x0a ||
+        codePoint === 0x0d ||
+        prohibitedTextRule(codePoint) !== null);
+    if (!escaped) {
+      plain += character;
+      continue;
+    }
+    if (plain.length > 0) parts.push({ text: plain, escape: false });
+    plain = '';
+    parts.push({ text: escapeCodePoint(codePoint), escape: true });
+  }
+  if (plain.length > 0) parts.push({ text: plain, escape: false });
+  return parts;
+}
+
 /** A multi-line value as a display shows it: the rule's code points escaped, line breaks and tabs kept. */
 export function escapeMultiLine(value: string): string {
   return replaceProhibitedText(value, escapeCodePoint);

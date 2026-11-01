@@ -312,8 +312,10 @@ export {
   escapeCodePoint,
   escapeMultiLine,
   escapeOneLine,
+  escapeOneLineParts,
   escapedCut,
   locateProhibitedText,
+  type EscapedPart,
   type LocatedCodePoint,
 } from './text-escape.js';
 export {
