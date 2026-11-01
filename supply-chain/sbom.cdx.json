@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "4a2b2d68430b6c2b9d7aafbca766dfac948cdbac16bc0cad6c0efe799c2ae69e"
+        "value": "2bb3e054e7f0c20d2e71fa24301d403d9e59159e75cfff8ca4598a75233cbd63"
       },
       {
         "name": "cas:lockfile:version",
@@ -236,29 +236,6 @@
     },
     {
       "type": "library",
-      "bom-ref": "workspace:@cas/feed-api",
-      "name": "@cas/feed-api",
-      "version": "0.0.0",
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "cas:workspace:path",
-          "value": "packages/feed-api"
-        },
-        {
-          "name": "cas:license:source",
-          "value": "workspace-manifest"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "bom-ref": "workspace:@cas/graph-evidence",
       "name": "@cas/graph-evidence",
       "version": "0.0.0",
@@ -296,29 +273,6 @@
         {
           "name": "cas:workspace:path",
           "value": "packages/mcp-server"
-        },
-        {
-          "name": "cas:license:source",
-          "value": "workspace-manifest"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "workspace:@cas/payer-agent",
-      "name": "@cas/payer-agent",
-      "version": "0.0.0",
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "cas:workspace:path",
-          "value": "apps/payer-agent"
         },
         {
           "name": "cas:license:source",
@@ -388,29 +342,6 @@
         {
           "name": "cas:workspace:path",
           "value": "packages/source-reader"
-        },
-        {
-          "name": "cas:license:source",
-          "value": "workspace-manifest"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "workspace:@cas/sunday-agent",
-      "name": "@cas/sunday-agent",
-      "version": "0.0.0",
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "cas:workspace:path",
-          "value": "apps/sunday-agent"
         },
         {
           "name": "cas:license:source",
@@ -11907,12 +11838,6 @@
       ]
     },
     {
-      "ref": "workspace:@cas/feed-api",
-      "dependsOn": [
-        "pkg:npm/typescript@6.0.3"
-      ]
-    },
-    {
       "ref": "workspace:@cas/graph-evidence",
       "dependsOn": [
         "pkg:npm/%40types/node@24.13.3",
@@ -11935,12 +11860,6 @@
         "workspace:@cas/drafting",
         "workspace:@cas/evidence",
         "workspace:@cas/graph-evidence"
-      ]
-    },
-    {
-      "ref": "workspace:@cas/payer-agent",
-      "dependsOn": [
-        "pkg:npm/typescript@6.0.3"
       ]
     },
     {
@@ -11970,12 +11889,6 @@
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
         "workspace:@cas/contracts"
-      ]
-    },
-    {
-      "ref": "workspace:@cas/sunday-agent",
-      "dependsOn": [
-        "pkg:npm/typescript@6.0.3"
       ]
     },
     {
@@ -12022,14 +11935,11 @@
         "workspace:@cas/database",
         "workspace:@cas/drafting",
         "workspace:@cas/evidence",
-        "workspace:@cas/feed-api",
         "workspace:@cas/graph-evidence",
         "workspace:@cas/mcp-server",
-        "workspace:@cas/payer-agent",
         "workspace:@cas/roundup",
         "workspace:@cas/sheets-intake",
         "workspace:@cas/source-reader",
-        "workspace:@cas/sunday-agent",
         "workspace:@cas/taxonomy",
         "workspace:@cas/worker"
       ]
