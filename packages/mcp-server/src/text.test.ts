@@ -77,16 +77,16 @@ describe('quoteBoundedEvidence', () => {
       HEADLINE_MAX_CHARACTERS,
     );
     expect(quoted?.truncated).toBe(true);
-    // Six display characters per angle bracket: fifty fit whole, two hundred
-    // and fifty do not, and the fifty-first is not begun.
-    expect(quoted?.text).toBe(`${'\\u003c'.repeat(50)}…[+250 chars]`);
-    expect(omittedOf(quoted?.text ?? '')).toBe(250);
+    // Eight display characters per angle bracket, `\\u{003C}`: thirty-seven fit
+    // whole, two hundred and sixty-three do not, and the thirty-eighth is not begun.
+    expect(quoted?.text).toBe(`${'\\u{003C}'.repeat(37)}…[+263 chars]`);
+    expect(omittedOf(quoted?.text ?? '')).toBe(263);
     const controls = `${char(0x2028)}`.repeat(10) + 'x'.repeat(HEADLINE_MAX_CHARACTERS);
     const mixed = quoteBoundedEvidence(
       fetched(controls, HEADLINE_MAX_CHARACTERS),
       HEADLINE_MAX_CHARACTERS,
     );
-    expect(mixed?.text.startsWith('\\u2028'.repeat(10))).toBe(true);
+    expect(mixed?.text.startsWith('\\u{2028}'.repeat(10))).toBe(true);
     expect(mixed?.text).not.toMatch(/\\u20…/u);
     expect(mixed?.truncated).toBe(true);
   });

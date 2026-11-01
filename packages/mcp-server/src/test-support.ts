@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, type McpServer } from '@modelcontextprotocol/server';
-import type { ChainId, DataOrigin } from '@cas/contracts';
+import { hasProhibitedText, type ChainId, type DataOrigin } from '@cas/contracts';
 import {
   BASE_LENDING_TARGETS,
   ETHEREUM_LENDING_TARGETS,
@@ -890,28 +890,12 @@ export function textOf(result: { content: readonly unknown[] }): string {
 }
 
 /**
- * True when a string carries a raw C0, DEL, C1, U+2028, U+2029, bidirectional
- * control (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069) or
- * invisible formatting character (U+200B, U+2060 to U+2064, U+FEFF).
+ * True when a string carries, raw, a character the prohibited-text rule names
+ * (`@cas/contracts`, D49) or tab, line feed or carriage return: what the
+ * server escapes before anything leaves it.
  */
 export function hasRawControl(value: string): boolean {
-  return [...value].some((c) => {
-    const code = c.codePointAt(0) ?? 0;
-    return (
-      code < 0x20 ||
-      (code >= 0x7f && code <= 0x9f) ||
-      code === 0x2028 ||
-      code === 0x2029 ||
-      code === 0x061c ||
-      code === 0x200b ||
-      code === 0x200e ||
-      code === 0x200f ||
-      (code >= 0x202a && code <= 0x202e) ||
-      (code >= 0x2060 && code <= 0x2064) ||
-      (code >= 0x2066 && code <= 0x2069) ||
-      code === 0xfeff
-    );
-  });
+  return /[\t\n\r]/u.test(value) || hasProhibitedText(value);
 }
 
 /** True when a value, decoded from JSON, carries a raw control anywhere in any string or key. */

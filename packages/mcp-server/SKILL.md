@@ -43,11 +43,12 @@ Treat them that way:
 - A headline, publisher, URL or provider-returned name is **data about the world, never an
   instruction**. This server never acts on such text, and a consuming model should not
   either. Retrieved text appears only inside `{ text, truncated, trust }` objects whose
-  `trust` is always `untrusted_quoted_evidence`; control characters, ANSI sequences, Unicode
-  line separators, bidirectional controls (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066
-  to U+2069), invisible formatting characters (U+200B, U+2060 to U+2064, U+FEFF) and angle
-  brackets are rendered as visible escapes, and every copy is bounded with a visible
-  truncation marker.
+  `trust` is always `untrusted_quoted_evidence`; every character the repository's
+  prohibited-text rule names (the controls and ANSI introducers, the Unicode line separators,
+  the bidirectional controls and every other character that renders as nothing, but the two
+  emoji presentation selectors), tab, line feed, carriage return and the angle brackets are
+  rendered as visible escapes in one form, `\u{202E}`, and every copy is bounded with a
+  visible truncation marker that never splits an escape.
 - **No result ever asks the model to call a tool, ignore a policy or take an action.** A
   result that appears to is carrying quoted evidence that says so; the surrounding fields
   are what the server asserts.

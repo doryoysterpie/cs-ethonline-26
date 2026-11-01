@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { escapeCodePoint, prohibitedCodePoints } from '@cas/contracts';
+
 import { codeSpan, escapeMarkdown, inertInline } from './safety/markdown.js';
 import { classifySourceReference, REFERENCE_REJECTIONS } from './safety/reference.js';
 import { hasControlCharacter, quoteEvidence, toSingleLine } from './safety/text.js';
@@ -28,18 +30,23 @@ describe('quoted evidence', () => {
       const value = `a${char(point)}b`;
       expect(hasControlCharacter(value), point.toString(16)).toBe(true);
       const shown = toSingleLine(value);
-      expect(shown).toBe(`a\\u${point.toString(16).padStart(4, '0')}b`);
+      expect(shown).toBe(`a\\u{${point.toString(16).toUpperCase().padStart(4, '0')}}b`);
       expect(hasRawControl(shown)).toBe(false);
     }
-    // Joiners used by ordinary text are left alone.
+    // The joiners are escaped with the rest of the rule's characters (D49's accepted loss).
     for (const point of [0x200c, 0x200d]) {
-      expect(hasControlCharacter(`a${char(point)}b`)).toBe(false);
+      expect(hasControlCharacter(`a${char(point)}b`)).toBe(true);
+    }
+    // Every character the rule names, by the runtime's own enumeration (CAS-012).
+    for (const point of prohibitedCodePoints()) {
+      const shown = toSingleLine(`a${char(point)}b`);
+      expect([point, shown]).toEqual([point, `a${escapeCodePoint(point)}b`]);
     }
     const quoted = quoteEvidence(HOSTILE.bidi, 300);
-    expect(quoted?.text).toContain('\\u202e');
-    expect(quoted?.text).toContain('\\u2066');
-    expect(quoted?.text).toContain('\\u200b');
-    expect(quoted?.text).toContain('\\ufeff');
+    expect(quoted?.text).toContain('\\u{202E}');
+    expect(quoted?.text).toContain('\\u{2066}');
+    expect(quoted?.text).toContain('\\u{200B}');
+    expect(quoted?.text).toContain('\\u{FEFF}');
     expect(hasRawControl(quoted?.text ?? '')).toBe(false);
   });
 });
@@ -85,11 +92,11 @@ describe('inert Markdown', () => {
     expect(inertInline(HOSTILE.markdownImage, 300)).toContain(
       '\\!\\[tracking pixel\\]\\(https\\://',
     );
-    expect(inertInline(HOSTILE.fence, 300)).toContain('\\`\\`\\`bash\\\\n');
+    expect(inertInline(HOSTILE.fence, 300)).toContain('\\`\\`\\`bash\\\\u\\{000A\\}');
     expect(inertInline(HOSTILE.entity, 300)).toContain('\\&\\#x3C;');
     expect(inertInline(HOSTILE.autolink, 300)).toContain('www\\.evil\\.seed\\.example\\.com');
-    expect(inertInline(HOSTILE.tag, 300)).toContain('\\\\u003csystem\\\\u003e');
-    expect(inertInline(HOSTILE.bidi, 300)).toContain('\\\\u202e');
+    expect(inertInline(HOSTILE.tag, 300)).toContain('\\\\u\\{003C\\}system\\\\u\\{003E\\}');
+    expect(inertInline(HOSTILE.bidi, 300)).toContain('\\\\u\\{202E\\}');
     expect(inertInline(null, 300)).toBeNull();
     expect(inertInline('', 300)).toBe('');
   });

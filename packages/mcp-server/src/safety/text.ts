@@ -1,3 +1,5 @@
+import { escapeCodePoint, escapeOneLine, escapedCut, hasProhibitedText } from '@cas/contracts';
+
 import type { Redactor } from './redact.js';
 
 /**
@@ -10,26 +12,23 @@ import type { Redactor } from './redact.js';
  *
  *   - it is redacted first (Track D finding F3), so a secret is matched whole
  *     before any escape can alter it or any bound can split it;
- *   - C0 controls, DEL, C1 controls and the Unicode line and paragraph
- *     separators are shown as visible escapes (backslash-n, backslash-x1b,
- *     backslash-u2028), so a value cannot forge a line, a status field or a
- *     terminal sequence;
- *   - the bidirectional controls (U+061C, U+200E, U+200F, U+202A to U+202E,
- *     U+2066 to U+2069) and the invisible formatting characters (U+200B,
- *     U+2060 to U+2064, U+FEFF) are shown as visible escapes too, so a value
- *     cannot reverse, hide or reorder what a reader sees (the Trojan Source
- *     class of attack). Joiners used by ordinary text, U+200C and U+200D, are
- *     left alone;
- *   - the two angle brackets are shown as backslash-u003c and backslash-u003e,
+ *   - every character the prohibited-text rule names (`@cas/contracts`, D49:
+ *     the controls, the line and paragraph separators, the bidirectional
+ *     controls, every other default-ignorable character but the two emoji
+ *     presentation selectors, the interlinear annotation characters and the
+ *     noncharacters), and tab, line feed and carriage return, is shown as a
+ *     visible escape in the one form, `\u{202E}` (D50), so a value cannot
+ *     forge a line, a status field or a terminal sequence, nor reverse, hide
+ *     or reorder what a reader sees (the Trojan Source class of attack);
+ *   - the two angle brackets are shown as `\u{003C}` and `\u{003E}`,
  *     so an HTML-like tag such as IMPORTANT or system in a headline cannot read
  *     as markup or as a directive to the consuming model (OWASP MCP guidance,
  *     section 12);
  *   - the copy is bounded with a visible truncation marker.
  *
  * The stored evidence is never mutated; only the copy that leaves is
- * transformed. The character classes are built from code points so this file
- * holds no control byte of its own. A display copy that is placed inside
- * Markdown is escaped once more by `markdown.ts`.
+ * transformed. The set and the form are `@cas/contracts`' (CAS-012). A display
+ * copy that is placed inside Markdown is escaped once more by `markdown.ts`.
  */
 
 const char = (code: number): string => String.fromCharCode(code);
@@ -37,17 +36,8 @@ const char = (code: number): string => String.fromCharCode(code);
 /** ASCII escape, the introducer of ANSI sequences. */
 export const ESCAPE_CHARACTER = char(0x1b);
 
-const CONTROL_CLASS = `[${char(0x00)}-${char(0x1f)}${char(0x7f)}-${char(0x9f)}${char(0x2028)}${char(0x2029)}${char(0x061c)}${char(0x200b)}${char(0x200e)}${char(0x200f)}${char(0x202a)}-${char(0x202e)}${char(0x2060)}-${char(0x2064)}${char(0x2066)}-${char(0x2069)}${char(0xfeff)}]`;
-const CONTROL_CHARACTERS = new RegExp(CONTROL_CLASS, 'g');
-const CONTROL_CHARACTER = new RegExp(CONTROL_CLASS);
-const ANGLE_BRACKETS = /[<>]/g;
-
-// Directional formatting characters: the Arabic letter mark, the left-to-right
-// and right-to-left marks, the embedding, override and pop controls, and the
-// isolate controls. They reorder displayed text and are escaped at the error
-// boundary (Track D finding F4).
-const DIRECTIONAL_CLASS = `[${char(0x061c)}${char(0x200e)}${char(0x200f)}${char(0x202a)}-${char(0x202e)}${char(0x2066)}-${char(0x2069)}]`;
-const DIRECTIONAL_CHARACTERS = new RegExp(DIRECTIONAL_CLASS, 'g');
+const LINE_CHARACTER = /[\t\n\r]/u;
+const ANGLE_BRACKETS = /[<>]/gu;
 
 /** Marker every quoted evidence value carries, so a consumer can tell it apart from server vocabulary. */
 export const EVIDENCE_TRUST = 'untrusted_quoted_evidence' as const;
@@ -60,53 +50,39 @@ export interface QuotedEvidence {
   readonly trust: typeof EVIDENCE_TRUST;
 }
 
-function escapeCharacter(character: string): string {
-  switch (character) {
-    case '\n':
-      return '\\n';
-    case '\r':
-      return '\\r';
-    case '\t':
-      return '\\t';
-    case ESCAPE_CHARACTER:
-      return '\\x1b';
-    case '<':
-      return '\\u003c';
-    case '>':
-      return '\\u003e';
-    default: {
-      const code = character.codePointAt(0) ?? 0;
-      return code > 0xff
-        ? `\\u${code.toString(16).padStart(4, '0')}`
-        : `\\x${code.toString(16).padStart(2, '0')}`;
-    }
-  }
+function escapeAngle(character: string): string {
+  return escapeCodePoint(character.codePointAt(0) ?? 0);
 }
 
 /**
- * True when the value carries any C0, DEL, C1, Unicode line/paragraph
- * separator, bidirectional control or invisible formatting character.
+ * True when the value carries a character the prohibited-text rule names, or
+ * tab, line feed or carriage return: the arguments the boundary refuses.
  */
 export function hasControlCharacter(value: string): boolean {
-  return CONTROL_CHARACTER.test(value);
+  return LINE_CHARACTER.test(value) || hasProhibitedText(value);
 }
 
-/** One physical line: every control character shown as a visible escape. Never truncates. */
+/** One physical line: every character the rule names, and the three line characters, escaped. Never truncates. */
 export function toSingleLine(value: unknown): string {
   const text = typeof value === 'string' ? value : String(value);
-  return text.replace(CONTROL_CHARACTERS, escapeCharacter);
+  return escapeOneLine(text);
 }
 
-/** `toSingleLine`, then every directional formatting character shown as a visible escape. */
+/**
+ * `toSingleLine`, kept for the error boundary (Track D finding F4): the
+ * directional formatting characters are among those the rule names, so they
+ * are escaped with the rest.
+ */
 export function toSingleLineWithoutDirection(value: unknown): string {
-  return toSingleLine(value).replace(DIRECTIONAL_CHARACTERS, escapeCharacter);
+  return toSingleLine(value);
 }
 
-/** `toSingleLine`, then bounded to `maxLength` characters with a visible marker. */
+/** `toSingleLine`, then bounded to `maxLength` characters with a visible marker, never splitting an escape. */
 export function safeDisplay(value: unknown, maxLength: number): string {
   const escaped = toSingleLine(value);
-  if (escaped.length <= maxLength) return escaped;
-  return `${escaped.slice(0, maxLength)}…[+${escaped.length - maxLength} chars]`;
+  const cut = escapedCut(escaped, maxLength);
+  if (cut === escaped.length) return escaped;
+  return `${escaped.slice(0, cut)}…[+${escaped.length - cut} chars]`;
 }
 
 /**
@@ -121,12 +97,11 @@ export function quoteEvidence(
 ): QuotedEvidence | null {
   if (value === null || value === undefined) return null;
   const redacted = redact === undefined ? value : redact(value);
-  const escaped = toSingleLine(redacted).replace(ANGLE_BRACKETS, escapeCharacter);
-  const truncated = escaped.length > maxLength;
+  const escaped = toSingleLine(redacted).replace(ANGLE_BRACKETS, escapeAngle);
+  const cut = escapedCut(escaped, maxLength);
+  const truncated = cut < escaped.length;
   return {
-    text: truncated
-      ? `${escaped.slice(0, maxLength)}…[+${escaped.length - maxLength} chars]`
-      : escaped,
+    text: truncated ? `${escaped.slice(0, cut)}…[+${escaped.length - cut} chars]` : escaped,
     truncated,
     trust: EVIDENCE_TRUST,
   };
@@ -140,9 +115,8 @@ export interface BoundedTextField {
 }
 
 function escapeForDisplay(character: string): string {
-  return CONTROL_CHARACTER.test(character) || character === '<' || character === '>'
-    ? escapeCharacter(character)
-    : character;
+  if (character === '<' || character === '>') return escapeAngle(character);
+  return escapeOneLine(character);
 }
 
 /**

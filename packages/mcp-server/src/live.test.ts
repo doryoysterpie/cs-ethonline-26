@@ -221,7 +221,7 @@ describe('chain_anomalies in live mode', () => {
       expect(hasRawControl(text)).toBe(false);
       expect(text).not.toContain(SECRET_API_KEY);
       expect(text).toContain('[REDACTED]');
-      expect(text).toContain('\\x1b[31m');
+      expect(text).toContain('\\u{001B}[31m');
       expect(text).not.toContain('<system>');
     } finally {
       await harness.close();
