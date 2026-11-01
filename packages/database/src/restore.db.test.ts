@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { runMigrations } from './migrate.js';
+import { loadMigrations, runMigrations } from './migrate.js';
 import { countSchemaRows } from './restore.js';
 import { openIsolatedSchema, type IsolatedSchema } from './test-support.js';
 
@@ -22,7 +22,10 @@ describe('read-only restore inspection', () => {
       { isolationLevel: 'repeatable read', readOnly: true },
     );
     expect(counts.map((row) => row.table)).toContain('schema_migrations');
-    expect(counts.find((row) => row.table === 'schema_migrations')?.rows).toBe('22');
+    // Read from the migrations directory, so a new migration does not make this stale (D51).
+    expect(counts.find((row) => row.table === 'schema_migrations')?.rows).toBe(
+      String((await loadMigrations()).length),
+    );
 
     await expect(
       isolated.db.withTransaction(
