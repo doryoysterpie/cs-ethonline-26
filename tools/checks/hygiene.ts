@@ -29,9 +29,11 @@ import { readTracked, repositoryRoot, trackedEntries, type TrackedEntry } from '
  * inside a TypeScript string that every formatter, linter and test accepted;
  * this check is the repository-wide form of the guard that followed.
  *
- * Two synthetic fixtures are exempt from exactly one rule each, because the
- * real exports they imitate carry a byte-order mark and CRLF line endings.
- * The exemptions are by exact path and by rule; nothing else is exempt.
+ * Two synthetic fixtures carry an exemption each, because the real exports
+ * they reproduce byte for byte carry a byte-order mark and CRLF line endings
+ * (`FIXTURE_EXEMPTIONS`). Each is scoped to one pattern in one file, never to
+ * the file: the rest of both fixtures is checked in full. Nothing else is
+ * exempt (D49).
  *
  * Findings name the file, the line and the code point. The character itself
  * is never printed, because a finding that reprinted it would be as
@@ -49,9 +51,38 @@ export interface HygieneOptions {
   readonly carriageReturnAllowed: ReadonlySet<string>;
 }
 
+/**
+ * One exemption per external format a fixture reproduces, recorded with the
+ * input it imitates (D49). `leading_byte_order_mark` skips exactly one U+FEFF
+ * at offset 0; a second one, or one anywhere else, is a finding. `crlf` is
+ * the line-ending check's: U+000D is a control the prohibited-text rule never
+ * names. A test holds each fixture to its pattern, so an exemption whose
+ * fixture has lost its reason fails the build instead of outliving it.
+ */
+export const FIXTURE_EXEMPTIONS: readonly {
+  readonly path: string;
+  readonly pattern: 'leading_byte_order_mark' | 'crlf';
+  readonly imitates: string;
+}[] = [
+  {
+    path: 'data/fixtures/editorial/master-synthetic.csv',
+    pattern: 'leading_byte_order_mark',
+    imitates: 'the master RSS export, saved as UTF-8 with a byte-order mark',
+  },
+  {
+    path: 'data/fixtures/editorial/weekly-synthetic.csv',
+    pattern: 'crlf',
+    imitates: 'a weekly snapshot sheet, exported with CRLF line endings',
+  },
+];
+
+function exempt(pattern: 'leading_byte_order_mark' | 'crlf'): ReadonlySet<string> {
+  return new Set(FIXTURE_EXEMPTIONS.filter((e) => e.pattern === pattern).map((e) => e.path));
+}
+
 export const DEFAULT_HYGIENE_OPTIONS: HygieneOptions = {
-  bomAllowed: new Set(['data/fixtures/editorial/master-synthetic.csv']),
-  carriageReturnAllowed: new Set(['data/fixtures/editorial/weekly-synthetic.csv']),
+  bomAllowed: exempt('leading_byte_order_mark'),
+  carriageReturnAllowed: exempt('crlf'),
 };
 
 /** Findings per file are capped so one hostile file cannot flood the output. */

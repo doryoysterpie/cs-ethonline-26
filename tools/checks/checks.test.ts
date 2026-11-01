@@ -19,7 +19,13 @@ import {
   prohibitedTextRule,
 } from '../../packages/contracts/src/prohibited-text.ts';
 import { scanForbiddenFiles } from './forbidden-files.ts';
-import { fixFileHygiene, fixHygiene, scanFileHygiene, scanHygiene } from './hygiene.ts';
+import {
+  FIXTURE_EXEMPTIONS,
+  fixFileHygiene,
+  fixHygiene,
+  scanFileHygiene,
+  scanHygiene,
+} from './hygiene.ts';
 import { formatFinding } from './lib/report.ts';
 import { repositoryRoot, trackedEntries } from './lib/tracked.ts';
 import { scanSecrets, scanTextForSecrets } from './secrets.ts';
@@ -113,6 +119,37 @@ describe('hygiene', () => {
       expect(line).not.toContain(bidi);
       expect(line).not.toContain(zeroWidth);
     }
+  });
+
+  it('holds each exempt fixture to the pattern it reproduces, and checks the rest of it in full (D49)', () => {
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    for (const exemption of FIXTURE_EXEMPTIONS) {
+      const bytes = readFileSync(path.join(REPO, exemption.path));
+      expect(exemption.imitates.length).toBeGreaterThan(0);
+      if (exemption.pattern === 'leading_byte_order_mark') {
+        expect([exemption.path, bytes.subarray(0, 3).equals(bom)]).toEqual([exemption.path, true]);
+      } else {
+        expect([exemption.path, bytes.includes('\r\n')]).toEqual([exemption.path, true]);
+      }
+    }
+    // One mark at offset 0 is the pattern; a second one, or a U+180E, is a finding there too.
+    const master = 'data/fixtures/editorial/master-synthetic.csv';
+    const marked = (body: string) => Buffer.concat([bom, Buffer.from(body)]);
+    expect(scanFileHygiene(master, marked('a,b\n1,2\n'))).toEqual([]);
+    expect(
+      scanFileHygiene(master, marked(`${String.fromCodePoint(0xfeff)}a,b\n`)).map(formatFinding),
+    ).toEqual([`${master}:1: default_ignorable (U+FEFF)`]);
+    expect(
+      scanFileHygiene(master, marked(`a,b\n1,${String.fromCodePoint(0x180e)}2\n`)).map(
+        formatFinding,
+      ),
+    ).toEqual([`${master}:2: default_ignorable (U+180E)`]);
+    const weekly = 'data/fixtures/editorial/weekly-synthetic.csv';
+    expect(
+      scanFileHygiene(weekly, Buffer.from(`a,b\r\n1,${String.fromCodePoint(0x180e)}2\r\n`)).map(
+        formatFinding,
+      ),
+    ).toEqual([`${weekly}:2: default_ignorable (U+180E)`]);
   });
 
   it('exempts exactly the two fixtures, each from exactly one rule', () => {
