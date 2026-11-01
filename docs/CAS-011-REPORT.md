@@ -1,6 +1,6 @@
 # CAS-011 report: one invisible-character rule
 
-**Status:** built on `cas-011/invisible-text`, from `main` at `7c867b7`; **not audited**.
+**Status:** built on `cas-011/invisible-text`, from `main` at `7c867b7`, pull request 57; **not audited**.
 Tracker: `docs/tcu/CAS-011.md`. Decision: D49. Issue: #56.
 
 ## 1. Scope and decisions (S0)
@@ -149,8 +149,12 @@ worker 119, dashboard 56, mcp-server 49), no test added; `test:browser` 30 passe
 
 ## 5. End-to-end proof (S5)
 
-Recorded in section 7 once run in the clean clone: the check refusing a tracked file with a
-planted soft hyphen and byte-order mark, `hygiene:fix` removing both, and the check passing.
+In the clean clone at `8651890`, 1 November 2026: a byte-order mark and a soft hyphen were
+planted in the tracked `README.md` with escapes. `node tools/checks/hygiene.ts` then failed with
+`README.md:1: byte_order_mark (U+FEFF)`, `README.md:1: default_ignorable (U+00AD)` and
+`hygiene: scanned=699 findings=2 FAILED`. `corepack pnpm hygiene:fix` printed
+`README.md: removed 2 default-ignorable code point(s)` and `hygiene: scanned=699 findings=0 OK`,
+and `git diff --quiet README.md` exited 0: the file was restored byte for byte.
 
 ## 6. Security baseline (S6)
 
@@ -162,7 +166,15 @@ planted soft hyphen and byte-order mark, `hygiene:fix` removing both, and the ch
 
 ## 7. Verification (S8)
 
-Pending: the counts, the clean clone and CI are recorded here and on the tracker when run.
+Clean clone of `cas-011/invisible-text` at `8651890`, 1 November 2026, Node 24.21.0 and pnpm
+11.10.0: `install --frozen-lockfile` exit 0; `supply-chain:check` CHECK OK, 346 components;
+`audit:deps` no known vulnerabilities; `verify` exit 0, 1,190 offline tests and 34 tool tests;
+`test:db` exit 0, 341 (database 117, worker 119, dashboard 56, mcp-server 49); `test:browser`
+30 passed. CI at `8651890`: run 41276066151 green on every job (Verify, Supply chain, both
+PostgreSQL lanes), CodeQL run 41276066146 green, no open code-scanning alert.
+
+The diff from `main` at `7c867b7`: two files added (the module and its test), one removed
+(`data/policy/prohibited-text.json`), the rest modified as section 1.2 lists; no file renamed.
 
 ## 8. What the rule does not cover
 
