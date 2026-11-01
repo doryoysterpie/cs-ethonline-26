@@ -123,10 +123,14 @@ Under Unicode 17.0 the rule names 4,305 code points: 4,172 default-ignorable one
 - **The hygiene check** labels each code point by `prohibitedTextRule`; printable ASCII is
   passed without a call. A finding still names the file, the line, the rule and the code point,
   never the character. The new findings are labelled `default_ignorable`; `zero_width` is gone.
-- **The fix mode.** `corepack pnpm hygiene:fix` (`node tools/checks/hygiene.ts --fix`) finds the
-  tracked regular files that carry a default-ignorable code point, opens each without following
-  a link, refuses anything but a regular file, reads, judges and rewrites it through that one
-  handle, prints the path and the number removed, then runs the check. A leading byte-order mark
+- **The fix mode.** `corepack pnpm hygiene:fix` (`node tools/checks/hygiene.ts --fix`) opens each
+  tracked file through one handle and checks the handle, not the path, before reading it: the
+  file is regular with one link, its path resolves to the repository's real path plus the
+  tracked path with no link in any component, and the file at that path is the handle's (device
+  and inode). Anything else is refused and nothing is read or written. A file that carries a
+  default-ignorable code point is reopened for writing under the same checks and rewritten from
+  what that handle holds; the command prints the path and the number removed, then runs the
+  check. A leading byte-order mark
   is removed except in the one fixture exempt from that rule. Controls, separators,
   noncharacters, carriage returns and invalid UTF-8 stay findings for a person.
 - **The export.** `escapeInline` turns line breaks into spaces, removes what the rule names,
@@ -179,8 +183,11 @@ and `git diff --quiet README.md` exited 0: the file was restored byte for byte.
 ## 6. Security baseline (S6)
 
 - No secret, no network, no new input boundary. The rule is pure.
-- The fix mode writes tracked regular files only, through a handle opened with `O_NOFOLLOW`
-  and checked with `fstat`; a link is refused (test). Its output is a path and a count.
+- The fix mode writes only a file of this checkout. `O_NOFOLLOW` refuses a link in the last
+  component alone, so the containment is checked on the open handle: a link in any component, a
+  file linked from elsewhere, or a path swapped before the open is refused, and nothing outside
+  the repository is read or written (tests for each; section 9). Its output is a path and a
+  count.
 - The hygiene check never prints the character it found.
 - `pnpm audit` is clean at low (section 7).
 
@@ -204,3 +211,23 @@ The diff from `main` at `7c867b7`: two files added (the module and its test), on
 - The set follows the running Node: a Node built against a system ICU of another version
   reports another set, and the bill-of-materials check fails on it. CI installs the release
   `.nvmrc` pins (24.21.0) through `actions/setup-node`; the reproduction steps use the same.
+
+## 9. Review of pull request 57 at `030c8d6` (1 November 2026)
+
+Codex reviewed `030c8d6` (record `2026-11-01-cas-011-pr-57.md`): CHANGES REQUIRED, one Medium.
+The rule, its four consumers, the fixture exemptions, the bill-of-materials pin and D49's scope
+were supported. F1: `hygiene:fix` opened each file with `O_NOFOLLOW`, which refuses a link in the
+last path component only. With a tracked file's parent directory replaced by a link, the fix
+read the outside file by path, opened it, and rewrote it; the reviewer reproduced it with the
+real function.
+
+Corrected the same day in `tools/checks/hygiene.ts`. The pre-read by path is gone: every file is
+opened through `openTracked`, and the checks are made on the handle once it is open. The file
+must be regular with exactly one link; its path must resolve to the repository's real path plus
+the tracked path, so no component is a link; and the file at that path must be the handle's
+(device and inode). A swap before the open leaves the handle on another file, and one after it
+changes the resolved path, so either is refused. A file to fix is reopened for writing under the
+same checks and rewritten from what that handle holds. The test replaces a tracked file's parent
+directory with a link to an outside directory, and in a second case replaces the file with a hard
+link to an outside file; both are refused with the outside file byte for byte unchanged. On
+`030c8d6`'s fix path the first case fails, the outside file rewritten. Tool tests: 36.

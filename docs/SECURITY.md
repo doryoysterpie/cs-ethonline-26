@@ -1023,9 +1023,11 @@ U+061C through.
   one; the round-up export removes them from every slot and refuses a model-written slot that
   carries one; the card's contract refuses a headline that carries one, and its display text
   removes them. Stored text is never altered (threat model RR13).
-- **The fix mode cannot be turned against the tree.** `corepack pnpm hygiene:fix` rewrites only
-  tracked regular files, through a handle opened without following a link, and removes only the
-  default-ignorable code points; every other finding stays for a person.
+- **The fix mode cannot be turned against the tree.** `corepack pnpm hygiene:fix` rewrites only a
+  file of this checkout: each is checked on its open handle, so a link in any path component, a
+  file linked from elsewhere or a path swapped before the open is refused, and nothing outside the
+  repository is read or written. It removes only the default-ignorable code points; every other
+  finding stays for a person.
 - **Accepted losses.** Soft hyphens are stripped; joined emoji sequences decompose and
   subdivision flags fall back to the black flag; U+200C, U+200E, U+200F and U+061C are stripped,
   which affects Persian, Arabic and Hebrew names only.
