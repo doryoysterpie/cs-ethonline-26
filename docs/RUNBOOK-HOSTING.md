@@ -206,6 +206,10 @@ restored in 999 ms; 20 migrations were current, pending and drift were zero, 45 
 matched, and `url_groups` reconciled `1` to `1`. A second run against the populated target
 refused before restore with `schema is not empty (tables=45)`. This proves the tool and its
 overwrite guard locally; it does not prove that a hosted Railway backup exists or restores.
+Rerun on 1 November 2026, PostgreSQL client/server 17.10, with the pull request carried onto
+`main`: 25 migrations current, pending and drift zero, 47 table counts matched, the seeded
+`url_groups` row restored 1:1, in 3,397 ms; the populated-target rerun refused before restore
+with `schema is not empty (tables=47)`.
 
 ## 8. The public TCP proxy
 
