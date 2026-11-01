@@ -466,6 +466,9 @@ admitted until CAS-007 is Complete and the owner opens it. Nothing is built for 
 - **Decisions before any build.** The first is the save path of drafts, round-ups and articles:
   refuse, or strip and report. The export already strips, and editor input is not a tracked
   file, so refusal there is not obviously right. The design note raises the rest.
+- **Design note.** Written 1 November 2026 (`docs/CAS-012-REPORT.md`, section 1): the nine lists,
+  what each guards, the database constraints beneath them, and three questions: the save path,
+  the other refusals with the password apart, and the generic escape form.
 - **Depends on.** CAS-011 merged, for the predicate. **Blocks:** nothing.
 
 ## 6. Interruption tolerance
