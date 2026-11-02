@@ -427,12 +427,14 @@ describe('bill of materials', () => {
     );
   });
 
+  // The shape, not the release: a bump (D58) moves the tag and the digest, and this must hold
+  // across it.
   it('reads the repository Dockerfile, pinned by digest', () => {
     expect(parseBaseImages(readFileSync(path.join(REPO, 'Dockerfile'), 'utf8'))).toEqual([
       {
         name: 'node',
-        tag: '24.21.0-bookworm-slim',
-        digest: 'sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20',
+        tag: expect.stringMatching(/^\d+\.\d+\.\d+-bookworm-slim$/u),
+        digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
       },
     ]);
   });
