@@ -70,6 +70,19 @@ interface Environment {
   readonly pull: string;
 }
 
+/** How a run waits between attempts; tests pass one that does not wait. */
+export interface RecordOptions {
+  readonly pause?: (milliseconds: number) => Promise<void>;
+}
+
+interface Settings extends Environment {
+  readonly pause: (milliseconds: number) => Promise<void>;
+}
+
+const ATTEMPTS = 3;
+const wait = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 function environment(env: NodeJS.ProcessEnv): Environment {
   const api = env.GITHUB_API_URL ?? 'https://api.github.com';
   const repository = env.GITHUB_REPOSITORY ?? '';
@@ -84,20 +97,35 @@ function environment(env: NodeJS.ProcessEnv): Environment {
   return { api, repository, token, pull };
 }
 
-async function github(env: Environment, path: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(`${env.api}${path}`, {
-    ...init,
-    headers: {
-      accept: 'application/vnd.github+json',
-      authorization: `Bearer ${env.token}`,
-      'x-github-api-version': '2022-11-28',
-      ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
-    },
-  });
-  // A fixed line: never the response body, which may echo a request.
-  if (!response.ok)
-    throw new Error(`GitHub API ${init.method ?? 'GET'} ${path}: ${response.status}`);
-  return response;
+/**
+ * One GitHub call, attempted up to three times when GitHub fails transiently
+ * (no response, 429 or 5xx), never on any other refusal. A failure is a fixed
+ * line: never the response body, which may echo a request.
+ */
+async function github(env: Settings, path: string, init: RequestInit = {}): Promise<Response> {
+  let failure = '';
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    if (attempt > 1) await env.pause(1_000 * (attempt - 1));
+    let response: Response;
+    try {
+      response = await fetch(`${env.api}${path}`, {
+        ...init,
+        headers: {
+          accept: 'application/vnd.github+json',
+          authorization: `Bearer ${env.token}`,
+          'x-github-api-version': '2022-11-28',
+          ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+      });
+    } catch {
+      failure = 'no response';
+      continue;
+    }
+    if (response.ok) return response;
+    failure = String(response.status);
+    if (response.status !== 429 && response.status < 500) break;
+  }
+  throw new Error(`GitHub API ${init.method ?? 'GET'} ${path}: ${failure}`);
 }
 
 function isEntry(value: unknown): value is ConversationEntry {
@@ -110,7 +138,7 @@ function isEntry(value: unknown): value is ConversationEntry {
 }
 
 /** The pull request's comments, oldest first. A review is not read: a verdict is a comment. */
-async function conversation(env: Environment): Promise<ConversationEntry[]> {
+async function conversation(env: Settings): Promise<ConversationEntry[]> {
   const entries: ConversationEntry[] = [];
   for (let page = 1; page <= 50; page += 1) {
     const response = await github(
@@ -127,7 +155,7 @@ async function conversation(env: Environment): Promise<ConversationEntry[]> {
   throw new Error('the pull request has more than 5,000 comments');
 }
 
-async function setStatus(env: Environment, head: string, verdict: Verdict): Promise<void> {
+async function setStatus(env: Settings, head: string, verdict: Verdict): Promise<void> {
   await github(env, `/repos/${env.repository}/statuses/${head}`, {
     method: 'POST',
     body: JSON.stringify({
@@ -139,36 +167,46 @@ async function setStatus(env: Environment, head: string, verdict: Verdict): Prom
 }
 
 /**
- * Records the verdict on the pull request's head. Once the head is known, the
- * status is set to pending before anything is read, so a status an earlier run
- * set never outlives this one (the review of pull request 65 at aa6f519, H1):
- * if a read, a page or the decision fails, the head is left pending, or
- * failure where that can still be written, and a merge stays blocked. Success
- * is written only after every comment has been read and decided.
+ * Records the verdict on the pull request's head (the reviews of pull request
+ * 65 at aa6f519 and 26dad9d, H1). Once the head is known, the status is set to
+ * pending before anything is read; a refused pending write does not stop the
+ * run, which goes on to write the verdict it decides, and every path that
+ * fails writes failure where it can. Success is written only after every
+ * comment has been read and decided. An earlier status outlives a run only
+ * when the head cannot be read, or every status write the run makes is
+ * refused after its retries; the job then fails.
  */
-export async function record(env: NodeJS.ProcessEnv = process.env): Promise<Verdict> {
-  const settings = environment(env);
+export async function record(
+  env: NodeJS.ProcessEnv = process.env,
+  options: RecordOptions = {},
+): Promise<Verdict> {
+  const settings: Settings = { ...environment(env), pause: options.pause ?? wait };
   const pull = (await (
     await github(settings, `/repos/${settings.repository}/pulls/${settings.pull}`)
   ).json()) as { head?: { sha?: unknown } };
   const head = typeof pull.head?.sha === 'string' ? pull.head.sha : '';
   if (!/^[0-9a-f]{40}$/u.test(head)) throw new Error('the pull request has no head commit');
   const short = head.slice(0, 7);
-  await setStatus(settings, head, {
-    state: 'pending',
-    description: `Reading the Codex verdict at ${short}`,
-  });
+  const write = async (verdict: Verdict): Promise<boolean> => {
+    try {
+      await setStatus(settings, head, verdict);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  await write({ state: 'pending', description: `Reading the Codex verdict at ${short}` });
   let verdict: Verdict;
   try {
     verdict = decide(head, await conversation(settings));
   } catch (error) {
-    await setStatus(settings, head, {
+    await write({
       state: 'failure',
       description: `The Codex verdict could not be read at ${short}`,
-    }).catch(() => undefined);
+    });
     throw error;
   }
-  await setStatus(settings, head, verdict);
+  if (!(await write(verdict))) throw new Error('the Codex verdict status could not be written');
   console.log(`codex-verdict: ${verdict.state} at ${head} (${verdict.description})`);
   return verdict;
 }

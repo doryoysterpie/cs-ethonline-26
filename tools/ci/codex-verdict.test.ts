@@ -88,6 +88,12 @@ describe('the Codex verdict recorder (D52)', () => {
       PULL_NUMBER: '64',
       STATUS_CONTEXT: 'Codex verdict',
     };
+    const NO_WAIT = { pause: async () => undefined };
+    const PASSED = [{ author_association: 'OWNER', body: `Codex verdict: PASS at ${HEAD}` }];
+    const CHANGES = [
+      ...PASSED,
+      { author_association: 'OWNER', body: `Codex verdict: CHANGES REQUIRED at ${HEAD}` },
+    ];
 
     it('sets pending first, reads every page of comments, then posts the verdict on the head', async () => {
       const calls: Array<{ url: string; method: string; body: unknown; auth: string | null }> = [];
@@ -106,15 +112,12 @@ describe('the Codex verdict recorder (D52)', () => {
           return Response.json(page(100));
         }
         if (url.includes('/issues/64/comments') && url.endsWith('page=2')) {
-          return Response.json([
-            ...page(3),
-            { author_association: 'OWNER', body: `Codex verdict: PASS at ${HEAD}` },
-          ]);
+          return Response.json([...page(3), ...PASSED]);
         }
         if (url.endsWith(`/statuses/${HEAD}`)) return new Response(null, { status: 201 });
         return new Response('unexpected', { status: 404 });
       });
-      expect(await record(ENV)).toEqual({
+      expect(await record(ENV, NO_WAIT)).toEqual({
         state: 'success',
         description: 'Codex PASS recorded at aaaaaaa',
       });
@@ -140,36 +143,42 @@ describe('the Codex verdict recorder (D52)', () => {
       expect(calls.every((c) => c.auth === 'Bearer ephemeral')).toBe(true);
     });
 
-    it('posts nothing, and fails with a fixed line, when the head itself cannot be read', async () => {
+    it('posts nothing, and fails with a fixed line, when the head cannot be read after its retries', async () => {
       const posted: string[] = [];
+      let reads = 0;
       vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
         if ((init.method ?? 'GET') === 'POST') posted.push(url);
+        else reads += 1;
         return new Response('secret-looking body', { status: 502 });
       });
-      await expect(record(ENV)).rejects.toThrow(
+      await expect(record(ENV, NO_WAIT)).rejects.toThrow(
         /^GitHub API GET \/repos\/owner\/repo\/pulls\/64: 502$/u,
       );
-      expect(posted).toEqual([]);
+      expect([posted, reads]).toEqual([[], 3]);
     });
 
     /**
-     * A head whose status an earlier run left green. `comments` answers each page; `statusFails`
-     * makes the status endpoint refuse the posts it names. Returns the head's status as GitHub
-     * would hold it after the run, and the run's error.
+     * A head whose status an earlier run left green. `comments` answers each page; `refuse` says
+     * whether the status endpoint refuses the nth status write (from 1) carrying that state.
+     * Returns the head's status as GitHub would hold it after the run, and the run's error.
      */
     async function afterPriorSuccess(
       comments: (page: number) => Response,
-      statusFails: ReadonlySet<string> = new Set(),
+      refuse: (state: string, nth: number) => boolean = () => false,
     ): Promise<{ readonly state: string; readonly error: unknown }> {
       let state = 'success';
+      const seen = new Map<string, number>();
       vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
         if (url.endsWith('/pulls/64')) return Response.json({ head: { sha: HEAD } });
         const match = /page=(\d+)$/u.exec(url);
-        if (url.includes('/issues/64/comments') && match !== null)
+        if (url.includes('/issues/64/comments') && match !== null) {
           return comments(Number(match[1]));
+        }
         if (url.endsWith(`/statuses/${HEAD}`)) {
           const posted = (JSON.parse(String(init.body)) as { state: string }).state;
-          if (statusFails.has(posted)) return new Response('no', { status: 503 });
+          const nth = (seen.get(posted) ?? 0) + 1;
+          seen.set(posted, nth);
+          if (refuse(posted, nth)) return new Response('no', { status: 503 });
           state = posted;
           return new Response(null, { status: 201 });
         }
@@ -177,14 +186,14 @@ describe('the Codex verdict recorder (D52)', () => {
       });
       let error: unknown = null;
       try {
-        await record(ENV);
+        await record(ENV, NO_WAIT);
       } catch (caught) {
         error = caught;
       }
       return { state, error };
     }
 
-    it('never leaves an earlier success standing when the comments cannot be read (review of aa6f519, H1)', async () => {
+    it('never leaves an earlier success standing when the comments cannot be read (H1)', async () => {
       const full = Array.from({ length: 100 }, () => ({ author_association: 'OWNER', body: 'x' }));
       for (const [label, comments] of [
         ['the first page fails', () => new Response('down', { status: 502 })],
@@ -201,18 +210,47 @@ describe('the Codex verdict recorder (D52)', () => {
       }
     });
 
+    it('goes on past a refused pending write and writes the verdict it decides (review of 26dad9d, H1)', async () => {
+      // The pending write refused on every attempt; the verdict is now CHANGES REQUIRED.
+      expect(
+        await afterPriorSuccess(
+          () => Response.json(CHANGES),
+          (state) => state === 'pending',
+        ),
+      ).toEqual({ state: 'failure', error: null });
+      // Refused once, then accepted on its retry.
+      expect(
+        await afterPriorSuccess(
+          () => Response.json(CHANGES),
+          (state, nth) => state === 'pending' && nth === 1,
+        ),
+      ).toEqual({ state: 'failure', error: null });
+      // Refused, and the comments cannot be read either: failure is still written.
+      const unread = await afterPriorSuccess(
+        () => new Response('down', { status: 502 }),
+        (state) => state === 'pending',
+      );
+      expect([unread.state, unread.error instanceof Error]).toEqual(['failure', true]);
+      // Refused, and the verdict is still a PASS: success is the true verdict.
+      expect(
+        await afterPriorSuccess(
+          () => Response.json(PASSED),
+          (state) => state === 'pending',
+        ),
+      ).toEqual({ state: 'success', error: null });
+    });
+
     it('leaves the head pending, never green, when the verdict or the failure cannot be written', async () => {
-      const passed = () =>
-        Response.json([{ author_association: 'OWNER', body: `Codex verdict: PASS at ${HEAD}` }]);
-      expect(await afterPriorSuccess(passed, new Set(['success']))).toMatchObject({
+      const passed = () => Response.json(PASSED);
+      expect(await afterPriorSuccess(passed, (state) => state === 'success')).toMatchObject({
         state: 'pending',
       });
       const down = () => new Response('down', { status: 502 });
-      expect(await afterPriorSuccess(down, new Set(['failure']))).toMatchObject({
+      expect(await afterPriorSuccess(down, (state) => state === 'failure')).toMatchObject({
         state: 'pending',
       });
-      // Only when the status cannot be written at all does the earlier one stand, and the run fails.
-      const blocked = await afterPriorSuccess(down, new Set(['pending', 'failure']));
+      // Only when every status write is refused does the earlier one stand, and the run fails.
+      const blocked = await afterPriorSuccess(down, () => true);
       expect([blocked.state, blocked.error instanceof Error]).toEqual(['success', true]);
     });
   });
