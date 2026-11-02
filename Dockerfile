@@ -10,7 +10,7 @@
 # binaries for darwin-arm64 and linux-x64 only (pnpm-workspace.yaml refuses
 # its install script), and those prebuilds are glibc, not musl.
 
-FROM node:24.22.2-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS base
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS base
 RUN corepack enable
 WORKDIR /app
 
@@ -25,7 +25,7 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 RUN pnpm exec turbo run build --filter=@cas/dashboard...
 
-FROM node:24.22.2-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS runtime
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS runtime
 # npm is never run here (the dashboard starts through corepack's pnpm), and the copy the base
 # image carries, with its own bundled packages, is what the image scan flags; it is removed.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \

@@ -73,16 +73,16 @@
     },
     {
       "type": "container",
-      "bom-ref": "container:node:24.22.2-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c",
+      "bom-ref": "container:node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c",
       "name": "node",
       "version": "24.22.2-bookworm-slim",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c"
+          "content": "c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c"
         }
       ],
-      "purl": "pkg:docker/library/node@sha256%3Abe8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c?tag=24.22.2-bookworm-slim",
+      "purl": "pkg:docker/library/node@sha256%3Ac86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c?tag=24.22.2-bookworm-slim",
       "properties": [
         {
           "name": "cas:image:source",
@@ -9676,7 +9676,7 @@
   ],
   "dependencies": [
     {
-      "ref": "container:node:24.22.2-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c",
+      "ref": "container:node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c",
       "dependsOn": []
     },
     {
@@ -11971,7 +11971,7 @@
     {
       "ref": "workspace:cs-ethonline-26",
       "dependsOn": [
-        "container:node:24.22.2-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c",
+        "container:node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c",
         "pkg:npm/%40eslint/js@10.0.1",
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/eslint@10.13.0",
