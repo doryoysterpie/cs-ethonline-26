@@ -32,7 +32,7 @@ import { repositoryRoot, trackedEntries } from './lib/tracked.ts';
 import { scanMainRuleset, scanMainRulesetText, workflowJobNames } from './rulesets.ts';
 import { scanSecrets, scanTextForSecrets } from './secrets.ts';
 import { checkToolchain, readToolchainExpectation } from './toolchain.ts';
-import { RUNNER_IMAGE_STEP, RUNNER_LABEL } from './runner.ts';
+import { RUNNER_IMAGE_COMMAND, RUNNER_IMAGE_STEP, RUNNER_LABEL } from './runner.ts';
 import { scanWorkflowText, scanWorkflows } from './workflows.ts';
 
 /**
@@ -390,7 +390,7 @@ describe('workflows', () => {
     `        image: ${digest}`,
     '    steps:',
     `      - name: ${RUNNER_IMAGE_STEP}`,
-    '        run: echo image',
+    `        run: ${RUNNER_IMAGE_COMMAND}`,
     `      - uses: actions/checkout@${sha} # v7.0.1`,
     '        with:',
     '          persist-credentials: false',
@@ -427,6 +427,7 @@ describe('workflows', () => {
       'permissions_too_broad',
     ]);
     expect(rules(scanWorkflowText('x.yml', 'on: push\njobs: {}\n'))).toEqual([
+      'jobs_missing',
       'permissions_missing',
     ]);
   });
@@ -442,7 +443,7 @@ describe('the pinned runner (D56)', () => {
       `    runs-on: ${runsOn}`,
       '    steps:',
       `      - name: ${firstStep}`,
-      '        run: true',
+      `        run: ${RUNNER_IMAGE_COMMAND}`,
       '',
     ].join('\n');
 
@@ -462,6 +463,97 @@ describe('the pinned runner (D56)', () => {
     }
     expect(rules(scanWorkflowText('x.yml', job(RUNNER_LABEL, 'Check out repository')))).toEqual([
       'runner_image_not_logged',
+    ]);
+  });
+
+  // The two bypasses of the review of 13298ef (M1): a job that names no runner the check can
+  // read, and a first step that keeps the name but does not print the image.
+  const head = ['permissions:', '  contents: read', 'jobs:'];
+  const pinnedJob = (name: string, ...firstStepBody: string[]) => [
+    `  ${name}:`,
+    `    runs-on: ${RUNNER_LABEL}`,
+    '    steps:',
+    `      - name: ${RUNNER_IMAGE_STEP}`,
+    ...firstStepBody,
+    '      - run: pnpm test',
+  ];
+  const scan = (...lines: string[]) => rules(scanWorkflowText('x.yml', [...lines, ''].join('\n')));
+
+  it('refuses a job-level call of a reusable workflow, whose runner and steps it cannot read', () => {
+    const call = `    uses: owner/repo/.github/workflows/build.yml@${'c'.repeat(40)} # v1.0.0`;
+    expect(scan(...head, '  outsourced:', call)).toEqual(['job_reusable_workflow']);
+    expect(
+      scan(
+        ...head,
+        ...pinnedJob('verify', `        run: ${RUNNER_IMAGE_COMMAND}`),
+        '  outsourced:',
+        call,
+      ),
+    ).toEqual(['job_reusable_workflow']);
+  });
+
+  it('refuses a job with no runs-on, and a job with no steps', () => {
+    expect(
+      scan(
+        ...head,
+        '  verify:',
+        '    steps:',
+        `      - name: ${RUNNER_IMAGE_STEP}`,
+        `        run: ${RUNNER_IMAGE_COMMAND}`,
+      ),
+    ).toEqual(['runner_not_pinned']);
+    expect(scan(...head, '  verify:', `    runs-on: ${RUNNER_LABEL}`)).toEqual([
+      'runner_image_not_logged',
+    ]);
+  });
+
+  it('refuses a runner-image step that does not print the image, or that can be skipped or changed', () => {
+    for (const body of [
+      ['        run: true'],
+      ['        run: echo image'],
+      ['        run: |', `          ${RUNNER_IMAGE_COMMAND}`],
+      [`        run: ${RUNNER_IMAGE_COMMAND}`, '        if: false'],
+      [`        run: ${RUNNER_IMAGE_COMMAND}`, '        shell: true {0}'],
+      [],
+    ]) {
+      expect([body, scan(...head, ...pinnedJob('verify', ...body))]).toEqual([
+        body,
+        ['runner_image_not_logged'],
+      ]);
+    }
+    expect(
+      scan(
+        ...head,
+        ...pinnedJob(
+          'verify',
+          `        run: ${RUNNER_IMAGE_COMMAND}`,
+          '        env:',
+          '          ImageOS: ubuntu26',
+        ),
+      ),
+    ).toEqual(['runner_image_not_logged', 'runner_image_overridden']);
+  });
+
+  it('refuses a value set for ImageOS or ImageVersion anywhere in a workflow', () => {
+    const job = pinnedJob('verify', `        run: ${RUNNER_IMAGE_COMMAND}`);
+    expect(scan('env:', '  ImageOS: ubuntu26', ...head, ...job)).toEqual([
+      'runner_image_overridden',
+    ]);
+    expect(scan('env: { ImageVersion: 20261026.180.1 }', ...head, ...job)).toEqual([
+      'runner_image_overridden',
+    ]);
+    expect(scan(...head, ...job)).toEqual([]);
+  });
+
+  it('reads each job on its own: a good job does not cover the one after it', () => {
+    const lines = [
+      ...head,
+      ...pinnedJob('first', `        run: ${RUNNER_IMAGE_COMMAND}`),
+      ...pinnedJob('second', '        run: true'),
+    ];
+    const findings = scanWorkflowText('x.yml', [...lines, ''].join('\n'));
+    expect(findings.map((item) => [item.rule, item.line])).toEqual([
+      ['runner_image_not_logged', lines.indexOf('    steps:', 6) + 1],
     ]);
   });
 

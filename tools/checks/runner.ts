@@ -14,3 +14,10 @@ export const RUNNER_LABEL = 'ubuntu-26.04';
 
 /** The name of the first step of every job, which logs the runner image. */
 export const RUNNER_IMAGE_STEP = 'Runner image';
+
+/**
+ * That step's one command, exactly: it prints both variables GitHub sets on the
+ * runner, so a log names the image a job ran on (review of 13298ef, M1).
+ */
+export const RUNNER_IMAGE_COMMAND =
+  'echo "runner image ImageOS=${ImageOS:-unreported} ImageVersion=${ImageVersion:-unreported}"';
