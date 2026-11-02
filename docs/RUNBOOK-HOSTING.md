@@ -11,7 +11,7 @@ that minted them to the Railway variable and nowhere else.
 
 One project (`cs`), one environment (`production`), two services:
 
-- **dashboard**, built from the repository's `Dockerfile` on every push to `main` (Node 24.21.0
+- **dashboard**, built from the repository's `Dockerfile` on every push to `main` (Node 24.22.2
   on Debian bookworm-slim, a frozen-lockfile install, a Turborepo build of the dashboard, the
   dashboard's `start` on port 3000). `railway.json` sets the Dockerfile builder, a pre-deploy
   command that runs the worker's `db migrate` then `db check` so the database is at the commit's

@@ -87,7 +87,7 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
 
 **Additions of the security-foundation track (decision D27, pending audit).**
 
-- The toolchain is pinned to exact releases: Node `24.21.0` in `.nvmrc` and pnpm `11.10.0`
+- The toolchain is pinned to exact releases: Node `24.22.2` in `.nvmrc` and pnpm `11.10.0`
   in `packageManager`, with `engines.node` naming that release line. Every CI job asserts,
   before anything else runs, that the Node and pnpm executing it are those releases
   (`tools/checks/toolchain.ts`). pnpm 11.10.0 refuses the corepack `+sha512` integrity suffix

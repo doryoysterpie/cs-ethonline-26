@@ -6,11 +6,11 @@
 # checks (docs/RUNBOOK-SECURITY.md, section 6): the new digest resolves from the tag on the
 # registry, and the image scan (.github/workflows/image-scan.yml) is clean.
 #
-# node:24.21.0-bookworm-slim (glibc, not musl/alpine): argon2 ships prebuilt
+# node:24.22.2-bookworm-slim (glibc, not musl/alpine): argon2 ships prebuilt
 # binaries for darwin-arm64 and linux-x64 only (pnpm-workspace.yaml refuses
 # its install script), and those prebuilds are glibc, not musl.
 
-FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS base
+FROM node:24.22.2-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS base
 RUN corepack enable
 WORKDIR /app
 
@@ -25,7 +25,7 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 RUN pnpm exec turbo run build --filter=@cas/dashboard...
 
-FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
+FROM node:24.22.2-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS runtime
 RUN corepack enable
 WORKDIR /app
 ENV NODE_ENV=production

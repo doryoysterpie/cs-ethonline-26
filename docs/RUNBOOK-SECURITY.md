@@ -201,7 +201,7 @@ two checks, and a bump merges only when both hold:
 1. The new digest resolves from the tag on the registry. Read-only:
 
    ```bash
-   docker buildx imagetools inspect node:24.21.0-bookworm-slim
+   docker buildx imagetools inspect node:24.22.2-bookworm-slim
    ```
 
    The `Digest:` line must equal the digest in both `FROM` lines of the pull request.

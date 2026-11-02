@@ -217,7 +217,7 @@ error, never an empty result and never a silent fallback to fixture or replay da
 
 | Concern         | Choice                                                                                                                                                  | Class                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| Runtime         | Node 24.21.0 exactly (`.nvmrc`), `engines` on that line; asserted at run time by `tools/checks/toolchain.ts` (security-foundation track, pending audit) | security necessity      |
+| Runtime         | Node 24.22.2 exactly (`.nvmrc`), `engines` on that line; asserted at run time by `tools/checks/toolchain.ts` (security-foundation track, pending audit) | security necessity      |
 | Package manager | pnpm 11.10.0, pinned in `packageManager`                                                                                                                | cost judgment           |
 | Task runner     | Turborepo 2.10.12                                                                                                                                       | charter                 |
 | Language        | TypeScript 6.0.3, `NodeNext` modules, strict                                                                                                            | compatibility need      |
