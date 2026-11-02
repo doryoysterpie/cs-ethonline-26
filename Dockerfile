@@ -26,7 +26,10 @@ FROM deps AS build
 RUN pnpm exec turbo run build --filter=@cas/dashboard...
 
 FROM node:24.22.2-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS runtime
-RUN corepack enable
+# npm is never run here (the dashboard starts through corepack's pnpm), and the copy the base
+# image carries, with its own bundled packages, is what the image scan flags; it is removed.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+  && corepack enable
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app ./
