@@ -1,4 +1,5 @@
 import { conclude, finding, isMain, type Finding } from './lib/report.ts';
+import { RUNNER_IMAGE_STEP, RUNNER_LABEL } from './runner.ts';
 import { readTracked, repositoryRoot, trackedEntries, type TrackedEntry } from './lib/tracked.ts';
 
 /**
@@ -7,9 +8,11 @@ import { readTracked, repositoryRoot, trackedEntries, type TrackedEntry } from '
  * Every `uses:` must name a full 40-character commit SHA with a version
  * comment beside it, every service image must be pinned by digest, every
  * workflow must declare least-privilege `permissions:` at the top level,
- * no workflow may run on `pull_request_target` or `workflow_run`, and every
- * checkout must set `persist-credentials: false`. The scan is line-based over
- * the project's own workflow files, which are written to be read that way.
+ * no workflow may run on `pull_request_target` or `workflow_run`, every
+ * checkout must set `persist-credentials: false`, every job must run on the
+ * one pinned runner label (`runner.ts`, D56), and every job's first step must
+ * log the runner image. The scan is line-based over the project's own
+ * workflow files, which are written to be read that way.
  */
 
 const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/u;
@@ -23,6 +26,10 @@ const DANGEROUS_TRIGGER = /^\s*(?:-\s*)?(pull_request_target|workflow_run)\s*:?\
 const CHECKOUT = /^\s*-?\s*uses:\s*actions\/checkout@/u;
 const PERSIST_CREDENTIALS_OFF = /^\s*persist-credentials:\s*false\s*$/u;
 const STEP_START = /^\s*-\s+(name|uses|run):/u;
+const RUNS_ON = /^\s*runs-on:\s*(.*?)\s*$/u;
+const JOB_START = /^ {2}[A-Za-z0-9_-]+:\s*$/u;
+const STEPS = /^\s*steps:\s*$/u;
+const FIRST_STEP = /^\s*-\s+name:\s*(.+?)\s*$/u;
 
 export function scanWorkflowText(relativePath: string, text: string): Finding[] {
   const findings: Finding[] = [];
@@ -59,6 +66,28 @@ export function scanWorkflowText(relativePath: string, text: string): Finding[] 
     const image = IMAGE.exec(line);
     if (image !== null && !DIGEST.test(image[1] ?? '')) {
       findings.push(finding(relativePath, lineNumber, 'image_not_digest_pinned'));
+    }
+    const runsOn = RUNS_ON.exec(line);
+    if (runsOn !== null) {
+      const label = (runsOn[1] ?? '').replace(/^(['"])(.*)\1$/u, '$2');
+      if (label !== RUNNER_LABEL) {
+        findings.push(finding(relativePath, lineNumber, 'runner_not_pinned'));
+      }
+    }
+    if (STEPS.test(line)) {
+      // The first step of the job, the next line that starts one, must log the runner image.
+      let named: string | null = null;
+      for (let next = index + 1; next < lines.length; next += 1) {
+        const candidate = lines[next] ?? '';
+        if (JOB_START.test(candidate)) break;
+        if (STEP_START.test(candidate)) {
+          named = FIRST_STEP.exec(candidate)?.[1] ?? null;
+          break;
+        }
+      }
+      if (named !== RUNNER_IMAGE_STEP) {
+        findings.push(finding(relativePath, lineNumber, 'runner_image_not_logged'));
+      }
     }
     if (CHECKOUT.test(line)) {
       let persisted = true;

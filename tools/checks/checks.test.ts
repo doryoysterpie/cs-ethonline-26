@@ -32,6 +32,7 @@ import { repositoryRoot, trackedEntries } from './lib/tracked.ts';
 import { scanMainRuleset, scanMainRulesetText, workflowJobNames } from './rulesets.ts';
 import { scanSecrets, scanTextForSecrets } from './secrets.ts';
 import { checkToolchain, readToolchainExpectation } from './toolchain.ts';
+import { RUNNER_IMAGE_STEP, RUNNER_LABEL } from './runner.ts';
 import { scanWorkflowText, scanWorkflows } from './workflows.ts';
 
 /**
@@ -383,11 +384,13 @@ describe('workflows', () => {
     '  contents: read',
     'jobs:',
     '  verify:',
-    '    runs-on: ubuntu-latest',
+    `    runs-on: ${RUNNER_LABEL}`,
     '    services:',
     '      postgres:',
     `        image: ${digest}`,
     '    steps:',
+    `      - name: ${RUNNER_IMAGE_STEP}`,
+    '        run: echo image',
     `      - uses: actions/checkout@${sha} # v7.0.1`,
     '        with:',
     '          persist-credentials: false',
@@ -426,6 +429,45 @@ describe('workflows', () => {
     expect(rules(scanWorkflowText('x.yml', 'on: push\njobs: {}\n'))).toEqual([
       'permissions_missing',
     ]);
+  });
+});
+
+describe('the pinned runner (D56)', () => {
+  const job = (runsOn: string, firstStep: string) =>
+    [
+      'permissions:',
+      '  contents: read',
+      'jobs:',
+      '  verify:',
+      `    runs-on: ${runsOn}`,
+      '    steps:',
+      `      - name: ${firstStep}`,
+      '        run: true',
+      '',
+    ].join('\n');
+
+  it('accepts a job on the pinned label whose first step logs the runner image', () => {
+    expect(rules(scanWorkflowText('x.yml', job(RUNNER_LABEL, RUNNER_IMAGE_STEP)))).toEqual([]);
+    expect(rules(scanWorkflowText('x.yml', job(`'${RUNNER_LABEL}'`, RUNNER_IMAGE_STEP)))).toEqual(
+      [],
+    );
+  });
+
+  it('refuses any other runner label, an expression and a missing image log', () => {
+    for (const label of ['ubuntu-latest', 'ubuntu-24.04', 'macos-latest', '${{ matrix.os }}', '']) {
+      expect([label, rules(scanWorkflowText('x.yml', job(label, RUNNER_IMAGE_STEP)))]).toEqual([
+        label,
+        ['runner_not_pinned'],
+      ]);
+    }
+    expect(rules(scanWorkflowText('x.yml', job(RUNNER_LABEL, 'Check out repository')))).toEqual([
+      'runner_image_not_logged',
+    ]);
+  });
+
+  it('holds every workflow in this repository to the label', () => {
+    expect(scanWorkflows(REPO).findings.map(formatFinding)).toEqual([]);
+    expect(RUNNER_LABEL).toBe('ubuntu-26.04');
   });
 });
 

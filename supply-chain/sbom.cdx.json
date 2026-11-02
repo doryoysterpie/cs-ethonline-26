@@ -9,7 +9,7 @@
         {
           "type": "application",
           "name": "cas-sbom-generator",
-          "version": "2"
+          "version": "3"
         }
       ]
     },
@@ -41,7 +41,7 @@
       },
       {
         "name": "cas:generator",
-        "value": "cas-sbom-generator@2"
+        "value": "cas-sbom-generator@3"
       },
       {
         "name": "cas:runtime:unicode",
@@ -50,6 +50,27 @@
     ]
   },
   "components": [
+    {
+      "type": "platform",
+      "bom-ref": "runner:github-hosted:ubuntu-26.04",
+      "name": "github-hosted-runner",
+      "version": "ubuntu-26.04",
+      "description": "The GitHub-hosted runner label every CI job runs on. It pins the operating system release, not the image build, which GitHub refreshes under the same label.",
+      "properties": [
+        {
+          "name": "cas:runner:label",
+          "value": "ubuntu-26.04"
+        },
+        {
+          "name": "cas:runner:pins",
+          "value": "os-release"
+        },
+        {
+          "name": "cas:runner:source",
+          "value": "tools/checks/runner.ts"
+        }
+      ]
+    },
     {
       "type": "library",
       "bom-ref": "workspace:@cas/article",
@@ -11740,6 +11761,10 @@
       "dependsOn": []
     },
     {
+      "ref": "runner:github-hosted:ubuntu-26.04",
+      "dependsOn": []
+    },
+    {
       "ref": "workspace:@cas/article",
       "dependsOn": [
         "pkg:npm/%40types/node@24.13.3",
@@ -11927,6 +11952,7 @@
         "pkg:npm/typescript-eslint@8.69.0",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
+        "runner:github-hosted:ubuntu-26.04",
         "workspace:@cas/article",
         "workspace:@cas/classification",
         "workspace:@cas/clustering",

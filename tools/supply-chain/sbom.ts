@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { isMain } from '../checks/lib/report.ts';
 import { repositoryRoot } from '../checks/lib/tracked.ts';
+import { RUNNER_LABEL } from '../checks/runner.ts';
 import { baseOfSpecifier, parseLockfile, type Lockfile } from './lockfile.ts';
 
 /**
@@ -22,6 +23,11 @@ import { baseOfSpecifier, parseLockfile, type Lockfile } from './lockfile.ts';
  * not inventoried rather than as whatever the generating machine happened to
  * see. The document carries no timestamp and no random serial number.
  *
+ * It records the runner label every CI job runs on (D56) as a component of
+ * type `platform`, so the label's retirement is reviewed with the packages and
+ * its bump is a planned pull request; the label pins the operating system's
+ * release, not the image build.
+ *
  * It also records the Unicode version of the Node that generated it
  * (`process.versions.unicode`, D49): the prohibited-text rule takes its
  * invisible characters from that version's Default_Ignorable_Code_Point
@@ -36,7 +42,7 @@ import { baseOfSpecifier, parseLockfile, type Lockfile } from './lockfile.ts';
 export const SBOM_PATH = 'supply-chain/sbom.cdx.json';
 export const LICENSES_PATH = 'supply-chain/LICENSES.md';
 export const GENERATOR_NAME = 'cas-sbom-generator';
-export const GENERATOR_VERSION = '2';
+export const GENERATOR_VERSION = '3';
 
 export interface WorkspaceManifest {
   /** Path relative to the repository root, as the lockfile's importer key. */
@@ -54,6 +60,8 @@ export interface SbomInputs {
   readonly licenses: ReadonlyMap<string, string>;
   /** `process.versions.unicode` of the generating Node (D49). */
   readonly unicodeVersion: string;
+  /** The runner label every CI job runs on (`tools/checks/runner.ts`, D56). */
+  readonly runnerLabel: string;
 }
 
 export interface SbomSummary {
@@ -64,6 +72,7 @@ export interface SbomSummary {
   /** Unconstrained packages whose every parent installs on no supported platform. */
   readonly platformInherited: number;
   readonly lockfileSha256: string;
+  readonly runnerLabel: string;
 }
 
 export interface SbomOutput {
@@ -301,6 +310,22 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
     });
   }
 
+  // The runner every CI job runs on: a platform component, never an npm package (D56).
+  const runnerRef = `runner:github-hosted:${inputs.runnerLabel}`;
+  const runnerComponent = {
+    type: 'platform',
+    'bom-ref': runnerRef,
+    name: 'github-hosted-runner',
+    version: inputs.runnerLabel,
+    description:
+      'The GitHub-hosted runner label every CI job runs on. It pins the operating system release, not the image build, which GitHub refreshes under the same label.',
+    properties: [
+      { name: 'cas:runner:label', value: inputs.runnerLabel },
+      { name: 'cas:runner:pins', value: 'os-release' },
+      { name: 'cas:runner:source', value: 'tools/checks/runner.ts' },
+    ],
+  };
+
   // Dependency graph: importers first, then one entry per package merging its snapshots.
   const dependencies = new Map<string, Set<string>>();
   const depend = (ref: string, on: string) => {
@@ -325,6 +350,8 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
   }
   const rootRef = workspaceRef(inputs.root.name);
   for (const workspace of inputs.workspaces) depend(rootRef, workspaceRef(workspace.name));
+  depend(rootRef, runnerRef);
+  dependencies.set(runnerRef, dependencies.get(runnerRef) ?? new Set<string>());
   for (const snapshot of lock.snapshots.values()) {
     const ref = purlOf(snapshot.name, snapshot.version);
     dependencies.set(ref, dependencies.get(ref) ?? new Set<string>());
@@ -358,7 +385,7 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
         { name: 'cas:runtime:unicode', value: inputs.unicodeVersion },
       ],
     },
-    components: [...workspaceComponents, ...components],
+    components: [runnerComponent, ...workspaceComponents, ...components],
     dependencies: [...dependencies.entries()]
       .sort(([a], [b]) => compare(a, b))
       .map(([ref, on]) => ({ ref, dependsOn: [...on].sort(compare) })),
@@ -371,6 +398,7 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
     platformConstrained,
     platformInherited,
     lockfileSha256,
+    runnerLabel: inputs.runnerLabel,
   };
   return {
     sbom: `${JSON.stringify(document, null, 2)}\n`,
@@ -499,6 +527,7 @@ export function gatherInputs(root: string): SbomInputs {
     workspaces: readWorkspaces(root),
     licenses: readInstalledLicenses(root),
     unicodeVersion: process.versions.unicode ?? 'unreported',
+    runnerLabel: RUNNER_LABEL,
   };
 }
 
@@ -612,7 +641,7 @@ if (isMain(import.meta.url)) {
   const s = output.summary;
   const verdict = check ? (failures === 0 ? 'CHECK OK' : 'CHECK FAILED') : 'WRITTEN';
   console.log(
-    `sbom: components=${s.components} workspace=${s.workspaceComponents} licensed=${s.licensed} platformConstrained=${s.platformConstrained} platformInherited=${s.platformInherited} lockfileSha256=${s.lockfileSha256} ${verdict}`,
+    `sbom: components=${s.components} workspace=${s.workspaceComponents} licensed=${s.licensed} platformConstrained=${s.platformConstrained} platformInherited=${s.platformInherited} runner=${s.runnerLabel} lockfileSha256=${s.lockfileSha256} ${verdict}`,
   );
   process.exitCode = failures === 0 ? 0 : 1;
 }

@@ -96,6 +96,7 @@ function syntheticInputs(licenses: Record<string, string>): SbomInputs {
     ],
     licenses: new Map(Object.entries(licenses)),
     unicodeVersion: '17.0',
+    runnerLabel: 'ubuntu-26.04',
   };
 }
 
@@ -194,6 +195,7 @@ describe('bill of materials', () => {
     expect(document.metadata.properties).toContainEqual({ name: 'cas:runtime:unicode', value: '17.0' });
     const refs = document.components.map((c) => c['bom-ref']);
     expect(refs).toEqual([
+      'runner:github-hosted:ubuntu-26.04',
       'workspace:@cas/contracts',
       'workspace:@cas/lib',
       'pkg:npm/%40scope/beta@2.0.0',
@@ -216,6 +218,7 @@ describe('bill of materials', () => {
     const graph = new Map(document.dependencies.map((d) => [d.ref, d.dependsOn]));
     expect(graph.get('workspace:root-app')).toEqual([
       'pkg:npm/alpha@1.0.0',
+      'runner:github-hosted:ubuntu-26.04',
       'workspace:@cas/contracts',
       'workspace:@cas/lib',
     ]);
@@ -358,6 +361,32 @@ describe('bill of materials', () => {
       licenses: new Map([...inputs.licenses, ['wasm-runtime@1.0.0', 'MIT']]),
     };
     expect(() => buildSbom(withRuntime)).toThrowError(/licence unavailable for wasm-shim@1.0.0/u);
+  });
+
+  it('records the runner label as a platform component, outside the package counts and the npm cross-check (D56)', () => {
+    const output = buildSbom(syntheticInputs({ 'alpha@1.0.0': 'MIT', '@scope/beta@2.0.0': 'ISC' }));
+    const document = JSON.parse(output.sbom) as {
+      components: Record<string, unknown>[];
+      dependencies: { ref: string; dependsOn: string[] }[];
+    };
+    const runner = document.components.find((c) => c['type'] === 'platform');
+    expect(runner).toMatchObject({
+      'bom-ref': 'runner:github-hosted:ubuntu-26.04',
+      name: 'github-hosted-runner',
+      version: 'ubuntu-26.04',
+      properties: expect.arrayContaining([
+        { name: 'cas:runner:label', value: 'ubuntu-26.04' },
+        { name: 'cas:runner:pins', value: 'os-release' },
+      ]),
+    });
+    expect(runner).not.toHaveProperty('purl');
+    expect(output.summary.runnerLabel).toBe('ubuntu-26.04');
+    expect(document.components.filter((c) => typeof c['purl'] === 'string')).toHaveLength(
+      output.summary.components,
+    );
+    expect(document.dependencies.find((d) => d.ref === 'workspace:root-app')?.dependsOn).toContain(
+      'runner:github-hosted:ubuntu-26.04',
+    );
   });
 
   it('encodes package URLs, hashes and licence choices as the specifications require', () => {
