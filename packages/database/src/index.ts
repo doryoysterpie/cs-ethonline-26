@@ -287,10 +287,12 @@ export {
 export { connectionSecrets, createRedactor, REDACTED, type Redactor } from './redact.js';
 export { createSchema, dropSchema, listTables, quoteIdentifier } from './schema.js';
 export {
+  assertNoAmbientLibpq,
   assertRestoreDrillSafety,
   compareTableRowCounts,
   countSchemaRows,
   drillChildEnvironment,
+  drillConnectionString,
   drillTarget,
   parseRestoreDrillTimeout,
   type DrillTarget,

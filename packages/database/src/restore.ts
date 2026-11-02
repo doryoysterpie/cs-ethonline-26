@@ -57,10 +57,14 @@ const DRILL_PARAMETERS: ReadonlySet<string> = new Set([
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 /**
- * Where one drill URL connects, read once. The guard checks this target, and
- * the child tools are handed exactly it (`drillChildEnvironment`); the Node
- * client reads the same URL to the same host, port and database, because
- * every parameter that could make the two disagree is refused here.
+ * Where one drill URL connects, read once (the reviews of pull request 65 at
+ * aa6f519 and 26dad9d, H2). The guard checks this target; the Node clients
+ * connect with `drillConnectionString(target)`, which names every routing and
+ * authentication field explicitly, and the child tools are handed the same
+ * fields (`drillChildEnvironment`). Nothing is left for either to fill from
+ * its environment: the drill refuses to run while any libpq variable is set
+ * (`assertNoAmbientLibpq`), and every parameter that could make the two
+ * disagree is refused here.
  */
 export interface DrillTarget {
   readonly transport: ConnectionTransport;
@@ -68,9 +72,50 @@ export interface DrillTarget {
   readonly host: string;
   readonly port: string;
   readonly database: string;
-  readonly user: string | null;
+  readonly user: string;
   readonly password: string | null;
   readonly parameters: ReadonlyMap<string, string>;
+}
+
+/**
+ * The one connection string every Node client of the drill uses for a target:
+ * host, port, database and user always explicit, so neither client fills one
+ * from its environment. A socket directory travels as the `host` parameter.
+ */
+export function drillConnectionString(target: DrillTarget): string {
+  const authority =
+    encodeURIComponent(target.user) +
+    (target.password === null ? '' : `:${encodeURIComponent(target.password)}`);
+  const host =
+    target.transport === 'unix-socket'
+      ? 'localhost'
+      : target.host.includes(':') && !target.host.startsWith('[')
+        ? `[${target.host}]`
+        : target.host;
+  const parameters = [
+    ...(target.transport === 'unix-socket' ? [['host', target.host] as const] : []),
+    ...target.parameters,
+  ].map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+  return `postgresql://${authority}@${host}:${target.port}/${encodeURIComponent(target.database)}${
+    parameters.length === 0 ? '' : `?${parameters.join('&')}`
+  }`;
+}
+
+/**
+ * Refuses to run the drill while any libpq variable (`PG*`) is set: the Node
+ * client and libpq each read them to fill what a URL leaves out, and not in
+ * the same way. The refusal names the variables, never their values.
+ */
+export function assertNoAmbientLibpq(env: Readonly<Record<string, string | undefined>>): void {
+  const names = Object.keys(env)
+    .filter((name) => name.startsWith('PG') && env[name] !== undefined)
+    .sort();
+  if (names.length > 0) {
+    throw new DatabaseError(
+      'configuration',
+      `restore drill refused: libpq variables are set in its environment (${names.join(', ')}); unset them`,
+    );
+  }
 }
 
 function drillRefusal(reason: string): DatabaseError {
@@ -106,6 +151,8 @@ export function drillTarget(connectionString: string): DrillTarget {
   parameters.delete('host');
   if (host.length === 0) throw drillRefusal('it names no host');
   if (host.includes(',')) throw drillRefusal('it names more than one host');
+  // An omitted user would be filled differently by the Node client and by libpq.
+  if (url.username.length === 0) throw drillRefusal('it names no user');
   const transport: ConnectionTransport = host.startsWith('/')
     ? 'unix-socket'
     : LOOPBACK_HOSTS.has(host.toLowerCase())
@@ -116,7 +163,7 @@ export function drillTarget(connectionString: string): DrillTarget {
     host,
     port: url.port.length === 0 ? '5432' : url.port,
     database: databaseName(connectionString),
-    user: url.username.length === 0 ? null : decoded(url.username, 'the user name'),
+    user: decoded(url.username, 'the user name'),
     password: url.password.length === 0 ? null : decoded(url.password, 'the password'),
     parameters,
   };
@@ -204,7 +251,7 @@ export function drillChildEnvironment(
   environment.PGHOST = target.host;
   environment.PGPORT = target.port;
   environment.PGDATABASE = target.database;
-  if (target.user !== null) environment.PGUSER = target.user;
+  environment.PGUSER = target.user;
   if (target.password !== null) environment.PGPASSWORD = target.password;
   const sslmode = target.parameters.get('sslmode');
   if (sslmode !== undefined) environment.PGSSLMODE = sslmode;

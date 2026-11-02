@@ -1,11 +1,13 @@
 import pg from 'pg';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { summarizeConnection } from './config.js';
 import {
   assertRestoreDrillSafety,
+  assertNoAmbientLibpq,
   compareTableRowCounts,
   drillChildEnvironment,
+  drillConnectionString,
   drillTarget,
   parseRestoreDrillTimeout,
 } from './restore.js';
@@ -15,7 +17,7 @@ describe('restore drill safety', () => {
     expect(() =>
       assertRestoreDrillSafety(
         'postgresql://source:secret-marker@db.internal:5432/app',
-        'postgresql://localhost:5432/cas_restore_20261023',
+        'postgresql://restore@localhost:5432/cas_restore_20261023',
       ),
     ).not.toThrow();
   });
@@ -39,14 +41,14 @@ describe('restore drill safety', () => {
   it('refuses an unsafe target name and the source database itself', () => {
     expect(() =>
       assertRestoreDrillSafety(
-        'postgresql://localhost:5432/application',
-        'postgresql://localhost:5432/scratch',
+        'postgresql://app@localhost:5432/application',
+        'postgresql://restore@localhost:5432/scratch',
       ),
     ).toThrow(/must begin with cas_restore_/);
     expect(() =>
       assertRestoreDrillSafety(
-        'postgresql://127.0.0.1:5432/cas_restore_same',
-        'postgresql://localhost:5432/cas_restore_same',
+        'postgresql://restore@127.0.0.1:5432/cas_restore_same',
+        'postgresql://restore@localhost:5432/cas_restore_same',
       ),
     ).toThrow(/same database/);
   });
@@ -89,6 +91,7 @@ describe('restore drill target (the review of pull request 65 at aa6f519, H2)', 
         /more than one host/,
       ],
       ['postgresql:///cas_restore_x', /names no host/],
+      ['postgresql://localhost/cas_restore_x', /names no user/],
     ] as const) {
       expect(() => assertRestoreDrillSafety(SOURCE, url), url).toThrow(reason);
     }
@@ -137,34 +140,96 @@ describe('restore drill target (the review of pull request 65 at aa6f519, H2)', 
     );
   });
 
-  it('gives the Node client and the child tools the same host, port, database and user', () => {
-    for (const url of [
+  describe('the Node client and the child tools resolve one target (review of 26dad9d, H2)', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+    type Parameters = {
+      readonly host: string;
+      readonly port: number;
+      readonly database: string;
+      readonly user: string;
+      readonly password: string | null | undefined;
+    };
+    // `connectionParameters` is the client's parsed target; it is not in the published types.
+    const nodeTarget = (connectionString: string): Parameters =>
+      (
+        new pg.Client({ connectionString }) as unknown as {
+          readonly connectionParameters: Parameters;
+        }
+      ).connectionParameters;
+
+    it('refuses to run while any libpq variable is set, naming the variables, never their values', () => {
+      expect(() => assertNoAmbientLibpq({ PATH: '/usr/bin', HOME: '/home/owner' })).not.toThrow();
+      for (const name of [
+        'PGPORT',
+        'PGHOST',
+        'PGHOSTADDR',
+        'PGUSER',
+        'PGPASSWORD',
+        'PGPASSFILE',
+        'PGSSLMODE',
+        'PGSERVICE',
+        'PGDATABASE',
+        'PGOPTIONS',
+      ]) {
+        expect(() => assertNoAmbientLibpq({ [name]: 'secret-value' }), name).toThrow(
+          new RegExp(`\\(${name}\\)`, 'u'),
+        );
+      }
+      expect(() => assertNoAmbientLibpq({ PGPORT: '6543', PGUSER: 'x' })).toThrow(/PGPORT, PGUSER/);
+      expect(() => assertNoAmbientLibpq({ PGPASSWORD: 'secret-value' })).not.toThrow(
+        /secret-value/,
+      );
+    });
+
+    const URLS = [
       'postgresql://u@localhost/cas_restore_x',
       'postgresql://u@localhost:5433/cas_restore_x?sslmode=disable',
       'postgresql://u@remote.example/cas_restore_x?host=%2Ftmp',
       'postgresql://u@%2Ftmp/cas_restore_x',
-      'postgresql://u:p@127.0.0.1/cas_restore_x?application_name=drill',
-      'postgresql://source@db.internal:6000/app?sslmode=require',
-    ]) {
-      // `connectionParameters` is the client's parsed target; it is not in the published types.
-      const node = (
-        new pg.Client({ connectionString: url }) as unknown as {
-          readonly connectionParameters: {
-            readonly host: string;
-            readonly port: number;
-            readonly database: string;
-            readonly user: string;
-          };
-        }
-      ).connectionParameters;
-      const child = drillChildEnvironment(drillTarget(url), false, {});
-      expect([child.PGHOST, child.PGPORT, child.PGDATABASE, child.PGUSER], url).toEqual([
-        node.host,
-        String(node.port),
-        node.database,
-        node.user,
-      ]);
-    }
+      'postgresql://u:p@127.0.0.1/cas_restore_x?application_name=drill&options=-c%20x%3Dy',
+      'postgresql://u@[::1]:5433/cas_restore_x',
+      'postgresql://source:s3cr%40t@db.internal:6000/app?sslmode=require',
+    ];
+
+    it('names every routing field explicitly, so no inherited variable can change where the Node client connects', () => {
+      // The reviewer's case: the URL names no port, and the parent environment holds another.
+      vi.stubEnv('PGPORT', '6543');
+      vi.stubEnv('PGHOST', 'remote.example');
+      vi.stubEnv('PGUSER', 'someone-else');
+      vi.stubEnv('PGDATABASE', 'production');
+      for (const url of URLS) {
+        const target = drillTarget(url);
+        const explicit = drillConnectionString(target);
+        const node = nodeTarget(explicit);
+        const child = drillChildEnvironment(target, false, {});
+        expect([node.host, String(node.port), node.database, node.user], url).toEqual([
+          child.PGHOST,
+          child.PGPORT,
+          child.PGDATABASE,
+          child.PGUSER,
+        ]);
+        // The explicit form reads back to the same target.
+        expect(drillTarget(explicit), url).toEqual(target);
+      }
+    });
+
+    it('gives both the same password in the only environment the drill runs in, one with no libpq variable', () => {
+      // A password the URL omits is the one field the explicit form cannot pin: the Node client
+      // would take an inherited PGPASSWORD. The drill refuses to run with one set
+      // (assertNoAmbientLibpq), so both then read the same password file, or none.
+      for (const name of Object.keys(process.env).filter((key) => key.startsWith('PG'))) {
+        vi.stubEnv(name, undefined);
+      }
+      expect(() => assertNoAmbientLibpq(process.env)).not.toThrow();
+      for (const url of URLS) {
+        const target = drillTarget(url);
+        const node = nodeTarget(drillConnectionString(target));
+        const child = drillChildEnvironment(target, false, {});
+        expect([node.password ?? null, url]).toEqual([child.PGPASSWORD ?? null, url]);
+      }
+    });
   });
 });
 

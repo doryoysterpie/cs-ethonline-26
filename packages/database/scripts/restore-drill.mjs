@@ -8,10 +8,12 @@ import process from 'node:process';
 import { clearTimeout, setTimeout } from 'node:timers';
 
 import {
+  assertNoAmbientLibpq,
   assertRestoreDrillSafety,
   compareTableRowCounts,
   countSchemaRows,
   drillChildEnvironment,
+  drillConnectionString,
   drillTarget,
   isDatabaseError,
   migrationStatusForClient,
@@ -105,18 +107,27 @@ async function main() {
   const targetUrl = required(TARGET_VARIABLE);
   const schema = process.env[SCHEMA_VARIABLE]?.trim() || 'public';
   const timeoutMs = parseRestoreDrillTimeout(process.env.RESTORE_DRILL_TIMEOUT_SECONDS);
-  const sourceConfig = parseDatabaseConfig({ DATABASE_URL: sourceUrl }, { schema });
-  const targetConfig = parseDatabaseConfig({ DATABASE_URL: targetUrl }, { schema });
+  // Nothing inherited may fill what a URL leaves out, for the Node clients or the child tools.
+  assertNoAmbientLibpq(process.env);
   assertRestoreDrillSafety(sourceUrl, targetUrl);
   const sourceTarget = drillTarget(sourceUrl);
   const restoreTarget = drillTarget(targetUrl);
+  // Every Node client connects with the explicit form of the target the guard checked.
+  const sourceConnection = drillConnectionString(sourceTarget);
+  const targetConnection = drillConnectionString(restoreTarget);
+  const sourceConfig = parseDatabaseConfig({ DATABASE_URL: sourceConnection }, { schema });
+  const targetConfig = parseDatabaseConfig({ DATABASE_URL: targetConnection }, { schema });
 
   const source = openDatabase(sourceConfig, { maxConnections: 1 });
   const target = openDatabase(targetConfig, { maxConnections: 1 });
   const sanitize = (value) =>
     target.redact(
       source.redact(
-        value.replaceAll(sourceUrl, '[database-url]').replaceAll(targetUrl, '[database-url]'),
+        value
+          .replaceAll(sourceUrl, '[database-url]')
+          .replaceAll(targetUrl, '[database-url]')
+          .replaceAll(sourceConnection, '[database-url]')
+          .replaceAll(targetConnection, '[database-url]'),
       ),
     );
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'cas-restore-drill-'));
