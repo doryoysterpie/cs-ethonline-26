@@ -70,15 +70,20 @@ esac
 # sudo resolves commands through its own secure path, not the caller's PATH,
 # so the command is resolved here, and the caller's whole environment, PATH
 # included, is carried in explicitly from the snapshot above. `env -i --` takes
-# every entry as an assignment, a name that begins with a dash included, and
-# the command runs through bash, so a command path holding `=` is never read as
-# one more assignment.
+# every entry as an assignment, a name that begins with a dash included, up to
+# the first argument without `=`, which must be the command; a command path
+# holding `=` would be read as one more assignment, and is refused.
 resolved="$(command -v "$1")" || {
   echo "network-denial: command not found: $1" >&2
   exit 127
 }
 shift
-shell="$(command -v bash)"
+case "$resolved" in
+  *=*)
+    echo "network-denial: the command's path holds '=', which env would read as an assignment" >&2
+    exit 2
+    ;;
+esac
 
 echo "network-denial: proven ($mode); outside='$outside' inside='$inside'; running: $resolved $*"
-exec "${deny[@]}" env -i -- "${NETWORK_DENIAL_ENVIRONMENT[@]}" "$shell" -c 'exec "$@"' network-denial "$resolved" "$@"
+exec "${deny[@]}" env -i -- "${NETWORK_DENIAL_ENVIRONMENT[@]}" "$resolved" "$@"

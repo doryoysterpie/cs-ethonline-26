@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -27,7 +29,6 @@ const NAMES = [
   'resolved',
   'probe',
   'environment',
-  'shell',
   'NETWORK_DENIAL_ENVIRONMENT',
   '-FLAG',
   'MULTI',
@@ -61,5 +62,18 @@ describe.skipIf(!AVAILABLE)('network-denial.sh (Linux with a network namespace o
     };
     expect(outcome.connect).toBe('ENETUNREACH');
     expect(outcome.seen).toEqual(Object.fromEntries(NAMES.map((name) => [name, env[name]])));
+  });
+
+  it('refuses a command whose path holds "=", which env would read as one more assignment', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cas-network-denial-')));
+    try {
+      const command = path.join(root, 'a=b');
+      fs.writeFileSync(command, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const result = spawnSync('bash', [SCRIPT, command], { encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(2);
+      expect(result.stderr).toMatch(/the command's path holds '='/u);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
