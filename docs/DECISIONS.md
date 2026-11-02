@@ -2280,3 +2280,45 @@ ruling of the same day: it need not, under five conditions.
   (CVE-2026-111497 among its advisories, in CISA's Known Exploited Vulnerabilities catalog), and
   the owner ruled that the patch ships ahead of the combined audit, recorded as not audited
   until that audit's head. Decided by the project owner, 2 November 2026, in chat.
+
+## D59 The workflow checks read YAML through one strict parser
+
+- **Date:** 2026-11-02
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 2 November 2026 to the review of pull request 68 at
+  `e2b0735` (M1): (a), the `yaml` package, and (i), every workflow rule moved onto the parsed
+  document. Both findings on D56's guard came from a reader that recognised the spellings it had
+  seen; a narrower hand-written grammar would be that reader again, so a real parser closes the
+  class. Conditions:
+  1. **A development dependency, pinned exactly, absent from the runtime stage.** `yaml` 2.9.1
+     through the catalog, a root `devDependency`; the Dockerfile's runtime stage removes it, and
+     the image scan requires it absent from the built image. It is a tool-time dependency and
+     never ships.
+  2. **A strict parse.** Duplicate keys refused; every anchor and alias refused, with the
+     package's alias limit at zero, so a merge key cannot bring one in; the default YAML 1.2 core
+     schema, under which `on` is a key and not the boolean true. Any parse error or parse warning
+     fails the file: a warning is a finding, not a note.
+  3. **Shape is part of the rule.** A `runs-on` that is a sequence, a mapping, an expression or
+     anything but a plain scalar equal to the literal is a refusal, not a skip; the same holds for
+     `uses` and the image fields. Each rule names the shape it accepts and refuses every other.
+     The line reader's defect was that what it did not recognise passed; the parsed reader's
+     default is the reverse.
+  4. **Regression fixtures.** The two findings' exact inputs, with flow style, quoted keys,
+     anchors, duplicate keys and expressions beside them, each asserted refused or caught; the
+     repository's own workflows are the passing fixture.
+  5. **One reader for all the YAML the checks inspect.** `tools/checks/lib/workflow-yaml.ts`
+     serves `workflows.ts` and the workflow reading of `rulesets.ts` alike.
+  6. **Each rule keeps its assertion and changes only its source;** the pull request lists every
+     rule as before (a line pattern) and after (a path in the parsed document).
+  7. **No text-matching path survives in the checks;** the old functions are deleted, not kept
+     as a fallback, and the checks' own test asserts that no module reads workflow YAML by
+     matching lines.
+  8. **Pull request 68 keeps its place in the train,** and its "not audited" row closes at the
+     combined audit's head, as decided.
+- **Rationale:** The owner's. One file, one mechanism, one review; leaving the older rules on line
+  matching would keep the hole open in exactly the rules nobody is looking at. No behaviour
+  changes, only how one tool reads one kind of file.
+- **Decided by:** Project owner, 2 November 2026, in chat.
+- **Supersedes:** nothing. The supply-chain reader of `pnpm-lock.yaml`
+  (`tools/supply-chain/lockfile.ts`) is a separate check, which carries no dependency by its own
+  design, and is unchanged.

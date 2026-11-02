@@ -96,13 +96,17 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
 - Every GitHub Action is pinned to a full commit SHA with its version beside it, every
   service image to a digest, every workflow declares least-privilege permissions, no workflow
   runs on `pull_request_target` or `workflow_run`, and every checkout discards its
-  credentials. `tools/checks/workflows.ts` enforces all of it on every push.
+  credentials. `tools/checks/workflows.ts` enforces all of it on every push. It reads each
+  workflow through one strict YAML parser (`tools/checks/lib/workflow-yaml.ts`, D59), so a
+  quoted key, flow style or an escape is read as GitHub reads it, and it applies every rule to
+  the parsed document, never to the text. A file with a parse error or warning, an anchor or
+  alias, a duplicate key or a second document is refused, and a value a rule compares must be a
+  plain scalar of the shape the rule names; any other shape is refused, not skipped.
 - Every job runs on one pinned runner label, `ubuntu-26.04` (`tools/checks/runner.ts`, D56),
-  and logs `ImageOS` and `ImageVersion` as its first step; `tools/checks/workflows.ts` reads
-  each job under `jobs:` and refuses any other `runs-on`, a job with none, a job-level call of
-  a reusable workflow (whose runner and steps live in another file), a first step that is not
-  the runner-image step with its one exact command, and a value set for `ImageOS` or
-  `ImageVersion` anywhere in a workflow. The label pins the
+  and logs `ImageOS` and `ImageVersion` as its first step. The check refuses any other
+  `runs-on`, a job with none, a job-level call of a reusable workflow (whose runner and steps
+  live in another file), a first step that is not the runner-image step with its one exact
+  command, and an `ImageOS` or `ImageVersion` key anywhere in a workflow. The label pins the
   operating system's release, not the image: GitHub refreshes the image under the same label on
   its own schedule and hosted runners offer no pin for an image build, so the weekly refresh
   still arrives unreviewed and the logged version is how a failure is matched to it. The bill

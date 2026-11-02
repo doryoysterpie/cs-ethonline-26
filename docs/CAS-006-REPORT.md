@@ -208,7 +208,7 @@ H2 not closed, one Medium. Each correction closed the general case and left one 
 - **The image, proved.** A Docker build of this branch's tree contains `apps/dashboard`,
   `apps/worker` and eleven packages, neither parked package among them, and the dashboard built.
 
-## 10. The combined review of 2 November 2026, and the correction
+## 10. The combined review of 2 November 2026, and the corrections
 
 - **Verdicts** (Codex; record
   `2026-11-02-pr-66-69-main-2759519-pr-67-4a0967f-pr-68-13298ef.md`): pull request 66 PASS at
@@ -218,14 +218,30 @@ H2 not closed, one Medium. Each correction closed the general case and left one 
   jobs themselves. A job-level call of a reusable workflow has no `runs-on:` and no steps of its
   own, so it passed with no finding; a first step named `Runner image` that ran `true` passed
   too, and the fixtures accepted exactly that.
-- **The correction** (`54e44d0`). `tools/checks/workflows.ts` reads each job under `jobs:`. A
-  job-level `uses:` is refused (`job_reusable_workflow`), and so is a job without `runs-on:`
-  (`runner_not_pinned`). The first step must be the runner-image step whose one other key is
-  `run:` with the exact command in `tools/checks/runner.ts` (`RUNNER_IMAGE_COMMAND`), so an
-  `if:`, a `shell:` or an `env:` on it is refused (`runner_image_not_logged`). A value set for
-  `ImageOS` or `ImageVersion` anywhere in a workflow is refused (`runner_image_overridden`). The
-  fixtures now use the command, and `docs/SECURITY.md` section 8 states the rule.
+- **The first correction** (`54e44d0`). `tools/checks/workflows.ts` read each job under
+  `jobs:`, but by matching lines: a job key counted only unquoted at two spaces and a job's keys
+  only unquoted at four, and `ImageOS` was matched as text. It refused a job-level `uses:`, a job
+  without `runs-on:`, a first step other than the runner-image step with its exact command, and
+  a textual `ImageOS` or `ImageVersion` key, in the repository's own layout only.
 - **Observed failing.** The new tests fail against the guard at `13298ef` (6 of 34). Against
   the committed workflows, each of four changes (the first step's command set to `true`, a
   reusable-workflow job added, `ImageOS` set for a whole workflow, `runs-on:` removed from a job)
   gives one finding with the new guard and none with the old.
+- **The re-review** (Codex; record `2026-11-02-pr-68-e2b0735.md`): CHANGES REQUIRED at
+  `e2b0735`, M1 (Medium). The guard still matched one textual layout: a quoted job key kept the
+  reusable-workflow bypass, a job in flow style and an escaped `ImageOS` key evaded it, and a
+  comment after `jobs:` or naming `ImageOS` was refused. The older workflow rules shared the gap:
+  a quoted `uses` or `image` key let an unpinned action or a tag-only image pass.
+- **The second correction** (D59; `d105a48` to `105fb16`). `yaml` 2.9.1 is a root development
+  dependency; the runtime stage of the image removes it, and the image scan requires it absent.
+  One reader, `tools/checks/lib/workflow-yaml.ts`, parses each workflow strictly (YAML 1.2 core
+  schema; any error or warning, anchor, alias, duplicate key, non-string key or second document
+  refused), and `workflows.ts` and `rulesets.ts` apply every rule to the parsed document, each
+  compared value a plain scalar of its rule's shape. The line functions are deleted, and a test
+  asserts that no checks module reads workflow YAML by matching lines.
+- **Observed failing, again.** The new tests fail against the guard and rulesets of `e2b0735` (7
+  of 39). On the committed workflows, the re-review's four inputs and a quoted `uses` key on a
+  checkout step each give a finding with the new guard and none with the old; comments after
+  `jobs:` and naming `ImageOS` pass with the new guard, where the old refused them. The image
+  scan failed on a runtime image that still held `yaml` (`yaml packages in the runtime: 1`) and
+  passed once the Dockerfile removed it (`0`).
