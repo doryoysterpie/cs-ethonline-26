@@ -192,7 +192,29 @@ succeeds. Stop merges, restore
 the intended setting, and follow the incident runbook if the deviation could have admitted an
 unreviewed commit.
 
-## 6. References
+## 6. Base image bumps
+
+The Dockerfile names its base by tag and manifest-list digest (D58). Dependabot opens a pull
+request when the digest under the tag moves (`.github/dependabot.yml`, weekly). Its review is
+two checks, and a bump merges only when both hold:
+
+1. The new digest resolves from the tag on the registry. Read-only:
+
+   ```bash
+   docker buildx imagetools inspect node:24.21.0-bookworm-slim
+   ```
+
+   The `Digest:` line must equal the digest in both `FROM` lines of the pull request.
+
+2. The image scan is clean: the pull request's `Image scan` job is green, and code scanning
+   shows no new image-scan alert.
+
+Then regenerate the bill of materials in the same pull request
+(`corepack pnpm supply-chain:generate`), since it records the base by digest and the check
+fails until it matches. A move of Node's release line is not a bump here: it changes `.nvmrc`
+and the toolchain pin with it (D27), as its own pull request.
+
+## 7. References
 
 - [GitHub REST API: repository rulesets](https://docs.github.com/en/rest/repos/rules)
 - [GitHub rules available for rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)

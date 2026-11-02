@@ -104,6 +104,14 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
   its own schedule and hosted runners offer no pin for an image build, so the weekly refresh
   still arrives unreviewed and the logged version is how a failure is matched to it. The bill
   of materials records the label as a component, where its retirement is planned.
+- The offline suite's network namespace takes `sudo` and `unshare` from the image, the named
+  exception of D57: the proof runs in the command's own namespace and requires a fast failure
+  on loopback and on an outside address, and a failed proof prints the image and both tools'
+  versions (`tools/checks/network-denial.sh`).
+- The Dockerfile's base image is pinned by its manifest-list digest (D58). Dependabot opens the
+  digest bump weekly, `.github/workflows/image-scan.yml` scans the built image on pull
+  requests, pushes and weekly, and the bill of materials records the base and refuses one not
+  pinned by digest.
 - Every push runs `pnpm audit` and reproduces the committed CycloneDX 1.6 bill of materials
   and licence inventory (`supply-chain/`) byte for byte from the lockfile and the frozen
   install, cross-checked against pnpm's own generator (`tools/supply-chain/sbom.ts`).

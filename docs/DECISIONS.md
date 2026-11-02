@@ -2207,8 +2207,67 @@ ruling of the same day: it need not, under five conditions.
   the demonstration. Pull request 66 fixed the symptom; the pin addresses the class.
 - **Consequences:** PostgreSQL already runs as a service container pinned by digest in every
   database job. The tools pull request 66 touched, `sudo` and `unshare`, are the network
-  namespace mechanism itself and still come from the image; moving them to a pinned source is
-  put to the owner separately, since every pinned alternative changes what the offline gate
-  denies.
+  namespace mechanism itself and stay with the image, the named exception of D57.
+- **Decided by:** Project owner, 2 November 2026, in chat.
+- **Supersedes:** nothing.
+
+## D57 `sudo` and `unshare` are the named exception to the pin posture
+
+- **Date:** 2026-11-02
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 2 November 2026, option (a): the offline suite's network
+  namespace keeps taking `sudo` and `unshare` from the runner image. The pin posture exists so a
+  change arrives as a reviewed pull request rather than as a surprise; this step does not need
+  that protection, because it proves its own precondition on every run and fails loudly when it
+  cannot, so an image change can reach it only as a red job with the image version in the log.
+  Conditions, all in `tools/checks/network-denial.sh`:
+  1. **The proof and the command share one namespace.** The proof runs in the same invocation as
+     the command, which starts only after the proof holds there.
+  2. **The proof fails fast, on loopback and off it.** Inside the namespace the loopback probe
+     and a connection to an outside address (192.0.2.1, TEST-NET-1) must each fail with a
+     connection error within two seconds; a timeout is a failed proof. The claim is "no
+     interface and no route", stated, not inferred from loopback alone.
+  3. **A failed proof names its context.** The failure prints the runner image (`ImageOS`,
+     `ImageVersion`) and the versions of `unshare` and `sudo`.
+  4. **The exception is scoped.** It covers `sudo` and `unshare` in this step only, for the
+     reason above, and the signal that covers them is the proof plus the logged image version.
+- **Rationale:** The owner's. A pinned container with `--network none` keeps the Docker engine
+  from the image, so it moves the unpinned input rather than removing it, and it leaves loopback
+  up, so a test that reaches a local service would still pass an "offline" suite.
+- **Decided by:** Project owner, 2 November 2026, in chat.
+- **Supersedes:** nothing.
+
+## D58 The Dockerfile's base image is pinned by digest, with a bump channel
+
+- **Date:** 2026-11-02
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 2 November 2026, option (a): both `FROM` lines name the
+  base as `node:24.21.0-bookworm-slim@sha256:…`, the tag kept for the reader and the
+  manifest-list digest doing the pinning, since the build names no single platform. A tag
+  rebuilt under the same name is how an upstream change, or an upstream compromise, would enter
+  the deployed image without a pull request; the digest makes that entry a reviewed bump.
+  Conditions:
+  1. **The manifest-list digest**, read from the registry on 2 November 2026
+     (`sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20`).
+  2. **A bump channel.** Dependabot's docker ecosystem on the Dockerfile, weekly
+     (`.github/dependabot.yml`): rebuilds under the tag are how Debian's patches reach the base,
+     and a digest freezes them, so the channel says when the frozen base is behind. Node's
+     release line moves with the toolchain pin (D27), so only the digest under the same tag is
+     bumped there.
+  3. **A scan of the built image.** `.github/workflows/image-scan.yml` builds the image and
+     scans it with Grype v0.120.1, run from its own image pinned by digest, on pull requests,
+     pushes to `main` and weekly; findings go to code scanning, and the job fails on a fixable
+     finding of high severity or above. It is not a required check: a finding is made visible,
+     and the bump that fixes it is a reviewed pull request. Rejected: Trivy, whose release
+     channel was compromised in March 2026 (CVE-2026-33634), including images on Docker Hub; a
+     digest would guard against a repointed tag, but the project prefers a scanner whose
+     distribution carries no such history.
+  4. **The bump's review is two checks** (`docs/RUNBOOK-SECURITY.md`, section 6): the new digest
+     resolves from the tag on the registry, and the image scan is clean.
+  5. **The base joins the bill of materials** beside the runner label, read from the
+     Dockerfile; a `FROM` that is not pinned by digest refuses the bill, so a tag-only base
+     cannot return.
+- **Rationale:** The owner's: the production copy of the runner problem of D56, with a wider
+  blast radius and a supply-chain edge the runner does not have.
 - **Decided by:** Project owner, 2 November 2026, in chat.
 - **Supersedes:** nothing.
