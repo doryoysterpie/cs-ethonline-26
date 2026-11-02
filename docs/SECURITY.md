@@ -98,8 +98,11 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
   runs on `pull_request_target` or `workflow_run`, and every checkout discards its
   credentials. `tools/checks/workflows.ts` enforces all of it on every push.
 - Every job runs on one pinned runner label, `ubuntu-26.04` (`tools/checks/runner.ts`, D56),
-  and logs `ImageOS` and `ImageVersion` as its first step; `tools/checks/workflows.ts` refuses
-  any other `runs-on` and any job that does not log its image first. The label pins the
+  and logs `ImageOS` and `ImageVersion` as its first step; `tools/checks/workflows.ts` reads
+  each job under `jobs:` and refuses any other `runs-on`, a job with none, a job-level call of
+  a reusable workflow (whose runner and steps live in another file), a first step that is not
+  the runner-image step with its one exact command, and a value set for `ImageOS` or
+  `ImageVersion` anywhere in a workflow. The label pins the
   operating system's release, not the image: GitHub refreshes the image under the same label on
   its own schedule and hosted runners offer no pin for an image build, so the weekly refresh
   still arrives unreviewed and the logged version is how a failure is matched to it. The bill

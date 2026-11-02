@@ -207,3 +207,25 @@ H2 not closed, one Medium. Each correction closed the general case and left one 
 - **Kept, `@cas/evidence` and the anomaly layer.** Unchanged.
 - **The image, proved.** A Docker build of this branch's tree contains `apps/dashboard`,
   `apps/worker` and eleven packages, neither parked package among them, and the dashboard built.
+
+## 10. The combined review of 2 November 2026, and the correction
+
+- **Verdicts** (Codex; record
+  `2026-11-02-pr-66-69-main-2759519-pr-67-4a0967f-pr-68-13298ef.md`): pull request 66 PASS at
+  `186235b`, 69 PASS at `4518d4c` and 67 PASS at `4a0967f`, each with no findings; 68 CHANGES
+  REQUIRED at `13298ef`, one Medium.
+- **M1.** The D56 guard read `runs-on:` lines and the name of each job's first step, not the
+  jobs themselves. A job-level call of a reusable workflow has no `runs-on:` and no steps of its
+  own, so it passed with no finding; a first step named `Runner image` that ran `true` passed
+  too, and the fixtures accepted exactly that.
+- **The correction** (`54e44d0`). `tools/checks/workflows.ts` reads each job under `jobs:`. A
+  job-level `uses:` is refused (`job_reusable_workflow`), and so is a job without `runs-on:`
+  (`runner_not_pinned`). The first step must be the runner-image step whose one other key is
+  `run:` with the exact command in `tools/checks/runner.ts` (`RUNNER_IMAGE_COMMAND`), so an
+  `if:`, a `shell:` or an `env:` on it is refused (`runner_image_not_logged`). A value set for
+  `ImageOS` or `ImageVersion` anywhere in a workflow is refused (`runner_image_overridden`). The
+  fixtures now use the command, and `docs/SECURITY.md` section 8 states the rule.
+- **Observed failing.** The new tests fail against the guard at `13298ef` (6 of 34). Against
+  the committed workflows, each of four changes (the first step's command set to `true`, a
+  reusable-workflow job added, `ImageOS` set for a whole workflow, `runs-on:` removed from a job)
+  gives one finding with the new guard and none with the old.
