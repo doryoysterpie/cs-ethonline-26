@@ -33,5 +33,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app ./
+# yaml is a tool-time dependency of the repository checks (D59) and never ships.
+RUN rm -rf /app/node_modules/yaml /app/node_modules/.pnpm/yaml@*
 EXPOSE 3000
 CMD ["pnpm", "--filter", "@cas/dashboard", "start"]
