@@ -97,6 +97,13 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
   service image to a digest, every workflow declares least-privilege permissions, no workflow
   runs on `pull_request_target` or `workflow_run`, and every checkout discards its
   credentials. `tools/checks/workflows.ts` enforces all of it on every push.
+- Every job runs on one pinned runner label, `ubuntu-26.04` (`tools/checks/runner.ts`, D56),
+  and logs `ImageOS` and `ImageVersion` as its first step; `tools/checks/workflows.ts` refuses
+  any other `runs-on` and any job that does not log its image first. The label pins the
+  operating system's release, not the image: GitHub refreshes the image under the same label on
+  its own schedule and hosted runners offer no pin for an image build, so the weekly refresh
+  still arrives unreviewed and the logged version is how a failure is matched to it. The bill
+  of materials records the label as a component, where its retirement is planned.
 - Every push runs `pnpm audit` and reproduces the committed CycloneDX 1.6 bill of materials
   and licence inventory (`supply-chain/`) byte for byte from the lockfile and the frozen
   install, cross-checked against pnpm's own generator (`tools/supply-chain/sbom.ts`).

@@ -2179,3 +2179,36 @@ ruling of the same day: it need not, under five conditions.
 - **Rationale:** The owner's. Per-track audits would review code since rewritten; accepting the
   risk would leave the authentication path unaudited at launch.
 - **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D56 The CI runner label is pinned
+
+- **Date:** 2026-11-02
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 2 November 2026, option (b): every job of every workflow
+  runs on one pinned runner label, `ubuntu-26.04`, instead of `ubuntu-latest`. Conditions:
+  1. **One literal, held by a check.** The label lives in `tools/checks/runner.ts`;
+     `tools/checks/workflows.ts` refuses any `runs-on` that is not that literal, so a `-latest`
+     label cannot return in a new workflow. A repository variable would centralise it but is
+     edited in settings, not in a reviewed pull request.
+  2. **What the pin does and does not do.** It pins the operating system's release, not the
+     image. GitHub refreshes the image under the same label on its own schedule, and hosted
+     runners offer no way to pin an image build. The next release move arrives as a pull
+     request; the weekly refresh still does not.
+  3. **The drift that remains is identified.** Every job logs the runner's `ImageOS` and
+     `ImageVersion` as its first step, so a failure can be matched to an image build; the check
+     refuses a job that does not. A tool a job takes from the image moves to a pinned source
+     where the fix of pull request 66 touched one (see the consequence below).
+  4. **The label retires.** GitHub removes old images, with brownouts first. The bill of
+     materials records the label as a component, reviewed on the same cadence as the packages,
+     so the bump is a planned pull request.
+- **Rationale:** The owner's. The runner image was the one input to the build that changed
+  without a pull request; the overnight break of 1 November 2026, when `ubuntu-latest` moved
+  from 24.04 to 26.04 and its sudo stopped preserving the environment (pull request 66), is
+  the demonstration. Pull request 66 fixed the symptom; the pin addresses the class.
+- **Consequences:** PostgreSQL already runs as a service container pinned by digest in every
+  database job. The tools pull request 66 touched, `sudo` and `unshare`, are the network
+  namespace mechanism itself and still come from the image; moving them to a pinned source is
+  put to the owner separately, since every pinned alternative changes what the offline gate
+  denies.
+- **Decided by:** Project owner, 2 November 2026, in chat.
+- **Supersedes:** nothing.
