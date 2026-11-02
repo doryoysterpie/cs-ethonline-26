@@ -43,14 +43,18 @@ jobs:
         run: docker build --tag cas-dashboard:scan . && docker save --output image.tar cas-dashboard:scan
 
       # The image must run the Node release .nvmrc pins (D27, D58): a tag can name one release and
-      # carry another. The runtime stage removes npm; the start command must still find pnpm.
-      - name: Runtime runs the pinned Node and starts pnpm without npm
+      # carry another. The runtime stage removes npm, and yaml, a tool-time dependency of the
+      # repository checks that never ships (D59); the start command must still find pnpm.
+      - name: Runtime runs the pinned Node, ships neither npm nor yaml, and starts pnpm
         run: |
           docker run --rm --entrypoint sh --env expected="v$(cat .nvmrc)" cas-dashboard:scan -c '
             set -e
             echo "node $(node --version), expected $expected"
             test "$(node --version)" = "$expected"
             if command -v npm; then exit 1; fi
+            yaml=$(find /app/node_modules -path "*/yaml/package.json" | wc -l)
+            echo "yaml packages in the runtime: $yaml"
+            test "$yaml" -eq 0
             pnpm --version
           '
 
