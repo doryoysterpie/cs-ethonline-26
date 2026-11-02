@@ -2271,3 +2271,12 @@ ruling of the same day: it need not, under five conditions.
   blast radius and a supply-chain edge the runner does not have.
 - **Decided by:** Project owner, 2 November 2026, in chat.
 - **Supersedes:** nothing.
+- **Amendment, 2026-11-02 (the owner's ruling on the first bump).** Condition 1 named a form,
+  not a version: the tag kept for the reader and the manifest-list digest doing the pinning.
+  The pinned version is whatever the bump channel delivers, `node:24.22.2-bookworm-slim` as of
+  this date (`sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c`),
+  delivered by pull request 69 with the toolchain pin (D27). Condition 4 stands unchanged. The
+  first image scan failed on Node 24.21.0, which Node's October 2026 security release patches
+  (CVE-2026-111497 among its advisories, in CISA's Known Exploited Vulnerabilities catalog), and
+  the owner ruled that the patch ships ahead of the combined audit, recorded as not audited
+  until that audit's head. Decided by the project owner, 2 November 2026, in chat.

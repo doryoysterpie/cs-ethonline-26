@@ -42,9 +42,17 @@ jobs:
       - name: Build the deployed image
         run: docker build --tag cas-dashboard:scan . && docker save --output image.tar cas-dashboard:scan
 
-      # The runtime stage removes npm; the dashboard's start command must still find pnpm.
-      - name: Runtime starts pnpm without npm
-        run: docker run --rm --entrypoint sh cas-dashboard:scan -c 'if command -v npm; then exit 1; fi; pnpm --version'
+      # The image must run the Node release .nvmrc pins (D27, D58): a tag can name one release and
+      # carry another. The runtime stage removes npm; the start command must still find pnpm.
+      - name: Runtime runs the pinned Node and starts pnpm without npm
+        run: |
+          docker run --rm --entrypoint sh --env expected="v$(cat .nvmrc)" cas-dashboard:scan -c '
+            set -e
+            echo "node $(node --version), expected $expected"
+            test "$(node --version)" = "$expected"
+            if command -v npm; then exit 1; fi
+            pnpm --version
+          '
 
       - name: Scan the image
         uses: docker://anchore/grype@sha256:e4a44ef45d285b829ce6efe2642980329661bd2d18eab5fc539138d4adaebbbe # v0.120.1
