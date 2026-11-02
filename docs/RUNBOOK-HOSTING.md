@@ -178,7 +178,10 @@ Install PostgreSQL 17 client tools (`pg_dump`, `pg_restore`, `createdb`, and `dr
 hosted source through `railway connect postgres --tunnel-only` or another owner-approved
 read-only path. Create a separate local database whose name begins `cas_restore_`; the script
 refuses a remote target, the source database itself, an unsafe target name, or a target schema
-that already contains a table.
+that already contains a table. Each URL names its user, and the drill refuses to run while any
+`PG*` variable is set in its environment, since the Node client and the PostgreSQL tools would
+each fill what a URL leaves out from them, and not in the same way; it reads each URL once and
+connects every client it starts to that one target.
 
 ```bash
 createdb --maintenance-db="$LOCAL_POSTGRES_ADMIN_URL" cas_restore_yyyymmdd

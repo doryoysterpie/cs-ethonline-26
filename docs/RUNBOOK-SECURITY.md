@@ -47,10 +47,12 @@ makes a head no verdict names, and the status turns to failure until Codex passe
 ruleset is active, nothing enforces the verdict but the process.
 
 Each run sets the status to pending before it reads anything, and writes success only after every
-comment has been read, so a failed read leaves the head pending or failed, never green from an
-earlier run. One case remains: if GitHub refuses every status write, the earlier status stands
-and the `Codex verdict record` job fails. Before a merge, the latest `Codex verdict record` run
-on the pull request is green.
+comment has been read. A refused pending write does not stop the run, which goes on to write the
+verdict it decides; a failed read writes failure. Every GitHub call is attempted up to three
+times when GitHub fails transiently. An earlier status outlives a run in two cases only: the run
+cannot read the pull request's head, or GitHub refuses every status write the run makes; the
+`Codex verdict record` job then fails. Before a merge, the latest `Codex verdict record` run on
+the pull request is green.
 
 ### 1.2 What one identity cannot enforce
 

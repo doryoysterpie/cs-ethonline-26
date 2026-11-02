@@ -155,3 +155,31 @@ same push (D53).
   route, socket directories in either place, the variables a child must not inherit, and that the
   Node client and the child tools resolve the same host, port, database and user. The drill passes
   locally at 25 migrations, and a target that routes elsewhere is refused before any connection.
+
+## 8. Re-review of pull request 65 at `26dad9d`, and the corrections (2 November 2026)
+
+Codex re-reviewed the corrections (record `2026-11-01-pr-65-26dad9d.md`): CHANGES REQUIRED, H1 and
+H2 not closed, one Medium. Each correction closed the general case and left one path open.
+
+- **H1: a refused first pending write still ended the run.** The pending write stood outside the
+  guarded path, so a run whose first write was refused stopped there and wrote nothing after it.
+  Corrected: every GitHub call is attempted up to three times when GitHub fails transiently; a
+  refused pending write no longer ends the run, which reads the comments and writes the verdict
+  it decides; every failing path writes failure. Tests include the pending write refused once,
+  refused on every attempt with the verdict now CHANGES REQUIRED, refused with the comments
+  unreadable, and refused with the verdict still PASS. The two cases in which an earlier status
+  outlives a run, an unreadable head and every status write refused, are stated exactly in
+  `docs/RUNBOOK-SECURITY.md`, section 1.1.
+- **H2: fields a URL omits were filled from the environment by the Node client alone.** The
+  child tools received the drill's explicit target, but the Node clients opened the original URLs
+  and filled an omitted port, user or password from inherited libpq variables. Corrected: the
+  drill refuses to run while any `PG*` variable is set (`assertNoAmbientLibpq`), each URL must name
+  its user, and every Node client connects with `drillConnectionString(target)`, which names host,
+  port, database and user explicitly. Tests show the Node client and the child tools resolve the
+  same host, port, database and user with hostile `PGPORT`, `PGHOST`, `PGUSER` and `PGDATABASE`
+  set, the same password in the clean environment the drill requires, and that the explicit form
+  reads back to the same target. The drill passes at 25 migrations, and refuses an inherited
+  `PGPORT` before any connection.
+- **M1: the tracker contradicted D53 to D55.** Reconciled: steps 3, 4 and 12 are ticked with
+  their decisions, the evidence table and the restart condition are current, and step 5 stays
+  open, outside pull request 65.
