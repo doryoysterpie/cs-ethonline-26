@@ -99,6 +99,9 @@ catalogs:
     vitest:
       specifier: 4.1.12
       version: 4.1.12
+    yaml:
+      specifier: 2.9.1
+      version: 2.9.1
     zod:
       specifier: 4.6.7
       version: 4.6.7
@@ -137,7 +140,10 @@ importers:
         version: 8.69.0(eslint@10.13.0)(typescript@6.0.3)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.1
 
   apps/dashboard:
     dependencies:
@@ -225,7 +231,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   apps/worker:
     dependencies:
@@ -268,7 +274,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/article:
     dependencies:
@@ -284,7 +290,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/classification:
     dependencies:
@@ -303,7 +309,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/clustering:
     dependencies:
@@ -319,7 +325,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/contracts:
     devDependencies:
@@ -331,7 +337,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/database:
     dependencies:
@@ -353,7 +359,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/drafting:
     dependencies:
@@ -369,7 +375,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/evidence:
     dependencies:
@@ -385,7 +391,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/graph-evidence:
     dependencies:
@@ -401,7 +407,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/mcp-server:
     dependencies:
@@ -438,7 +444,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/roundup:
     dependencies:
@@ -457,7 +463,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/sheets-intake:
     dependencies:
@@ -473,7 +479,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/source-reader:
     dependencies:
@@ -492,7 +498,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
   packages/taxonomy:
     devDependencies:
@@ -501,7 +507,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3))
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
 
 packages:
 
@@ -2068,6 +2074,11 @@ packages:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
     engines: {node: '>=0.4'}
 
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
@@ -2565,13 +2576,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.1
 
-  '@vitest/mocker@4.1.12(vite@8.2.4(@types/node@24.13.3))':
+  '@vitest/mocker@4.1.12(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))':
     dependencies:
       '@vitest/spy': 4.1.12
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.2.4(@types/node@24.13.3)
+      vite: 8.2.4(@types/node@24.13.3)(yaml@2.9.1)
 
   '@vitest/pretty-format@4.1.12':
     dependencies:
@@ -3554,7 +3565,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite@8.2.4(@types/node@24.13.3):
+  vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -3564,11 +3575,12 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.13.3
       fsevents: 2.3.3
+      yaml: 2.9.1
 
-  vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)):
+  vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.13.3)(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1)):
     dependencies:
       '@vitest/expect': 4.1.12
-      '@vitest/mocker': 4.1.12(vite@8.2.4(@types/node@24.13.3))
+      '@vitest/mocker': 4.1.12(vite@8.2.4(@types/node@24.13.3)(yaml@2.9.1))
       '@vitest/pretty-format': 4.1.12
       '@vitest/runner': 4.1.12
       '@vitest/snapshot': 4.1.12
@@ -3585,7 +3597,7 @@ snapshots:
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vite: 8.2.4(@types/node@24.13.3)
+      vite: 8.2.4(@types/node@24.13.3)(yaml@2.9.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@opentelemetry/api': 1.10.0
@@ -3605,6 +3617,8 @@ snapshots:
   word-wrap@1.2.5: {}
 
   xtend@4.0.2: {}
+
+  yaml@2.9.1: {}
 
   yocto-queue@0.1.0: {}
 

@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "2bb3e054e7f0c20d2e71fa24301d403d9e59159e75cfff8ca4598a75233cbd63"
+        "value": "285f45c524f0d4c2667f7c357a223fd3039e743fe21c589d0399c7ec6d022e73"
       },
       {
         "name": "cas:lockfile:version",
@@ -9597,6 +9597,36 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/yaml@2.9.1",
+      "name": "yaml",
+      "version": "2.9.1",
+      "purl": "pkg:npm/yaml@2.9.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "dcdc4df3eefc39dcdb4fb0bf5a31acc9f3c0b4968ddc5343b16c6fed8ee6703b13fe83a6816f01a72410145067bd91378fd63649dcf550b14b7b32fb11bdb217"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "ISC"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        },
+        {
+          "name": "cas:pnpm:hasBin",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/yocto-queue@0.1.0",
       "name": "yocto-queue",
       "version": "0.1.0",
@@ -11724,7 +11754,8 @@
         "pkg:npm/picomatch@4.0.7",
         "pkg:npm/postcss@8.5.28",
         "pkg:npm/rolldown@1.2.7",
-        "pkg:npm/tinyglobby@0.2.17"
+        "pkg:npm/tinyglobby@0.2.17",
+        "pkg:npm/yaml@2.9.1"
       ]
     },
     {
@@ -11773,6 +11804,10 @@
     },
     {
       "ref": "pkg:npm/xtend@4.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/yaml@2.9.1",
       "dependsOn": []
     },
     {
@@ -11980,6 +12015,7 @@
         "pkg:npm/typescript-eslint@8.69.0",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
+        "pkg:npm/yaml@2.9.1",
         "runner:github-hosted:ubuntu-26.04",
         "workspace:@cas/article",
         "workspace:@cas/classification",
