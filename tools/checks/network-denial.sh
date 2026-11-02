@@ -13,7 +13,10 @@
 # both results are observed is the command run inside that namespace. The
 # namespace is created with `unshare -rn` when unprivileged user namespaces
 # are permitted, and otherwise through passwordless sudo, dropping back to
-# the invoking user inside it.
+# the invoking user inside it. The caller's environment is carried into the
+# namespace explicitly, through env(1): sudo-rs, the sudo of Ubuntu 26.04,
+# ignores --preserve-env, and the command (pnpm under CI=true above all)
+# behaves differently without it.
 set -euo pipefail
 
 if [ "$#" -eq 0 ]; then
@@ -42,7 +45,7 @@ if unshare -rn true 2>/dev/null; then
   mode="unprivileged user namespace"
 elif sudo -n true 2>/dev/null; then
   user="$(id -un)"
-  deny=(sudo -n --preserve-env unshare -n -- sudo -n --preserve-env -u "$user")
+  deny=(sudo -n unshare -n -- sudo -n -u "$user")
   mode="root network namespace, command run as $user"
 else
   echo "network-denial: unavailable; neither unprivileged user namespaces nor passwordless sudo" >&2
@@ -59,12 +62,17 @@ case "$inside" in
 esac
 
 # sudo resolves commands through its own secure path, not the caller's PATH,
-# so the command is resolved here and the PATH is carried in explicitly.
+# so the command is resolved here, and the caller's whole environment, PATH
+# included, is carried in explicitly, NUL-separated so no value can split.
 resolved="$(command -v "$1")" || {
   echo "network-denial: command not found: $1" >&2
   exit 127
 }
 shift
+environment=()
+while IFS= read -r -d '' entry; do
+  environment+=("$entry")
+done < <(env -0)
 
 echo "network-denial: proven ($mode); outside='$outside' inside='$inside'; running: $resolved $*"
-exec "${deny[@]}" env "PATH=$PATH" "$resolved" "$@"
+exec "${deny[@]}" env -i "${environment[@]}" "$resolved" "$@"
