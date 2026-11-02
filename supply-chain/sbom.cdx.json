@@ -72,6 +72,29 @@
       ]
     },
     {
+      "type": "container",
+      "bom-ref": "container:node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20",
+      "name": "node",
+      "version": "24.21.0-bookworm-slim",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20"
+        }
+      ],
+      "purl": "pkg:docker/library/node@sha256%3Ad6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20?tag=24.21.0-bookworm-slim",
+      "properties": [
+        {
+          "name": "cas:image:source",
+          "value": "Dockerfile"
+        },
+        {
+          "name": "cas:image:pins",
+          "value": "manifest-list-digest"
+        }
+      ]
+    },
+    {
       "type": "library",
       "bom-ref": "workspace:@cas/article",
       "name": "@cas/article",
@@ -9653,6 +9676,10 @@
   ],
   "dependencies": [
     {
+      "ref": "container:node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/%40anthropic-ai/sdk@1.0.0",
       "dependsOn": [
         "pkg:npm/%40opentelemetry/api@1.10.0",
@@ -11944,6 +11971,7 @@
     {
       "ref": "workspace:cs-ethonline-26",
       "dependsOn": [
+        "container:node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20",
         "pkg:npm/%40eslint/js@10.0.1",
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/eslint@10.13.0",

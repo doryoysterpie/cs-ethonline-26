@@ -23,6 +23,11 @@ import { baseOfSpecifier, parseLockfile, type Lockfile } from './lockfile.ts';
  * not inventoried rather than as whatever the generating machine happened to
  * see. The document carries no timestamp and no random serial number.
  *
+ * It records the Dockerfile's base image (D58) as a component of type
+ * `container`, read from the Dockerfile's `FROM` lines, and refuses a base that
+ * is not pinned by digest, so a tag that can be rebuilt under the same name
+ * cannot return there.
+ *
  * It records the runner label every CI job runs on (D56) as a component of
  * type `platform`, so the label's retirement is reviewed with the packages and
  * its bump is a planned pull request; the label pins the operating system's
@@ -62,6 +67,43 @@ export interface SbomInputs {
   readonly unicodeVersion: string;
   /** The runner label every CI job runs on (`tools/checks/runner.ts`, D56). */
   readonly runnerLabel: string;
+  /** The Dockerfile's base images, each pinned by digest (D58). */
+  readonly baseImages: readonly BaseImage[];
+}
+
+export interface BaseImage {
+  readonly name: string;
+  readonly tag: string;
+  /** `sha256:<64 hex>`, the manifest-list digest. */
+  readonly digest: string;
+}
+
+const FROM_LINE = /^\s*FROM\s+(\S+)(?:\s+AS\s+(\S+))?\s*$/iu;
+const PINNED_IMAGE = /^([a-z0-9][a-z0-9._/-]*):([A-Za-z0-9._-]+)@(sha256:[0-9a-f]{64})$/u;
+
+/**
+ * The external base images a Dockerfile builds from, each required to carry a
+ * tag for the reader and a digest that does the pinning (D58). A `FROM` naming
+ * an earlier stage is not an image. Anything else refuses the bill.
+ */
+export function parseBaseImages(dockerfile: string): BaseImage[] {
+  const stages = new Set<string>();
+  const images = new Map<string, BaseImage>();
+  for (const line of dockerfile.split('\n')) {
+    const match = FROM_LINE.exec(line);
+    if (match === null) continue;
+    const reference = match[1] ?? '';
+    if (!stages.has(reference.toLowerCase())) {
+      const pinned = PINNED_IMAGE.exec(reference);
+      if (pinned === null) {
+        throw new Error(`Dockerfile base image is not pinned by digest: ${reference}`);
+      }
+      const image = { name: pinned[1] ?? '', tag: pinned[2] ?? '', digest: pinned[3] ?? '' };
+      images.set(`${image.name}:${image.tag}@${image.digest}`, image);
+    }
+    if (match[2] !== undefined) stages.add(match[2].toLowerCase());
+  }
+  return [...images.values()];
 }
 
 export interface SbomSummary {
@@ -73,6 +115,7 @@ export interface SbomSummary {
   readonly platformInherited: number;
   readonly lockfileSha256: string;
   readonly runnerLabel: string;
+  readonly baseImages: readonly string[];
 }
 
 export interface SbomOutput {
@@ -326,6 +369,23 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
     ],
   };
 
+  // The deployed image's base: a container component, never an npm package (D58).
+  const imageComponents = inputs.baseImages.map((image) => {
+    const repository = image.name.includes('/') ? image.name : `library/${image.name}`;
+    return {
+      type: 'container',
+      'bom-ref': `container:${image.name}:${image.tag}@${image.digest}`,
+      name: image.name,
+      version: image.tag,
+      hashes: [{ alg: 'SHA-256', content: image.digest.slice('sha256:'.length) }],
+      purl: `pkg:docker/${repository}@${encodeURIComponent(image.digest)}?tag=${image.tag}`,
+      properties: [
+        { name: 'cas:image:source', value: 'Dockerfile' },
+        { name: 'cas:image:pins', value: 'manifest-list-digest' },
+      ],
+    };
+  });
+
   // Dependency graph: importers first, then one entry per package merging its snapshots.
   const dependencies = new Map<string, Set<string>>();
   const depend = (ref: string, on: string) => {
@@ -352,6 +412,10 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
   for (const workspace of inputs.workspaces) depend(rootRef, workspaceRef(workspace.name));
   depend(rootRef, runnerRef);
   dependencies.set(runnerRef, dependencies.get(runnerRef) ?? new Set<string>());
+  for (const image of imageComponents) {
+    depend(rootRef, image['bom-ref']);
+    dependencies.set(image['bom-ref'], dependencies.get(image['bom-ref']) ?? new Set<string>());
+  }
   for (const snapshot of lock.snapshots.values()) {
     const ref = purlOf(snapshot.name, snapshot.version);
     dependencies.set(ref, dependencies.get(ref) ?? new Set<string>());
@@ -385,7 +449,7 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
         { name: 'cas:runtime:unicode', value: inputs.unicodeVersion },
       ],
     },
-    components: [runnerComponent, ...workspaceComponents, ...components],
+    components: [runnerComponent, ...imageComponents, ...workspaceComponents, ...components],
     dependencies: [...dependencies.entries()]
       .sort(([a], [b]) => compare(a, b))
       .map(([ref, on]) => ({ ref, dependsOn: [...on].sort(compare) })),
@@ -399,6 +463,7 @@ export function buildSbom(inputs: SbomInputs): SbomOutput {
     platformInherited,
     lockfileSha256,
     runnerLabel: inputs.runnerLabel,
+    baseImages: inputs.baseImages.map((image) => `${image.name}:${image.tag}@${image.digest}`),
   };
   return {
     sbom: `${JSON.stringify(document, null, 2)}\n`,
@@ -528,6 +593,7 @@ export function gatherInputs(root: string): SbomInputs {
     licenses: readInstalledLicenses(root),
     unicodeVersion: process.versions.unicode ?? 'unreported',
     runnerLabel: RUNNER_LABEL,
+    baseImages: parseBaseImages(readFileSync(path.join(root, 'Dockerfile'), 'utf8')),
   };
 }
 
@@ -641,7 +707,7 @@ if (isMain(import.meta.url)) {
   const s = output.summary;
   const verdict = check ? (failures === 0 ? 'CHECK OK' : 'CHECK FAILED') : 'WRITTEN';
   console.log(
-    `sbom: components=${s.components} workspace=${s.workspaceComponents} licensed=${s.licensed} platformConstrained=${s.platformConstrained} platformInherited=${s.platformInherited} runner=${s.runnerLabel} lockfileSha256=${s.lockfileSha256} ${verdict}`,
+    `sbom: components=${s.components} workspace=${s.workspaceComponents} licensed=${s.licensed} platformConstrained=${s.platformConstrained} platformInherited=${s.platformInherited} runner=${s.runnerLabel} base=${s.baseImages.join(',')} lockfileSha256=${s.lockfileSha256} ${verdict}`,
   );
   process.exitCode = failures === 0 ? 0 : 1;
 }
