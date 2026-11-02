@@ -75,6 +75,12 @@ repository's own reports and the sprint board. CAS-006 step 1, 22 October 2026.
 | CAS-012 lists, PR #61 merged                      | `d1751e5` in `59df7da`     | Codex                          | PASS: the five findings of `db10902` closed, no findings; merged with pull request 63, whose branch held it                                                                                                        | 1 Nov 2026       | `2026-11-01-CAS-012-pr-61-d1751e5.md`                    |
 | CAS-012 refusal record, PR #63 merged             | `58b5f27` in `59df7da`     | Codex                          | PASS, no findings (the D50 amendment 2, migration 0025, D51); CAS-012 accepted                                                                                                                                     | 1 Nov 2026       | `2026-11-01-pr-63-58b5f27-pr-64-8464611.md`              |
 | Ruleset carry, PR #64 merged                      | `8464611` in `37e7857`     | Codex                          | PASS, no findings; the ruleset not activated, its approval rules replaced by D52 before activation                                                                                                                 | 1 Nov 2026       | `2026-11-01-pr-63-58b5f27-pr-64-8464611.md`              |
+| D52 ruleset and drill, PR #65 review              | `aa6f519`                  | Codex                          | CHANGES REQUIRED: H1 (recorder failures can preserve a stale successful required status) and H2 (PostgreSQL host overrides bypass the restore drill's local-target guard)                                          | 1 Nov 2026       | `2026-11-01-pr-65-aa6f519.md`                            |
+| D52 ruleset and drill, PR #65 re-review           | `26dad9d`                  | Codex                          | CHANGES REQUIRED: H1 and H2 not closed, and M1 (the CAS-006 tracker contradicts the recorded owner decisions)                                                                                                      | 1 Nov 2026       | `2026-11-01-pr-65-26dad9d.md`                            |
+| D52 ruleset and drill, PR #65 corrected           | `4830c87`                  | Codex                          | PASS, no findings (H1, H2 and M1 closed); not yet merged                                                                                                                                                           | 2 Nov 2026       | `2026-11-02-pr-65-4830c87-pr-66-393b1d6.md`              |
+| Network denial on Ubuntu 26.04, PR #66 review     | `393b1d6`                  | Codex                          | CHANGES REQUIRED: M1 (Medium), PR 66 does not preserve the caller's whole environment                                                                                                                              | 2 Nov 2026       | `2026-11-02-pr-65-4830c87-pr-66-393b1d6.md`              |
+| Network denial on Ubuntu 26.04, PR #66 merged     | `186235b` in `254dfd3`     | none yet                       | not audited: M1 corrected at `35e3872` and `186235b`; merged ahead of the combined audit, which pull request 69's checks needed (the owner's ruling of 2 November 2026)                                            | 2 Nov 2026       | PR #66                                                   |
+| Node 24.22.2 security patch, PR #69 merged        | `4518d4c` in `2759519`     | none yet                       | not audited: merged ahead of the combined audit by the owner's ruling of 2 November 2026 (D58 amendment), on D58's two checks (the digest resolves from the tag; the image scan is clean)                          | 2 Nov 2026       | PR #69                                                   |
 
 ## What this means for the deployed service
 
@@ -89,7 +95,10 @@ audit of that head returned CHANGES REQUIRED on 31 October 2026 (F1 to F3), corr
 `train/34-50-corrections` and merged on 1 November 2026 at `a144108` after a PASS at
 `d572aaf`. CAS-011 (pull request 57) merged the same day at `7530d1c`, before its last verdict;
 that verdict, CHANGES REQUIRED (F3, a short write in the fix mode), is corrected on
-`cas-011/write-all`.
+`cas-011/write-all`. Pull requests 66 (the network-denial fix) and 69 (Node 24.22.2, past
+Node's October 2026 security release) merged on 2 November 2026 at `254dfd3` and `2759519`,
+ahead of the combined audit, by the owner's ruling; both are not audited until that audit's
+head.
 
 ## How a row changes
 
