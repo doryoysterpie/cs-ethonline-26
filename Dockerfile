@@ -1,10 +1,10 @@
 # Builds and runs @cas/dashboard from the pnpm/Turborepo monorepo.
 #
-# node:24.21.0-bookworm-slim (glibc, not musl/alpine): argon2 ships prebuilt
+# node:24.22.2-bookworm-slim (glibc, not musl/alpine): argon2 ships prebuilt
 # binaries for darwin-arm64 and linux-x64 only (pnpm-workspace.yaml refuses
 # its install script), and those prebuilds are glibc, not musl.
 
-FROM node:24.21.0-bookworm-slim AS base
+FROM node:24.22.2-bookworm-slim AS base
 RUN corepack enable
 WORKDIR /app
 
@@ -19,7 +19,7 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 RUN pnpm exec turbo run build --filter=@cas/dashboard...
 
-FROM node:24.21.0-bookworm-slim AS runtime
+FROM node:24.22.2-bookworm-slim AS runtime
 RUN corepack enable
 WORKDIR /app
 ENV NODE_ENV=production
