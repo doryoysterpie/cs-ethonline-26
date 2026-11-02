@@ -19,6 +19,12 @@
 # behaves differently without it.
 set -euo pipefail
 
+# The caller's environment, read before this script sets a single variable, so
+# a caller variable that shares a name with one of the script's own, the
+# snapshot's included, is carried as the caller set it (review of 393b1d6, M1).
+# NUL-separated, so no value can split.
+mapfile -d '' -t NETWORK_DENIAL_ENVIRONMENT < <(env -0)
+
 if [ "$#" -eq 0 ]; then
   echo "usage: network-denial.sh <command> [args...]" >&2
   exit 2
@@ -41,11 +47,11 @@ if [ "$outside" != "connected" ]; then
 fi
 
 if unshare -rn true 2>/dev/null; then
-  deny=(unshare -rn)
+  deny=(unshare -rn --)
   mode="unprivileged user namespace"
 elif sudo -n true 2>/dev/null; then
   user="$(id -un)"
-  deny=(sudo -n unshare -n -- sudo -n -u "$user")
+  deny=(sudo -n -- unshare -n -- sudo -n -u "$user" --)
   mode="root network namespace, command run as $user"
 else
   echo "network-denial: unavailable; neither unprivileged user namespaces nor passwordless sudo" >&2
@@ -63,16 +69,16 @@ esac
 
 # sudo resolves commands through its own secure path, not the caller's PATH,
 # so the command is resolved here, and the caller's whole environment, PATH
-# included, is carried in explicitly, NUL-separated so no value can split.
+# included, is carried in explicitly from the snapshot above. `env -i --` takes
+# every entry as an assignment, a name that begins with a dash included, and
+# the command runs through bash, so a command path holding `=` is never read as
+# one more assignment.
 resolved="$(command -v "$1")" || {
   echo "network-denial: command not found: $1" >&2
   exit 127
 }
 shift
-environment=()
-while IFS= read -r -d '' entry; do
-  environment+=("$entry")
-done < <(env -0)
+shell="$(command -v bash)"
 
 echo "network-denial: proven ($mode); outside='$outside' inside='$inside'; running: $resolved $*"
-exec "${deny[@]}" env -i "${environment[@]}" "$resolved" "$@"
+exec "${deny[@]}" env -i -- "${NETWORK_DENIAL_ENVIRONMENT[@]}" "$shell" -c 'exec "$@"' network-denial "$resolved" "$@"
