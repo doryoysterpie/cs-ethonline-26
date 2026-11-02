@@ -1,168 +1,206 @@
+import { isMap, isNode, isScalar, isSeq, Scalar, type Pair, type YAMLMap } from 'yaml';
+
 import { conclude, finding, isMain, type Finding } from './lib/report.ts';
-import { RUNNER_IMAGE_COMMAND, RUNNER_IMAGE_STEP, RUNNER_LABEL } from './runner.ts';
 import { readTracked, repositoryRoot, trackedEntries, type TrackedEntry } from './lib/tracked.ts';
+import { readWorkflowYaml } from './lib/workflow-yaml.ts';
+import { RUNNER_IMAGE_COMMAND, RUNNER_IMAGE_STEP, RUNNER_LABEL } from './runner.ts';
 
 /**
- * GitHub Actions workflow policy (docs/SECURITY.md section 8).
+ * GitHub Actions workflow policy (docs/SECURITY.md section 8; D56, D59).
  *
- * Every `uses:` must name a full 40-character commit SHA with a version
- * comment beside it, every service image must be pinned by digest, every
- * workflow must declare least-privilege `permissions:` at the top level,
- * no workflow may run on `pull_request_target` or `workflow_run`, every
- * checkout must set `persist-credentials: false`, every job must run on the
- * one pinned runner label (`runner.ts`, D56), and every job's first step must
- * log the runner image. The scan is line-based over the project's own
- * workflow files, which are written to be read that way; the jobs are read by
- * their indentation under `jobs:`.
+ * Each workflow is read by the one YAML reader (`lib/workflow-yaml.ts`), and every rule applies to
+ * the parsed document, never to the text. A value a rule compares must be a plain (unquoted)
+ * scalar of the shape the rule names; any other shape is refused, not skipped.
+ *
+ * - `permissions` at the root: a mapping of plain values, or `read-all`; `write-all` is too broad.
+ * - `on`: a trigger name, a sequence of them, or a mapping keyed by them; never
+ *   `pull_request_target` or `workflow_run`.
+ * - `jobs`: a non-empty mapping of mappings. A job-level `uses` (a reusable workflow, whose runner
+ *   and steps live in another file) is refused. `runs-on` is the one pinned label (`runner.ts`).
+ *   `steps` is a non-empty sequence of mappings whose first is the runner-image step and nothing
+ *   else: its name and its one exact command.
+ * - Every `uses`, wherever it appears: a local `./` action, a `docker://` image pinned by digest, or
+ *   an action pinned to a full commit SHA with a version comment beside it.
+ * - Every `image`, and a job's `container` given as a string: pinned by digest. A container
+ *   mapping and every service must name an `image`.
+ * - Every checkout step sets `persist-credentials` to `false`.
+ * - No key anywhere is `ImageOS` or `ImageVersion`, which would change what the runner-image step
+ *   prints.
  */
 
 const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/u;
-const USES = /^\s*-?\s*uses:\s*(\S+)(.*)$/u;
 const PINNED_ACTION = /^[\w.-]+\/[\w.-]+(?:\/[\w./-]+)?@[0-9a-f]{40}$/u;
-const VERSION_COMMENT = /^\s*#\s*v?\d/u;
-const IMAGE = /^\s*image:\s*(\S+)/u;
+const VERSION_COMMENT = /^\s*v?\d/u;
 const DIGEST = /@sha256:[0-9a-f]{64}$/u;
-const TOP_LEVEL_PERMISSIONS = /^permissions:\s*(.*)$/u;
-const DANGEROUS_TRIGGER = /^\s*(?:-\s*)?(pull_request_target|workflow_run)\s*:?\s*$/u;
-const CHECKOUT = /^\s*-?\s*uses:\s*actions\/checkout@/u;
-const PERSIST_CREDENTIALS_OFF = /^\s*persist-credentials:\s*false\s*$/u;
-const STEP_START = /^\s*-\s+(name|uses|run):/u;
-const RUNS_ON = /^\s*runs-on:\s*(.*?)\s*$/u;
-const JOBS = /^jobs:\s*$/u;
-const TOP_LEVEL_KEY = /^[^\s#]/u;
-const JOB_START = /^ {2}[A-Za-z0-9_-]+:\s*$/u;
-const JOB_KEY = /^ {4}([A-Za-z0-9_-]+):/u;
-const STEP_NAME = /^(\s*)-\s+name:\s*(.+?)\s*$/u;
-const BLANK_OR_COMMENT = /^\s*(?:#.*)?$/u;
-const IMAGE_VARIABLE = /(?:^|[\s{,"'])Image(?:OS|Version)["']?\s*:(?:\s|$)/u;
+const DANGEROUS_TRIGGERS = new Set(['pull_request_target', 'workflow_run']);
+const IMAGE_VARIABLES = new Set(['ImageOS', 'ImageVersion']);
+const CHECKOUT = 'actions/checkout@';
+
+/** A plain (unquoted) string scalar's value; null for any other node or none. */
+function plainString(node: unknown): string | null {
+  return isScalar(node) && node.type === Scalar.PLAIN && typeof node.value === 'string'
+    ? node.value
+    : null;
+}
+
+function digestPinned(node: unknown): boolean {
+  const reference = plainString(node);
+  return reference !== null && DIGEST.test(reference);
+}
+
+function keyOf(pair: Pair): string {
+  return isScalar(pair.key) ? String(pair.key.value) : '';
+}
+
+/** Every pair of every mapping under `node`, depth first. */
+function eachPair(node: unknown, visit: (pair: Pair) => void): void {
+  if (isMap(node)) {
+    for (const pair of node.items) {
+      visit(pair);
+      eachPair(pair.value, visit);
+    }
+  } else if (isSeq(node)) {
+    for (const item of node.items) eachPair(item, visit);
+  }
+}
+
+function logsRunnerImage(step: unknown): boolean {
+  return (
+    isMap(step) &&
+    step.items.length === 2 &&
+    plainString(step.get('name', true)) === RUNNER_IMAGE_STEP &&
+    plainString(step.get('run', true)) === RUNNER_IMAGE_COMMAND
+  );
+}
 
 export function scanWorkflowText(relativePath: string, text: string): Finding[] {
+  const workflow = readWorkflowYaml(relativePath, text);
+  const root = workflow.root;
+  if (root === null) return [...workflow.problems];
   const findings: Finding[] = [];
-  const lines = text.split('\n');
-  let sawPermissions = false;
-  for (const [index, line] of lines.entries()) {
-    const lineNumber = index + 1;
-    const permissions = TOP_LEVEL_PERMISSIONS.exec(line);
-    if (permissions !== null) {
-      sawPermissions = true;
-      if ((permissions[1] ?? '').trim() === 'write-all') {
-        findings.push(finding(relativePath, lineNumber, 'permissions_too_broad'));
+  const report = (node: unknown, rule: string): void => {
+    findings.push(finding(relativePath, workflow.line(isNode(node) ? node : null), rule));
+  };
+
+  if (!root.has('permissions')) {
+    report(null, 'permissions_missing');
+  } else {
+    const permissions = root.get('permissions', true);
+    if (isMap(permissions)) {
+      for (const pair of permissions.items) {
+        if (plainString(pair.value) === null) report(pair.key, 'permissions_unsupported');
       }
-    }
-    if (DANGEROUS_TRIGGER.test(line)) {
-      findings.push(finding(relativePath, lineNumber, 'dangerous_trigger'));
-    }
-    const uses = USES.exec(line);
-    if (uses !== null) {
-      const reference = uses[1] ?? '';
-      const rest = uses[2] ?? '';
-      if (reference.startsWith('./')) {
-        // A local action is repository content and is reviewed as such.
-      } else if (reference.startsWith('docker://')) {
-        if (!DIGEST.test(reference)) {
-          findings.push(finding(relativePath, lineNumber, 'image_not_digest_pinned'));
-        }
-      } else if (!PINNED_ACTION.test(reference)) {
-        findings.push(finding(relativePath, lineNumber, 'action_not_sha_pinned'));
-      } else if (!VERSION_COMMENT.test(rest)) {
-        findings.push(finding(relativePath, lineNumber, 'action_pin_missing_version_comment'));
-      }
-    }
-    const image = IMAGE.exec(line);
-    if (image !== null && !DIGEST.test(image[1] ?? '')) {
-      findings.push(finding(relativePath, lineNumber, 'image_not_digest_pinned'));
-    }
-    const runsOn = RUNS_ON.exec(line);
-    if (runsOn !== null) {
-      const label = (runsOn[1] ?? '').replace(/^(['"])(.*)\1$/u, '$2');
-      if (label !== RUNNER_LABEL) {
-        findings.push(finding(relativePath, lineNumber, 'runner_not_pinned'));
-      }
-    }
-    if (IMAGE_VARIABLE.test(line)) {
-      // A value set for ImageOS or ImageVersion would make the runner-image log name another image.
-      findings.push(finding(relativePath, lineNumber, 'runner_image_overridden'));
-    }
-    if (CHECKOUT.test(line)) {
-      let persisted = true;
-      for (let next = index + 1; next < lines.length; next += 1) {
-        const candidate = lines[next] ?? '';
-        if (STEP_START.test(candidate)) break;
-        if (PERSIST_CREDENTIALS_OFF.test(candidate)) {
-          persisted = false;
-          break;
-        }
-      }
-      if (persisted) {
-        findings.push(finding(relativePath, lineNumber, 'checkout_persists_credentials'));
-      }
+    } else {
+      const scope = plainString(permissions);
+      if (scope === 'write-all') report(permissions, 'permissions_too_broad');
+      else if (scope !== 'read-all') report(permissions, 'permissions_unsupported');
     }
   }
-  if (!sawPermissions) findings.push(finding(relativePath, null, 'permissions_missing'));
-  findings.push(...scanJobs(relativePath, lines));
+
+  const on = root.get('on', true);
+  const triggers: Array<readonly [string, unknown]> = [];
+  if (isMap(on)) {
+    for (const pair of on.items) triggers.push([keyOf(pair), pair.key]);
+  } else if (isSeq(on)) {
+    for (const item of on.items) {
+      const name = plainString(item);
+      if (name === null) report(item, 'triggers_unsupported');
+      else triggers.push([name, item]);
+    }
+  } else if (root.has('on')) {
+    const name = plainString(on);
+    if (name === null) report(on, 'triggers_unsupported');
+    else triggers.push([name, on]);
+  }
+  for (const [name, node] of triggers) {
+    if (DANGEROUS_TRIGGERS.has(name)) report(node, 'dangerous_trigger');
+  }
+
+  const jobs = root.get('jobs', true);
+  if (!isMap(jobs) || jobs.items.length === 0) {
+    report(jobs, 'jobs_missing');
+  } else {
+    for (const pair of jobs.items) scanJob(pair, report);
+  }
+
+  eachPair(root, (pair) => {
+    const key = keyOf(pair);
+    if (key === 'uses') scanUses(pair.value, report);
+    if (key === 'image' && !digestPinned(pair.value)) {
+      report(pair.value ?? pair.key, 'image_not_digest_pinned');
+    }
+    if (IMAGE_VARIABLES.has(key)) report(pair.key, 'runner_image_overridden');
+  });
+
   return findings;
 }
 
-/**
- * Every job under `jobs:` names its own runner and its own steps (D56). A job-level call of a
- * reusable workflow (`uses:`) takes both from another file, outside this check, and is refused.
- * A job without `runs-on:` has no runner this check can hold to the label. The first step must be
- * the runner-image step and nothing else: its name and its one command, exactly, with no `if:`
- * that could skip it and no `env:` that could change what it prints (review of 13298ef, M1).
- */
-function scanJobs(relativePath: string, lines: readonly string[]): Finding[] {
-  const start = lines.findIndex((line) => JOBS.test(line));
-  if (start === -1) return [finding(relativePath, null, 'jobs_missing')];
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (TOP_LEVEL_KEY.test(lines[index] ?? '')) {
-      end = index;
-      break;
+function scanJob(pair: Pair, report: (node: unknown, rule: string) => void): void {
+  const job = pair.value;
+  if (!isMap(job)) {
+    report(pair.key, 'job_unsupported');
+    return;
+  }
+  if (job.has('uses')) {
+    report(job.get('uses', true), 'job_reusable_workflow');
+    return;
+  }
+  if (plainString(job.get('runs-on', true)) !== RUNNER_LABEL) {
+    report(job.has('runs-on') ? job.get('runs-on', true) : pair.key, 'runner_not_pinned');
+  }
+  if (job.has('container')) {
+    const container = job.get('container', true);
+    if (isMap(container) ? !container.has('image') : !digestPinned(container)) {
+      report(container, 'image_not_digest_pinned');
     }
   }
-  const jobStarts: number[] = [];
-  for (let index = start + 1; index < end; index += 1) {
-    if (JOB_START.test(lines[index] ?? '')) jobStarts.push(index);
-  }
-  if (jobStarts.length === 0) return [finding(relativePath, start + 1, 'jobs_missing')];
-  const findings: Finding[] = [];
-  for (const [position, jobStart] of jobStarts.entries()) {
-    const jobEnd = jobStarts[position + 1] ?? end;
-    const keys = new Map<string, number>();
-    for (let index = jobStart + 1; index < jobEnd; index += 1) {
-      const key = JOB_KEY.exec(lines[index] ?? '')?.[1];
-      if (key !== undefined && !keys.has(key)) keys.set(key, index);
-    }
-    const uses = keys.get('uses');
-    if (uses !== undefined) {
-      findings.push(finding(relativePath, uses + 1, 'job_reusable_workflow'));
-      continue;
-    }
-    if (!keys.has('runs-on')) {
-      findings.push(finding(relativePath, jobStart + 1, 'runner_not_pinned'));
-    }
-    const steps = keys.get('steps');
-    if (steps === undefined || !firstStepLogsImage(lines, steps, jobEnd)) {
-      findings.push(finding(relativePath, (steps ?? jobStart) + 1, 'runner_image_not_logged'));
+  if (job.has('services')) {
+    const services = job.get('services', true);
+    if (!isMap(services)) {
+      report(services, 'image_not_digest_pinned');
+    } else {
+      for (const service of services.items) {
+        if (!isMap(service.value) || !service.value.has('image')) {
+          report(service.key, 'image_not_digest_pinned');
+        }
+      }
     }
   }
-  return findings;
+  const steps = job.get('steps', true);
+  if (!isSeq(steps) || steps.items.length === 0) {
+    report(job.has('steps') ? steps : pair.key, 'runner_image_not_logged');
+    return;
+  }
+  if (!logsRunnerImage(steps.items[0])) report(steps.items[0], 'runner_image_not_logged');
+  for (const step of steps.items) {
+    if (!isMap(step)) report(step, 'step_unsupported');
+    else scanCheckout(step, report);
+  }
 }
 
-function firstStepLogsImage(lines: readonly string[], steps: number, jobEnd: number): boolean {
-  let index = steps + 1;
-  while (index < jobEnd && BLANK_OR_COMMENT.test(lines[index] ?? '')) index += 1;
-  const name = STEP_NAME.exec(lines[index] ?? '');
-  if (name === null || name[2] !== RUNNER_IMAGE_STEP) return false;
-  const indent = (name[1] ?? '').length;
-  const body: string[] = [];
-  for (let next = index + 1; next < jobEnd; next += 1) {
-    const line = lines[next] ?? '';
-    if (BLANK_OR_COMMENT.test(line)) continue;
-    if (line.length - line.trimStart().length <= indent) break;
-    body.push(line.trim());
+function scanUses(value: unknown, report: (node: unknown, rule: string) => void): void {
+  const reference = plainString(value);
+  if (reference === null) {
+    report(value, 'action_not_sha_pinned');
+  } else if (reference.startsWith('./')) {
+    // A local action is repository content and is reviewed as such.
+  } else if (reference.startsWith('docker://')) {
+    if (!DIGEST.test(reference)) report(value, 'image_not_digest_pinned');
+  } else if (!PINNED_ACTION.test(reference)) {
+    report(value, 'action_not_sha_pinned');
+  } else if (!VERSION_COMMENT.test(isScalar(value) ? (value.comment ?? '') : '')) {
+    report(value, 'action_pin_missing_version_comment');
   }
-  return body.length === 1 && body[0] === `run: ${RUNNER_IMAGE_COMMAND}`;
+}
+
+function scanCheckout(step: YAMLMap, report: (node: unknown, rule: string) => void): void {
+  const uses = step.get('uses', true);
+  if (!(plainString(uses) ?? '').startsWith(CHECKOUT)) return;
+  const options = step.get('with', true);
+  const persist = isMap(options) ? options.get('persist-credentials', true) : null;
+  if (!(isScalar(persist) && persist.type === Scalar.PLAIN && persist.value === false)) {
+    report(uses, 'checkout_persists_credentials');
+  }
 }
 
 export interface WorkflowsResult {
