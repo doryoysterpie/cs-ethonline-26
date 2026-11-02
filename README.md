@@ -224,7 +224,7 @@ the dashboard and is not installed before Sprint 6.
 
 ## Local installation and verification
 
-Requirements: Node 24.21.0 exactly (`.nvmrc`) and pnpm 11.10.0, pinned in the `packageManager`
+Requirements: Node 24.22.2 exactly (`.nvmrc`) and pnpm 11.10.0, pinned in the `packageManager`
 field of `package.json`. `corepack pnpm` runs the pinned version without a global install.
 `corepack pnpm check:toolchain` asserts that the Node and pnpm in use are the pinned releases.
 

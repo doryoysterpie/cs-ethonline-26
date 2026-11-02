@@ -119,7 +119,7 @@ risk register and the report can point at them.
 | X2  | PostgreSQL 17 (Homebrew 17.10 locally; `postgres:17.11` by digest in CI)                              | Migrations checksummed; schema-qualified guard functions; no `SECURITY DEFINER`                                                                  |
 | X3  | 185 npm packages (152 unconstrained, 33 platform-specific optional binaries)                          | Exact catalog versions; frozen lockfile; `minimumReleaseAge: 1440`; `pnpm audit`; CycloneDX 1.6 bill of materials reproduced byte for byte in CI |
 | X4  | GitHub Actions: `actions/checkout`, `pnpm/action-setup`, `actions/setup-node`, `github/codeql-action` | Full commit SHA pins with version comments; enforced by `tools/checks/workflows.ts`                                                              |
-| X5  | Node 24.21.0 and pnpm 11.10.0                                                                         | Exact pins in `.nvmrc` and `packageManager`; asserted at the start of every CI job by `tools/checks/toolchain.ts`                                |
+| X5  | Node 24.22.2 and pnpm 11.10.0                                                                         | Exact pins in `.nvmrc` and `packageManager`; asserted at the start of every CI job by `tools/checks/toolchain.ts`                                |
 | X6  | GitHub-hosted runners (`ubuntu-latest`)                                                               | Read-only token; no secret; network denial for the offline suite proven inside the job                                                           |
 
 ## 8. Attacker capabilities
