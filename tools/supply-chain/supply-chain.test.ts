@@ -13,6 +13,7 @@ import {
   purlOf,
   readWorkspaces,
   type SbomInputs,
+  parseBaseImages,
 } from './sbom.ts';
 
 const REPO = repositoryRoot();
@@ -96,6 +97,8 @@ function syntheticInputs(licenses: Record<string, string>): SbomInputs {
     ],
     licenses: new Map(Object.entries(licenses)),
     unicodeVersion: '17.0',
+    runnerLabel: 'ubuntu-26.04',
+    baseImages: [{ name: 'node', tag: '24.21.0-bookworm-slim', digest: `sha256:${'d'.repeat(64)}` }],
   };
 }
 
@@ -194,6 +197,8 @@ describe('bill of materials', () => {
     expect(document.metadata.properties).toContainEqual({ name: 'cas:runtime:unicode', value: '17.0' });
     const refs = document.components.map((c) => c['bom-ref']);
     expect(refs).toEqual([
+      'runner:github-hosted:ubuntu-26.04',
+      `container:node:24.21.0-bookworm-slim@sha256:${'d'.repeat(64)}`,
       'workspace:@cas/contracts',
       'workspace:@cas/lib',
       'pkg:npm/%40scope/beta@2.0.0',
@@ -215,7 +220,9 @@ describe('bill of materials', () => {
     ]);
     const graph = new Map(document.dependencies.map((d) => [d.ref, d.dependsOn]));
     expect(graph.get('workspace:root-app')).toEqual([
+      `container:node:24.21.0-bookworm-slim@sha256:${'d'.repeat(64)}`,
       'pkg:npm/alpha@1.0.0',
+      'runner:github-hosted:ubuntu-26.04',
       'workspace:@cas/contracts',
       'workspace:@cas/lib',
     ]);
@@ -358,6 +365,78 @@ describe('bill of materials', () => {
       licenses: new Map([...inputs.licenses, ['wasm-runtime@1.0.0', 'MIT']]),
     };
     expect(() => buildSbom(withRuntime)).toThrowError(/licence unavailable for wasm-shim@1.0.0/u);
+  });
+
+  it('records the runner label as a platform component, outside the package counts and the npm cross-check (D56)', () => {
+    const output = buildSbom(syntheticInputs({ 'alpha@1.0.0': 'MIT', '@scope/beta@2.0.0': 'ISC' }));
+    const document = JSON.parse(output.sbom) as {
+      components: Record<string, unknown>[];
+      dependencies: { ref: string; dependsOn: string[] }[];
+    };
+    const runner = document.components.find((c) => c['type'] === 'platform');
+    expect(runner).toMatchObject({
+      'bom-ref': 'runner:github-hosted:ubuntu-26.04',
+      name: 'github-hosted-runner',
+      version: 'ubuntu-26.04',
+      properties: expect.arrayContaining([
+        { name: 'cas:runner:label', value: 'ubuntu-26.04' },
+        { name: 'cas:runner:pins', value: 'os-release' },
+      ]),
+    });
+    expect(runner).not.toHaveProperty('purl');
+    expect(output.summary.runnerLabel).toBe('ubuntu-26.04');
+    expect(
+      document.components.filter(
+        (c) => typeof c['purl'] === 'string' && c['purl'].startsWith('pkg:npm/'),
+      ),
+    ).toHaveLength(output.summary.components);
+    expect(document.dependencies.find((d) => d.ref === 'workspace:root-app')?.dependsOn).toContain(
+      'runner:github-hosted:ubuntu-26.04',
+    );
+  });
+
+  it('records the Dockerfile base pinned by digest, and refuses one pinned by tag alone (D58)', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    expect(
+      parseBaseImages(
+        [
+          `FROM node:24.21.0-bookworm-slim@${digest} AS base`,
+          'FROM base AS deps',
+          'from deps as build',
+          `FROM node:24.21.0-bookworm-slim@${digest} AS runtime`,
+        ].join('\n'),
+      ),
+    ).toEqual([{ name: 'node', tag: '24.21.0-bookworm-slim', digest }]);
+    for (const reference of ['node:24.21.0-bookworm-slim', `node@${digest}`, 'node', `node:24@sha256:${'a'.repeat(63)}`]) {
+      expect(() => parseBaseImages(`FROM ${reference} AS base`), reference).toThrow(/not pinned by digest/);
+    }
+    const output = buildSbom(syntheticInputs({ 'alpha@1.0.0': 'MIT', '@scope/beta@2.0.0': 'ISC' }));
+    const image = (JSON.parse(output.sbom) as { components: Record<string, unknown>[] }).components.find(
+      (c) => c['type'] === 'container',
+    );
+    expect(image).toMatchObject({
+      name: 'node',
+      version: '24.21.0-bookworm-slim',
+      hashes: [{ alg: 'SHA-256', content: 'd'.repeat(64) }],
+      purl: `pkg:docker/library/node@sha256%3A${'d'.repeat(64)}?tag=24.21.0-bookworm-slim`,
+    });
+    expect(output.summary.components).toBe(
+      (JSON.parse(output.sbom) as { components: { purl?: string }[] }).components.filter((c) =>
+        c.purl?.startsWith('pkg:npm/'),
+      ).length,
+    );
+  });
+
+  // The shape, not the release: a bump (D58) moves the tag and the digest, and this must hold
+  // across it.
+  it('reads the repository Dockerfile, pinned by digest', () => {
+    expect(parseBaseImages(readFileSync(path.join(REPO, 'Dockerfile'), 'utf8'))).toEqual([
+      {
+        name: 'node',
+        tag: expect.stringMatching(/^\d+\.\d+\.\d+-bookworm-slim$/u),
+        digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      },
+    ]);
   });
 
   it('encodes package URLs, hashes and licence choices as the specifications require', () => {

@@ -18,7 +18,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:db": "vitest run --config vitest.db.config.ts"
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "restore:drill": "pnpm run build && node scripts/restore-drill.mjs"
   },
   "dependencies": {
     "@cas/contracts": "workspace:*",

@@ -32,6 +32,7 @@ import { repositoryRoot, trackedEntries } from './lib/tracked.ts';
 import { scanMainRuleset, scanMainRulesetText, workflowJobNames } from './rulesets.ts';
 import { scanSecrets, scanTextForSecrets } from './secrets.ts';
 import { checkToolchain, readToolchainExpectation } from './toolchain.ts';
+import { RUNNER_IMAGE_COMMAND, RUNNER_IMAGE_STEP, RUNNER_LABEL } from './runner.ts';
 import { scanWorkflowText, scanWorkflows } from './workflows.ts';
 
 /**
@@ -383,11 +384,13 @@ describe('workflows', () => {
     '  contents: read',
     'jobs:',
     '  verify:',
-    '    runs-on: ubuntu-latest',
+    `    runs-on: ${RUNNER_LABEL}`,
     '    services:',
     '      postgres:',
     `        image: ${digest}`,
     '    steps:',
+    `      - name: ${RUNNER_IMAGE_STEP}`,
+    `        run: ${RUNNER_IMAGE_COMMAND}`,
     `      - uses: actions/checkout@${sha} # v7.0.1`,
     '        with:',
     '          persist-credentials: false',
@@ -424,8 +427,327 @@ describe('workflows', () => {
       'permissions_too_broad',
     ]);
     expect(rules(scanWorkflowText('x.yml', 'on: push\njobs: {}\n'))).toEqual([
+      'jobs_missing',
       'permissions_missing',
     ]);
+  });
+});
+
+describe('the pinned runner (D56)', () => {
+  const job = (runsOn: string, firstStep: string) =>
+    [
+      'permissions:',
+      '  contents: read',
+      'jobs:',
+      '  verify:',
+      `    runs-on: ${runsOn}`,
+      '    steps:',
+      `      - name: ${firstStep}`,
+      `        run: ${RUNNER_IMAGE_COMMAND}`,
+      '',
+    ].join('\n');
+
+  it('accepts a job on the pinned label whose first step logs the runner image', () => {
+    expect(rules(scanWorkflowText('x.yml', job(RUNNER_LABEL, RUNNER_IMAGE_STEP)))).toEqual([]);
+  });
+
+  it('refuses any other runner label, an expression and a missing image log', () => {
+    // A quoted label is refused too: the rule takes one shape, a plain scalar (D59).
+    for (const label of [
+      'ubuntu-latest',
+      'ubuntu-24.04',
+      'macos-latest',
+      '${{ matrix.os }}',
+      '',
+      `'${RUNNER_LABEL}'`,
+      `"${RUNNER_LABEL}"`,
+      `[${RUNNER_LABEL}]`,
+      `{ group: ${RUNNER_LABEL} }`,
+    ]) {
+      expect([label, rules(scanWorkflowText('x.yml', job(label, RUNNER_IMAGE_STEP)))]).toEqual([
+        label,
+        ['runner_not_pinned'],
+      ]);
+    }
+    expect(rules(scanWorkflowText('x.yml', job(RUNNER_LABEL, 'Check out repository')))).toEqual([
+      'runner_image_not_logged',
+    ]);
+  });
+
+  // The two bypasses of the review of 13298ef (M1): a job that names no runner the check can
+  // read, and a first step that keeps the name but does not print the image.
+  const head = ['permissions:', '  contents: read', 'jobs:'];
+  const pinnedJob = (name: string, ...firstStepBody: string[]) => [
+    `  ${name}:`,
+    `    runs-on: ${RUNNER_LABEL}`,
+    '    steps:',
+    `      - name: ${RUNNER_IMAGE_STEP}`,
+    ...firstStepBody,
+    '      - run: pnpm test',
+  ];
+  const scan = (...lines: string[]) => rules(scanWorkflowText('x.yml', [...lines, ''].join('\n')));
+
+  it('refuses a job-level call of a reusable workflow, whose runner and steps it cannot read', () => {
+    const call = `    uses: owner/repo/.github/workflows/build.yml@${'c'.repeat(40)} # v1.0.0`;
+    expect(scan(...head, '  outsourced:', call)).toEqual(['job_reusable_workflow']);
+    expect(
+      scan(
+        ...head,
+        ...pinnedJob('verify', `        run: ${RUNNER_IMAGE_COMMAND}`),
+        '  outsourced:',
+        call,
+      ),
+    ).toEqual(['job_reusable_workflow']);
+  });
+
+  it('refuses a job with no runs-on, and a job with no steps', () => {
+    expect(
+      scan(
+        ...head,
+        '  verify:',
+        '    steps:',
+        `      - name: ${RUNNER_IMAGE_STEP}`,
+        `        run: ${RUNNER_IMAGE_COMMAND}`,
+      ),
+    ).toEqual(['runner_not_pinned']);
+    expect(scan(...head, '  verify:', `    runs-on: ${RUNNER_LABEL}`)).toEqual([
+      'runner_image_not_logged',
+    ]);
+  });
+
+  it('refuses a runner-image step that does not print the image, or that can be skipped or changed', () => {
+    for (const body of [
+      ['        run: true'],
+      ['        run: echo image'],
+      ['        run: |', `          ${RUNNER_IMAGE_COMMAND}`],
+      [`        run: ${RUNNER_IMAGE_COMMAND}`, '        if: false'],
+      [`        run: ${RUNNER_IMAGE_COMMAND}`, '        shell: true {0}'],
+      [],
+    ]) {
+      expect([body, scan(...head, ...pinnedJob('verify', ...body))]).toEqual([
+        body,
+        ['runner_image_not_logged'],
+      ]);
+    }
+    expect(
+      scan(
+        ...head,
+        ...pinnedJob(
+          'verify',
+          `        run: ${RUNNER_IMAGE_COMMAND}`,
+          '        env:',
+          '          ImageOS: ubuntu26',
+        ),
+      ),
+    ).toEqual(['runner_image_not_logged', 'runner_image_overridden']);
+  });
+
+  it('refuses a value set for ImageOS or ImageVersion anywhere in a workflow', () => {
+    const job = pinnedJob('verify', `        run: ${RUNNER_IMAGE_COMMAND}`);
+    expect(scan('env:', '  ImageOS: ubuntu26', ...head, ...job)).toEqual([
+      'runner_image_overridden',
+    ]);
+    expect(scan('env: { ImageVersion: 20261026.180.1 }', ...head, ...job)).toEqual([
+      'runner_image_overridden',
+    ]);
+    expect(scan(...head, ...job)).toEqual([]);
+  });
+
+  it('reads each job on its own: a good job does not cover the one after it', () => {
+    const lines = [
+      ...head,
+      ...pinnedJob('first', `        run: ${RUNNER_IMAGE_COMMAND}`),
+      ...pinnedJob('second', '        run: true'),
+    ];
+    const findings = scanWorkflowText('x.yml', [...lines, ''].join('\n'));
+    expect(findings.map((item) => [item.rule, item.line])).toEqual([
+      ['runner_image_not_logged', lines.indexOf(`      - name: ${RUNNER_IMAGE_STEP}`, 9) + 1],
+    ]);
+  });
+
+  it('holds every workflow in this repository to the label', () => {
+    expect(scanWorkflows(REPO).findings.map(formatFinding)).toEqual([]);
+    expect(RUNNER_LABEL).toBe('ubuntu-26.04');
+  });
+});
+
+describe('the parsed reader (D59)', () => {
+  const sha = 'c'.repeat(40);
+  const compliant = [
+    '  verify:',
+    `    runs-on: ${RUNNER_LABEL}`,
+    '    steps:',
+    `      - name: ${RUNNER_IMAGE_STEP}`,
+    `        run: ${RUNNER_IMAGE_COMMAND}`,
+  ];
+  const workflow = (...lines: string[]) =>
+    ['permissions:', '  contents: read', 'jobs:', ...lines, ''].join('\n');
+  const scan = (text: string) => rules(scanWorkflowText('x.yml', text));
+
+  // The exact inputs of the review of e2b0735 (M1), each with zero findings at that head.
+  it('refuses the four bypasses of the review of e2b0735', () => {
+    const quotedCall = [
+      '  "outsourced":',
+      `    uses: owner/repo/.github/workflows/build.yml@${sha} # v1.0.0`,
+    ];
+    expect(scan(workflow(...quotedCall, ...compliant))).toEqual(['job_reusable_workflow']);
+    expect(
+      scan(
+        workflow(
+          ...compliant,
+          '  unpinned: { runs-on: ubuntu-latest, steps: [{ name: Test, run: true }] }',
+        ),
+      ),
+    ).toEqual(['runner_image_not_logged', 'runner_not_pinned']);
+    expect(
+      scan(
+        workflow(
+          ...compliant,
+          `  outsourced: { uses: owner/repo/.github/workflows/build.yml@${sha} }`,
+        ),
+      ),
+    ).toContain('job_reusable_workflow');
+    expect(scan(`env: {"Image\\u004fS": spoofed}\n${workflow(...compliant)}`)).toEqual([
+      'runner_image_overridden',
+    ]);
+    expect(scan(`env: {"Image\\u0056ersion": spoofed}\n${workflow(...compliant)}`)).toEqual([
+      'runner_image_overridden',
+    ]);
+  });
+
+  it('accepts comments wherever YAML allows them, an ImageOS comment included', () => {
+    expect(
+      scan(
+        [
+          '# CI',
+          'permissions: # least privilege',
+          '  contents: read',
+          'jobs: # jobs follow',
+          '  # ImageOS: a comment, not a key',
+          ...compliant,
+          '',
+        ].join('\n'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses anchors, aliases, merge keys, duplicate keys, tags and a second document', () => {
+    expect(
+      scan(
+        workflow(
+          '  verify:',
+          `    runs-on: &label ${RUNNER_LABEL}`,
+          '    steps:',
+          `      - name: ${RUNNER_IMAGE_STEP}`,
+          `        run: ${RUNNER_IMAGE_COMMAND}`,
+          '  again:',
+          '    runs-on: *label',
+          '    steps: []',
+        ),
+      ),
+    ).toEqual(['workflow_yaml_alias', 'workflow_yaml_anchor']);
+    expect(
+      scan(
+        workflow(
+          '  base: &base',
+          `    runs-on: ${RUNNER_LABEL}`,
+          '  verify:',
+          '    <<: *base',
+          '    steps: []',
+        ),
+      ),
+    ).toEqual(['workflow_yaml_alias', 'workflow_yaml_anchor']);
+    expect(scan(workflow(...compliant, `    runs-on: ${RUNNER_LABEL}`))).toEqual([
+      'workflow_yaml_error',
+    ]);
+    expect(
+      scan(
+        workflow(...compliant).replace(
+          `runs-on: ${RUNNER_LABEL}`,
+          `runs-on: !label ${RUNNER_LABEL}`,
+        ),
+      ),
+    ).toEqual(['workflow_yaml_warning']);
+    expect(scan(`${workflow(...compliant)}---\n${workflow(...compliant)}`)).toEqual([
+      'workflow_not_one_document',
+    ]);
+  });
+
+  it('refuses a quoted key or a quoted value under every rule, not only the runner rules', () => {
+    const checkout = (...lines: string[]) => workflow(...compliant, ...lines);
+    expect(
+      scan(
+        checkout(
+          '      - "uses": actions/checkout@v4',
+          '        with:',
+          '          persist-credentials: false',
+        ),
+      ),
+    ).toEqual(['action_not_sha_pinned']);
+    expect(
+      scan(
+        checkout(
+          `      - uses: "actions/checkout@${sha}" # v7.0.1`,
+          '        with:',
+          '          persist-credentials: false',
+        ),
+      ),
+    ).toEqual(['action_not_sha_pinned']);
+    expect(
+      scan(
+        checkout(
+          `      - uses: actions/checkout@${sha} # v7.0.1`,
+          '        with:',
+          "          persist-credentials: 'false'",
+        ),
+      ),
+    ).toEqual(['checkout_persists_credentials']);
+    expect(
+      scan(
+        checkout(
+          `      - { uses: actions/checkout@${sha}, with: { persist-credentials: false } } # v7.0.1`,
+        ),
+      ),
+    ).toEqual(['action_pin_missing_version_comment']);
+    expect(
+      scan(workflow(...compliant, '    services:', '      db:', '        "image": postgres:17')),
+    ).toEqual(['image_not_digest_pinned']);
+    expect(scan(workflow(...compliant, '    container: node:24'))).toEqual([
+      'image_not_digest_pinned',
+    ]);
+    expect(scan(workflow(...compliant, '    container: { options: --cpus 1 }'))).toEqual([
+      'image_not_digest_pinned',
+    ]);
+    expect(
+      scan(
+        workflow(...compliant).replace(
+          'permissions:\n  contents: read',
+          '"permissions": write-all',
+        ),
+      ),
+    ).toEqual(['permissions_too_broad']);
+    expect(scan(`on: { "pull_request_target": {} }\n${workflow(...compliant)}`)).toEqual([
+      'dangerous_trigger',
+    ]);
+    expect(scan(`on: [push, workflow_run]\n${workflow(...compliant)}`)).toEqual([
+      'dangerous_trigger',
+    ]);
+  });
+
+  it('reads workflow YAML in no module by matching lines of text', () => {
+    for (const module of ['workflows.ts', 'rulesets.ts', 'lib/workflow-yaml.ts']) {
+      const source = readFileSync(path.join(REPO, 'tools/checks', module), 'utf8');
+      expect([
+        module,
+        /\.split\(/u.test(source),
+        /\b(?:test|exec)\(line\b/u.test(source),
+        /for \(const line of/u.test(source),
+      ]).toEqual([module, false, false, false]);
+    }
+    for (const module of ['workflows.ts', 'rulesets.ts']) {
+      const source = readFileSync(path.join(REPO, 'tools/checks', module), 'utf8');
+      expect([module, source.includes("from './lib/workflow-yaml.ts'")]).toEqual([module, true]);
+    }
   });
 });
 
@@ -435,6 +757,10 @@ describe('main ruleset', () => {
     '.github/workflows/ci.yml': readFileSync(path.join(REPO, '.github/workflows/ci.yml'), 'utf8'),
     '.github/workflows/codeql.yml': readFileSync(
       path.join(REPO, '.github/workflows/codeql.yml'),
+      'utf8',
+    ),
+    '.github/workflows/codex-verdict.yml': readFileSync(
+      path.join(REPO, '.github/workflows/codex-verdict.yml'),
       'utf8',
     ),
   };
@@ -454,6 +780,10 @@ describe('main ruleset', () => {
       'Browser E2E',
       'Supply chain',
     ]);
+    // The verdict is a commit status, not a job of that name (D52).
+    expect(workflowJobNames(workflowTexts['.github/workflows/codex-verdict.yml'])).toEqual([
+      'Codex verdict record',
+    ]);
   });
 
   it('reports weakened review, ref, force-push, deletion and status-check controls', () => {
@@ -467,9 +797,10 @@ describe('main ruleset', () => {
     );
     const pull = ruleset.rules.find((rule) => rule.type === 'pull_request')?.parameters;
     if (pull === undefined) throw new Error('fixture has no pull request rule');
-    pull.required_approving_review_count = 0;
+    // D52: an approval one identity cannot give would block every merge.
+    pull.required_approving_review_count = 1;
     pull.dismiss_stale_reviews_on_push = false;
-    pull.require_last_push_approval = false;
+    pull.require_last_push_approval = true;
     pull.required_review_thread_resolution = false;
     const status = ruleset.rules.find((rule) => rule.type === 'required_status_checks')?.parameters;
     if (status === undefined) throw new Error('fixture has no required status rule');
@@ -480,11 +811,11 @@ describe('main ruleset', () => {
     ];
 
     expect(rules(scanMainRulesetText(JSON.stringify(ruleset), workflowTexts))).toEqual([
+      'approval_count_unsatisfiable',
       'deletion_rule_missing',
-      'independent_last_push_review_not_required',
+      'last_push_approval_unsatisfiable',
       'main_condition_mismatch',
       'non_fast_forward_rule_missing',
-      'one_review_not_required',
       'required_check_missing',
       'required_status_check_source_mismatch',
       'required_status_checks_mismatch',
@@ -505,6 +836,30 @@ describe('main ruleset', () => {
     expect(rules(scanMainRulesetText(readFileSync(rulesetPath, 'utf8'), renamed))).toContain(
       'required_check_missing',
     );
+  });
+
+  it('requires the Codex verdict status to be set by its workflow and never shadowed by a job (D52)', () => {
+    const verdict = workflowTexts['.github/workflows/codex-verdict.yml'];
+    const unset = {
+      ...workflowTexts,
+      '.github/workflows/codex-verdict.yml': verdict.replace(
+        'STATUS_CONTEXT: Codex verdict',
+        'STATUS_CONTEXT: Codex review',
+      ),
+    };
+    expect(rules(scanMainRulesetText(readFileSync(rulesetPath, 'utf8'), unset))).toEqual([
+      'required_status_not_set',
+    ]);
+    const shadowed = {
+      ...workflowTexts,
+      '.github/workflows/codex-verdict.yml': verdict.replace(
+        '    name: Codex verdict record',
+        '    name: Codex verdict',
+      ),
+    };
+    expect(rules(scanMainRulesetText(readFileSync(rulesetPath, 'utf8'), shadowed))).toEqual([
+      'status_context_shadowed_by_job',
+    ]);
   });
 });
 

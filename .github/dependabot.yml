@@ -1,0 +1,18 @@
+# The bump channel for the Dockerfile's base image (D58). The base is pinned by digest, so the
+# rebuilds Debian's patches arrive in no longer reach the image on their own; Dependabot opens
+# a pull request weekly when the tag's digest moves, so a frozen base is never silently behind.
+# Node's release line is pinned with the toolchain (.nvmrc, D27), so version updates are
+# ignored here and only the digest under the same tag is bumped.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+          - version-update:semver-patch

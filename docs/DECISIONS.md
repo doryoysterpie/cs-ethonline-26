@@ -2065,3 +2065,260 @@ ruling of the same day: it need not, under five conditions.
   from the directory and mark their written-out lists as the tripwire.
 - **Decided by:** Project owner, 1 November 2026, in chat.
 - **Supersedes:** nothing.
+
+## D52 The main ruleset for one GitHub identity
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED; the ruleset is defined and validated in the repository, not yet active
+- **Decision:** The `main` ruleset keeps the rules that do not depend on a second identity and
+  enforces the Codex review with a status check instead of an approval count. The owner's ruling
+  of 1 November 2026, option (a), with four conditions:
+  1. **No approval rule.** Required approvals 0 and no last-push approval; the pull-request
+     requirement, the six checks, no force-push and no deletion stay. It rides with the carry of
+     pull request 51.
+  2. **A seventh required check, `Codex verdict`.** A workflow on pull-request pushes and comment
+     events sets a commit status on the pull request's head, success only when the last verdict
+     line naming that exact head is `Codex verdict: PASS at <commit>`, written by an account
+     with write access; a new push makes a head no verdict names, and the status turns to
+     failure until Codex passes it. It recovers what the dismiss-stale and last-push rules were
+     for, without a second identity and without a stored credential, since the workflow runs on
+     the ephemeral Actions token. Until the check is active, the verdict is enforced by the
+     process alone.
+  3. **Conversation resolution required**, so every Codex review thread is addressed before a
+     merge, which is the part of the verdict the check cannot see.
+  4. **The bypass list stays empty.** With one identity the only way around the gate is to edit
+     the ruleset, and the ruleset's own history records that. This limit is written down in
+     `docs/RUNBOOK-SECURITY.md`, section 1.2, not papered over.
+- **Rationale:** The owner's. The rules worth having here are the ones that need no second
+  identity, and leaving the ruleset off would keep all of them off for a rule that can never be
+  met. The review separation this project runs is author against Codex, not one GitHub user
+  against another, so an approval count is the wrong instrument and a status check the right
+  one.
+- **Why not the alternatives.** A machine account's approval is the same person approving twice.
+  A GitHub App that approves on a PASS needs a private key held somewhere, a long-lived
+  credential that can approve anything if it leaks, the class of risk the key-locality rule
+  exists for. Keeping the ruleset as written and inactive blocks nothing and protects nothing.
+- **Consequences:** `.github/rulesets/main.json`, `tools/checks/rulesets.ts`,
+  `.github/workflows/codex-verdict.yml`, `tools/ci/codex-verdict.ts` and
+  `docs/RUNBOOK-SECURITY.md` change together. A verdict is posted by Codex or by the owner, never
+  by the engineering agent. Activation and its read-back stay the owner's (CAS-006, step 6).
+- **Decided by:** Project owner, 1 November 2026, in chat.
+- **Supersedes:** pull request 52's approval rules (one approval, last-push approval), never
+  active.
+
+## D53 The repository stays public under Apache-2.0
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 3: the repository stays
+  public under Apache-2.0. Conditions:
+  1. **A record names a gap, never a reproduction, and the record of an exploitable gap is pushed
+     after its fix lands, not before.** Decision records and reports stay public, and recording
+     gaps stays the practice; the ordering is what changes.
+  2. **The licence covers the code, not the name.** The README states that the "Cyberattack
+     Sunday" name and marks are not licensed under Apache-2.0.
+  3. **Nothing else changes.** Secrets stay in the environment and the repository scans keep
+     enforcing it.
+- **Rationale:** GitHub's documentation, read on 1 November 2026: repository rulesets are
+  enforced in public repositories on GitHub Free and in private repositories only on Pro, Team or
+  Enterprise Cloud; code scanning on a private repository needs a paid GitHub Code Security
+  licence; secret scanning on a personal account's private repository is not available outside
+  Enterprise Managed Users. Going private would switch off the ruleset of D52 and the scans the
+  project relies on. Versions already published stay licensed to whoever fetched them.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D54 The dispositions of the hackathon components (P-3)
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED; executed by CAS-006, step 5
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 4, transcribing P-3:
+  - `apps/payer-agent`, `apps/sunday-agent` and `packages/feed-api`: **remove**. Each is a
+    placeholder of nine lines; a public feed, if one is ever wanted, is a unit of its own.
+  - `@cas/graph-evidence` and the live Graph path: **park**. It fails closed without
+    `GRAPH_API_KEY`; its tests run without the key or skip with the reason recorded; it stays out
+    of the deployed image; its dependencies stay in the bill of materials and advisories keep
+    applying while it is parked.
+  - `@cas/evidence` and the anomaly layer: **keep**.
+  - `packages/mcp-server`: decided on use, not size: kept if it is wired into an AI client the
+    owner uses in the editorial workflow, otherwise parked; absent that fact, **park**. Parked,
+    CAS-006 step 8 is not applicable, and unparking is a unit with its own audit, not a
+    status-line edit. Kept, step 8 runs as the fix list from its audit under D55, and it stays a
+    consumer of D49's rule and D50's escapes.
+- **Conditions on the removal:** if migration 0008 or 0009 created a table that only a removed
+  placeholder reads, a new migration drops it in the same unit, since an empty table with no
+  reader is a place for data nobody checks; no workspace entry, path alias, CI matrix row or
+  bill-of-materials line refers to a removed package, which the clean-clone gate proves; the
+  README's hackathon section keeps one line naming what was submitted to ETHOnline and that it
+  was removed or parked at CAS-006, so the history stays true. Migrations 0008 and 0009 stay,
+  since applied migrations are never edited.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D55 One audit of main, in scoped prompts
+
+- **Date:** 2026-11-01
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 1 November 2026 to CAS-006, step 12: the code that exists is
+  audited at one head, `main` once pull request 65 merges, and that commit is recorded in the
+  ledger as the audit head. Every "not audited" code row closes against it; code merged afterwards
+  is covered by its own review, so the rows never reopen. Conditions:
+  1. **Scoped prompts, not one.** One prompt over the whole of `main` gives a shallow audit with a
+     confident verdict. The audit is scoped by trust boundary against the same head, in this order:
+     authentication, sessions, roles and the dashboard's capability checks; then intake and the
+     worker (the Sheets intake, the source scanner, and the path from untrusted text through the
+     model to a stored draft); then the MCP server if it is kept; then the rest (the security
+     foundation, the release integration and the dependency posture).
+  2. **Invariants, not "audit this".** Each prompt lists the invariants from the decision records
+     (secrets from the environment and the key-locality rule, D6's publication act, the reader
+     role, D49's rule and its consumers, D50's escapes, the audit-event rule) and asks, for each,
+     where it is enforced and which test would fail if it were broken.
+  3. **Documents-only rows** (pull requests 12, 54 and 59) are an accepted risk with the public
+     launch as the review date: their risk is a wrong decision, not an exploit, and those
+     decisions have since been built and reviewed in code.
+  4. **Findings become units.** A ledger row reads "audited at `<head>`, findings in CAS-0xx",
+     never PASS alone.
+- **Rationale:** The owner's. Per-track audits would review code since rewritten; accepting the
+  risk would leave the authentication path unaudited at launch.
+- **Decided by:** Project owner, 1 November 2026, in chat.
+
+## D56 The CI runner label is pinned
+
+- **Date:** 2026-11-02
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 2 November 2026, option (b): every job of every workflow
+  runs on one pinned runner label, `ubuntu-26.04`, instead of `ubuntu-latest`. Conditions:
+  1. **One literal, held by a check.** The label lives in `tools/checks/runner.ts`;
+     `tools/checks/workflows.ts` refuses any `runs-on` that is not that literal, so a `-latest`
+     label cannot return in a new workflow. A repository variable would centralise it but is
+     edited in settings, not in a reviewed pull request.
+  2. **What the pin does and does not do.** It pins the operating system's release, not the
+     image. GitHub refreshes the image under the same label on its own schedule, and hosted
+     runners offer no way to pin an image build. The next release move arrives as a pull
+     request; the weekly refresh still does not.
+  3. **The drift that remains is identified.** Every job logs the runner's `ImageOS` and
+     `ImageVersion` as its first step, so a failure can be matched to an image build; the check
+     refuses a job that does not. A tool a job takes from the image moves to a pinned source
+     where the fix of pull request 66 touched one (see the consequence below).
+  4. **The label retires.** GitHub removes old images, with brownouts first. The bill of
+     materials records the label as a component, reviewed on the same cadence as the packages,
+     so the bump is a planned pull request.
+- **Rationale:** The owner's. The runner image was the one input to the build that changed
+  without a pull request; the overnight break of 1 November 2026, when `ubuntu-latest` moved
+  from 24.04 to 26.04 and its sudo stopped preserving the environment (pull request 66), is
+  the demonstration. Pull request 66 fixed the symptom; the pin addresses the class.
+- **Consequences:** PostgreSQL already runs as a service container pinned by digest in every
+  database job. The tools pull request 66 touched, `sudo` and `unshare`, are the network
+  namespace mechanism itself and stay with the image, the named exception of D57.
+- **Decided by:** Project owner, 2 November 2026, in chat.
+- **Supersedes:** nothing.
+
+## D57 `sudo` and `unshare` are the named exception to the pin posture
+
+- **Date:** 2026-11-02
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 2 November 2026, option (a): the offline suite's network
+  namespace keeps taking `sudo` and `unshare` from the runner image. The pin posture exists so a
+  change arrives as a reviewed pull request rather than as a surprise; this step does not need
+  that protection, because it proves its own precondition on every run and fails loudly when it
+  cannot, so an image change can reach it only as a red job with the image version in the log.
+  Conditions, all in `tools/checks/network-denial.sh`:
+  1. **The proof and the command share one namespace.** The proof runs in the same invocation as
+     the command, which starts only after the proof holds there.
+  2. **The proof fails fast, on loopback and off it.** Inside the namespace the loopback probe
+     and a connection to an outside address (192.0.2.1, TEST-NET-1) must each fail with a
+     connection error within two seconds; a timeout is a failed proof. The claim is "no
+     interface and no route", stated, not inferred from loopback alone.
+  3. **A failed proof names its context.** The failure prints the runner image (`ImageOS`,
+     `ImageVersion`) and the versions of `unshare` and `sudo`.
+  4. **The exception is scoped.** It covers `sudo` and `unshare` in this step only, for the
+     reason above, and the signal that covers them is the proof plus the logged image version.
+- **Rationale:** The owner's. A pinned container with `--network none` keeps the Docker engine
+  from the image, so it moves the unpinned input rather than removing it, and it leaves loopback
+  up, so a test that reaches a local service would still pass an "offline" suite.
+- **Decided by:** Project owner, 2 November 2026, in chat.
+- **Supersedes:** nothing.
+
+## D58 The Dockerfile's base image is pinned by digest, with a bump channel
+
+- **Date:** 2026-11-02
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 2 November 2026, option (a): both `FROM` lines name the
+  base as `node:24.21.0-bookworm-slim@sha256:…`, the tag kept for the reader and the
+  manifest-list digest doing the pinning, since the build names no single platform. A tag
+  rebuilt under the same name is how an upstream change, or an upstream compromise, would enter
+  the deployed image without a pull request; the digest makes that entry a reviewed bump.
+  Conditions:
+  1. **The manifest-list digest**, read from the registry on 2 November 2026
+     (`sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20`).
+  2. **A bump channel.** Dependabot's docker ecosystem on the Dockerfile, weekly
+     (`.github/dependabot.yml`): rebuilds under the tag are how Debian's patches reach the base,
+     and a digest freezes them, so the channel says when the frozen base is behind. Node's
+     release line moves with the toolchain pin (D27), so only the digest under the same tag is
+     bumped there.
+  3. **A scan of the built image.** `.github/workflows/image-scan.yml` builds the image and
+     scans it with Grype v0.120.1, run from its own image pinned by digest, on pull requests,
+     pushes to `main` and weekly; findings go to code scanning, and the job fails on a fixable
+     finding of high severity or above. It is not a required check: a finding is made visible,
+     and the bump that fixes it is a reviewed pull request. Rejected: Trivy, whose release
+     channel was compromised in March 2026 (CVE-2026-33634), including images on Docker Hub; a
+     digest would guard against a repointed tag, but the project prefers a scanner whose
+     distribution carries no such history.
+  4. **The bump's review is two checks** (`docs/RUNBOOK-SECURITY.md`, section 6): the new digest
+     resolves from the tag on the registry, and the image scan is clean.
+  5. **The base joins the bill of materials** beside the runner label, read from the
+     Dockerfile; a `FROM` that is not pinned by digest refuses the bill, so a tag-only base
+     cannot return.
+- **Rationale:** The owner's: the production copy of the runner problem of D56, with a wider
+  blast radius and a supply-chain edge the runner does not have.
+- **Decided by:** Project owner, 2 November 2026, in chat.
+- **Supersedes:** nothing.
+- **Amendment, 2026-11-02 (the owner's ruling on the first bump).** Condition 1 named a form,
+  not a version: the tag kept for the reader and the manifest-list digest doing the pinning.
+  The pinned version is whatever the bump channel delivers, `node:24.22.2-bookworm-slim` as of
+  this date (`sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c`),
+  delivered by pull request 69 with the toolchain pin (D27). Condition 4 stands unchanged. The
+  first image scan failed on Node 24.21.0, which Node's October 2026 security release patches
+  (CVE-2026-111497 among its advisories, in CISA's Known Exploited Vulnerabilities catalog), and
+  the owner ruled that the patch ships ahead of the combined audit, recorded as not audited
+  until that audit's head. Decided by the project owner, 2 November 2026, in chat.
+
+## D59 The workflow checks read YAML through one strict parser
+
+- **Date:** 2026-11-02
+- **Status:** ACCEPTED
+- **Decision:** The owner's answer of 2 November 2026 to the review of pull request 68 at
+  `e2b0735` (M1): (a), the `yaml` package, and (i), every workflow rule moved onto the parsed
+  document. Both findings on D56's guard came from a reader that recognised the spellings it had
+  seen; a narrower hand-written grammar would be that reader again, so a real parser closes the
+  class. Conditions:
+  1. **A development dependency, pinned exactly, absent from the runtime stage.** `yaml` 2.9.1
+     through the catalog, a root `devDependency`; the Dockerfile's runtime stage removes it, and
+     the image scan requires it absent from the built image. It is a tool-time dependency and
+     never ships.
+  2. **A strict parse.** Duplicate keys refused; every anchor and alias refused, with the
+     package's alias limit at zero, so a merge key cannot bring one in; the default YAML 1.2 core
+     schema, under which `on` is a key and not the boolean true. Any parse error or parse warning
+     fails the file: a warning is a finding, not a note.
+  3. **Shape is part of the rule.** A `runs-on` that is a sequence, a mapping, an expression or
+     anything but a plain scalar equal to the literal is a refusal, not a skip; the same holds for
+     `uses` and the image fields. Each rule names the shape it accepts and refuses every other.
+     The line reader's defect was that what it did not recognise passed; the parsed reader's
+     default is the reverse.
+  4. **Regression fixtures.** The two findings' exact inputs, with flow style, quoted keys,
+     anchors, duplicate keys and expressions beside them, each asserted refused or caught; the
+     repository's own workflows are the passing fixture.
+  5. **One reader for all the YAML the checks inspect.** `tools/checks/lib/workflow-yaml.ts`
+     serves `workflows.ts` and the workflow reading of `rulesets.ts` alike.
+  6. **Each rule keeps its assertion and changes only its source;** the pull request lists every
+     rule as before (a line pattern) and after (a path in the parsed document).
+  7. **No text-matching path survives in the checks;** the old functions are deleted, not kept
+     as a fallback, and the checks' own test asserts that no module reads workflow YAML by
+     matching lines.
+  8. **Pull request 68 keeps its place in the train,** and its "not audited" row closes at the
+     combined audit's head, as decided.
+- **Rationale:** The owner's. One file, one mechanism, one review; leaving the older rules on line
+  matching would keep the hole open in exactly the rules nobody is looking at. No behaviour
+  changes, only how one tool reads one kind of file.
+- **Decided by:** Project owner, 2 November 2026, in chat.
+- **Supersedes:** nothing. The supply-chain reader of `pnpm-lock.yaml`
+  (`tools/supply-chain/lockfile.ts`) is a separate check, which carries no dependency by its own
+  design, and is unchanged.

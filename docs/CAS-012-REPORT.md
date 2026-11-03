@@ -1,8 +1,7 @@
 # CAS-012 report: every character list on the rule
 
-**Status:** Built on `cas-012/lists`, pull request 61. The review of `db10902` returned CHANGES
-REQUIRED, four P2 findings and one P3, corrected on the same branch (section 9); re-review
-pending; **not accepted**. Tracker: `docs/tcu/CAS-012.md`. Decisions: D49, D50. Issue: #58.
+**Status:** **Accepted.** Pull request 61 passed at `d1751e5` and pull request 63 at `58b5f27`;
+both merged into `main` on 1 November 2026 at `59df7da` (section 11). Tracker: `docs/tcu/CAS-012.md`. Decisions: D49, D50. Issue: #58.
 Section 1 is the S0 design note, written before any code on `cas-012/design-note` and merged in
 pull request 59; sections 2 to 8 record the build and section 9 the corrections.
 
@@ -456,3 +455,12 @@ Counts from the runner, 1 November 2026, in the working tree: `verify` exit 0, 1
 tests and 39 tool tests; `test:db` 353 (database 128, worker 119, dashboard 57, mcp-server 49);
 `test:browser` 33 passed. The clean clone and CI of this branch's head are recorded in its pull
 request, so that recording them does not move the head.
+
+## 11. Re-review and acceptance (1 November 2026)
+
+Codex re-reviewed pull request 61 at `d1751e5` (record `2026-11-01-CAS-012-pr-61-d1751e5.md`):
+PASS, no findings, the five findings of `db10902` closed. It then reviewed pull request 63 at
+`58b5f27` with pull request 64 (record `2026-11-01-pr-63-58b5f27-pr-64-8464611.md`): PASS, no
+findings, the five conditions of the D50 amendment 2 and migration 0025 supported. The owner
+merged pull request 63 at `59df7da`; its branch held pull request 61's head, so GitHub recorded 61
+as merged at the same moment. CAS-012 is accepted.

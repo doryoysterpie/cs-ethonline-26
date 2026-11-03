@@ -13,30 +13,67 @@ repository settings, merge a pull request, or close an issue.
 `refs/heads/main`. It defines the following controls:
 
 - updates reach `main` through a pull request;
-- one approving review is required; a new reviewable push dismisses stale approvals; the most
-  recent reviewable push requires approval from someone other than its pusher;
-- every review conversation is resolved before merge;
+- no approving review is required and no last-push approval (D52): the repository has one
+  GitHub identity, which cannot approve its own pull request, so either rule would block every
+  merge. The review is enforced by the seventh check instead;
+- every review conversation is resolved before merge, so each Codex review thread is addressed;
 - `Verify`, both PostgreSQL trust and SCRAM lanes, `Browser E2E`, `Supply chain`, and
   `Analyze (javascript-typescript)` pass against the latest `main` before merge;
+- `Codex verdict` passes: a commit status on the pull request's head that
+  `.github/workflows/codex-verdict.yml` sets from the pull request's comments, success only when
+  the last verdict line naming that exact head is `Codex verdict: PASS at <commit>` (§1.1);
 - each required check is bound to the GitHub Actions integration (`integration_id` 15368),
   observed on `main` at `978d6cc6fadbbd5fee3b000edf17e0795331596f` on 2026-10-23;
 - branch deletion and non-fast-forward updates are prohibited; the ruleset has no bypass actor.
 
-`tools/checks/rulesets.ts` fails when the JSON is malformed, a named control is weakened, a
-required check changes identity, a required job disappears, two jobs publish the same name, or
-a required check is no longer bound to GitHub Actions. `corepack pnpm check:repo` and
+`tools/checks/rulesets.ts` fails when the JSON is malformed, a named control is weakened, an
+approval rule that one identity cannot satisfy returns, a required check changes identity, a
+required job disappears, the verdict workflow stops setting its status or a job takes its name,
+two jobs publish the same name, or a required check is no longer bound to GitHub Actions.
+
+### 1.1 Recording a Codex verdict
+
+A verdict is one line of a pull-request comment, exactly:
+
+```text
+Codex verdict: PASS at <40-character head commit>
+Codex verdict: CHANGES REQUIRED at <40-character head commit>
+```
+
+Codex, or the owner pasting Codex's verdict, posts it after the review of that exact head. The
+engineering agent never posts one. Only a comment by an account with write access counts, so a
+public commenter cannot pass a head. The comment sets the status within a minute; a new push
+makes a head no verdict names, and the status turns to failure until Codex passes it. Until the
+ruleset is active, nothing enforces the verdict but the process.
+
+Each run sets the status to pending before it reads anything, and writes success only after every
+comment has been read. A refused pending write does not stop the run, which goes on to write the
+verdict it decides; a failed read writes failure. Every GitHub call is attempted up to three
+times when GitHub fails transiently. An earlier status outlives a run in two cases only: the run
+cannot read the pull request's head, or GitHub refuses every status write the run makes; the
+`Codex verdict record` job then fails. Before a merge, the latest `Codex verdict record` run on
+the pull request is green.
+
+### 1.2 What one identity cannot enforce
+
+With a single GitHub identity, everyone who can push can also write a verdict comment, add a
+workflow that sets the status, or edit the ruleset. The check enforces against the realistic
+failure, merging a head Codex never passed, not against a deliberate forger with push access;
+nothing can, in a one-identity repository. The bypass list stays empty, so the only way around
+the gate is to change the ruleset, and the ruleset's own history records every change. That is
+the honest limit of the control. `corepack pnpm check:repo` and
 `corepack pnpm verify` run this check.
 
 ## 2. Activation prerequisites
 
 Do not activate the ruleset until all of these statements are true:
 
-1. The pull request containing `.github/workflows/ci.yml` has produced all six required check
-   names. In particular, `Browser E2E` must execute the repaired passwordless browser harness;
+1. A pull request has produced all seven required check names. In particular, `Browser E2E`
+   must execute the repaired passwordless browser harness, and `Codex verdict` must have been
+   set by GitHub Actions on the head, once as failure and, after a verdict comment, as success;
    a skipped, absent, or failing check is not evidence.
-2. A person other than the most recent pusher has write access and can supply the required
-   approval. On a single-maintainer repository, activating this rule without an eligible
-   reviewer deliberately prevents merges.
+2. The owner has read §1.1 and §1.2: no approval is required, and the review is enforced by the
+   `Codex verdict` status.
 3. The owner has reviewed the empty bypass list. There is no administrative escape path in the
    local definition.
 4. The owner has retained an authenticated recovery session and knows how to edit or disable a
@@ -66,6 +103,15 @@ PostgreSQL integration, password authentication
 Browser E2E
 Supply chain
 Analyze (javascript-typescript)
+Codex verdict
+```
+
+Confirm that the `Codex verdict` status comes from GitHub Actions, the source the ruleset names
+(`integration_id` 15368). This command is read-only:
+
+```bash
+gh api repos/doryoysterpie/cs-ethonline-26/commits/<HEAD>/status \
+  --jq '.statuses[] | select(.context == "Codex verdict") | [.state, .creator.login] | @tsv'
 ```
 
 ## 3. Owner-only ruleset activation
@@ -74,12 +120,12 @@ The owner performs this section. Engineering and review agents stop after the lo
 
 1. Open **Settings → Rules → Rulesets → New branch ruleset**.
 2. Reproduce `.github/rulesets/main.json` exactly, including the `main` ref, active enforcement,
-   empty bypass list, pull-request review controls, strict required checks, deletion rule, and
-   non-fast-forward rule.
+   empty bypass list, pull-request controls (no approval, conversation resolution required),
+   strict required checks, deletion rule, and non-fast-forward rule.
 3. Select GitHub Actions as the expected source for every status check.
-4. Save the ruleset, then open a disposable pull request; confirm that a missing review, an
-   unresolved conversation, an out-of-date branch, and each absent check independently block
-   merge.
+4. Save the ruleset, then open a disposable pull request; confirm that a missing Codex verdict,
+   a verdict on an earlier head, an unresolved conversation, an out-of-date branch, and each
+   absent check independently block merge.
 
 Alternatively, the owner may submit the committed JSON through the REST API. This command
 changes repository settings; it is recorded here for the human owner and must not be executed
@@ -133,18 +179,42 @@ mode, or ruleset changes:
 1. Run `corepack pnpm check:repo` from a clean checkout.
 2. Read back the live ruleset; compare its target, enforcement, bypass actors, rules and required
    contexts with `.github/rulesets/main.json`.
-3. Confirm a recent pull request produced all six checks from GitHub Actions and that each passed.
+3. Confirm a recent pull request produced all seven checks from GitHub Actions and that each
+   passed, `Codex verdict` on the head it merged.
 4. Confirm the four security scanning controls in §4 remain enabled and inspect open alerts.
 5. Record the date, reviewer, deviations and remediation issue in `docs/tcu/CAS-006.md`; do not
    record tokens, credentials, connection strings, or alert payloads.
 
 The control is falsified when the live read-back differs from the committed definition, a named
-check can be satisfied by an unexpected integration, a pull request can merge without the review
-and conversation conditions, or a force push or deletion of `main` succeeds. Stop merges, restore
+check can be satisfied by an unexpected integration, a pull request can merge without a Codex
+PASS on its head or with an unresolved conversation, or a force push or deletion of `main`
+succeeds. Stop merges, restore
 the intended setting, and follow the incident runbook if the deviation could have admitted an
 unreviewed commit.
 
-## 6. References
+## 6. Base image bumps
+
+The Dockerfile names its base by tag and manifest-list digest (D58). Dependabot opens a pull
+request when the digest under the tag moves (`.github/dependabot.yml`, weekly). Its review is
+two checks, and a bump merges only when both hold:
+
+1. The new digest resolves from the tag on the registry. Read-only:
+
+   ```bash
+   docker buildx imagetools inspect node:24.22.2-bookworm-slim
+   ```
+
+   The `Digest:` line must equal the digest in both `FROM` lines of the pull request.
+
+2. The image scan is clean: the pull request's `Image scan` job is green, and code scanning
+   shows no new image-scan alert.
+
+Then regenerate the bill of materials in the same pull request
+(`corepack pnpm supply-chain:generate`), since it records the base by digest and the check
+fails until it matches. A move of Node's release line is not a bump here: it changes `.nvmrc`
+and the toolchain pin with it (D27), as its own pull request.
+
+## 7. References
 
 - [GitHub REST API: repository rulesets](https://docs.github.com/en/rest/repos/rules)
 - [GitHub rules available for rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)

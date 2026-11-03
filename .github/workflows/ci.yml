@@ -44,9 +44,11 @@ env:
 jobs:
   verify:
     name: Verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
+      - name: Runner image
+        run: echo "runner image ImageOS=${ImageOS:-unreported} ImageVersion=${ImageVersion:-unreported}"
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -98,7 +100,7 @@ jobs:
 
   database:
     name: PostgreSQL integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     services:
       postgres:
@@ -118,6 +120,8 @@ jobs:
       # Synthetic, credential-free: a role and a database on the job's loopback.
       DATABASE_URL: postgresql://cas_ci@127.0.0.1:5432/cas_ci
     steps:
+      - name: Runner image
+        run: echo "runner image ImageOS=${ImageOS:-unreported} ImageVersion=${ImageVersion:-unreported}"
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -168,7 +172,7 @@ jobs:
 
   database-password:
     name: PostgreSQL integration, password authentication
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     services:
       postgres:
@@ -192,6 +196,8 @@ jobs:
       # The same role and database, the synthetic password in the URL.
       DATABASE_URL: postgresql://cas_ci:cas_ci_scram_${{ github.run_id }}@127.0.0.1:5432/cas_ci
     steps:
+      - name: Runner image
+        run: echo "runner image ImageOS=${ImageOS:-unreported} ImageVersion=${ImageVersion:-unreported}"
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -242,7 +248,7 @@ jobs:
 
   browser:
     name: Browser E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     services:
       postgres:
@@ -261,6 +267,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://cas_ci@127.0.0.1:5432/cas_ci
     steps:
+      - name: Runner image
+        run: echo "runner image ImageOS=${ImageOS:-unreported} ImageVersion=${ImageVersion:-unreported}"
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -290,9 +298,11 @@ jobs:
 
   supply-chain:
     name: Supply chain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
+      - name: Runner image
+        run: echo "runner image ImageOS=${ImageOS:-unreported} ImageVersion=${ImageVersion:-unreported}"
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -1,0 +1,71 @@
+# Scans the deployed image (D58), so a vulnerability in the frozen base is visible between
+# bumps. The image is built from the Dockerfile and saved as an archive, and Grype, run from its
+# own image pinned by digest (v0.120.1), scans the archive for vulnerabilities that have a fix.
+# The findings go to code scanning; the job fails on a fixable finding of high severity or
+# above, so a bump pull request shows clean or not. It runs on pull requests, on pushes to
+# main and weekly, since a new advisory needs no code change to apply. It is not a required
+# check: a finding is made visible, and the bump that fixes it is a reviewed pull request.
+name: Image scan
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: '41 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Image scan
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Runner image
+        run: echo "runner image ImageOS=${ImageOS:-unreported} ImageVersion=${ImageVersion:-unreported}"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the deployed image
+        run: docker build --tag cas-dashboard:scan . && docker save --output image.tar cas-dashboard:scan
+
+      # The image must run the Node release .nvmrc pins (D27, D58): a tag can name one release and
+      # carry another. The runtime stage removes npm, and yaml, a tool-time dependency of the
+      # repository checks that never ships (D59); the start command must still find pnpm.
+      - name: Runtime runs the pinned Node, ships neither npm nor yaml, and starts pnpm
+        run: |
+          docker run --rm --entrypoint sh --env expected="v$(cat .nvmrc)" cas-dashboard:scan -c '
+            set -e
+            echo "node $(node --version), expected $expected"
+            test "$(node --version)" = "$expected"
+            if command -v npm; then exit 1; fi
+            yaml=$(find /app/node_modules -path "*/yaml/package.json" | wc -l)
+            echo "yaml packages in the runtime: $yaml"
+            test "$yaml" -eq 0
+            pnpm --version
+          '
+
+      - name: Scan the image
+        uses: docker://anchore/grype@sha256:e4a44ef45d285b829ce6efe2642980329661bd2d18eab5fc539138d4adaebbbe # v0.120.1
+        with:
+          args: docker-archive:image.tar --only-fixed --fail-on high --output table --output sarif=grype.sarif
+
+      - name: Report to code scanning
+        if: ${{ always() && hashFiles('grype.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          sarif_file: grype.sarif
+          category: image-scan

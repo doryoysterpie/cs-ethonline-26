@@ -18,8 +18,9 @@ const AVAILABLE =
   (spawnSync('unshare', ['-rn', 'true']).status === 0 ||
     spawnSync('sudo', ['-n', 'true']).status === 0);
 
-// Names the script uses for its own variables, the snapshot's among them, and a name that
-// begins with a dash: each must reach the command as the caller set it (review of 393b1d6, M1).
+// Names the script and its inner shell use for their own variables, the snapshot's among them,
+// and a name that begins with a dash: each must reach the command as the caller set it (review
+// of 393b1d6, M1).
 const NAMES = [
   'outside',
   'inside',
@@ -29,6 +30,15 @@ const NAMES = [
   'resolved',
   'probe',
   'environment',
+  'loopback_probe',
+  'inside_probe',
+  'sudo_version',
+  'unshare_version',
+  'context',
+  'node_path',
+  'env_path',
+  'bash_path',
+  'count',
   'NETWORK_DENIAL_ENVIRONMENT',
   '-FLAG',
   'MULTI',
@@ -62,6 +72,26 @@ describe.skipIf(!AVAILABLE)('network-denial.sh (Linux with a network namespace o
     };
     expect(outcome.connect).toBe('ENETUNREACH');
     expect(outcome.seen).toEqual(Object.fromEntries(NAMES.map((name) => [name, env[name]])));
+  });
+
+  it('runs nothing of the caller environment before the command: BASH_ENV reaches it unchanged and is sourced once, by the script itself', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cas-network-denial-')));
+    try {
+      const log = path.join(root, 'sourced');
+      const startup = path.join(root, 'startup.sh');
+      fs.writeFileSync(startup, `echo sourced >> '${log}'\n`);
+      const env = { ...process.env, BASH_ENV: startup } as Record<string, string>;
+      const result = spawnSync(
+        'bash',
+        [SCRIPT, 'node', '-e', 'process.stdout.write("BASH_ENV=" + process.env.BASH_ENV)'],
+        { env, encoding: 'utf8' },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim().split('\n').at(-1)).toBe(`BASH_ENV=${startup}`);
+      expect(fs.readFileSync(log, 'utf8')).toBe('sourced\n');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('refuses a command whose path holds "=", which env would read as one more assignment', () => {

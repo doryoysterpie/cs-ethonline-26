@@ -96,7 +96,29 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
 - Every GitHub Action is pinned to a full commit SHA with its version beside it, every
   service image to a digest, every workflow declares least-privilege permissions, no workflow
   runs on `pull_request_target` or `workflow_run`, and every checkout discards its
-  credentials. `tools/checks/workflows.ts` enforces all of it on every push.
+  credentials. `tools/checks/workflows.ts` enforces all of it on every push. It reads each
+  workflow through one strict YAML parser (`tools/checks/lib/workflow-yaml.ts`, D59), so a
+  quoted key, flow style or an escape is read as GitHub reads it, and it applies every rule to
+  the parsed document, never to the text. A file with a parse error or warning, an anchor or
+  alias, a duplicate key or a second document is refused, and a value a rule compares must be a
+  plain scalar of the shape the rule names; any other shape is refused, not skipped.
+- Every job runs on one pinned runner label, `ubuntu-26.04` (`tools/checks/runner.ts`, D56),
+  and logs `ImageOS` and `ImageVersion` as its first step. The check refuses any other
+  `runs-on`, a job with none, a job-level call of a reusable workflow (whose runner and steps
+  live in another file), a first step that is not the runner-image step with its one exact
+  command, and an `ImageOS` or `ImageVersion` key anywhere in a workflow. The label pins the
+  operating system's release, not the image: GitHub refreshes the image under the same label on
+  its own schedule and hosted runners offer no pin for an image build, so the weekly refresh
+  still arrives unreviewed and the logged version is how a failure is matched to it. The bill
+  of materials records the label as a component, where its retirement is planned.
+- The offline suite's network namespace takes `sudo` and `unshare` from the image, the named
+  exception of D57: the proof runs in the command's own namespace and requires a fast failure
+  on loopback and on an outside address, and a failed proof prints the image and both tools'
+  versions (`tools/checks/network-denial.sh`).
+- The Dockerfile's base image is pinned by its manifest-list digest (D58). Dependabot opens the
+  digest bump weekly, `.github/workflows/image-scan.yml` scans the built image on pull
+  requests, pushes and weekly, and the bill of materials records the base and refuses one not
+  pinned by digest.
 - Every push runs `pnpm audit` and reproduces the committed CycloneDX 1.6 bill of materials
   and licence inventory (`supply-chain/`) byte for byte from the lockfile and the frozen
   install, cross-checked against pnpm's own generator (`tools/supply-chain/sbom.ts`).
@@ -111,7 +133,9 @@ and the full suite rerun. No wildcard exclusion and no pre-approval.
   reporting, the `main` ruleset and required SHA pinning are repository settings. They cannot
   be enabled from code; `.github/rulesets/main.json` defines the intended branch rules,
   `RUNBOOK-SECURITY.md` defines the owner-only activation and read-back, and the first-party
-  scans above are the readiness step that runs whether or not the live settings are on.
+  scans above are the readiness step that runs whether or not the live settings are on. With
+  one GitHub identity, the ruleset requires no approval; it requires the `Codex verdict` status,
+  a Codex PASS recorded against the pull request's exact head (D52).
 
 ## 9. Chain posture
 

@@ -9,7 +9,7 @@
         {
           "type": "application",
           "name": "cas-sbom-generator",
-          "version": "2"
+          "version": "3"
         }
       ]
     },
@@ -33,7 +33,7 @@
       },
       {
         "name": "cas:lockfile:sha256",
-        "value": "4a2b2d68430b6c2b9d7aafbca766dfac948cdbac16bc0cad6c0efe799c2ae69e"
+        "value": "285f45c524f0d4c2667f7c357a223fd3039e743fe21c589d0399c7ec6d022e73"
       },
       {
         "name": "cas:lockfile:version",
@@ -41,7 +41,7 @@
       },
       {
         "name": "cas:generator",
-        "value": "cas-sbom-generator@2"
+        "value": "cas-sbom-generator@3"
       },
       {
         "name": "cas:runtime:unicode",
@@ -50,6 +50,50 @@
     ]
   },
   "components": [
+    {
+      "type": "platform",
+      "bom-ref": "runner:github-hosted:ubuntu-26.04",
+      "name": "github-hosted-runner",
+      "version": "ubuntu-26.04",
+      "description": "The GitHub-hosted runner label every CI job runs on. It pins the operating system release, not the image build, which GitHub refreshes under the same label.",
+      "properties": [
+        {
+          "name": "cas:runner:label",
+          "value": "ubuntu-26.04"
+        },
+        {
+          "name": "cas:runner:pins",
+          "value": "os-release"
+        },
+        {
+          "name": "cas:runner:source",
+          "value": "tools/checks/runner.ts"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "container:node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c",
+      "name": "node",
+      "version": "24.22.2-bookworm-slim",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c"
+        }
+      ],
+      "purl": "pkg:docker/library/node@sha256%3Ac86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c?tag=24.22.2-bookworm-slim",
+      "properties": [
+        {
+          "name": "cas:image:source",
+          "value": "Dockerfile"
+        },
+        {
+          "name": "cas:image:pins",
+          "value": "manifest-list-digest"
+        }
+      ]
+    },
     {
       "type": "library",
       "bom-ref": "workspace:@cas/article",
@@ -236,29 +280,6 @@
     },
     {
       "type": "library",
-      "bom-ref": "workspace:@cas/feed-api",
-      "name": "@cas/feed-api",
-      "version": "0.0.0",
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "cas:workspace:path",
-          "value": "packages/feed-api"
-        },
-        {
-          "name": "cas:license:source",
-          "value": "workspace-manifest"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "bom-ref": "workspace:@cas/graph-evidence",
       "name": "@cas/graph-evidence",
       "version": "0.0.0",
@@ -296,29 +317,6 @@
         {
           "name": "cas:workspace:path",
           "value": "packages/mcp-server"
-        },
-        {
-          "name": "cas:license:source",
-          "value": "workspace-manifest"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "workspace:@cas/payer-agent",
-      "name": "@cas/payer-agent",
-      "version": "0.0.0",
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "cas:workspace:path",
-          "value": "apps/payer-agent"
         },
         {
           "name": "cas:license:source",
@@ -388,29 +386,6 @@
         {
           "name": "cas:workspace:path",
           "value": "packages/source-reader"
-        },
-        {
-          "name": "cas:license:source",
-          "value": "workspace-manifest"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "workspace:@cas/sunday-agent",
-      "name": "@cas/sunday-agent",
-      "version": "0.0.0",
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "cas:workspace:path",
-          "value": "apps/sunday-agent"
         },
         {
           "name": "cas:license:source",
@@ -9622,6 +9597,36 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/yaml@2.9.1",
+      "name": "yaml",
+      "version": "2.9.1",
+      "purl": "pkg:npm/yaml@2.9.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "dcdc4df3eefc39dcdb4fb0bf5a31acc9f3c0b4968ddc5343b16c6fed8ee6703b13fe83a6816f01a72410145067bd91378fd63649dcf550b14b7b32fb11bdb217"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "ISC"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "cas:license:source",
+          "value": "installed-manifest"
+        },
+        {
+          "name": "cas:pnpm:hasBin",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/yocto-queue@0.1.0",
       "name": "yocto-queue",
       "version": "0.1.0",
@@ -9700,6 +9705,10 @@
     }
   ],
   "dependencies": [
+    {
+      "ref": "container:node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c",
+      "dependsOn": []
+    },
     {
       "ref": "pkg:npm/%40anthropic-ai/sdk@1.0.0",
       "dependsOn": [
@@ -11745,7 +11754,8 @@
         "pkg:npm/picomatch@4.0.7",
         "pkg:npm/postcss@8.5.28",
         "pkg:npm/rolldown@1.2.7",
-        "pkg:npm/tinyglobby@0.2.17"
+        "pkg:npm/tinyglobby@0.2.17",
+        "pkg:npm/yaml@2.9.1"
       ]
     },
     {
@@ -11797,6 +11807,10 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:npm/yaml@2.9.1",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/yocto-queue@0.1.0",
       "dependsOn": []
     },
@@ -11806,6 +11820,10 @@
     },
     {
       "ref": "pkg:npm/zwitch@2.0.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "runner:github-hosted:ubuntu-26.04",
       "dependsOn": []
     },
     {
@@ -11907,12 +11925,6 @@
       ]
     },
     {
-      "ref": "workspace:@cas/feed-api",
-      "dependsOn": [
-        "pkg:npm/typescript@6.0.3"
-      ]
-    },
-    {
       "ref": "workspace:@cas/graph-evidence",
       "dependsOn": [
         "pkg:npm/%40types/node@24.13.3",
@@ -11935,12 +11947,6 @@
         "workspace:@cas/drafting",
         "workspace:@cas/evidence",
         "workspace:@cas/graph-evidence"
-      ]
-    },
-    {
-      "ref": "workspace:@cas/payer-agent",
-      "dependsOn": [
-        "pkg:npm/typescript@6.0.3"
       ]
     },
     {
@@ -11973,12 +11979,6 @@
       ]
     },
     {
-      "ref": "workspace:@cas/sunday-agent",
-      "dependsOn": [
-        "pkg:npm/typescript@6.0.3"
-      ]
-    },
-    {
       "ref": "workspace:@cas/taxonomy",
       "dependsOn": [
         "pkg:npm/typescript@6.0.3",
@@ -12006,6 +12006,7 @@
     {
       "ref": "workspace:cs-ethonline-26",
       "dependsOn": [
+        "container:node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c",
         "pkg:npm/%40eslint/js@10.0.1",
         "pkg:npm/%40types/node@24.13.3",
         "pkg:npm/eslint@10.13.0",
@@ -12014,6 +12015,8 @@
         "pkg:npm/typescript-eslint@8.69.0",
         "pkg:npm/typescript@6.0.3",
         "pkg:npm/vitest@4.1.12",
+        "pkg:npm/yaml@2.9.1",
+        "runner:github-hosted:ubuntu-26.04",
         "workspace:@cas/article",
         "workspace:@cas/classification",
         "workspace:@cas/clustering",
@@ -12022,14 +12025,11 @@
         "workspace:@cas/database",
         "workspace:@cas/drafting",
         "workspace:@cas/evidence",
-        "workspace:@cas/feed-api",
         "workspace:@cas/graph-evidence",
         "workspace:@cas/mcp-server",
-        "workspace:@cas/payer-agent",
         "workspace:@cas/roundup",
         "workspace:@cas/sheets-intake",
         "workspace:@cas/source-reader",
-        "workspace:@cas/sunday-agent",
         "workspace:@cas/taxonomy",
         "workspace:@cas/worker"
       ]

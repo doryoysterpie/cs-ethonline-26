@@ -127,3 +127,121 @@ Codex re-reviewed `e19449e` on 22 October 2026: **PASS**, no findings. The atomi
 Record: `2026-10-22-cas-006-pr-17-correction-reaudit.md`. Steps 9 and 10 are therefore audited
 at the commit `main` carries. Pull request 18's delta was passed at `32e1357`; the owner's
 halves of step 7 remain, on the recreated Railway service.
+
+## 7. Review of pull request 65 at `aa6f519`, and the corrections (1 November 2026)
+
+Codex reviewed pull request 65, the ruleset for one identity (D52) and the restore drill carried
+from pull request 51 (record `2026-11-01-pr-65-aa6f519.md`): CHANGES REQUIRED, two High. The
+ruleset's four conditions, the validator, the carry of pull request 51 and the records were
+supported. Neither gap was ever on `main`. Each is named here and corrected with its tests, in the
+same push (D53).
+
+- **H1: a failed run of the verdict recorder could leave an earlier success standing.** The
+  recorder decided before it wrote, so a run that failed while reading the comments wrote
+  nothing, and a head an earlier run had passed stayed green after its verdict changed. Corrected
+  in `tools/ci/codex-verdict.ts`: once the head is known the status is set to pending before
+  anything is read, a failed read or a malformed page leaves it failed or pending, and success is
+  written only after every comment is read and decided. Five cases are tested from an earlier
+  success; the one that remains, GitHub refusing every status write, fails the job and is named in
+  `docs/RUNBOOK-SECURITY.md`, section 1.1.
+- **H2: the restore drill's local-only check read a different host from the one its clients
+  used.** The guard classified the URL's authority, while the Node client and the child tools
+  honoured a host parameter, and the child tools inherited the drill's whole environment.
+  Corrected in `packages/database/src/restore.ts`: `drillTarget` reads each URL once, refusing
+  any libpq parameter that could route a client elsewhere, a parameter given twice, more than one
+  host or none; the guard checks that target; `drillChildEnvironment` hands the child tools that
+  target and keeps from the inherited environment only what finds the tools and formats messages.
+  `summarizeConnection` now reads the effective host as well. Tests cover the parameters that
+  route, socket directories in either place, the variables a child must not inherit, and that the
+  Node client and the child tools resolve the same host, port, database and user. The drill passes
+  locally at 25 migrations, and a target that routes elsewhere is refused before any connection.
+
+## 8. Re-review of pull request 65 at `26dad9d`, and the corrections (2 November 2026)
+
+Codex re-reviewed the corrections (record `2026-11-01-pr-65-26dad9d.md`): CHANGES REQUIRED, H1 and
+H2 not closed, one Medium. Each correction closed the general case and left one path open.
+
+- **H1: a refused first pending write still ended the run.** The pending write stood outside the
+  guarded path, so a run whose first write was refused stopped there and wrote nothing after it.
+  Corrected: every GitHub call is attempted up to three times when GitHub fails transiently; a
+  refused pending write no longer ends the run, which reads the comments and writes the verdict
+  it decides; every failing path writes failure. Tests include the pending write refused once,
+  refused on every attempt with the verdict now CHANGES REQUIRED, refused with the comments
+  unreadable, and refused with the verdict still PASS. The two cases in which an earlier status
+  outlives a run, an unreadable head and every status write refused, are stated exactly in
+  `docs/RUNBOOK-SECURITY.md`, section 1.1.
+- **H2: fields a URL omits were filled from the environment by the Node client alone.** The
+  child tools received the drill's explicit target, but the Node clients opened the original URLs
+  and filled an omitted port, user or password from inherited libpq variables. Corrected: the
+  drill refuses to run while any `PG*` variable is set (`assertNoAmbientLibpq`), each URL must name
+  its user, and every Node client connects with `drillConnectionString(target)`, which names host,
+  port, database and user explicitly. Tests show the Node client and the child tools resolve the
+  same host, port, database and user with hostile `PGPORT`, `PGHOST`, `PGUSER` and `PGDATABASE`
+  set, the same password in the clean environment the drill requires, and that the explicit form
+  reads back to the same target. The drill passes at 25 migrations, and refuses an inherited
+  `PGPORT` before any connection.
+- **M1: the tracker contradicted D53 to D55.** Reconciled: steps 3, 4 and 12 are ticked with
+  their decisions, the evidence table and the restart condition are current, and step 5 stays
+  open, outside pull request 65.
+
+## 9. The dispositions (step 5, D54)
+
+- **Removed:** `apps/sunday-agent`, `apps/payer-agent` and `packages/feed-api`, twelve files in
+  all, each package a `package.json`, two `tsconfig` files and one source file exporting nothing,
+  in one commit that names every file. Migrations 0008 and 0009 created no table that only a
+  removed package read, since none of the three read anything, so no migration drops one. The
+  lockfile and the bill of materials were regenerated (15 workspace packages, 346 components);
+  no workspace entry, path alias, CI matrix row or bill-of-materials line names a removed
+  package, and the clean clone proves it. The README's sponsor-track section keeps one line
+  naming what the repository held at the ETHOnline submission and what became of it.
+- **Parked, `@cas/graph-evidence` and the live Graph path.** It fails closed without
+  `GRAPH_API_KEY` (the client and the probe refuse with a fixed message, and tests hold both);
+  its default tests run with a synthetic key and no network; the live suite, `test:live`, is
+  outside the default suite and fails rather than skips without the key, so that a missing key
+  is never read as a pass (`gateway.live.test.ts`). `.dockerignore` keeps it out of the deployed
+  image; its dependencies stay in the bill of materials, and advisories keep applying.
+- **Parked, `@cas/mcp-server`.** No fact was given that it is wired into an AI client the owner
+  uses, so it is parked (D54): out of the deployed image by `.dockerignore`, in the repository,
+  the workspace and the bill of materials; step 8 is `N/A`; unparking is a unit with its own
+  audit.
+- **Kept, `@cas/evidence` and the anomaly layer.** Unchanged.
+- **The image, proved.** A Docker build of this branch's tree contains `apps/dashboard`,
+  `apps/worker` and eleven packages, neither parked package among them, and the dashboard built.
+
+## 10. The combined review of 2 November 2026, and the corrections
+
+- **Verdicts** (Codex; record
+  `2026-11-02-pr-66-69-main-2759519-pr-67-4a0967f-pr-68-13298ef.md`): pull request 66 PASS at
+  `186235b`, 69 PASS at `4518d4c` and 67 PASS at `4a0967f`, each with no findings; 68 CHANGES
+  REQUIRED at `13298ef`, one Medium.
+- **M1.** The D56 guard read `runs-on:` lines and the name of each job's first step, not the
+  jobs themselves. A job-level call of a reusable workflow has no `runs-on:` and no steps of its
+  own, so it passed with no finding; a first step named `Runner image` that ran `true` passed
+  too, and the fixtures accepted exactly that.
+- **The first correction** (`54e44d0`). `tools/checks/workflows.ts` read each job under
+  `jobs:`, but by matching lines: a job key counted only unquoted at two spaces and a job's keys
+  only unquoted at four, and `ImageOS` was matched as text. It refused a job-level `uses:`, a job
+  without `runs-on:`, a first step other than the runner-image step with its exact command, and
+  a textual `ImageOS` or `ImageVersion` key, in the repository's own layout only.
+- **Observed failing.** The new tests fail against the guard at `13298ef` (6 of 34). Against
+  the committed workflows, each of four changes (the first step's command set to `true`, a
+  reusable-workflow job added, `ImageOS` set for a whole workflow, `runs-on:` removed from a job)
+  gives one finding with the new guard and none with the old.
+- **The re-review** (Codex; record `2026-11-02-pr-68-e2b0735.md`): CHANGES REQUIRED at
+  `e2b0735`, M1 (Medium). The guard still matched one textual layout: a quoted job key kept the
+  reusable-workflow bypass, a job in flow style and an escaped `ImageOS` key evaded it, and a
+  comment after `jobs:` or naming `ImageOS` was refused. The older workflow rules shared the gap:
+  a quoted `uses` or `image` key let an unpinned action or a tag-only image pass.
+- **The second correction** (D59; `d105a48` to `105fb16`). `yaml` 2.9.1 is a root development
+  dependency; the runtime stage of the image removes it, and the image scan requires it absent.
+  One reader, `tools/checks/lib/workflow-yaml.ts`, parses each workflow strictly (YAML 1.2 core
+  schema; any error or warning, anchor, alias, duplicate key, non-string key or second document
+  refused), and `workflows.ts` and `rulesets.ts` apply every rule to the parsed document, each
+  compared value a plain scalar of its rule's shape. The line functions are deleted, and a test
+  asserts that no checks module reads workflow YAML by matching lines.
+- **Observed failing, again.** The new tests fail against the guard and rulesets of `e2b0735` (7
+  of 39). On the committed workflows, the re-review's four inputs and a quoted `uses` key on a
+  checkout step each give a finding with the new guard and none with the old; comments after
+  `jobs:` and naming `ImageOS` pass with the new guard, where the old refused them. The image
+  scan failed on a runtime image that still held `yaml` (`yaml packages in the runtime: 1`) and
+  passed once the Dockerfile removed it (`0`).
